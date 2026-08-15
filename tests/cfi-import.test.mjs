@@ -1,13 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import manifest from "../config/sources.json" with { type: "json" };
-import { parseFootballDataCsv, runBulkImport, validateManifest } from "../supabase/functions/_shared/cfi-import-core.ts";
+import { parseFootballDataCsv, runBulkImport, selectSources, validateManifest } from "../supabase/functions/_shared/cfi-import-core.ts";
+import { normalizeRefreshRequest } from "../supabase/functions/_shared/cfi-current-refresh.ts";
 
 const header = "Date,HomeTeam,AwayTeam,FTHG,FTAG,HTHG,HTAG";
-const source = { id: "test", enabled: true, provider: "test", country: "England", league: "Test", season: "2025-26", url: "https://example.test/data.csv", format: "football-data-v1" };
+const source = { id: "test", enabled: true, provider: "test", country: "England", league: "Test", season: "2025-26", url: "https://example.test/data.csv", format: "football-data-v1", current: true };
 
-function regressionCsv(count = 380) {
-  const rows = Array.from({ length: count }, (_, index) => `01/08/25,Home ${index},Away ${index},2,1,1,0`);
+function regressionCsv(count = 380, start = 0) {
+  const rows = Array.from({ length: count }, (_, offset) => {
+    const index = start + offset;
+    return `01/08/25,Home ${index},Away ${index},2,1,1,0`;
+  });
   return [header, ...rows].join("\n");
 }
 
@@ -68,4 +72,43 @@ test("one failed source is isolated and checkpointed", async () => {
   assert.equal(result.counters.ERROR, 1);
   assert.deepEqual(result.checkpoint.completedSourceIds, ["good"]);
   assert.deepEqual(result.checkpoint.failedSourceIds, ["bad"]);
+});
+
+test("currentOnly refresh selects only current manifest sources", () => {
+  const selected = selectSources(manifest, { currentOnly: true });
+  assert.ok(selected.length > 0);
+  assert.ok(selected.every((item) => item.current === true));
+  assert.ok(selected.every((item) => item.enabled === true));
+});
+
+test("current-season refresh is idempotent and source growth adds only new rows", async () => {
+  const upsertBatch = canonicalBatchStore();
+  const testManifest = { version: 1, sources: [source] };
+  let csv = regressionCsv(3);
+  const dependencies = { concurrency: 1, batchSize: 500, fetchText: async () => csv, upsertBatch };
+
+  const first = await runBulkImport(testManifest, { currentOnly: true }, dependencies);
+  assert.equal(first.counters.NEW, 3);
+
+  const same = await runBulkImport(testManifest, { currentOnly: true }, dependencies);
+  assert.equal(same.counters.NEW, 0);
+  assert.equal(same.counters.DUPLICATE_COMPATIBLE, 3);
+
+  csv = [regressionCsv(3), regressionCsv(2, 3).split("\n").slice(1).join("\n")].join("\n");
+  const grown = await runBulkImport(testManifest, { currentOnly: true }, dependencies);
+  assert.equal(grown.counters.NEW, 2);
+  assert.equal(grown.counters.DUPLICATE_COMPATIBLE, 3);
+  assert.equal(grown.counters.ERROR, 0);
+});
+
+test("scheduler payload validation forces currentOnly and bounds concurrency", () => {
+  assert.deepEqual(normalizeRefreshRequest({}), { concurrency: 3, filters: { currentOnly: true } });
+  assert.deepEqual(normalizeRefreshRequest({ concurrency: 5, sourceIds: [" a ", "a", "b"] }), {
+    concurrency: 5,
+    filters: { currentOnly: true, sourceIds: ["a", "b"] },
+  });
+  assert.throws(() => normalizeRefreshRequest({ concurrency: 0 }), /INVALID_CONCURRENCY/);
+  assert.throws(() => normalizeRefreshRequest({ concurrency: 6 }), /INVALID_CONCURRENCY/);
+  assert.throws(() => normalizeRefreshRequest({ sourceIds: [""] }), /INVALID_SOURCE_IDS/);
+  assert.throws(() => normalizeRefreshRequest([]), /INVALID_REFRESH_PAYLOAD/);
 });
