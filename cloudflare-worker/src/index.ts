@@ -2,92 +2,48 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 
-type Env = {
-  CFI_DB_BASE_URL?: string;
-  CFI_DB_KEY?: string;
-};
+type Env = { CFI_DB_BASE_URL?: string; CFI_DB_KEY?: string };
 
-function jsonText(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
+function jsonText(value: unknown) { return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] }; }
 
 async function callCFI(env: Env, path: string, init?: RequestInit) {
-  if (!env.CFI_DB_BASE_URL) {
-    return { status: "CONFIG_REQUIRED", message: "CFI_DB_BASE_URL is not configured on the Worker yet." };
-  }
-  const headers = new Headers(init?.headers || {});
-  headers.set("accept", "application/json");
+  if (!env.CFI_DB_BASE_URL) return { status: "CONFIG_REQUIRED", message: "CFI_DB_BASE_URL is not configured on the Worker yet." };
+  const headers = new Headers(init?.headers || {}); headers.set("accept", "application/json");
   if (env.CFI_DB_KEY) headers.set("x-cfi-key", env.CFI_DB_KEY);
   const res = await fetch(`${env.CFI_DB_BASE_URL.replace(/\/$/, "")}${path}`, { ...init, headers });
-  const text = await res.text();
-  let body: unknown = text;
-  try { body = JSON.parse(text); } catch {}
+  const text = await res.text(); let body: unknown = text; try { body = JSON.parse(text); } catch {}
   return { httpStatus: res.status, ok: res.ok, body };
 }
 
 function createServer(env: Env) {
-  const server = new McpServer({ name: "CFI Football Intelligence", version: "4.0.0" });
-
-  server.registerTool("cfi_db_status", {
-    description: "Read the live Persistent CFI database status.",
-    inputSchema: {}
-  }, async () => jsonText(await callCFI(env, "/status")));
-
-  server.registerTool("cfi_team_history", {
-    description: "Read canonical history for one exact football team from Persistent CFI DB.",
-    inputSchema: { team: z.string().min(1) }
-  }, async ({ team }) => jsonText(await callCFI(env, `/team-history?team=${encodeURIComponent(team)}`)));
-
-  server.registerTool("cfi_h2h", {
-    description: "Read canonical head-to-head history for two exact football teams.",
-    inputSchema: { home: z.string().min(1), away: z.string().min(1) }
-  }, async ({ home, away }) => jsonText(await callCFI(env, `/h2h?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}`)));
-
-  server.registerTool("cfi_predict_match", {
-    description: "Request the CFI prediction pipeline for the four frozen markets. Manual team metrics are not accepted; CFI must derive evidence from its database and verified context.",
-    inputSchema: {
-      home: z.string().min(1),
-      away: z.string().min(1),
-      matchDate: z.string().optional(),
-      language: z.string().default("vi")
-    }
-  }, async (input) => {
-    const result = await callCFI(env, "/predict", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input)
-    });
-    return jsonText(result);
-  });
-
-  server.registerTool("cfi_live_event", {
-    description: "Send a verified live match event such as a red card to CFI live intelligence for contextual escalation analysis.",
-    inputSchema: {
-      home: z.string().min(1),
-      away: z.string().min(1),
-      minute: z.number().min(0).max(130),
-      eventType: z.enum(["RED_CARD", "GOAL", "SCORE_UPDATE"]),
-      team: z.enum(["HOME", "AWAY"]).optional(),
-      score: z.string().optional()
-    }
-  }, async (input) => {
-    const result = await callCFI(env, "/live-event", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input)
-    });
-    return jsonText(result);
-  });
-
+  const server = new McpServer({ name: "CFI Football Intelligence", version: "4.1.0" });
+  server.registerTool("cfi_db_status", { description: "Read live Persistent CFI database status.", inputSchema: {} }, async () => jsonText(await callCFI(env, "/status")));
+  server.registerTool("cfi_team_history", { description: "Read canonical history for one exact football team.", inputSchema: { team: z.string().min(1) } }, async ({ team }) => jsonText(await callCFI(env, `/team-history?team=${encodeURIComponent(team)}`)));
+  server.registerTool("cfi_h2h", { description: "Read canonical head-to-head history.", inputSchema: { home: z.string().min(1), away: z.string().min(1) } }, async ({ home, away }) => jsonText(await callCFI(env, `/h2h?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}`)));
+  server.registerTool("cfi_predict_match", { description: "Predict the four frozen CFI markets from database evidence.", inputSchema: { home: z.string().min(1), away: z.string().min(1), matchDate: z.string().optional(), language: z.string().default("vi") } }, async (input) => jsonText(await callCFI(env, "/predict", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) })));
+  server.registerTool("cfi_live_event", { description: "Send a verified live event for escalation analysis.", inputSchema: { home: z.string().min(1), away: z.string().min(1), minute: z.number().min(0).max(130), eventType: z.enum(["RED_CARD", "GOAL", "SCORE_UPDATE"]), team: z.enum(["HOME", "AWAY"]).optional(), score: z.string().optional() } }, async (input) => jsonText(await callCFI(env, "/live-event", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) })));
   return server;
 }
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    const url = new URL(request.url);
-    if (url.pathname === "/" || url.pathname === "/health") {
-      return Response.json({ status: "OK", service: "CFI Football Intelligence MCP", version: "4.0.0", mcp: "/mcp" });
-    }
-    return createMcpHandler(() => createServer(env), { route: "/mcp" })(request, env, ctx);
-  }
-} satisfies ExportedHandler<Env>;
+const dashboard = `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CFI — Persistent Intelligence</title><style>
+:root{--bg:#07111f;--panel:#101b2d;--panel2:#142238;--line:#243550;--text:#e9f1ff;--muted:#8ea0b8;--green:#3ee88b;--purple:#b99cff;--yellow:#ffc83d;--red:#ff5c6c}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 60% 0,#14223a 0,#07111f 42%);color:var(--text);font:14px Inter,system-ui,-apple-system,sans-serif}.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}.side{padding:24px 14px;border-right:1px solid var(--line);background:#091422}.brand{font-size:28px;font-weight:900;display:flex;gap:10px;align-items:center}.brand b{color:var(--green)}.sub{color:var(--muted);font-size:12px;margin:0 0 28px 46px}.nav{display:grid;gap:8px}.nav div{padding:13px 14px;border-radius:9px;color:#b9c7da}.nav .on{background:#123d30;color:var(--green);border:1px solid #1f684d}.main{padding:22px;max-width:1450px;width:100%;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.status{display:flex;gap:24px;color:var(--muted);font-size:12px}.status b{color:var(--green)}.lang{background:var(--panel);border:1px solid var(--line);color:white;padding:10px 14px;border-radius:9px}.grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:16px}.card{background:linear-gradient(145deg,var(--panel),#0c1728);border:1px solid var(--line);border-radius:10px;padding:18px;box-shadow:0 12px 35px #0003}.title{color:var(--purple);font-size:12px;font-weight:800;margin-bottom:14px}.inputs{display:grid;grid-template-columns:1fr 56px 1fr;gap:12px;align-items:end}.field label{display:block;color:#a9b7ca;font-size:11px;margin-bottom:7px}.field input{width:100%;background:#152238;border:1px solid #30415e;color:white;padding:13px;border-radius:7px;font-size:15px}.vs{height:44px;width:44px;border:1px solid #34445f;border-radius:50%;display:grid;place-items:center;color:#91a3bb;margin:auto}.actions{display:flex;gap:10px;margin-top:14px}.btn{border:0;border-radius:7px;padding:12px 18px;font-weight:800;cursor:pointer}.go{background:linear-gradient(90deg,#30c979,#58e99c);color:#042014}.ghost{background:#18253a;color:#b9c7da;border:1px solid #30415e}.markets{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}.market{background:#111d30;border:1px solid #30415e;border-radius:9px;padding:18px;text-align:center}.market h3{margin:0 0 12px}.pct{font-size:28px;font-weight:900;color:var(--green)}.market:nth-child(2) .pct,.market:nth-child(4) .pct{color:var(--yellow)}.market:nth-child(3) .pct{color:var(--red)}.bar{height:5px;background:#26344a;border-radius:9px;margin:12px 0}.bar i{display:block;height:100%;background:currentColor;border-radius:9px}.small{color:var(--muted);font-size:12px;line-height:1.7}.analysis{margin-top:14px;display:grid;grid-template-columns:1.4fr 1fr;gap:12px}.result{border:1px solid #1f704f;background:#0e3929;padding:14px;border-radius:7px;color:#74f0a9;font-weight:800;text-align:center}.right{display:grid;gap:14px;align-content:start}.statrow{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #22314a}.ok{color:var(--green)}#msg{margin-top:12px;color:#9eb0c8;white-space:pre-wrap}.spinner{display:none}.loading .spinner{display:inline}.loading .txt{display:none}@media(max-width:850px){.app{grid-template-columns:1fr}.side{display:none}.main{padding:12px}.grid{grid-template-columns:1fr}.right{grid-template-columns:1fr}.markets{grid-template-columns:1fr 1fr}.analysis{grid-template-columns:1fr}.status{display:none}.inputs{grid-template-columns:1fr}.vs{display:none}.top h2{font-size:18px}}
+</style></head><body><div class="app"><aside class="side"><div class="brand">🧠 <span>CFI <b>v4.1</b></span></div><div class="sub">Persistent Intelligence</div><div class="nav"><div class="on">⌂ &nbsp; Dự đoán & Phân tích</div><div>◉ &nbsp; Lịch sử đội bóng</div><div>⌘ &nbsp; H2H - Đối đầu</div><div>▣ &nbsp; Database toàn cầu</div><div>◈ &nbsp; Trending DNA</div><div>★ &nbsp; Watch List</div><div>⚙ &nbsp; Cài đặt hệ thống</div></div></aside><main class="main"><div class="top"><h2>CFI Football Intelligence</h2><div class="status"><span>AI STATUS <b>● Hoạt động</b></span><span>DATABASE <b>● Persistent</b></span><span>WEB APP <b>● ONLINE</b></span></div><select class="lang"><option>🇻🇳 Tiếng Việt</option><option>🇬🇧 English</option></select></div><div class="grid"><section><div class="card"><div class="title">NHẬP TRẬN ĐẤU</div><div class="inputs"><div class="field"><label>ĐỘI NHÀ (HOME)</label><input id="home" placeholder="Ví dụ: Wallern"></div><div class="vs">VS</div><div class="field"><label>ĐỘI KHÁCH (AWAY)</label><input id="away" placeholder="Ví dụ: Union Dietach"></div></div><div class="actions"><button id="predict" class="btn go" onclick="predict()"><span class="txt">⚡ PHÂN TÍCH NGAY</span><span class="spinner">ĐANG PHÂN TÍCH…</span></button><button class="btn ghost" onclick="demo()">Dữ liệu mẫu</button></div><div id="msg">CFI tự lấy dữ liệu từ Persistent DB — không cần nhập chỉ số thủ công.</div></div><div class="markets"><div class="market"><h3>3+ HT</h3><div class="pct" id="m1">—</div><div class="bar"><i style="width:0" id="b1"></i></div><div class="small" id="s1">Chờ phân tích</div></div><div class="market"><h3>7+ FT</h3><div class="pct" id="m2">—</div><div class="bar"><i style="width:0" id="b2"></i></div><div class="small" id="s2">Chờ phân tích</div></div><div class="market"><h3>Other HT</h3><div class="pct" id="m3">—</div><div class="bar"><i style="width:0" id="b3"></i></div><div class="small" id="s3">Chờ phân tích</div></div><div class="market"><h3>Other FT</h3><div class="pct" id="m4">—</div><div class="bar"><i style="width:0" id="b4"></i></div><div class="small" id="s4">Chờ phân tích</div></div><div class="card analysis" style="grid-column:1/-1"><div><div class="title">PHÂN TÍCH CFI</div><div class="small" id="analysis">• Historical Database<br>• Team Trending DNA<br>• Home/Away form<br>• H2H + standings/context<br>• Randomness allowance</div></div><div><div class="title">KẾT LUẬN CFI</div><div class="result" id="conclusion">CFI READY — CHỜ TRẬN ĐẤU</div></div></div></section><aside class="right"><div class="card"><div class="title">TÓM TẮT DỮ LIỆU</div><div class="statrow"><span>Persistent DB</span><b class="ok" id="db">ONLINE</b></div><div class="statrow"><span>HT đầy đủ</span><b>✓</b></div><div class="statrow"><span>FT đầy đủ</span><b>✓</b></div><div class="statrow"><span>Data Quality</span><b class="ok">CLEAN</b></div></div><div class="card"><div class="title">4 MARKET CỐ ĐỊNH</div><div class="statrow"><span>3+ HT</span><b class="ok">ACTIVE</b></div><div class="statrow"><span>7+ FT</span><b class="ok">ACTIVE</b></div><div class="statrow"><span>Other HT</span><b class="ok">ACTIVE</b></div><div class="statrow"><span>Other FT</span><b class="ok">ACTIVE</b></div></div><div class="card"><div class="title">AI STATUS</div><div class="small">● Database ingestion<br>● Prediction engine<br>● Trending DNA<br>● Live-event escalation<br>● Red-card intelligence</div></div></aside></div></main></div><script>
+function demo(){home.value='Wallern';away.value='Union Dietach'}
+function n(v){return typeof v==='number'?v:(typeof v==='string'?parseFloat(v):NaN)}
+function findMarkets(o){const x=o?.body||o||{};return x.markets||x.predictions||x.probabilities||x.result?.markets||x.result?.predictions||null}
+function val(m,keys){for(const k of keys){let v=n(m?.[k]);if(Number.isFinite(v))return v<=1?v*100:v}return null}
+function setMarket(i,v){const p=Math.max(0,Math.min(100,v));document.getElementById('m'+i).textContent=p.toFixed(1)+'%';document.getElementById('b'+i).style.width=p+'%';document.getElementById('s'+i).textContent=p>=60?'Tín hiệu: MẠNH':p>=35?'Tín hiệu: TRUNG BÌNH':'Tín hiệu: YẾU'}
+async function predict(){const h=home.value.trim(),a=away.value.trim();if(!h||!a){msg.textContent='Vui lòng nhập đủ đội nhà và đội khách.';return}predict.classList.add('loading');msg.textContent='Đang truy xuất Persistent DB và chạy CFI…';try{const r=await fetch('/api/predict',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({home:h,away:a,language:'vi'})});const d=await r.json();if(d.status==='CONFIG_REQUIRED'||d.body?.status==='CONFIG_REQUIRED'){msg.textContent='Worker đã online nhưng cần cấu hình kết nối Persistent DB (CFI_DB_BASE_URL).';conclusion.textContent='DATABASE CONNECTION REQUIRED';return}const m=findMarkets(d);if(m){const values=[val(m,['3+ HT','3+HT','threePlusHT','ht3plus']),val(m,['7+ FT','7+FT','sevenPlusFT','ft7plus']),val(m,['Other HT','otherHT']),val(m,['Other FT','otherFT'])];values.forEach((v,i)=>{if(v!==null)setMarket(i+1,v)});const mx=Math.max(...values.filter(v=>v!==null));conclusion.textContent=Number.isFinite(mx)?'CFI RESULT — '+(mx>=60?'CÓ TÍN HIỆU MẠNH':'CHƯA CÓ TÍN HIỆU MẠNH'):'CFI ANALYSIS COMPLETE'}else{conclusion.textContent='CFI ANALYSIS COMPLETE'}analysis.textContent='Đã phân tích '+h+' vs '+a+' từ dữ liệu CFI.\nKết quả thô: '+JSON.stringify(d).slice(0,900);msg.textContent='Phân tích hoàn tất.'}catch(e){msg.textContent='Không thể truy xuất engine: '+e.message;conclusion.textContent='ENGINE CONNECTION ERROR'}finally{predict.classList.remove('loading')}}
+fetch('/api/status').then(r=>r.json()).then(d=>{db.textContent=(d.status==='CONFIG_REQUIRED'||d.body?.status==='CONFIG_REQUIRED')?'NEEDS CONFIG':'ONLINE'}).catch(()=>db.textContent='CHECK')
+</script></body></html>`;
+
+export default { async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  const url = new URL(request.url);
+  if (url.pathname === "/") return new Response(dashboard, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  if (url.pathname === "/health") return Response.json({ status: "OK", service: "CFI Football Intelligence", version: "4.1.0", webApp: true, mcp: "/mcp" });
+  if (url.pathname === "/api/status") return Response.json(await callCFI(env, "/status"));
+  if (url.pathname === "/api/predict" && request.method === "POST") return Response.json(await callCFI(env, "/predict", { method: "POST", headers: { "content-type": "application/json" }, body: await request.text() }));
+  if (url.pathname === "/api/team-history") return Response.json(await callCFI(env, `/team-history${url.search}`));
+  if (url.pathname === "/api/h2h") return Response.json(await callCFI(env, `/h2h${url.search}`));
+  return createMcpHandler(() => createServer(env), { route: "/mcp" })(request, env, ctx);
+} } satisfies ExportedHandler<Env>;
