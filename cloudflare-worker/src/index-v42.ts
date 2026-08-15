@@ -6,10 +6,20 @@ const FULL = `<b>DATA CORE</b><br>• Historical Database · H2H · Home/Away fo
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/api/demo') {
+      const internal = new Request(new URL('/api/predict', request.url), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ home: 'Wallern', away: 'Union Dietach', language: 'vi' })
+      });
+      return base.fetch(internal, env, ctx);
+    }
+
     const res = await base.fetch(request, env, ctx);
     if (url.pathname !== '/' || !String(res.headers.get('content-type')).includes('text/html')) return res;
     let html = await res.text();
-    html = html.replace(OLD, FULL).replaceAll('CFI v4.1', 'CFI v4.2').replaceAll('version: "4.1.0"', 'version: "4.2.0"');
+    html = html.replace(OLD, FULL).replaceAll('CFI v4.1', 'CFI v4.2');
     return new Response(html, { status: res.status, headers: res.headers });
   }
 } satisfies ExportedHandler<any>;
