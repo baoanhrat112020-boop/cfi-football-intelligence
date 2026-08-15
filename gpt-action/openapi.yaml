@@ -1,0 +1,52 @@
+openapi: 3.1.0
+info:
+  title: CFI Football Intelligence Actions
+  version: 4.6.0
+  description: GPT Actions bridge for CFI Persistent Intelligence.
+servers:
+  - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
+paths:
+  /api/predict:
+    post:
+      operationId: cfiPredictMatch
+      summary: Run full CFI prediction for a football match
+      description: Returns CFI four-market predictions plus scoreline intelligence, context factors, uncertainty and data quality using the Persistent DB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [home, away]
+              properties:
+                home:
+                  type: string
+                away:
+                  type: string
+                targetDate:
+                  type: string
+                  description: YYYY-MM-DD when known
+                language:
+                  type: string
+                  enum: [vi, en, zh, ja, ko, es, pt, fr, de, it, th, id, auto]
+                  default: vi
+      responses:
+        '200':
+          description: Full CFI prediction response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/status:
+    get:
+      operationId: cfiDatabaseStatus
+      summary: Read current CFI backend/database status
+      responses:
+        '200':
+          description: CFI status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
