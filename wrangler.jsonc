@@ -5,5 +5,8 @@
   "compatibility_date": "2026-08-15",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  "vars": {
+    "CFI_DB_BASE_URL": "https://kovmddkkzttquupdgmel.supabase.co/functions/v1/cfi-db"
+  }
 }
