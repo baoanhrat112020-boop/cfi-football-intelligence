@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "provider": "football-data.co.uk",
+  "sources": [
+    {
+      "id": "eng-e0-2025-26",
+      "enabled": true,
+      "country": "England",
+      "league": "Premier League",
+      "season": "2025-26",
+      "url": "https://www.football-data.co.uk/mmz4281/2526/E0.csv",
+      "format": "football-data-v1"
+    }
+  ]
+}
