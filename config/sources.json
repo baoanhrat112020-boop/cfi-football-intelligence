@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "sources": [
+    {"id":"eng-e0-2022-23","enabled":true,"provider":"football-data.co.uk","country":"England","league":"Premier League","season":"2022-23","url":"https://www.football-data.co.uk/mmz4281/2223/E0.csv","format":"football-data-v1","current":false},
+    {"id":"eng-e0-2023-24","enabled":true,"provider":"football-data.co.uk","country":"England","league":"Premier League","season":"2023-24","url":"https://www.football-data.co.uk/mmz4281/2324/E0.csv","format":"football-data-v1","current":false},
+    {"id":"eng-e0-2024-25","enabled":true,"provider":"football-data.co.uk","country":"England","league":"Premier League","season":"2024-25","url":"https://www.football-data.co.uk/mmz4281/2425/E0.csv","format":"football-data-v1","current":false},
+    {"id":"eng-e0-2025-26","enabled":true,"provider":"football-data.co.uk","country":"England","league":"Premier League","season":"2025-26","url":"https://www.football-data.co.uk/mmz4281/2526/E0.csv","format":"football-data-v1","current":false},
+    {"id":"eng-e0-2026-27","enabled":true,"provider":"football-data.co.uk","country":"England","league":"Premier League","season":"2026-27","url":"https://www.football-data.co.uk/mmz4281/2627/E0.csv","format":"football-data-v1","current":true},
+    {"id":"de-d1-2022-23","enabled":true,"provider":"football-data.co.uk","country":"Germany","league":"Bundesliga","season":"2022-23","url":"https://www.football-data.co.uk/mmz4281/2223/D1.csv","format":"football-data-v1","current":false},
+    {"id":"de-d1-2023-24","enabled":true,"provider":"football-data.co.uk","country":"Germany","league":"Bundesliga","season":"2023-24","url":"https://www.football-data.co.uk/mmz4281/2324/D1.csv","format":"football-data-v1","current":false},
+    {"id":"de-d1-2024-25","enabled":true,"provider":"football-data.co.uk","country":"Germany","league":"Bundesliga","season":"2024-25","url":"https://www.football-data.co.uk/mmz4281/2425/D1.csv","format":"football-data-v1","current":false},
+    {"id":"de-d1-2025-26","enabled":true,"provider":"football-data.co.uk","country":"Germany","league":"Bundesliga","season":"2025-26","url":"https://www.football-data.co.uk/mmz4281/2526/D1.csv","format":"football-data-v1","current":false},
+    {"id":"de-d1-2026-27","enabled":true,"provider":"football-data.co.uk","country":"Germany","league":"Bundesliga","season":"2026-27","url":"https://www.football-data.co.uk/mmz4281/2627/D1.csv","format":"football-data-v1","current":true},
+    {"id":"es-sp1-2022-23","enabled":true,"provider":"football-data.co.uk","country":"Spain","league":"La Liga","season":"2022-23","url":"https://www.football-data.co.uk/mmz4281/2223/SP1.csv","format":"football-data-v1","current":false},
+    {"id":"es-sp1-2023-24","enabled":true,"provider":"football-data.co.uk","country":"Spain","league":"La Liga","season":"2023-24","url":"https://www.football-data.co.uk/mmz4281/2324/SP1.csv","format":"football-data-v1","current":false},
+    {"id":"es-sp1-2024-25","enabled":true,"provider":"football-data.co.uk","country":"Spain","league":"La Liga","season":"2024-25","url":"https://www.football-data.co.uk/mmz4281/2425/SP1.csv","format":"football-data-v1","current":false},
+    {"id":"es-sp1-2025-26","enabled":true,"provider":"football-data.co.uk","country":"Spain","league":"La Liga","season":"2025-26","url":"https://www.football-data.co.uk/mmz4281/2526/SP1.csv","format":"football-data-v1","current":false},
+    {"id":"es-sp1-2026-27","enabled":true,"provider":"football-data.co.uk","country":"Spain","league":"La Liga","season":"2026-27","url":"https://www.football-data.co.uk/mmz4281/2627/SP1.csv","format":"football-data-v1","current":true}
+  ]
+}
