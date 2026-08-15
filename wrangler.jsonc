@@ -1,11 +1,12 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "cfi-football-intelligence",
-  "main": "cloudflare-worker/src/index-v43.ts",
+  "main": "cloudflare-worker/src/index-v44.ts",
   "compatibility_date": "2026-08-15",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "observability": { "enabled": true },
+  "ai": { "binding": "AI" },
   "vars": {
     "CFI_DB_BASE_URL": "https://kovmddkkzttquupdgmel.supabase.co/functions/v1/cfi-db"
   }
