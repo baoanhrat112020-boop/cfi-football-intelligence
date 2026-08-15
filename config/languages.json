@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "default": "auto",
+  "fallback": "en",
+  "supported": [
+    {"code":"auto","label":"Auto"},
+    {"code":"vi","label":"Tiếng Việt"},
+    {"code":"en","label":"English"},
+    {"code":"zh","label":"中文"},
+    {"code":"ja","label":"日本語"},
+    {"code":"ko","label":"한국어"},
+    {"code":"es","label":"Español"},
+    {"code":"pt","label":"Português"},
+    {"code":"fr","label":"Français"},
+    {"code":"de","label":"Deutsch"},
+    {"code":"it","label":"Italiano"},
+    {"code":"th","label":"ไทย"},
+    {"code":"id","label":"Bahasa Indonesia"}
+  ],
+  "commands": {
+    "set": "CFI LANGUAGE <code|name>",
+    "examples": ["CFI LANGUAGE VI", "CFI LANGUAGE EN", "CFI LANGUAGE AUTO"]
+  },
+  "canonicalTermsNeverTranslate": [
+    "canonical_name",
+    "3+ HT",
+    "7+ FT",
+    "Other HT",
+    "Other FT",
+    "NEW",
+    "DUPLICATE_COMPATIBLE",
+    "COMPLEMENTARY",
+    "CONFLICT",
+    "REJECTED"
+  ]
+}
