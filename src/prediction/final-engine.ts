@@ -1,4 +1,4 @@
-export const FINAL_VERSION = "CFI_FINAL_V5.0.0";
+export const FINAL_VERSION = "CFI_FINAL_V5.0.1";
 export const MARKET_CODES = ["3+ HT", "7+ FT", "Other HT", "Other FT"] as const;
 
 export type Pair = { home: number; away: number };
@@ -129,6 +129,14 @@ function teamDna(team: string, fixtures: CanonicalFixture[]) {
   };
 }
 
+function teamGoalSeries(fixtures: CanonicalFixture[], team: string, part: "ht" | "ft") {
+  const key = team.toLowerCase();
+  return fixtures
+    .filter((row) => row[part] && (row.homeTeam.toLowerCase() === key || row.awayTeam.toLowerCase() === key))
+    .sort((a, b) => a.matchDate.localeCompare(b.matchDate))
+    .map((row) => row.homeTeam.toLowerCase() === key ? row[part]!.home : row[part]!.away);
+}
+
 function poisson(k: number, lambda: number) { let factorial = 1; for (let i = 2; i <= k; i++) factorial *= i; return Math.exp(-lambda) * Math.pow(lambda, k) / factorial; }
 function scoreGrid(home: number, away: number, max: number) {
   const rows = [] as Array<{ score: string; probability: number; total: number }>;
@@ -148,10 +156,14 @@ export function buildPrediction(args: { home: string; away: string; targetDate?:
   const language = ["vi", "en", "zh", "th", "id"].includes(args.language ?? "") ? args.language! : "vi";
   const evidence = strictPriorEvidence(args.homePayload, args.awayPayload, args.h2hPayload, args.targetDate);
   const homeDna = teamDna(args.home, evidence.unique), awayDna = teamDna(args.away, evidence.unique);
-  const homeHt = weightedMean(evidence.streams.home.filter((row) => row.ht).map((row) => row.ht!.home)) ?? 0.68;
-  const awayHt = weightedMean(evidence.streams.away.filter((row) => row.ht).map((row) => row.ht!.away)) ?? 0.68;
-  const homeFt = weightedMean(evidence.streams.home.filter((row) => row.ft).map((row) => row.ft!.home)) ?? 1.35;
-  const awayFt = weightedMean(evidence.streams.away.filter((row) => row.ft).map((row) => row.ft!.away)) ?? 1.35;
+  // Scoreline lambdas must follow the target team's goals regardless of whether that team
+  // appeared as HOME or AWAY in each historical fixture. The previous implementation read
+  // the fixture-side column (row.ht.home / row.ft.home etc.), which could accidentally use
+  // an opponent's goals whenever the target team played on the opposite venue side.
+  const homeHt = weightedMean(teamGoalSeries(evidence.streams.home, args.home, "ht")) ?? 0.68;
+  const awayHt = weightedMean(teamGoalSeries(evidence.streams.away, args.away, "ht")) ?? 0.68;
+  const homeFt = weightedMean(teamGoalSeries(evidence.streams.home, args.home, "ft")) ?? 1.35;
+  const awayFt = weightedMean(teamGoalSeries(evidence.streams.away, args.away, "ft")) ?? 1.35;
   const htGrid = scoreGrid(clamp(homeHt, 0.08, 4.5), clamp(awayHt, 0.08, 4.5), 8);
   const ftGrid = scoreGrid(clamp(homeFt, 0.08, 6), clamp(awayFt, 0.08, 6), 12);
   const markets = Object.fromEntries(MARKET_CODES.map((market) => {
