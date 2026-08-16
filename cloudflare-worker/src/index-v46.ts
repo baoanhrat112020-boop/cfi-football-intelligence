@@ -41,16 +41,44 @@ function finalProb(a:number|null,b:number,n:number){if(a===null)return b;const w
 async function internal(request:Request,env:Env,ctx:ExecutionContext,path:string){return base.fetch(new Request(new URL(path,request.url),{headers:{accept:'application/json'}}),env,ctx)}
 async function json(r:Response){try{return await r.json()}catch{return null}}
 
+async function recordAudit(env:Env,input:any,prediction:any){
+ const date=String(input?.target_date||input?.matchDate||prediction?.target?.date||prediction?.target?.targetDate||'').slice(0,10);
+ const home=String(input?.home||prediction?.target?.home||'').trim();
+ const away=String(input?.away||prediction?.target?.away||'').trim();
+ if(!date)return{status:'SKIPPED',reason:'TARGET_DATE_REQUIRED'};
+ if(!env.CFI_DB_BASE_URL)return{status:'SKIPPED',reason:'DATABASE_NOT_CONFIGURED'};
+ const auditUrl=env.CFI_DB_BASE_URL.replace(/\/cfi-db\/?$/,'/cfi-prediction-audit');
+ const headers:Record<string,string>={'content-type':'application/json',accept:'application/json'};
+ if(env.CFI_DB_KEY)headers['x-cfi-key']=env.CFI_DB_KEY;
+ try{
+  const res=await fetch(auditUrl,{method:'POST',headers,body:JSON.stringify({action:'SNAPSHOT',target_date:date,home,away,language:String(input?.language||prediction?.language||'vi'),source:'GPT_ACTION',prediction})});
+  const text=await res.text();let body:any=text;try{body=JSON.parse(text)}catch{}
+  return{status:res.ok?'RECORDED':'ERROR',httpStatus:res.status,body};
+ }catch(e:any){return{status:'ERROR',message:String(e?.message||e)}}
+}
+
 async function fallback(request:Request,env:Env,ctx:ExecutionContext,input:any){
  const home=String(input?.home||'').trim(),away=String(input?.away||'').trim();const date=String(input?.target_date||input?.matchDate||'').slice(0,10)||undefined;
  if(!home||!away)return Response.json({status:'INVALID_REQUEST',error:'HOME_AWAY_REQUIRED'},{status:400});
  const [hr,ar,xr]=await Promise.all([internal(request,env,ctx,`/api/team-history?team=${encodeURIComponent(home)}`),internal(request,env,ctx,`/api/team-history?team=${encodeURIComponent(away)}`),internal(request,env,ctx,`/api/h2h?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}`)]);
  const [homePayload,awayPayload,h2hPayload]=await Promise.all([json(hr),json(ar),json(xr)]);
  const prediction=buildPrediction({home,away,targetDate:date,language:String(input?.language||'vi'),homePayload,awayPayload,h2hPayload});
- return Response.json({...prediction,engine:FINAL_VERSION,note:'Native prediction computed from canonical Persistent DB evidence because upstream /predict returned NOT_FOUND.'});
+ const result={...prediction,engine:FINAL_VERSION,note:'Native prediction computed from canonical Persistent DB evidence because upstream /predict returned NOT_FOUND.'};
+ const audit=await recordAudit(env,input,result);
+ return Response.json({...result,audit});
 }
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){const u=new URL(request.url);
  if(u.pathname==='/health')return Response.json({status:'OK',service:'CFI Football Intelligence',version:FINAL_VERSION,webApp:true,gptAction:true});
  if(u.pathname==='/api/status'){const res=await base.fetch(request,env,ctx);let payload:any=null;try{payload=await res.clone().json()}catch{}return Response.json({...payload,runtime:{version:FINAL_VERSION,predictionPath:'native-persistent-fallback',databaseConfigured:!!env.CFI_DB_BASE_URL}})}
- if(u.pathname==='/api/predict'&&request.method==='POST'){const body=await request.text();const cloned=new Request(request.url,{method:'POST',headers:request.headers,body});const res=await base.fetch(cloned,env,ctx);let d:any=null;try{d=await res.clone().json()}catch{}const b=unwrap(d);if(res.status===404||d?.httpStatus===404||b?.error==='NOT_FOUND'||d?.body?.error==='NOT_FOUND'){let input:any={};try{input=JSON.parse(body)}catch{}return fallback(request,env,ctx,input)}return res}return base.fetch(request,env,ctx)}} satisfies ExportedHandler<Env>;
+ if(u.pathname==='/api/predict'&&request.method==='POST'){
+  const body=await request.text();const cloned=new Request(request.url,{method:'POST',headers:request.headers,body});const res=await base.fetch(cloned,env,ctx);let d:any=null;try{d=await res.clone().json()}catch{}const b=unwrap(d);let input:any={};try{input=JSON.parse(body)}catch{}
+  if(res.status===404||d?.httpStatus===404||b?.error==='NOT_FOUND'||d?.body?.error==='NOT_FOUND')return fallback(request,env,ctx,input);
+  if(res.ok&&b&&typeof b==='object'){
+   const audit=await recordAudit(env,input,b);
+   return Response.json({...b,audit});
+  }
+  return res;
+ }
+ return base.fetch(request,env,ctx)
+}} satisfies ExportedHandler<Env>;
