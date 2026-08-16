@@ -9,17 +9,25 @@ const instructions = readFileSync(new URL("../gpt-action/CFI_GPT_INSTRUCTIONS.md
 test("GPT Action OpenAPI parses and preserves production operation IDs", () => {
   const schema = parse(schemaText);
   assert.equal(schema.openapi, "3.1.0");
+  assert.equal(schema.info.version, "5.0.1");
   assert.equal(schema.paths["/api/status"].get.operationId, "cfiGetStatus");
   assert.equal(schema.paths["/api/predict"].post.operationId, "cfiPredictMatch");
   const request = schema.paths["/api/predict"].post.requestBody.content["application/json"].schema;
   assert.ok(request.properties.target_date);
   assert.equal(request.properties.matchDate, undefined);
   assert.deepEqual(request.required, ["home", "away"]);
+  assert.match(schema.components.schemas.Prediction.properties.engine.description, /V5\.0\.1/);
+  assert.match(schema.components.schemas.Prediction.properties.scoreline.description, /Authoritative production scoreline output/);
 });
 
 test("GPT Instructions mandate action use and complete mobile output", () => {
   for (const token of ["cfiPredictMatch", "Method A", "Method B", "Final CFI", "Top 3 HT", "Top 3 FT", "Team Trending DNA", "NO_STRONG_SIGNAL", "không có dữ liệu"]) assert.match(instructions, new RegExp(token));
   for (const market of ["3\\+ HT", "7\\+ FT", "Other HT", "Other FT"]) assert.match(instructions, new RegExp(market));
+});
+
+test("GPT Instructions pin Scoreline Intelligence to fixed production ownership semantics", () => {
+  for (const token of ["CFI_FINAL_V5.0.1", "target team by team identity", "Do not recompute Top 3 HT/FT", "fixture-side columns", "Historical audit snapshots remain immutable", "unavailable"])
+    assert.match(instructions, new RegExp(token));
 });
 
 test("Worker production entrypoint exposes final runtime version and native fallback", () => {
