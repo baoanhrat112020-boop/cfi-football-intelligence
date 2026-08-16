@@ -142,8 +142,12 @@ export async function importSource(source, dependencies) {
     }
     return { source, status: "COMPLETED", fetchedRows: parsed.rows, acceptedRows: parsed.fixtures.length, counters, elapsedMs: Date.now() - started };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("SOURCE_NOT_AVAILABLE:")) {
+      return { source, status: "NOT_AVAILABLE", fetchedRows: 0, acceptedRows: 0, counters, reason: message, elapsedMs: Date.now() - started };
+    }
     counters.ERROR++;
-    return { source, status: "FAILED", fetchedRows: 0, acceptedRows: 0, counters, error: error instanceof Error ? error.message : String(error), elapsedMs: Date.now() - started };
+    return { source, status: "FAILED", fetchedRows: 0, acceptedRows: 0, counters, error: message, elapsedMs: Date.now() - started };
   }
 }
 
@@ -159,6 +163,7 @@ export async function runBulkImport(manifest, filters, dependencies) {
     sources: results,
     checkpoint: {
       completedSourceIds: results.filter((result) => result.status === "COMPLETED").map((result) => result.source.id),
+      unavailableSourceIds: results.filter((result) => result.status === "NOT_AVAILABLE").map((result) => result.source.id),
       failedSourceIds: results.filter((result) => result.status === "FAILED").map((result) => result.source.id),
     },
   };
