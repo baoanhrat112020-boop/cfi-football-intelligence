@@ -39,6 +39,24 @@ test("native prediction is complete, localized, covered and scoreline-normalized
   assert.ok(result.scoreline.ht.reduce((sum, row) => sum + row.probability, 0) <= 1);
 });
 
+test("scoreline lambdas follow target-team goals across mixed home/away history", () => {
+  const homeHistory = [
+    { id: "h1", matchDate: "2025-01-01", homeTeam: "HJK", awayTeam: "X", ht: "1-0", ft: "2-0" },
+    { id: "h2", matchDate: "2025-01-02", homeTeam: "Y", awayTeam: "HJK", ht: "5-1", ft: "8-2" },
+  ];
+  const awayHistory = [
+    { id: "a1", matchDate: "2025-01-01", homeTeam: "Jaro", awayTeam: "Z", ht: "0-4", ft: "1-7" },
+    { id: "a2", matchDate: "2025-01-02", homeTeam: "W", awayTeam: "Jaro", ht: "3-0", ft: "6-1" },
+  ];
+  const result = buildPrediction({ home: "HJK", away: "Jaro", targetDate: "2025-02-01", homePayload: homeHistory, awayPayload: awayHistory, h2hPayload: [], language: "en" });
+  assert.equal(result.scoreline.expectedGoals.htHome, 1);
+  assert.equal(result.scoreline.expectedGoals.ftHome, 2);
+  assert.equal(result.scoreline.expectedGoals.htAway, 0);
+  assert.equal(result.scoreline.expectedGoals.ftAway, 1);
+  assert.notEqual(result.scoreline.expectedGoals.ftHome, 8);
+  assert.notEqual(result.scoreline.expectedGoals.ftAway, 7);
+});
+
 test("Young Violets regression has 44/44 coverage without lambda-floor artifacts", () => {
   const rows = Array.from({ length: 44 }, (_, index) => ({ ...nested, id: String(index), matchDate: `2024-${String(Math.floor(index / 28) + 1).padStart(2, "0")}-${String(index % 28 + 1).padStart(2, "0")}`, homeTeam: index < 21 ? "Young Violets Austria Wien" : "Opponent", awayTeam: index < 21 ? "Opponent" : "SV Austria Salzburg", ht: index % 2 ? "1-0" : "0-1", ft: index % 3 ? "2-1" : "1-2" }));
   const result = buildPrediction({ home: "Young Violets Austria Wien", away: "SV Austria Salzburg", targetDate: "2026-08-15", homePayload: rows.slice(0, 21), awayPayload: rows.slice(21, 42), h2hPayload: rows.slice(42), language: "vi" });
