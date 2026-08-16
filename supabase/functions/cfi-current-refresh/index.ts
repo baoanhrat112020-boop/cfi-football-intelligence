@@ -38,7 +38,7 @@ Deno.serve(async (request) => {
       fetchText: async (url) => {
         const response = await fetch(url, {
           headers: {
-            "user-agent": "CFI-Football-Intelligence/2.0C",
+            "user-agent": "CFI-Football-Intelligence/5.1",
             accept: "text/csv,text/plain",
           },
         });
@@ -55,6 +55,14 @@ Deno.serve(async (request) => {
       },
     });
 
+    let settlement = { status: "NOT_RUN", settled: 0 };
+    const { data: settlementData, error: settlementError } = await client.rpc("cfi_settle_prediction_snapshots");
+    if (settlementError) {
+      settlement = { status: "ERROR", settled: 0, message: settlementError.message } as any;
+    } else if (settlementData) {
+      settlement = settlementData;
+    }
+
     const finishedAt = new Date();
     return json({
       status: result.status,
@@ -67,6 +75,7 @@ Deno.serve(async (request) => {
       completedSources: result.checkpoint.completedSourceIds.length,
       failedSources: result.checkpoint.failedSourceIds.length,
       counters: result.counters,
+      settlement,
       checkpoint: result.checkpoint,
       sources: result.sources,
     }, result.status === "PARTIAL" ? 207 : 200);
