@@ -1,16 +1,34 @@
 openapi: 3.1.0
 info:
-  title: CFI Football Intelligence Actions
-  version: 4.6.0
-  description: GPT Actions bridge for CFI Persistent Intelligence.
+  title: CFI Football Intelligence Runtime
+  version: 4.6.2
+  description: Production GPT Actions bridge for CFI Football Intelligence.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
 paths:
+  /api/status:
+    get:
+      operationId: cfiGetStatus
+      summary: Check live CFI runtime and persistent database status
+      responses:
+        '200':
+          description: CFI runtime/database status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  body:
+                    type: object
+                    additionalProperties: true
+                additionalProperties: true
   /api/predict:
     post:
       operationId: cfiPredictMatch
-      summary: Run full CFI prediction for a football match
-      description: Returns CFI four-market predictions plus scoreline intelligence, context factors, uncertainty and data quality using the Persistent DB.
+      summary: Run the complete CFI production prediction for one football match
+      description: Returns strict-prior persistent evidence, dual-method four-market probabilities, Team Trending DNA, scoreline intelligence and uncertainty/context diagnostics.
       requestBody:
         required: true
         content:
@@ -21,32 +39,49 @@ paths:
               properties:
                 home:
                   type: string
+                  description: Exact HOME team name
                 away:
                   type: string
-                targetDate:
+                  description: Exact AWAY team name
+                target_date:
                   type: string
-                  description: YYYY-MM-DD when known
+                  description: Target match date in YYYY-MM-DD format when known
                 language:
                   type: string
                   enum: [vi, en, zh, ja, ko, es, pt, fr, de, it, th, id, auto]
                   default: vi
       responses:
         '200':
-          description: Full CFI prediction response
+          description: Complete CFI prediction response
           content:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
-  /api/status:
-    get:
-      operationId: cfiDatabaseStatus
-      summary: Read current CFI backend/database status
-      responses:
-        '200':
-          description: CFI status
-          content:
-            application/json:
-              schema:
-                type: object
+                properties:
+                  status:
+                    type: string
+                  engine:
+                    type: string
+                  target:
+                    type: object
+                    additionalProperties: true
+                  evidence:
+                    type: object
+                    additionalProperties: true
+                  markets:
+                    type: object
+                    additionalProperties: true
+                  marketEvidence:
+                    type: object
+                    additionalProperties: true
+                  marketModels:
+                    type: object
+                    additionalProperties: true
+                  scoreline:
+                    type: object
+                    additionalProperties: true
+                  features:
+                    type: array
+                    items:
+                      type: string
                 additionalProperties: true
