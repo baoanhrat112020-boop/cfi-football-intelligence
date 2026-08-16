@@ -11,27 +11,12 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST_REQUIRED" }, 405);
 
+  // Authentication is enforced by Supabase Edge verify_jwt=true in production.
+  // The function itself never stores or returns scheduler credentials.
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRole) {
     return json({ error: "SUPABASE_SERVER_SECRET_MISSING" }, 500);
-  }
-
-  const client = createClient(supabaseUrl, serviceRole, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const suppliedKey = request.headers.get("x-cfi-key") ?? "";
-  const envKey = Deno.env.get("CFI_ACTION_KEY") ?? "";
-  const { data: tokenRow } = await client
-    .from("cfi_internal_tokens")
-    .select("token")
-    .eq("name", "current_refresh")
-    .maybeSingle();
-  const dbKey = String(tokenRow?.token ?? "");
-
-  if (!suppliedKey || (suppliedKey !== envKey && suppliedKey !== dbKey)) {
-    return json({ error: "UNAUTHORIZED" }, 401);
   }
 
   const startedAt = new Date();
@@ -40,6 +25,9 @@ Deno.serve(async (request) => {
   try {
     const payload = await request.json().catch(() => ({}));
     const { concurrency, filters } = normalizeRefreshRequest(payload);
+    const client = createClient(supabaseUrl, serviceRole, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
 
     const result = await runBulkImport(manifest, filters, {
       concurrency,
@@ -51,6 +39,9 @@ Deno.serve(async (request) => {
             accept: "text/csv,text/plain",
           },
         });
+        if ([300, 404].includes(response.status)) {
+          throw new Error(`SOURCE_NOT_AVAILABLE:${response.status}`);
+        }
         if (!response.ok) throw new Error(`CSV_FETCH_FAILED:${response.status}`);
         return response.text();
       },
@@ -82,6 +73,7 @@ Deno.serve(async (request) => {
       elapsedMs: Date.now() - startedMs,
       selectedSources: result.sources.length,
       completedSources: result.checkpoint.completedSourceIds.length,
+      unavailableSources: result.checkpoint.unavailableSourceIds?.length ?? 0,
       failedSources: result.checkpoint.failedSourceIds.length,
       counters: result.counters,
       settlement,
