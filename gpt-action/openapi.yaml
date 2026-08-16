@@ -1,87 +1,130 @@
 openapi: 3.1.0
 info:
-  title: CFI Football Intelligence Runtime
-  version: 4.6.2
-  description: Production GPT Actions bridge for CFI Football Intelligence.
+  title: CFI Football Intelligence Production API
+  version: 5.0.0
+  description: Strict-prior Persistent DB prediction API for the CFI Football Intelligence Custom GPT.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
 paths:
   /api/status:
     get:
       operationId: cfiGetStatus
-      summary: Check live CFI runtime and persistent database status
+      summary: Get CFI runtime and Persistent DB health
       responses:
-        '200':
-          description: CFI runtime/database status
+        "200":
+          description: Runtime and database status without secrets
           content:
             application/json:
               schema:
                 type: object
+                required: [status]
                 properties:
-                  status:
-                    type: string
-                  body:
-                    type: object
-                    additionalProperties: true
+                  status: { type: string }
+                  httpStatus: { type: integer }
+                  ok: { type: boolean }
+                  body: { type: object, additionalProperties: true }
+                  runtime: { type: object, additionalProperties: true }
                 additionalProperties: true
   /api/predict:
     post:
       operationId: cfiPredictMatch
-      summary: Run the complete CFI production prediction for one football match
-      description: Returns strict-prior persistent evidence, dual-method four-market probabilities, Team Trending DNA, scoreline intelligence and uncertainty/context diagnostics.
+      summary: Run a complete CFI pre-match prediction
+      description: Returns strict-prior canonical evidence, Team Trending DNA, Method A/B/Final probabilities for four frozen markets, HT/FT scorelines, context availability, ranking and localized verdict. Persistent DB fallback is used when an upstream prediction is not found.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [home, away]
               properties:
                 home:
                   type: string
+                  minLength: 1
                   description: Exact HOME team name
                 away:
                   type: string
+                  minLength: 1
                   description: Exact AWAY team name
                 target_date:
                   type: string
-                  description: Target match date in YYYY-MM-DD format when known
+                  format: date
+                  description: Target match date; only earlier fixtures are eligible evidence
                 language:
                   type: string
-                  enum: [vi, en, zh, ja, ko, es, pt, fr, de, it, th, id, auto]
+                  enum: [vi, en, zh, th, id]
                   default: vi
       responses:
-        '200':
-          description: Complete CFI prediction response
+        "200":
+          description: Complete CFI prediction or explicit insufficient-data result
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  engine:
-                    type: string
-                  target:
-                    type: object
-                    additionalProperties: true
-                  evidence:
-                    type: object
-                    additionalProperties: true
-                  markets:
-                    type: object
-                    additionalProperties: true
-                  marketEvidence:
-                    type: object
-                    additionalProperties: true
-                  marketModels:
-                    type: object
-                    additionalProperties: true
-                  scoreline:
-                    type: object
-                    additionalProperties: true
-                  features:
-                    type: array
-                    items:
-                      type: string
-                additionalProperties: true
+                $ref: "#/components/schemas/Prediction"
+        "400":
+          description: Invalid HOME/AWAY request
+components:
+  schemas:
+    MarketResult:
+      type: object
+      required: [methodA, methodB, final, confidence, hits, eligible, smoothedRate, supportingFactors, opposingFactors]
+      properties:
+        methodA: { type: number, minimum: 0, maximum: 1 }
+        methodB: { type: number, minimum: 0, maximum: 1 }
+        final: { type: number, minimum: 0, maximum: 1 }
+        confidence: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        hits: { type: integer, minimum: 0 }
+        eligible: { type: integer, minimum: 0 }
+        rawRate: { type: [number, "null"], minimum: 0, maximum: 1 }
+        smoothedRate: { type: number, minimum: 0, maximum: 1 }
+        supportingFactors: { type: array, items: { type: string } }
+        opposingFactors: { type: array, items: { type: string } }
+        calibration: { type: object, additionalProperties: true }
+    ScorelineCandidate:
+      type: object
+      required: [score, probability]
+      properties:
+        score: { type: string }
+        probability: { type: number, minimum: 0, maximum: 1 }
+    Prediction:
+      type: object
+      required: [status, engine, language, target, evidence, teamTrendingDNA, context, markets, scoreline, ranking, verdict]
+      properties:
+        status: { type: string }
+        engine: { type: string }
+        language: { type: string, enum: [vi, en, zh, th, id] }
+        target: { type: object, additionalProperties: true }
+        evidence:
+          type: object
+          required: [homeFixtures, awayFixtures, h2hFixtures, uniqueCanonical, htCoverage, ftCoverage, strictPrior]
+          additionalProperties: true
+        teamTrendingDNA: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        markets:
+          type: object
+          required: ["3+ HT", "7+ FT", "Other HT", "Other FT"]
+          properties:
+            "3+ HT": { $ref: "#/components/schemas/MarketResult" }
+            "7+ FT": { $ref: "#/components/schemas/MarketResult" }
+            "Other HT": { $ref: "#/components/schemas/MarketResult" }
+            "Other FT": { $ref: "#/components/schemas/MarketResult" }
+          additionalProperties: false
+        scoreline:
+          type: object
+          required: [ht, ft, expectedGoals, mostLikelyPath, uncertainty, consistencyWarnings]
+          properties:
+            ht: { type: array, minItems: 3, maxItems: 3, items: { $ref: "#/components/schemas/ScorelineCandidate" } }
+            ft: { type: array, minItems: 3, maxItems: 3, items: { $ref: "#/components/schemas/ScorelineCandidate" } }
+            expectedGoals: { type: object, additionalProperties: { type: number } }
+            mostLikelyPath: { type: string }
+            uncertainty: { type: string }
+            consistencyWarnings: { type: array, items: { type: string } }
+        ranking:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: object, additionalProperties: true }
+        verdict: { type: string, enum: [STRONG_SIGNAL, NO_STRONG_SIGNAL] }
+        localized: { type: object, additionalProperties: true }
+      additionalProperties: true

@@ -1,4 +1,5 @@
 import base from './index-v45';
+import { buildPrediction, FINAL_VERSION } from '../../src/prediction/final-engine.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 type Pair={home:number;away:number};
@@ -44,27 +45,12 @@ async function fallback(request:Request,env:Env,ctx:ExecutionContext,input:any){
  const home=String(input?.home||'').trim(),away=String(input?.away||'').trim();const date=String(input?.target_date||input?.matchDate||'').slice(0,10)||undefined;
  if(!home||!away)return Response.json({status:'INVALID_REQUEST',error:'HOME_AWAY_REQUIRED'},{status:400});
  const [hr,ar,xr]=await Promise.all([internal(request,env,ctx,`/api/team-history?team=${encodeURIComponent(home)}`),internal(request,env,ctx,`/api/team-history?team=${encodeURIComponent(away)}`),internal(request,env,ctx,`/api/h2h?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}`)]);
- const [hj,aj,xj]=await Promise.all([json(hr),json(ar),json(xr)]);const H=prior(rows(hj),date),A=prior(rows(aj),date),X=prior(rows(xj),date);const all=[...H,...A,...X];
- if(!H.length&&!A.length)return Response.json({status:'INSUFFICIENT_DATA',error:'TEAM_HISTORY_NOT_FOUND',target:{home,away,date},evidence:{home:H.length,away:A.length,h2h:X.length}},{status:200});
- const m3=market(all,hit3,'ht'),m7=market(all,hit7,'ft'),moH=market(all,otherHT,'ht'),moF=market(all,otherFT,'ft');
- const hh=avg(H,'ht'),ah=avg(A,'ht'),xh=avg(X,'ht'),hf=avg(H,'ft'),af=avg(A,'ft'),xf=avg(X,'ft');
- const blend=(x:number,y:number,z:number,zn:number)=>Math.max(.05,(x+y+(zn?z:0))/(2+(zn?1:0)));
- const lhh=blend(hh.h,ah.a,xh.h,xh.n),lha=blend(hh.a,ah.h,xh.a,xh.n),lfh=blend(hf.h,af.a,xf.h,xf.n),lfa=blend(hf.a,af.h,xf.a,xf.n);
- const gh=grid(lhh,lha,10),gf=grid(lfh,lfa,12);const nHT=m3.total,nFT=m7.total;
- const dual:any={
-  '3+ HT':{methodA:m3.smoothed,methodB:modelB(gh,'3HT')},
-  '7+ FT':{methodA:m7.smoothed,methodB:modelB(gf,'7FT')},
-  'Other HT':{methodA:moH.smoothed,methodB:modelB(gh,'OHT')},
-  'Other FT':{methodA:moF.smoothed,methodB:modelB(gf,'OFT')}
- };
- dual['3+ HT'].final=finalProb(dual['3+ HT'].methodA,dual['3+ HT'].methodB,nHT);
- dual['7+ FT'].final=finalProb(dual['7+ FT'].methodA,dual['7+ FT'].methodB,nFT);
- dual['Other HT'].final=finalProb(dual['Other HT'].methodA,dual['Other HT'].methodB,nHT);
- dual['Other FT'].final=finalProb(dual['Other FT'].methodA,dual['Other FT'].methodB,nFT);
- const markets=Object.fromEntries(Object.entries(dual).map(([k,v]:any)=>[k,Math.round(v.final*1000)/10]));
- const htTop=scores(lhh,lha,8),ftTop=scores(lfh,lfa,10);
- const scoreline={ht:htTop,ft:ftTop,mostLikelyPath:`${htTop[0]?.score||'—'} HT → ${ftTop[0]?.score||'—'} FT`,expectedGoals:{htHome:lhh,htAway:lha,ftHome:lfh,ftAway:lfa},spread:{uncertainty:all.length>=30?'MEDIUM':all.length>=12?'MEDIUM_HIGH':'HIGH'},consistencyWarnings:[]};
- return Response.json({status:'DATA_READY',engine:'CFI_PERSISTENT_FALLBACK_V4.6.2',target:{home,away,date},evidence:{home:H.length,away:A.length,h2h:X.length,total:all.length,strictPrior:!!date,coverage:{ht:all.filter(f=>!!f.ht).length,ft:all.filter(f=>!!f.ft).length}},markets,marketModels:dual,marketEvidence:{'3+ HT':m3,'7+ FT':m7,'Other HT':moH,'Other FT':moF},scoreline,features:['Historical Database','Team Trending DNA proxy','Home/Away form','H2H context','Goal timing profile','Leading/Trailing & collapse evidence proxy','Opponent strength/context when present in DB','Recency/strict-prior eligibility','Sample reliability','Randomness/uncertainty allowance'],note:'Fallback computed from canonical Persistent DB evidence because upstream /predict returned NOT_FOUND.'});
+ const [homePayload,awayPayload,h2hPayload]=await Promise.all([json(hr),json(ar),json(xr)]);
+ const prediction=buildPrediction({home,away,targetDate:date,language:String(input?.language||'vi'),homePayload,awayPayload,h2hPayload});
+ return Response.json({...prediction,engine:FINAL_VERSION,note:'Native prediction computed from canonical Persistent DB evidence because upstream /predict returned NOT_FOUND.'});
 }
 
-export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){const u=new URL(request.url);if(u.pathname==='/api/predict'&&request.method==='POST'){const body=await request.text();const cloned=new Request(request.url,{method:'POST',headers:request.headers,body});const res=await base.fetch(cloned,env,ctx);let d:any=null;try{d=await res.clone().json()}catch{}const b=unwrap(d);if(res.status===404||d?.httpStatus===404||b?.error==='NOT_FOUND'||d?.body?.error==='NOT_FOUND'){let input:any={};try{input=JSON.parse(body)}catch{}return fallback(request,env,ctx,input)}return res}return base.fetch(request,env,ctx)}} satisfies ExportedHandler<Env>;
+export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){const u=new URL(request.url);
+ if(u.pathname==='/health')return Response.json({status:'OK',service:'CFI Football Intelligence',version:FINAL_VERSION,webApp:true,gptAction:true});
+ if(u.pathname==='/api/status'){const res=await base.fetch(request,env,ctx);let payload:any=null;try{payload=await res.clone().json()}catch{}return Response.json({...payload,runtime:{version:FINAL_VERSION,predictionPath:'native-persistent-fallback',databaseConfigured:!!env.CFI_DB_BASE_URL}})}
+ if(u.pathname==='/api/predict'&&request.method==='POST'){const body=await request.text();const cloned=new Request(request.url,{method:'POST',headers:request.headers,body});const res=await base.fetch(cloned,env,ctx);let d:any=null;try{d=await res.clone().json()}catch{}const b=unwrap(d);if(res.status===404||d?.httpStatus===404||b?.error==='NOT_FOUND'||d?.body?.error==='NOT_FOUND'){let input:any={};try{input=JSON.parse(body)}catch{}return fallback(request,env,ctx,input)}return res}return base.fetch(request,env,ctx)}} satisfies ExportedHandler<Env>;
