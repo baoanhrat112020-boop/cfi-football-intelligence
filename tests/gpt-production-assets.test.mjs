@@ -12,6 +12,9 @@ test("GPT Action OpenAPI parses and preserves production operation IDs", () => {
   assert.equal(schema.info.version, "5.0.1");
   assert.equal(schema.paths["/api/status"].get.operationId, "cfiGetStatus");
   assert.equal(schema.paths["/api/predict"].post.operationId, "cfiPredictMatch");
+  assert.equal(schema.paths["/api/prediction-history"].get.operationId, "cfiGetPredictionHistory");
+  assert.equal(schema.paths["/api/results"].get.operationId, "cfiGetResults");
+  assert.equal(schema.paths["/api/collect-results"].post.operationId, "cfiCollectResults");
   const request = schema.paths["/api/predict"].post.requestBody.content["application/json"].schema;
   assert.ok(request.properties.target_date);
   assert.equal(request.properties.matchDate, undefined);
@@ -20,9 +23,11 @@ test("GPT Action OpenAPI parses and preserves production operation IDs", () => {
   assert.match(schema.components.schemas.Prediction.properties.scoreline.description, /Authoritative production scoreline output/);
 });
 
-test("GPT Instructions mandate action use and complete mobile output", () => {
-  for (const token of ["cfiPredictMatch", "Method A", "Method B", "Final CFI", "Top 3 HT", "Top 3 FT", "Team Trending DNA", "NO_STRONG_SIGNAL", "không có dữ liệu"]) assert.match(instructions, new RegExp(token));
+test("GPT Instructions mandate prediction, history, result and settle actions", () => {
+  for (const token of ["cfiPredictMatch", "cfiGetPredictionHistory", "cfiGetResults", "cfiCollectResults", "CFI HISTORY", "CFI RESULTS", "CFI SETTLE", "Method A", "Method B", "Final CFI", "Top 3 HT", "Top 3 FT", "Team Trending DNA", "NO_STRONG_SIGNAL", "không có dữ liệu"]) assert.match(instructions, new RegExp(token));
   for (const market of ["3\\+ HT", "7\\+ FT", "Other HT", "Other FT"]) assert.match(instructions, new RegExp(market));
+  assert.match(instructions, /Never search File Library/);
+  assert.match(instructions, /Never reconstruct a past prediction/);
 });
 
 test("GPT Instructions pin Scoreline Intelligence to fixed production ownership semantics", () => {
@@ -30,11 +35,13 @@ test("GPT Instructions pin Scoreline Intelligence to fixed production ownership 
     assert.match(instructions, new RegExp(token));
 });
 
-test("Worker production entrypoint exposes final runtime version and native fallback", () => {
-  const worker = readFileSync(new URL("../cloudflare-worker/src/index-v46.ts", import.meta.url), "utf8");
+test("Worker production entrypoint exposes result actions and final runtime", () => {
+  const worker = readFileSync(new URL("../cloudflare-worker/src/index-v47.ts", import.meta.url), "utf8");
   const config = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
-  assert.match(config, /index-v46\.ts/);
-  assert.match(worker, /buildPrediction/);
-  assert.match(worker, /FINAL_VERSION/);
-  assert.match(worker, /NOT_FOUND/);
+  assert.match(config, /index-v47\.ts/);
+  assert.match(worker, /\/api\/prediction-history/);
+  assert.match(worker, /\/api\/results/);
+  assert.match(worker, /\/api\/collect-results/);
+  assert.match(worker, /cfi-gpt-control/);
+  assert.match(worker, /resultActions:true/);
 });
