@@ -35,13 +35,18 @@ test("GPT Instructions pin Scoreline Intelligence to fixed production ownership 
     assert.match(instructions, new RegExp(token));
 });
 
-test("Worker production entrypoint exposes result actions and final runtime", () => {
-  const worker = readFileSync(new URL("../cloudflare-worker/src/index-v47.ts", import.meta.url), "utf8");
+test("Worker production entrypoint exposes result actions plus backward-compatible status bridge", () => {
+  const resultWorker = readFileSync(new URL("../cloudflare-worker/src/index-v47.ts", import.meta.url), "utf8");
+  const compatWorker = readFileSync(new URL("../cloudflare-worker/src/index-v48.ts", import.meta.url), "utf8");
   const config = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
-  assert.match(config, /index-v47\.ts/);
-  assert.match(worker, /\/api\/prediction-history/);
-  assert.match(worker, /\/api\/results/);
-  assert.match(worker, /\/api\/collect-results/);
-  assert.match(worker, /cfi-gpt-control/);
-  assert.match(worker, /resultActions:true/);
+  assert.match(config, /index-v48\.ts/);
+  assert.match(resultWorker, /\/api\/prediction-history/);
+  assert.match(resultWorker, /\/api\/results/);
+  assert.match(resultWorker, /\/api\/collect-results/);
+  assert.match(resultWorker, /cfi-gpt-control/);
+  assert.match(resultWorker, /resultActions:true/);
+  assert.match(compatWorker, /legacyResultBridge/);
+  assert.match(compatWorker, /action:'COLLECT'/);
+  assert.match(compatWorker, /Do not search File Library/);
+  assert.match(compatWorker, /legacyStatusBridge:true/);
 });
