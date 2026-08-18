@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CFI Football Intelligence Production API
-  version: 5.0.1
+  version: 5.0.2
   description: Strict-prior Persistent DB prediction, prediction-history, result-collection and settlement API for the CFI Football Intelligence Custom GPT.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
@@ -29,7 +29,6 @@ paths:
     post:
       operationId: cfiPredictMatch
       summary: Run a complete CFI pre-match prediction
-      description: Returns strict-prior canonical evidence, Team Trending DNA, Method A/B/Final probabilities for four frozen markets, HT/FT scorelines, context availability, ranking and localized verdict. Persistent DB fallback is used when an upstream prediction is not found.
       requestBody:
         required: true
         content:
@@ -39,35 +38,23 @@ paths:
               additionalProperties: false
               required: [home, away]
               properties:
-                home:
-                  type: string
-                  minLength: 1
-                away:
-                  type: string
-                  minLength: 1
-                target_date:
-                  type: string
-                  format: date
-                  description: Target match date; only earlier fixtures are eligible evidence
-                language:
-                  type: string
-                  enum: [vi, en, zh, th, id]
-                  default: vi
+                home: { type: string, minLength: 1 }
+                away: { type: string, minLength: 1 }
+                target_date: { type: string, format: date }
+                language: { type: string, enum: [vi, en, zh, th, id], default: vi }
       responses:
         "200":
-          description: Complete CFI prediction or explicit insufficient-data result
+          description: Complete CFI prediction
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Prediction"
-        "400":
-          description: Invalid HOME/AWAY request
+              schema: { $ref: "#/components/schemas/Prediction" }
   /api/prediction-history:
     get:
       operationId: cfiGetPredictionHistory
       summary: Get immutable user prediction history from Persistent DB
-      description: Returns strict-prior GPT_ACTION prediction snapshots. By default returns the DATA_READY snapshot selected for each match audit, preserving all immutable snapshots in storage.
+      description: Returns selected strict-prior prediction snapshots newest first. Use limit=5 for the five most recent predictions.
       parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: target_date, in: query, required: false, schema: { type: string, format: date } }
         - { name: home, in: query, required: false, schema: { type: string } }
         - { name: away, in: query, required: false, schema: { type: string } }
@@ -83,8 +70,8 @@ paths:
     get:
       operationId: cfiGetResults
       summary: Get prediction versus actual settlement results
-      description: Returns pre-match prediction snapshots joined to verified actual HT/FT, market outcomes, Brier scores and scoreline hit flags. Does not reconstruct predictions after the result is known.
       parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: target_date, in: query, required: false, schema: { type: string, format: date } }
         - { name: home, in: query, required: false, schema: { type: string } }
         - { name: away, in: query, required: false, schema: { type: string } }
@@ -100,7 +87,6 @@ paths:
     post:
       operationId: cfiCollectResults
       summary: Immediately collect actual results for unsettled user predictions and settle them
-      description: Runs the production result collector. It searches external score providers for unsettled immutable snapshots, verifies finished status and HT/FT, upserts canonical actuals, runs automatic settlement, then returns current Prediction History. Unverified or ambiguous matches remain pending and are never guessed.
       requestBody:
         required: false
         content:
@@ -115,6 +101,7 @@ paths:
                 away: { type: string }
                 settlement_status: { type: string, enum: [PENDING, SETTLED] }
                 selected_only: { type: boolean, default: true }
+                limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         "200":
           description: Collector runtime summary plus current history rows
@@ -122,13 +109,6 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [status, action, collector, count, rows]
-                properties:
-                  status: { type: string }
-                  action: { type: string }
-                  collector: { type: object, additionalProperties: true }
-                  count: { type: integer, minimum: 0 }
-                  rows: { type: array, items: { $ref: "#/components/schemas/HistoryRow" } }
                 additionalProperties: true
 components:
   schemas:
@@ -165,23 +145,12 @@ components:
         status: { type: string }
         action: { type: string }
         count: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
         rows: { type: array, items: { $ref: "#/components/schemas/HistoryRow" } }
       additionalProperties: true
     MarketResult:
       type: object
-      required: [methodA, methodB, final, confidence, hits, eligible, smoothedRate, supportingFactors, opposingFactors]
-      properties:
-        methodA: { type: number, minimum: 0, maximum: 1 }
-        methodB: { type: number, minimum: 0, maximum: 1 }
-        final: { type: number, minimum: 0, maximum: 1 }
-        confidence: { type: string, enum: [LOW, MEDIUM, HIGH] }
-        hits: { type: integer, minimum: 0 }
-        eligible: { type: integer, minimum: 0 }
-        rawRate: { type: [number, "null"], minimum: 0, maximum: 1 }
-        smoothedRate: { type: number, minimum: 0, maximum: 1 }
-        supportingFactors: { type: array, items: { type: string } }
-        opposingFactors: { type: array, items: { type: string } }
-        calibration: { type: object, additionalProperties: true }
+      additionalProperties: true
     ScorelineCandidate:
       type: object
       required: [score, probability]
@@ -190,43 +159,4 @@ components:
         probability: { type: number, minimum: 0, maximum: 1 }
     Prediction:
       type: object
-      required: [status, engine, language, target, evidence, teamTrendingDNA, context, markets, scoreline, ranking, verdict]
-      properties:
-        status: { type: string }
-        engine: { type: string, description: Production engine version; Scoreline Intelligence requires CFI_FINAL_V5.0.1 or later for target-team ownership fix. }
-        language: { type: string, enum: [vi, en, zh, th, id] }
-        target: { type: object, additionalProperties: true }
-        evidence:
-          type: object
-          required: [homeFixtures, awayFixtures, h2hFixtures, uniqueCanonical, htCoverage, ftCoverage, strictPrior]
-          additionalProperties: true
-        teamTrendingDNA: { type: object, additionalProperties: true }
-        context: { type: object, additionalProperties: true }
-        markets:
-          type: object
-          required: ["3+ HT", "7+ FT", "Other HT", "Other FT"]
-          properties:
-            "3+ HT": { $ref: "#/components/schemas/MarketResult" }
-            "7+ FT": { $ref: "#/components/schemas/MarketResult" }
-            "Other HT": { $ref: "#/components/schemas/MarketResult" }
-            "Other FT": { $ref: "#/components/schemas/MarketResult" }
-          additionalProperties: false
-        scoreline:
-          type: object
-          description: Authoritative production scoreline output. Clients should present these values directly and must not reconstruct them from fixture-side score columns.
-          required: [ht, ft, expectedGoals, mostLikelyPath, uncertainty, consistencyWarnings]
-          properties:
-            ht: { type: array, minItems: 3, maxItems: 3, items: { $ref: "#/components/schemas/ScorelineCandidate" } }
-            ft: { type: array, minItems: 3, maxItems: 3, items: { $ref: "#/components/schemas/ScorelineCandidate" } }
-            expectedGoals: { type: object, additionalProperties: { type: number } }
-            mostLikelyPath: { type: string }
-            uncertainty: { type: string }
-            consistencyWarnings: { type: array, items: { type: string } }
-        ranking:
-          type: array
-          minItems: 4
-          maxItems: 4
-          items: { type: object, additionalProperties: true }
-        verdict: { type: string, enum: [STRONG_SIGNAL, NO_STRONG_SIGNAL] }
-        localized: { type: object, additionalProperties: true }
       additionalProperties: true
