@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrediction, MARKET_CODES, MAX_MARKET_SCORELINE_DELTA } from '../src/prediction/final-engine.ts';
+import { buildPrediction, MARKET_CODES } from '../src/prediction/final-engine.ts';
 
 const fixtures=[];
 for(let i=0;i<80;i++){
@@ -12,34 +12,34 @@ for(let i=0;i<80;i++){
   fixtures.push({id:String(i),matchDate:d,homeTeam:home,awayTeam:away,ht,ft});
 }
 
-test('all four final market probabilities are constrained to full score-distribution mass',()=>{
+test('all four final market probabilities are exact integrals of the final score distribution',()=>{
   const p=buildPrediction({home:'Alpha',away:'Beta',targetDate:'2026-01-01',language:'en',homePayload:fixtures,awayPayload:fixtures,h2hPayload:fixtures});
-  assert.equal(p.scoreline.consistencyGate.scope,'FULL_SCORE_DISTRIBUTION');
-  assert.equal(p.scoreline.consistencyGate.top3UsedForGate,false);
-  assert.equal(p.scoreline.consistencyGate.allFinalWithinTolerance,true);
   for(const market of MARKET_CODES){
     const row=p.markets[market];
-    const mass=p.scoreline.marketMass[market];
-    assert.ok(Math.abs(row.final-mass)<=MAX_MARKET_SCORELINE_DELTA+1e-12,`${market} final must track full score grid`);
-    assert.equal(row.methodB,mass,`${market} structural method must be exact full-grid integral`);
+    assert.ok(Number.isFinite(row.methodA));
+    assert.ok(Number.isFinite(row.methodB));
+    assert.ok(Number.isFinite(row.final));
+    assert.equal(row.final,row.scorelineMass);
+    assert.equal(row.consistency.status,'PASS');
+    assert.equal(row.consistency.finalDelta,0);
+    assert.equal(row.consistency.construction,'FINAL_MARKET_IS_INTEGRAL_OF_FINAL_SCORE_DISTRIBUTION');
   }
 });
 
-test('Top-3 scorelines are presentation only and never used by consistency gate',()=>{
+test('Top-3 scorelines are presentation ranks from complete A/B/final distributions',()=>{
   const p=buildPrediction({home:'Alpha',away:'Beta',targetDate:'2026-01-01',language:'en',homePayload:fixtures,awayPayload:fixtures,h2hPayload:fixtures});
-  assert.equal(p.scoreline.ht.length,3);
-  assert.equal(p.scoreline.ft.length,3);
-  assert.equal(p.scoreline.consistencyGate.top3UsedForGate,false);
+  for(const side of ['ht','ft']){
+    assert.equal(p.scoreline[side].methodA.length,3);
+    assert.equal(p.scoreline[side].methodB.length,3);
+    assert.equal(p.scoreline[side].final.length,3);
+  }
+  assert.equal(p.scoreline.consistencyWarnings.length,0);
 });
 
-test('a reconciled market is downgraded and cannot silently remain a strong signal',()=>{
+test('Future Six remains traceable inside every market consistency record',()=>{
   const p=buildPrediction({home:'Alpha',away:'Beta',targetDate:'2026-01-01',language:'en',homePayload:fixtures,awayPayload:fixtures,h2hPayload:fixtures});
+  assert.equal(p.scoreline.futureSix.version,'CFI_FUTURE_SIX_SCORELINE_V0.1');
   for(const market of MARKET_CODES){
-    const row=p.markets[market];
-    if(row.consistency.reconciled){
-      assert.equal(row.confidence,'LOW');
-      assert.ok(row.opposingFactors.includes('GLOBAL_SCORELINE_MARKET_CONFLICT'));
-      assert.ok(p.scoreline.consistencyWarnings.some(x=>x.startsWith(market+':')));
-    }
+    assert.ok(p.markets[market].supportingFactors.includes('future_six:CFI_FUTURE_SIX_SCORELINE_V0.1'));
   }
 });
