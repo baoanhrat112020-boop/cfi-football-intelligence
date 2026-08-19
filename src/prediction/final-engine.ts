@@ -1,7 +1,7 @@
 import { buildFutureSixScorelines } from './future-six-scoreline.ts';
 import { calibrateMarketProbability, predictiveConfidence, sampleConfidence } from './probability-calibration.ts';
 
-export const FINAL_VERSION = "CFI_FINAL_V5.2.1";
+export const FINAL_VERSION = "CFI_FINAL_V5.2.2";
 export const MARKET_CODES = ["3+ HT", "7+ FT", "Other HT", "Other FT"] as const;
 export const PRIMARY_TARGETS = [...MARKET_CODES, "Top-3 HT", "Top-3 FT"] as const;
 
@@ -63,7 +63,22 @@ function empiricalGrid(rows:CanonicalFixture[],part:'ht'|'ft',max:number):GridRo
  for(let h=0;h<=max;h++)for(let a=0;a<=max;a++){const score=`${h}-${a}`;grid.push({score,total:h+a,probability:((counts.get(score)??0)+alpha)/den});}
  return grid;
 }
-function blendGrid(a:GridRow[],b:GridRow[],wA:number):GridRow[]{const mb=new Map(b.map(r=>[r.score,r]));return a.map(r=>({score:r.score,total:r.total,probability:r.probability*wA+(mb.get(r.score)?.probability??0)*(1-wA)}));}
+function normalizeGrid(rows:GridRow[]):GridRow[]{const z=rows.reduce((s,r)=>s+r.probability,0)||1;return rows.map(r=>({...r,probability:r.probability/z}));}
+function blendGrid(a:GridRow[],b:GridRow[],wA:number):GridRow[]{const mb=new Map(b.map(r=>[r.score,r]));return normalizeGrid(a.map(r=>({score:r.score,total:r.total,probability:r.probability*wA+(mb.get(r.score)?.probability??0)*(1-wA)})));}
+function scoreDirection(score:string){const[h,a]=score.split('-').map(Number);return h>a?1:a>h?-1:0;}
+function gridFingerprint(grid:GridRow[]){let h=2166136261;for(const r of grid){const s=`${r.score}:${r.probability.toFixed(8)}`;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}}return(h>>>0).toString(16).padStart(8,'0');}
+function reconcileScoreGrid(a:GridRow[],b:GridRow[],baseWeightA:number,expectedHome:number,expectedAway:number,bHome:number,bAway:number){
+ const expectedDelta=expectedHome-expectedAway,challengerDelta=bHome-bAway,consensusDelta=.45*expectedDelta+.55*challengerDelta;
+ const directionalStrength=clamp(Math.abs(consensusDelta)/1.5,0,1);
+ const weightA=clamp(baseWeightA-.30*directionalStrength,.34,.56);
+ let grid=blendGrid(a,b,weightA);
+ const direction=consensusDelta>.18?1:consensusDelta<-.18?-1:0;
+ if(direction!==0&&directionalStrength>.12){
+   grid=normalizeGrid(grid.map(r=>{const d=scoreDirection(r.score);let factor=1;if(d===direction)factor+=.38*directionalStrength;else if(d===-direction)factor-=.28*directionalStrength;else factor-=.04*directionalStrength;return{...r,probability:r.probability*Math.max(.55,factor)};}));
+ }
+ const t3=top3(grid),aligned=t3.filter(x=>scoreDirection(x.score)===direction).length;
+ return{grid,audit:{version:'CFI_SCORELINE_RECONCILIATION_V1',baseWeightA,scorelineWeightA:weightA,scorelineWeightB:1-weightA,expectedDelta,challengerDelta,consensusDelta,direction:direction===1?'HOME':direction===-1?'AWAY':'BALANCED',directionalStrength,top3AlignedCount:direction===0?null:aligned,fingerprint:gridFingerprint(grid)}};
+}
 function structuralMass(grid:GridRow[],m:typeof MARKET_CODES[number]){return grid.filter(r=>{const[h,a]=r.score.split('-').map(Number);return m==='3+ HT'?r.total>=3:m==='7+ FT'?r.total>=7:m==='Other HT'?h>=4||a>=4:h>=5||a>=5;}).reduce((s,r)=>s+r.probability,0);}
 function top3(grid:GridRow[]){return [...grid].sort((a,b)=>b.probability-a.probability).slice(0,3).map(({score,probability})=>({score,probability}));}
 function scoreRank(top:Array<{score:string}>,actual:string){const i=top.findIndex(x=>x.score===actual);return i<0?null:i+1;}
@@ -77,11 +92,14 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
  const awayHtFor=weightedMean(teamGoals(awayRows,args.away,'ht',true))??.68,awayHtAgainst=weightedMean(teamGoals(awayRows,args.away,'ht',false))??.68;
  const homeFtFor=weightedMean(teamGoals(homeRows,args.home,'ft',true))??1.35,homeFtAgainst=weightedMean(teamGoals(homeRows,args.home,'ft',false))??1.35;
  const awayFtFor=weightedMean(teamGoals(awayRows,args.away,'ft',true))??1.35,awayFtAgainst=weightedMean(teamGoals(awayRows,args.away,'ft',false))??1.35;
+ const htExpectedHome=(homeHtFor+awayHtAgainst)/2,htExpectedAway=(awayHtFor+homeHtAgainst)/2,ftExpectedHome=(homeFtFor+awayFtAgainst)/2,ftExpectedAway=(awayFtFor+homeFtAgainst)/2;
  const htA=empiricalGrid(evidence.unique,'ht',8),ftA=empiricalGrid(evidence.unique,'ft',12);
  const futureSix=buildFutureSixScorelines({home:args.home,away:args.away,homeRows,awayRows});
  const htB:GridRow[]=futureSix.ht,ftB:GridRow[]=futureSix.ft;
  const completeness=Math.min(1,evidence.unique.length/40),h2hBoost=Math.min(.12,evidence.streams.h2h.length*.02),weightA=clamp(.48+.22*completeness+h2hBoost,.45,.78);
- const htFinal=blendGrid(htA,htB,weightA),ftFinal=blendGrid(ftA,ftB,weightA);
+ const htRecon=reconcileScoreGrid(htA,htB,weightA,htExpectedHome,htExpectedAway,futureSix.intensity.htHome,futureSix.intensity.htAway);
+ const ftRecon=reconcileScoreGrid(ftA,ftB,weightA,ftExpectedHome,ftExpectedAway,futureSix.intensity.ftHome,futureSix.intensity.ftAway);
+ const htFinal=htRecon.grid,ftFinal=ftRecon.grid;
  const markets=Object.fromEntries(MARKET_CODES.map(m=>{
    const gA=m.includes('HT')?htA:ftA,gB=m.includes('HT')?htB:ftB;
    const structuralA=structuralMass(gA,m),structuralB=structuralMass(gB,m);
@@ -94,7 +112,10 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
    const sConfidence=sampleConfidence(eligible.length),pConfidence=predictiveConfidence(final,rawRate,eligible.length);
    return[m,{methodA,methodB,final,confidence:pConfidence,sampleConfidence:sConfidence,predictiveConfidence:pConfidence,hits,eligible:eligible.length,rawRate,smoothedRate:structuralA,scorelineMass:rawFinal,consistency:{status:'PASS',construction:'EMPIRICAL_ANCHORED_CONSERVATIVE_CALIBRATION',rawDistributionMass:rawFinal,calibratedFinal:final},supportingFactors:[`dual_distribution:true`,`future_six:${futureSix.version}`,`weightA:${weightA.toFixed(3)}`,`empirical_anchor:${rawRate===null?'NA':rawRate.toFixed(4)}`],opposingFactors:eligible.length<12?['SMALL_SAMPLE']:[],calibration:{version:'conservative-tail-calibration-v1',weightA,weightB:1-weightA,empiricalAnchor:rawRate,structuralA,structuralB,rawFinal}}];
  }));
- const scoreline={ht:{methodA:top3(htA),methodB:futureSix.top3HT,final:top3(htFinal)},ft:{methodA:top3(ftA),methodB:futureSix.top3FT,final:top3(ftFinal)},expectedGoals:{htHome:(homeHtFor+awayHtAgainst)/2,htAway:(awayHtFor+homeHtAgainst)/2,ftHome:(homeFtFor+awayFtAgainst)/2,ftAway:(awayFtFor+homeFtAgainst)/2},futureSix:{version:futureSix.version,factors:futureSix.factors,intensity:futureSix.intensity},mostLikelyPath:`${top3(htFinal)[0]?.score??'—'} HT → ${top3(ftFinal)[0]?.score??'—'} FT`,uncertainty:evidence.unique.length>=30?'MEDIUM':'HIGH',consistencyWarnings:[] as string[]};
+ const warnings:string[]=[];
+ if(ftRecon.audit.direction!=='BALANCED'&&ftRecon.audit.directionalStrength>=.35&&ftRecon.audit.top3AlignedCount===0)warnings.push('FINAL_FT_DIRECTION_MISMATCH');
+ if(htRecon.audit.direction!=='BALANCED'&&htRecon.audit.directionalStrength>=.40&&htRecon.audit.top3AlignedCount===0)warnings.push('FINAL_HT_DIRECTION_MISMATCH');
+ const scoreline={ht:{methodA:top3(htA),methodB:futureSix.top3HT,final:top3(htFinal)},ft:{methodA:top3(ftA),methodB:futureSix.top3FT,final:top3(ftFinal)},expectedGoals:{htHome:htExpectedHome,htAway:htExpectedAway,ftHome:ftExpectedHome,ftAway:ftExpectedAway},futureSix:{version:futureSix.version,factors:futureSix.factors,intensity:futureSix.intensity,audit:futureSix.audit},reconciliation:{ht:htRecon.audit,ft:ftRecon.audit},mostLikelyPath:`${top3(htFinal)[0]?.score??'—'} HT → ${top3(ftFinal)[0]?.score??'—'} FT`,uncertainty:evidence.unique.length>=30?'MEDIUM':'HIGH',consistencyWarnings:warnings};
  const ranking=Object.entries(markets).map(([market,v]:any)=>({target:market,probability:v.final,confidence:v.predictiveConfidence,sampleConfidence:v.sampleConfidence})).sort((a,b)=>b.probability-a.probability);
  const scorelineTargets={'Top-3 HT':{methodA:scoreline.ht.methodA,methodB:scoreline.ht.methodB,final:scoreline.ht.final,totalMass:scoreline.ht.final.reduce((s,x)=>s+x.probability,0),rankingClass:'EXACT_SCORE_COVERAGE'},'Top-3 FT':{methodA:scoreline.ft.methodA,methodB:scoreline.ft.methodB,final:scoreline.ft.final,totalMass:scoreline.ft.final.reduce((s,x)=>s+x.probability,0),rankingClass:'EXACT_SCORE_COVERAGE'}};
  const max=ranking[0]?.probability??0,verdict=max>=.6?'STRONG_SIGNAL':'NO_STRONG_SIGNAL';
@@ -106,5 +127,5 @@ export function walkForwardBacktest(fixtures:CanonicalFixture[]){
  const marketMetrics:any=Object.fromEntries(MARKET_CODES.map(m=>[m,{n:0,brierMethodA:0,brierMethodB:0,brierFinal:0,positive:0}]));let htN=0,htHit=0,ftN=0,ftHit=0;
  for(let i=8;i<sorted.length;i++){const t=sorted[i],prior=sorted.slice(0,i).filter(r=>r.matchDate<t.matchDate);const p=buildPrediction({home:t.homeTeam,away:t.awayTeam,targetDate:t.matchDate,language:'en',homePayload:prior,awayPayload:prior,h2hPayload:prior});for(const m of MARKET_CODES){const y=marketHit(t,m);if(y===null)continue;const outcome=y?1:0;const row=(p.markets as any)[m];marketMetrics[m].n++;marketMetrics[m].positive+=outcome;marketMetrics[m].brierMethodA+=(row.methodA-outcome)**2;marketMetrics[m].brierMethodB+=(row.methodB-outcome)**2;marketMetrics[m].brierFinal+=(row.final-outcome)**2;}if(t.ht){htN++;const a=`${t.ht.home}-${t.ht.away}`;if(scoreRank((p.scoreline as any).ht.final,a)!==null)htHit++;}if(t.ft){ftN++;const a=`${t.ft.home}-${t.ft.away}`;if(scoreRank((p.scoreline as any).ft.final,a)!==null)ftHit++;}}
  for(const m of MARKET_CODES){const r=marketMetrics[m];r.prevalence=r.n?r.positive/r.n:null;r.brierMethodA=r.n?r.brierMethodA/r.n:null;r.brierMethodB=r.n?r.brierMethodB/r.n:null;r.brierFinal=r.n?r.brierFinal/r.n:null;delete r.positive;}
- return{evaluatedMatches:Math.max(0,sorted.length-8),markets:marketMetrics,scorelineTargets:{'Top-3 HT':{eligible:htN,hitAt3:htHit,accuracy:htN?htHit/htN:null},'Top-3 FT':{eligible:ftN,hitAt3:ftHit,accuracy:ftN?ftHit/ftN:null}},primaryTargets:6,calibration:{method:'strict-prior-walk-forward+conservative-tail-calibration-v1',leakage:false}};
+ return{evaluatedMatches:Math.max(0,sorted.length-8),markets:marketMetrics,scorelineTargets:{'Top-3 HT':{eligible:htN,hitAt3:htHit,accuracy:htN?htHit/htN:null},'Top-3 FT':{eligible:ftN,hitAt3:ftHit,accuracy:ftN?ftHit/ftN:null}},primaryTargets:6,calibration:{method:'strict-prior-walk-forward+conservative-tail-calibration-v1+scoreline-reconciliation-v1',leakage:false}};
 }
