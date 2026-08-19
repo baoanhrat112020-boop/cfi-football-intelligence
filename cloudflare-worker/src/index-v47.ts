@@ -14,12 +14,15 @@ async function callControl(env:Env, action:string, payload:Record<string,unknown
 }
 
 function queryPayload(url:URL){
+  const rawLimit=url.searchParams.get('limit');
+  const parsedLimit=rawLimit===null?undefined:Number(rawLimit);
+  const limit=Number.isFinite(parsedLimit)?Math.max(1,Math.min(100,Math.trunc(parsedLimit!))):undefined;
   const target_date=url.searchParams.get('target_date')||undefined;
   const home=url.searchParams.get('home')||undefined;
   const away=url.searchParams.get('away')||undefined;
   const settlement_status=url.searchParams.get('settlement_status')||undefined;
   const selected_only=url.searchParams.get('selected_only')!=='false';
-  return{target_date,home,away,settlement_status,selected_only};
+  return{limit,target_date,home,away,settlement_status,selected_only};
 }
 
 export default{
