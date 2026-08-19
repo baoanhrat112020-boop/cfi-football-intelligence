@@ -1,7 +1,7 @@
 import base from './index-v48.ts';
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS } from '../../src/prediction/final-engine.ts';
 
-const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.0';
+const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.1';
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 
 function unwrap(x:any){return x?.body??x}
@@ -58,6 +58,34 @@ function sixTargetMatrix(prediction:any){
   };
 }
 
+function renderedReport(prediction:any,matrix:any){
+  const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
+  const list=(rows:any)=>Array.isArray(rows)?rows.map((r:any,i:number)=>`${i+1}) ${r.score} ${pct(r.probability)}`).join(' · '):'—';
+  const t=matrix.threshold;
+  const s=matrix.scoreline;
+  const lines=[
+    `CFI 2 METHODS × 6 TARGETS — ${matrix.contract}`,
+    `MATCH: ${prediction?.target?.home??'—'} vs ${prediction?.target?.away??'—'} | ${prediction?.target?.date??'—'} | ENGINE ${prediction?.engine??FINAL_VERSION}`,
+    '',
+    'THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',
+    ...MARKET_CODES.map(m=>`${m}: A ${pct(t[m]?.methodA)} | B ${pct(t[m]?.methodB)} | FINAL ${pct(t[m]?.final)} | ${t[m]?.confidence??'—'}`),
+    '',
+    'TOP-3 HT — PRIMARY TARGET',
+    `Method A: ${list(s['Top-3 HT']?.methodA)}`,
+    `Method B: ${list(s['Top-3 HT']?.methodB)}`,
+    `FINAL: ${list(s['Top-3 HT']?.final)}`,
+    '',
+    'TOP-3 FT — PRIMARY TARGET',
+    `Method A: ${list(s['Top-3 FT']?.methodA)}`,
+    `Method B: ${list(s['Top-3 FT']?.methodB)}`,
+    `FINAL: ${list(s['Top-3 FT']?.final)}`,
+    '',
+    `VERDICT: ${prediction?.verdict??'—'} | UNCERTAINTY: ${prediction?.scoreline?.uncertainty??'—'}`,
+    `CONTRACT COMPLETE: ${matrix.verification.complete?'YES':'NO'}`,
+  ];
+  return lines.join('\n');
+}
+
 const UI=`<section id="sixTargetPanel" style="display:none;margin:14px 0;background:#101c2e;border:1px solid #624c8d;border-radius:12px;padding:14px;color:#eef5ff"><div style="font-weight:900;color:#c5a6ff;margin-bottom:4px">🧠 CFI — 2 METHODS × 6 TARGETS</div><div style="font-size:12px;color:#9aabc0;margin-bottom:12px">Method A · Method B Future Six · FINAL</div><div id="sixThreshold" style="display:grid;gap:6px"></div><div style="font-weight:800;margin:14px 0 8px">TOP-3 HT / FT — A · B · FINAL</div><div id="sixScoreline" style="display:grid;gap:8px"></div></section>`;
 const SCRIPT=`<script>(()=>{const nativeFetch=window.fetch.bind(window);const pct=v=>Number.isFinite(Number(v))?(Number(v)*100).toFixed(1)+'%':'—';const scores=x=>Array.isArray(x)?x.map(r=>r.score+' '+pct(r.probability)).join(' · '):'—';function render(d){const m=d?.sixTargetMatrix;if(!m)return;sixTargetPanel.style.display='block';sixThreshold.innerHTML=Object.entries(m.threshold||{}).map(([k,v])=>'<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;background:#0b1627;padding:8px;border-radius:8px"><b>'+k+'</b><span>A '+pct(v.methodA)+'</span><span style="color:#c5a6ff">B '+pct(v.methodB)+'</span><span>FINAL '+pct(v.final)+'</span></div>').join('');sixScoreline.innerHTML=Object.entries(m.scoreline||{}).map(([k,v])=>'<div style="background:#0b1627;padding:9px;border-radius:8px"><b>'+k+'</b><div>A: '+scores(v.methodA)+'</div><div style="color:#c5a6ff">B: '+scores(v.methodB)+'</div><div>FINAL: '+scores(v.final)+'</div></div>').join('')}window.fetch=async(...args)=>{const res=await nativeFetch(...args);try{const u=typeof args[0]==='string'?args[0]:args[0]?.url||'';if(String(u).includes('/api/predict'))res.clone().json().then(render).catch(()=>{})}catch{}return res}})();</script>`;
 
@@ -76,8 +104,9 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
       if(!matrix.verification.complete){
         return Response.json({...prediction,sixTargetMatrix:matrix,runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION},status:'RUNTIME_CONTRACT_ERROR',error:'INCOMPLETE_2_METHODS_X_6_TARGETS'},{status:500});
       }
+      const report=renderedReport(prediction,matrix);
       const audit=await recordAudit(env,input,prediction);
-      return Response.json({...prediction,sixTargetMatrix:matrix,runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6},audit});
+      return Response.json({...prediction,sixTargetMatrix:matrix,renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract},runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6},audit});
     }catch(e:any){
       return Response.json({status:'ERROR',error:'PREDICTION_RUNTIME_FAILURE',message:String(e?.message||e),runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION}},{status:500});
     }

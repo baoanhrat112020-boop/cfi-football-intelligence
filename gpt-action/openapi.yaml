@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: CFI Football Intelligence Production API
-  version: 5.0.2
-  description: Strict-prior Persistent DB prediction, prediction-history, result-collection and settlement API for the CFI Football Intelligence Custom GPT.
+  version: 5.2.1
+  description: Strict-prior Persistent DB prediction, prediction-history, result-collection and settlement API for the CFI Football Intelligence Custom GPT. Prediction responses expose a mandatory CFI_2_METHODS_X_6_TARGETS_V1 contract plus a canonical renderedReport.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
 paths:
@@ -28,7 +28,8 @@ paths:
   /api/predict:
     post:
       operationId: cfiPredictMatch
-      summary: Run a complete CFI pre-match prediction
+      summary: Run a complete CFI pre-match prediction with Method A, Method B and FINAL for all six primary targets
+      description: Always present the returned renderedReport as the canonical 2-methods-by-6-targets result. Do not collapse Top-3 HT or Top-3 FT into one unlabeled list.
       requestBody:
         required: true
         content:
@@ -44,10 +45,15 @@ paths:
                 language: { type: string, enum: [vi, en, zh, th, id], default: vi }
       responses:
         "200":
-          description: Complete CFI prediction
+          description: Complete CFI 2 methods × 6 targets prediction
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Prediction" }
+        "500":
+          description: Runtime contract failure; never manufacture missing target outputs
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
   /api/prediction-history:
     get:
       operationId: cfiGetPredictionHistory
@@ -148,15 +154,110 @@ components:
         limit: { type: integer, minimum: 1, maximum: 100 }
         rows: { type: array, items: { $ref: "#/components/schemas/HistoryRow" } }
       additionalProperties: true
-    MarketResult:
-      type: object
-      additionalProperties: true
     ScorelineCandidate:
       type: object
       required: [score, probability]
       properties:
         score: { type: string }
         probability: { type: number, minimum: 0, maximum: 1 }
+      additionalProperties: false
+    Top3MethodSet:
+      type: object
+      required: [methodA, methodB, final]
+      properties:
+        methodA:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: "#/components/schemas/ScorelineCandidate" }
+        methodB:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: "#/components/schemas/ScorelineCandidate" }
+        final:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: "#/components/schemas/ScorelineCandidate" }
+      additionalProperties: false
+    ThresholdTarget:
+      type: object
+      required: [methodA, methodB, final]
+      properties:
+        methodA: { type: number, minimum: 0, maximum: 1 }
+        methodB: { type: number, minimum: 0, maximum: 1 }
+        final: { type: number, minimum: 0, maximum: 1 }
+        confidence: { type: [string, "null"] }
+        hits: { type: [integer, "null"] }
+        eligible: { type: [integer, "null"] }
+      additionalProperties: false
+    SixTargetMatrix:
+      type: object
+      required: [contract, primaryTargets, methods, threshold, scoreline, verification]
+      properties:
+        contract: { type: string, const: CFI_2_METHODS_X_6_TARGETS_V1 }
+        primaryTargets:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items: { type: string }
+        methods:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { type: string }
+        threshold:
+          type: object
+          required: ["3+ HT", "7+ FT", "Other HT", "Other FT"]
+          properties:
+            "3+ HT": { $ref: "#/components/schemas/ThresholdTarget" }
+            "7+ FT": { $ref: "#/components/schemas/ThresholdTarget" }
+            "Other HT": { $ref: "#/components/schemas/ThresholdTarget" }
+            "Other FT": { $ref: "#/components/schemas/ThresholdTarget" }
+          additionalProperties: false
+        scoreline:
+          type: object
+          required: ["Top-3 HT", "Top-3 FT"]
+          properties:
+            "Top-3 HT": { $ref: "#/components/schemas/Top3MethodSet" }
+            "Top-3 FT": { $ref: "#/components/schemas/Top3MethodSet" }
+          additionalProperties: false
+        verification:
+          type: object
+          required: [thresholdComplete, scorelineComplete, complete]
+          properties:
+            thresholdComplete: { type: boolean }
+            scorelineComplete: { type: boolean }
+            complete: { type: boolean, const: true }
+          additionalProperties: false
+      additionalProperties: false
+    PresentationContract:
+      type: object
+      required: [mode, source, contract]
+      properties:
+        mode: { type: string, const: RENDER_RENDERED_REPORT_VERBATIM }
+        source: { type: string, const: renderedReport }
+        contract: { type: string, const: CFI_2_METHODS_X_6_TARGETS_V1 }
+      additionalProperties: false
     Prediction:
       type: object
+      required: [sixTargetMatrix, renderedReport, presentationContract]
+      properties:
+        status: { type: string }
+        engine: { type: string }
+        verdict: { type: string }
+        target: { type: object, additionalProperties: true }
+        evidence: { type: object, additionalProperties: true }
+        teamTrendingDNA: { type: object, additionalProperties: true }
+        markets: { type: object, additionalProperties: true }
+        scoreline: { type: object, additionalProperties: true }
+        ranking: { type: array, items: { type: object, additionalProperties: true } }
+        sixTargetMatrix: { $ref: "#/components/schemas/SixTargetMatrix" }
+        renderedReport:
+          type: string
+          description: Canonical preformatted 2-methods-by-6-targets report. The Custom GPT should present this report without collapsing or omitting A/B/FINAL Top-3 lists.
+        presentationContract: { $ref: "#/components/schemas/PresentationContract" }
+        runtime: { type: object, additionalProperties: true }
+        audit: { type: object, additionalProperties: true }
       additionalProperties: true

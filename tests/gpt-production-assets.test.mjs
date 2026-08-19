@@ -9,6 +9,7 @@ const instructions = readFileSync(new URL("../gpt-action/CFI_GPT_INSTRUCTIONS.md
 test("GPT Action OpenAPI parses and preserves production operation IDs", () => {
   const schema = parse(schemaText);
   assert.equal(schema.openapi, "3.1.0");
+  assert.equal(schema.info.version, "5.2.1");
   assert.equal(schema.paths["/api/status"].get.operationId, "cfiGetStatus");
   assert.equal(schema.paths["/api/predict"].post.operationId, "cfiPredictMatch");
   assert.equal(schema.paths["/api/prediction-history"].get.operationId, "cfiGetPredictionHistory");
@@ -17,14 +18,23 @@ test("GPT Action OpenAPI parses and preserves production operation IDs", () => {
   const request = schema.paths["/api/predict"].post.requestBody.content["application/json"].schema;
   assert.ok(request.properties.target_date);
   assert.deepEqual(request.required, ["home", "away"]);
-  assert.equal(schema.components.schemas.Prediction.additionalProperties, true);
+  const prediction = schema.components.schemas.Prediction;
+  assert.equal(prediction.additionalProperties, true);
+  assert.deepEqual(prediction.required, ["sixTargetMatrix", "renderedReport", "presentationContract"]);
+  assert.equal(schema.components.schemas.SixTargetMatrix.properties.contract.const, "CFI_2_METHODS_X_6_TARGETS_V1");
+  assert.equal(schema.components.schemas.PresentationContract.properties.mode.const, "RENDER_RENDERED_REPORT_VERBATIM");
+  assert.equal(schema.components.schemas.Top3MethodSet.properties.methodA.minItems, 3);
+  assert.equal(schema.components.schemas.Top3MethodSet.properties.methodB.minItems, 3);
+  assert.equal(schema.components.schemas.Top3MethodSet.properties.final.minItems, 3);
 });
 
-test("GPT instructions require the canonical 2 methods x 6 targets contract", () => {
+test("GPT instructions require the canonical rendered 2 methods x 6 targets contract", () => {
   for (const token of [
     "cfiPredictMatch",
     "CFI_2_METHODS_X_6_TARGETS_V1",
     "sixTargetMatrix.verification.complete",
+    "renderedReport",
+    "RENDER_RENDERED_REPORT_VERBATIM",
     "Method A",
     "Method B",
     "FINAL",
@@ -38,21 +48,23 @@ test("GPT instructions require the canonical 2 methods x 6 targets contract", ()
   assert.match(instructions, /Never search File Library/);
 });
 
-test("production worker makes native v5.2 strict-prior prediction and fails closed on incomplete six-target output", () => {
+test("production worker returns canonical rendered report and fails closed on incomplete six-target output", () => {
   const worker = readFileSync(new URL("../cloudflare-worker/src/index-v49.ts", import.meta.url), "utf8");
   const config = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   assert.match(config, /index-v49\.ts/);
   assert.match(worker, /buildPrediction/);
   assert.match(worker, /FINAL_VERSION/);
-  assert.match(worker, /CFI_SIX_TARGET_RUNTIME_V1\.0/);
+  assert.match(worker, /CFI_SIX_TARGET_RUNTIME_V1\.1/);
   assert.match(worker, /CFI_2_METHODS_X_6_TARGETS_V1/);
   assert.match(worker, /NATIVE_V5_2_STRICT_PRIOR/);
   assert.match(worker, /sixTargetMatrix/);
+  assert.match(worker, /renderedReport/);
+  assert.match(worker, /RENDER_RENDERED_REPORT_VERBATIM/);
   assert.match(worker, /thresholdComplete/);
   assert.match(worker, /scorelineComplete/);
   assert.match(worker, /INCOMPLETE_2_METHODS_X_6_TARGETS/);
-  assert.match(worker, /Top-3 HT/);
-  assert.match(worker, /Top-3 FT/);
+  assert.match(worker, /TOP-3 HT — PRIMARY TARGET/);
+  assert.match(worker, /TOP-3 FT — PRIMARY TARGET/);
   assert.doesNotMatch(worker, /NOT_YET_MODELED/);
   assert.doesNotMatch(worker, /buildFutureSixPrediction/);
 });
