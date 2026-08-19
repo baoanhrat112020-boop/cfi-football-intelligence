@@ -1,4 +1,4 @@
-import base from './index-v48';
+import base from './index-v48.ts';
 import { buildFutureSixPrediction, FUTURE_SIX_VERSION } from '../../src/prediction/future-six.ts';
 
 const DUAL_VERSION='CFI_DUAL_SHADOW_V0.1';
