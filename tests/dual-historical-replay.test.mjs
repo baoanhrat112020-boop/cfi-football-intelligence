@@ -11,7 +11,7 @@ const fixtures = Array.from({ length: 18 }, (_, i) => ({
   ft: { home: i % 6 === 0 ? 5 : 2, away: i % 7 === 0 ? 2 : 1 },
 }));
 
-test("historical replay evaluates both models from strict-prior evidence", () => {
+test("historical replay evaluates both models and all six targets from strict-prior evidence", () => {
   const result = replayDualHistorical(fixtures, { minPrior: 8 });
   assert.equal(result.strictPrior, true);
   assert.equal(result.sameDateLeakage, false);
@@ -19,8 +19,9 @@ test("historical replay evaluates both models from strict-prior evidence", () =>
   assert.equal(result.evaluationRows, result.evaluatedFixtures * 2);
   assert.ok(result.evaluations.some(r => r.modelType === "HISTORICAL_PRODUCTION"));
   assert.ok(result.evaluations.some(r => r.modelType === "FUTURE_SIX_FACTORS"));
-  assert.equal(result.scoreboard.futureSix.top3HTAccuracy, null);
-  assert.equal(result.scoreboard.futureSix.top3FTAccuracy, null);
+  assert.ok(result.evaluations.filter(r=>r.modelType === "FUTURE_SIX_FACTORS").every(r=>r.top3HT.status === "MODELED" && r.top3FT.status === "MODELED"));
+  assert.ok(result.scoreboard.futureSix.top3HTAccuracy !== null);
+  assert.ok(result.scoreboard.futureSix.top3FTAccuracy !== null);
 });
 
 test("future result mutation cannot change an earlier historical replay", () => {
