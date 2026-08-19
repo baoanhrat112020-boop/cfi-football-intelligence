@@ -27,16 +27,22 @@ test("frozen market definitions and zero-hit Bayesian smoothing remain intact", 
   for (const market of MARKET_CODES) assert.ok(prediction.markets[market].smoothedRate > 0);
 });
 
-test("native prediction is complete, localized, covered and scoreline-normalized", () => {
+test("native prediction is complete, localized, covered and six-target normalized", () => {
   const rows = Array.from({ length: 44 }, (_, index) => ({ ...nested, id: String(index), matchDate: `2024-${String(Math.floor(index / 28) + 1).padStart(2, "0")}-${String(index % 28 + 1).padStart(2, "0")}`, homeTeam: index % 2 ? "A" : "C", awayTeam: index % 2 ? "D" : "B" }));
   const result = buildPrediction({ home: "A", away: "B", targetDate: "2025-01-01", homePayload: rows.slice(0, 21), awayPayload: rows.slice(21, 42), h2hPayload: rows.slice(42), language: "zh" });
   assert.equal(result.language, "zh");
   assert.equal(result.evidence.htCoverage, 44);
   assert.equal(result.evidence.ftCoverage, 44);
   for (const market of MARKET_CODES) for (const key of ["methodA", "methodB", "final", "confidence", "hits", "eligible", "rawRate", "smoothedRate", "supportingFactors", "opposingFactors"]) assert.ok(key in result.markets[market]);
-  assert.equal(result.scoreline.ht.length, 3); assert.equal(result.scoreline.ft.length, 3);
-  assert.equal(result.ranking.length, 4); assert.equal(result.localized.probabilityUnit, "0..1");
-  assert.ok(result.scoreline.ht.reduce((sum, row) => sum + row.probability, 0) <= 1);
+  for (const side of ["ht","ft"]) {
+    assert.equal(result.scoreline[side].methodA.length,3);
+    assert.equal(result.scoreline[side].methodB.length,3);
+    assert.equal(result.scoreline[side].final.length,3);
+    assert.ok(result.scoreline[side].final.reduce((sum,row)=>sum+row.probability,0)<=1);
+  }
+  assert.equal(result.scoreline.futureSix.version,"CFI_FUTURE_SIX_SCORELINE_V0.1");
+  assert.equal(result.ranking.length, 6);
+  assert.equal(result.localized.probabilityUnit, "0..1");
 });
 
 test("scoreline lambdas follow target-team goals across mixed home/away history", () => {
@@ -55,6 +61,8 @@ test("scoreline lambdas follow target-team goals across mixed home/away history"
   assert.equal(result.scoreline.expectedGoals.ftAway, 1);
   assert.notEqual(result.scoreline.expectedGoals.ftHome, 8);
   assert.notEqual(result.scoreline.expectedGoals.ftAway, 7);
+  assert.ok(result.scoreline.futureSix.intensity.ftHome > 0);
+  assert.ok(result.scoreline.futureSix.intensity.ftAway > 0);
 });
 
 test("Young Violets regression has 44/44 coverage without lambda-floor artifacts", () => {
@@ -72,7 +80,7 @@ test("missing scores remain missing and are excluded from eligible denominators"
   assert.equal(result.markets["3+ HT"].eligible, 0); assert.equal(result.markets["7+ FT"].eligible, 0);
 });
 
-test("strict-prior walk-forward backtest reports all model Brier scores", () => {
+test("strict-prior walk-forward backtest reports A, B and final Brier scores", () => {
   const rows = Array.from({ length: 24 }, (_, index) => normalizeFixtures([{ ...nested, id: String(index), matchDate: `2024-01-${String(index + 1).padStart(2, "0")}`, ft: index % 3 ? "2-1" : "5-2" }])[0]);
   const report = walkForwardBacktest(rows);
   assert.equal(report.evaluatedMatches, 16);
