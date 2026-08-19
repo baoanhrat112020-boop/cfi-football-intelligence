@@ -1,256 +1,97 @@
-export const FINAL_VERSION = "CFI_FINAL_V5.0.2";
+export const FINAL_VERSION = "CFI_FINAL_V5.1.0";
 export const MARKET_CODES = ["3+ HT", "7+ FT", "Other HT", "Other FT"] as const;
-export const MAX_MARKET_SCORELINE_DELTA = 0.08;
+export const PRIMARY_TARGETS = [...MARKET_CODES, "Top-3 HT", "Top-3 FT"] as const;
 
-export type Pair = { home: number; away: number };
-export type CanonicalFixture = {
-  id: string;
-  matchDate: string;
-  homeTeam: string;
-  awayTeam: string;
-  ht: Pair | null;
-  ft: Pair | null;
-};
+export type Pair = { home:number; away:number };
+export type CanonicalFixture = { id:string; matchDate:string; homeTeam:string; awayTeam:string; ht:Pair|null; ft:Pair|null };
+type GridRow = { score:string; probability:number; total:number };
 
-const finite = (value: unknown) => {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : null;
-};
+const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x));
+const finite=(v:unknown)=>{ if(v===null||v===undefined||v==='') return null; const n=Number(v); return Number.isFinite(n)&&n>=0?n:null; };
+const mean=(xs:number[])=>xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;
+const recencyWeight=(age:number)=>Math.pow(.92,age);
 
-export function normalizePair(value: unknown): Pair | null {
-  if (typeof value === "string") {
-    const match = value.trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);
-    return match ? { home: Number(match[1]), away: Number(match[2]) } : null;
-  }
-  if (Array.isArray(value) && value.length >= 2) {
-    const home = finite(value[0]), away = finite(value[1]);
-    return home === null || away === null ? null : { home, away };
-  }
-  if (value && typeof value === "object") {
-    const row = value as Record<string, unknown>;
-    const home = finite(row.home ?? row.h ?? row.homeGoals), away = finite(row.away ?? row.a ?? row.awayGoals);
-    return home === null || away === null ? null : { home, away };
-  }
-  return null;
+export function normalizePair(value:unknown):Pair|null{
+ if(typeof value==='string'){const m=value.trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);return m?{home:+m[1],away:+m[2]}:null;}
+ if(Array.isArray(value)&&value.length>=2){const h=finite(value[0]),a=finite(value[1]);return h===null||a===null?null:{home:h,away:a};}
+ if(value&&typeof value==='object'){const r=value as Record<string,unknown>;const h=finite(r.home??r.h??r.homeGoals),a=finite(r.away??r.a??r.awayGoals);return h===null||a===null?null:{home:h,away:a};}
+ return null;
+}
+function unwrapRows(payload:unknown):unknown[]{
+ if(Array.isArray(payload)) return payload;
+ if(!payload||typeof payload!=='object') return [];
+ const r=payload as Record<string,unknown>;
+ for(const k of ['fixtures','history','rows','data']){const v=r[k];if(Array.isArray(v))return v;const n=unwrapRows(v);if(n.length)return n;}
+ for(const k of ['result','body']){const n=unwrapRows(r[k]);if(n.length)return n;}
+ return [];
+}
+export function normalizeFixture(input:unknown):CanonicalFixture|null{
+ if(!input||typeof input!=='object')return null;
+ const outer=input as Record<string,unknown>;const r=(outer.fixture??outer.match??outer) as Record<string,unknown>;
+ const team=(v:unknown)=>v&&typeof v==='object'?String((v as any).canonical_name??(v as any).name??''):String(v??'');
+ const matchDate=String(r.matchDate??r.match_date??r.date??'').slice(0,10),homeTeam=team(r.homeTeam??r.home_team??r.home_name??r.home).trim(),awayTeam=team(r.awayTeam??r.away_team??r.away_name??r.away).trim();
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(matchDate)||!homeTeam||!awayTeam)return null;
+ const ht=normalizePair(r.ht??r.htScore??r.ht_score??r.halfTime??r.half_time??r.halftimeScore)??normalizePair([r.ht_home??r.hthg??r.home_ht,r.ht_away??r.htag??r.away_ht]);
+ const ft=normalizePair(r.ft??r.ftScore??r.ft_score??r.fullTime??r.full_time??r.fulltimeScore)??normalizePair([r.ft_home??r.fthg??r.home_ft,r.ft_away??r.ftag??r.away_ft]);
+ if(ht&&ft&&(ht.home>ft.home||ht.away>ft.away))return null;
+ const identity=`${matchDate}|${homeTeam.toLowerCase()}|${awayTeam.toLowerCase()}`;
+ return {id:String(r.fixture_id??r.fixtureId??r.id??identity),matchDate,homeTeam,awayTeam,ht,ft};
+}
+export function normalizeFixtures(payload:unknown){return unwrapRows(payload).map(normalizeFixture).filter((x):x is CanonicalFixture=>x!==null);}
+export function strictPriorEvidence(homePayload:unknown,awayPayload:unknown,h2hPayload:unknown,targetDate?:string){
+ const prior=(xs:CanonicalFixture[])=>xs.filter(x=>!targetDate||x.matchDate<targetDate);
+ const home=prior(normalizeFixtures(homePayload)),away=prior(normalizeFixtures(awayPayload)),h2h=prior(normalizeFixtures(h2hPayload));
+ const unique=[...new Map([...home,...away,...h2h].map(x=>[`${x.matchDate}|${x.homeTeam.toLowerCase()}|${x.awayTeam.toLowerCase()}`,x])).values()];
+ return {streams:{home,away,h2h},unique,counts:{homeFixtures:home.length,awayFixtures:away.length,h2hFixtures:h2h.length,uniqueCanonical:unique.length,htCoverage:unique.filter(x=>x.ht).length,ftCoverage:unique.filter(x=>x.ft).length}};
+}
+export function marketHit(f:CanonicalFixture,m:typeof MARKET_CODES[number]){
+ if(m==='3+ HT')return f.ht?f.ht.home+f.ht.away>=3:null;
+ if(m==='7+ FT')return f.ft?f.ft.home+f.ft.away>=7:null;
+ if(m==='Other HT')return f.ht?f.ht.home>=4||f.ht.away>=4:null;
+ return f.ft?f.ft.home>=5||f.ft.away>=5:null;
+}
+function teamRows(rows:CanonicalFixture[],team:string){const k=team.toLowerCase();return rows.filter(r=>r.homeTeam.toLowerCase()===k||r.awayTeam.toLowerCase()===k).sort((a,b)=>a.matchDate.localeCompare(b.matchDate));}
+function teamGoals(rows:CanonicalFixture[],team:string,part:'ht'|'ft',forGoals=true){const k=team.toLowerCase();return teamRows(rows,team).flatMap(r=>{const p=r[part];if(!p)return[];const isHome=r.homeTeam.toLowerCase()===k;return [forGoals?(isHome?p.home:p.away):(isHome?p.away:p.home)];});}
+function weightedMean(xs:number[]){if(!xs.length)return null;let s=0,w=0;xs.forEach((x,i)=>{const ww=recencyWeight(xs.length-1-i);s+=x*ww;w+=ww;});return s/w;}
+function poisson(k:number,l:number){let f=1;for(let i=2;i<=k;i++)f*=i;return Math.exp(-l)*Math.pow(l,k)/f;}
+function poissonGrid(lh:number,la:number,max:number):GridRow[]{const rows:GridRow[]=[];for(let h=0;h<=max;h++)for(let a=0;a<=max;a++)rows.push({score:`${h}-${a}`,probability:poisson(h,lh)*poisson(a,la),total:h+a});const z=rows.reduce((s,r)=>s+r.probability,0)||1;return rows.map(r=>({...r,probability:r.probability/z}));}
+function empiricalGrid(rows:CanonicalFixture[],part:'ht'|'ft',max:number):GridRow[]{
+ const usable=rows.filter(r=>r[part]);const counts=new Map<string,number>();let z=0;
+ usable.forEach((r,i)=>{const p=r[part]!;const h=Math.min(max,p.home),a=Math.min(max,p.away),key=`${h}-${a}`,w=recencyWeight(usable.length-1-i);counts.set(key,(counts.get(key)??0)+w);z+=w;});
+ const alpha=.12, cells=(max+1)*(max+1),den=z+alpha*cells,grid:GridRow[]=[];
+ for(let h=0;h<=max;h++)for(let a=0;a<=max;a++){const score=`${h}-${a}`;grid.push({score,total:h+a,probability:((counts.get(score)??0)+alpha)/den});}
+ return grid;
+}
+function blendGrid(a:GridRow[],b:GridRow[],wA:number):GridRow[]{const mb=new Map(b.map(r=>[r.score,r]));return a.map(r=>({score:r.score,total:r.total,probability:r.probability*wA+(mb.get(r.score)?.probability??0)*(1-wA)}));}
+function structuralMass(grid:GridRow[],m:typeof MARKET_CODES[number]){return grid.filter(r=>{const[h,a]=r.score.split('-').map(Number);return m==='3+ HT'?r.total>=3:m==='7+ FT'?r.total>=7:m==='Other HT'?h>=4||a>=4:h>=5||a>=5;}).reduce((s,r)=>s+r.probability,0);}
+function top3(grid:GridRow[]){return [...grid].sort((a,b)=>b.probability-a.probability).slice(0,3).map(({score,probability})=>({score,probability}));}
+function scoreRank(top:Array<{score:string}>,actual:string){const i=top.findIndex(x=>x.score===actual);return i<0?null:i+1;}
+function teamDna(team:string,rows:CanonicalFixture[]){const gf=teamGoals(rows,team,'ft',true),ga=teamGoals(rows,team,'ft',false),ht=teamGoals(rows,team,'ht',true),recent=gf.slice(-5),prev=gf.slice(-10,-5);return{fixtures:teamRows(rows,team).length,recencyWeightedGF:weightedMean(gf),recencyWeightedGA:weightedMean(ga),htGoalMean:mean(ht),ftGoalMean:mean(gf),homeSplit:teamRows(rows,team).filter(r=>r.homeTeam.toLowerCase()===team.toLowerCase()).length,awaySplit:teamRows(rows,team).filter(r=>r.awayTeam.toLowerCase()===team.toLowerCase()).length,scoringStreak:[...gf].reverse().findIndex(x=>x===0)===-1?gf.length:[...gf].reverse().findIndex(x=>x===0),scorelessStreak:[...gf].reverse().findIndex(x=>x>0)===-1?gf.length:[...gf].reverse().findIndex(x=>x>0),highScoreCluster:gf.filter(x=>x>=3).length,lowScoreCluster:gf.filter(x=>x<=1).length,scoringAcceleration:recent.length&&prev.length?mean(recent)!-mean(prev)!:null,extremeScoreRecurrence:gf.filter(x=>x>=5).length,goalTimingProfile:ht.length?{firstHalfShare:ht.reduce((a,b)=>a+b,0)/Math.max(1,gf.reduce((a,b)=>a+b,0))}:'unavailable',leadTrailBehavior:'unavailable',collapseRiskProxy:ga.length?ga.filter(x=>x>=3).length/ga.length:null};}
+
+export function buildPrediction(args:{home:string;away:string;targetDate?:string;language?:string;homePayload:unknown;awayPayload:unknown;h2hPayload:unknown}){
+ const language=['vi','en','zh','th','id'].includes(args.language??'')?args.language!:'vi';
+ const evidence=strictPriorEvidence(args.homePayload,args.awayPayload,args.h2hPayload,args.targetDate);
+ const homeRows=evidence.streams.home,awayRows=evidence.streams.away;
+ const homeHtFor=weightedMean(teamGoals(homeRows,args.home,'ht',true))??.68,homeHtAgainst=weightedMean(teamGoals(homeRows,args.home,'ht',false))??.68;
+ const awayHtFor=weightedMean(teamGoals(awayRows,args.away,'ht',true))??.68,awayHtAgainst=weightedMean(teamGoals(awayRows,args.away,'ht',false))??.68;
+ const homeFtFor=weightedMean(teamGoals(homeRows,args.home,'ft',true))??1.35,homeFtAgainst=weightedMean(teamGoals(homeRows,args.home,'ft',false))??1.35;
+ const awayFtFor=weightedMean(teamGoals(awayRows,args.away,'ft',true))??1.35,awayFtAgainst=weightedMean(teamGoals(awayRows,args.away,'ft',false))??1.35;
+ const htA=empiricalGrid(evidence.unique,'ht',8),ftA=empiricalGrid(evidence.unique,'ft',12);
+ const htB=poissonGrid(clamp((homeHtFor+awayHtAgainst)/2,.08,4.5),clamp((awayHtFor+homeHtAgainst)/2,.08,4.5),8);
+ const ftB=poissonGrid(clamp((homeFtFor+awayFtAgainst)/2,.08,6),clamp((awayFtFor+homeFtAgainst)/2,.08,6),12);
+ const completeness=Math.min(1,evidence.unique.length/40),h2hBoost=Math.min(.12,evidence.streams.h2h.length*.02),weightA=clamp(.48+.22*completeness+h2hBoost,.45,.78);
+ const htFinal=blendGrid(htA,htB,weightA),ftFinal=blendGrid(ftA,ftB,weightA);
+ const markets=Object.fromEntries(MARKET_CODES.map(m=>{const gA=m.includes('HT')?htA:ftA,gB=m.includes('HT')?htB:ftB,gF=m.includes('HT')?htFinal:ftFinal;const methodA=structuralMass(gA,m),methodB=structuralMass(gB,m),final=structuralMass(gF,m),eligible=evidence.unique.filter(r=>marketHit(r,m)!==null),hits=eligible.filter(r=>marketHit(r,m)===true).length;return[m,{methodA,methodB,final,confidence:eligible.length>=30?'HIGH':eligible.length>=12?'MEDIUM':'LOW',hits,eligible:eligible.length,rawRate:eligible.length?hits/eligible.length:null,smoothedRate:methodA,scorelineMass:final,consistency:{status:'PASS',finalDelta:0,construction:'FINAL_MARKET_IS_INTEGRAL_OF_FINAL_SCORE_DISTRIBUTION'},supportingFactors:[`dual_distribution:true`,`weightA:${weightA.toFixed(3)}`],opposingFactors:eligible.length<12?['SMALL_SAMPLE']:[],calibration:{version:'dual-score-distribution-v1',weightA,weightB:1-weightA}}]}));
+ const scoreline={ht:{methodA:top3(htA),methodB:top3(htB),final:top3(htFinal)},ft:{methodA:top3(ftA),methodB:top3(ftB),final:top3(ftFinal)},expectedGoals:{htHome:(homeHtFor+awayHtAgainst)/2,htAway:(awayHtFor+homeHtAgainst)/2,ftHome:(homeFtFor+awayFtAgainst)/2,ftAway:(awayFtFor+homeFtAgainst)/2},mostLikelyPath:`${top3(htFinal)[0]?.score??'—'} HT → ${top3(ftFinal)[0]?.score??'—'} FT`,uncertainty:evidence.unique.length>=30?'MEDIUM':'HIGH',consistencyWarnings:[] as string[]};
+ const ranking=[...Object.entries(markets).map(([market,v]:any)=>({target:market,probability:v.final,confidence:v.confidence})),{target:'Top-3 HT',probability:scoreline.ht.final.reduce((s,x)=>s+x.probability,0),confidence:evidence.counts.htCoverage>=30?'HIGH':evidence.counts.htCoverage>=12?'MEDIUM':'LOW'},{target:'Top-3 FT',probability:scoreline.ft.final.reduce((s,x)=>s+x.probability,0),confidence:evidence.counts.ftCoverage>=30?'HIGH':evidence.counts.ftCoverage>=12?'MEDIUM':'LOW'}].sort((a,b)=>b.probability-a.probability);
+ const max=ranking[0]?.probability??0,verdict=max>=.6?'STRONG_SIGNAL':'NO_STRONG_SIGNAL';
+ return{status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA',engine:FINAL_VERSION,language,target:{home:args.home,away:args.away,date:args.targetDate??null},evidence:{...evidence.counts,strictPrior:Boolean(args.targetDate)},teamTrendingDNA:{home:teamDna(args.home,evidence.unique),away:teamDna(args.away,evidence.unique)},context:{standings:'unavailable',opponentStrength:'unavailable',restFatigue:'unavailable',lineupInjuries:'unavailable',tacticalTempo:'unavailable',liveMomentum:'unavailable',randomnessAllowance:.025},markets,scoreline,primaryTargets:{count:6,codes:[...PRIMARY_TARGETS],scorelineTargets:{'Top-3 HT':scoreline.ht,'Top-3 FT':scoreline.ft}},ranking,verdict,localized:{verdict,probabilityUnit:'0..1',unavailable:language==='vi'?'không có dữ liệu':'unavailable'}};
 }
 
-function unwrapRows(payload: unknown): unknown[] {
-  if (Array.isArray(payload)) return payload;
-  if (!payload || typeof payload !== "object") return [];
-  const row = payload as Record<string, unknown>;
-  for (const key of ["fixtures", "history", "rows", "data"]) {
-    const value = row[key];
-    if (Array.isArray(value)) return value;
-    const nested = unwrapRows(value);
-    if (nested.length) return nested;
-  }
-  for (const key of ["result", "body"]) {
-    const nested = unwrapRows(row[key]);
-    if (nested.length) return nested;
-  }
-  return [];
-}
-
-export function normalizeFixture(input: unknown): CanonicalFixture | null {
-  if (!input || typeof input !== "object") return null;
-  const outer = input as Record<string, unknown>;
-  const row = (outer.fixture ?? outer.match ?? outer) as Record<string, unknown>;
-  const matchDate = String(row.matchDate ?? row.match_date ?? row.date ?? "").slice(0, 10);
-  const teamName = (value: unknown) => value && typeof value === "object" ? String((value as Record<string, unknown>).canonical_name ?? (value as Record<string, unknown>).name ?? "") : String(value ?? "");
-  const homeTeam = teamName(row.homeTeam ?? row.home_team ?? row.home_name ?? row.home).trim();
-  const awayTeam = teamName(row.awayTeam ?? row.away_team ?? row.away_name ?? row.away).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(matchDate) || !homeTeam || !awayTeam) return null;
-  const ht = normalizePair(row.ht ?? row.htScore ?? row.ht_score ?? row.halfTime ?? row.half_time ?? row.halftimeScore) ??
-    normalizePair([row.ht_home ?? row.hthg ?? row.home_ht, row.ht_away ?? row.htag ?? row.away_ht]);
-  const ft = normalizePair(row.ft ?? row.ftScore ?? row.ft_score ?? row.fullTime ?? row.full_time ?? row.fulltimeScore) ??
-    normalizePair([row.ft_home ?? row.fthg ?? row.home_ft, row.ft_away ?? row.ftag ?? row.away_ft]);
-  if (ht && ft && (ht.home > ft.home || ht.away > ft.away)) return null;
-  const identity = `${matchDate}|${homeTeam.toLowerCase()}|${awayTeam.toLowerCase()}`;
-  return { id: String(row.fixture_id ?? row.fixtureId ?? row.id ?? identity), matchDate, homeTeam, awayTeam, ht, ft };
-}
-
-export function normalizeFixtures(payload: unknown) {
-  return unwrapRows(payload).map(normalizeFixture).filter((fixture): fixture is CanonicalFixture => fixture !== null);
-}
-
-export function strictPriorEvidence(homePayload: unknown, awayPayload: unknown, h2hPayload: unknown, targetDate?: string) {
-  const prior = (rows: CanonicalFixture[]) => rows.filter((row) => !targetDate || row.matchDate < targetDate);
-  const home = prior(normalizeFixtures(homePayload));
-  const away = prior(normalizeFixtures(awayPayload));
-  const h2h = prior(normalizeFixtures(h2hPayload));
-  const unique = [...new Map([...home, ...away, ...h2h].map((row) => [`${row.matchDate}|${row.homeTeam.toLowerCase()}|${row.awayTeam.toLowerCase()}`, row])).values()];
-  return {
-    streams: { home, away, h2h }, unique,
-    counts: {
-      homeFixtures: home.length, awayFixtures: away.length, h2hFixtures: h2h.length,
-      uniqueCanonical: unique.length,
-      htCoverage: unique.filter((row) => row.ht !== null).length,
-      ftCoverage: unique.filter((row) => row.ft !== null).length,
-    },
-  };
-}
-
-const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
-const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-const weightedMean = (values: number[]) => {
-  if (!values.length) return null;
-  const weighted = values.map((value, index) => ({ value, weight: Math.pow(0.92, values.length - 1 - index) }));
-  return weighted.reduce((sum, item) => sum + item.value * item.weight, 0) / weighted.reduce((sum, item) => sum + item.weight, 0);
-};
-
-export function marketHit(fixture: CanonicalFixture, market: typeof MARKET_CODES[number]) {
-  if (market === "3+ HT") return fixture.ht ? fixture.ht.home + fixture.ht.away >= 3 : null;
-  if (market === "7+ FT") return fixture.ft ? fixture.ft.home + fixture.ft.away >= 7 : null;
-  if (market === "Other HT") return fixture.ht ? fixture.ht.home >= 4 || fixture.ht.away >= 4 : null;
-  return fixture.ft ? fixture.ft.home >= 5 || fixture.ft.away >= 5 : null;
-}
-
-function teamDna(team: string, fixtures: CanonicalFixture[]) {
-  const rows = fixtures.filter((row) => row.homeTeam.toLowerCase() === team.toLowerCase() || row.awayTeam.toLowerCase() === team.toLowerCase()).sort((a, b) => a.matchDate.localeCompare(b.matchDate));
-  const gf = rows.filter((row) => row.ft).map((row) => row.homeTeam.toLowerCase() === team.toLowerCase() ? row.ft!.home : row.ft!.away);
-  const ga = rows.filter((row) => row.ft).map((row) => row.homeTeam.toLowerCase() === team.toLowerCase() ? row.ft!.away : row.ft!.home);
-  const htGoals = rows.filter((row) => row.ht).map((row) => row.homeTeam.toLowerCase() === team.toLowerCase() ? row.ht!.home : row.ht!.away);
-  const split = (venue: "home" | "away") => rows.filter((row) => venue === "home" ? row.homeTeam.toLowerCase() === team.toLowerCase() : row.awayTeam.toLowerCase() === team.toLowerCase());
-  const recent = gf.slice(-5), previous = gf.slice(-10, -5);
-  const streak = (predicate: (value: number) => boolean) => { let count = 0; for (const value of [...gf].reverse()) { if (!predicate(value)) break; count++; } return count; };
-  return {
-    fixtures: rows.length,
-    recencyWeightedGF: weightedMean(gf), recencyWeightedGA: weightedMean(ga),
-    htGoalMean: mean(htGoals), ftGoalMean: mean(gf),
-    homeSplit: split("home").length, awaySplit: split("away").length,
-    scoringStreak: streak((value) => value > 0), scorelessStreak: streak((value) => value === 0),
-    highScoreCluster: gf.filter((value) => value >= 3).length,
-    lowScoreCluster: gf.filter((value) => value <= 1).length,
-    scoringAcceleration: recent.length && previous.length ? mean(recent)! - mean(previous)! : null,
-    extremeScoreRecurrence: gf.filter((value) => value >= 5).length,
-    goalTimingProfile: htGoals.length ? { firstHalfShare: htGoals.reduce((a, b) => a + b, 0) / Math.max(1, gf.reduce((a, b) => a + b, 0)) } : "unavailable",
-    leadTrailBehavior: "unavailable",
-    collapseRiskProxy: ga.length ? clamp(ga.filter((value) => value >= 3).length / ga.length) : null,
-  };
-}
-
-function teamGoalSeries(fixtures: CanonicalFixture[], team: string, part: "ht" | "ft") {
-  const key = team.toLowerCase();
-  return fixtures
-    .filter((row) => row[part] && (row.homeTeam.toLowerCase() === key || row.awayTeam.toLowerCase() === key))
-    .sort((a, b) => a.matchDate.localeCompare(b.matchDate))
-    .map((row) => row.homeTeam.toLowerCase() === key ? row[part]!.home : row[part]!.away);
-}
-
-function poisson(k: number, lambda: number) { let factorial = 1; for (let i = 2; i <= k; i++) factorial *= i; return Math.exp(-lambda) * Math.pow(lambda, k) / factorial; }
-function scoreGrid(home: number, away: number, max: number) {
-  const rows = [] as Array<{ score: string; probability: number; total: number }>;
-  for (let h = 0; h <= max; h++) for (let a = 0; a <= max; a++) rows.push({ score: `${h}-${a}`, probability: poisson(h, home) * poisson(a, away), total: h + a });
-  const total = rows.reduce((sum, row) => sum + row.probability, 0) || 1;
-  return rows.map((row) => ({ ...row, probability: row.probability / total }));
-}
-
-function structuralProbability(grid: Array<{ score: string; probability: number; total: number }>, market: typeof MARKET_CODES[number]) {
-  return grid.filter((row) => {
-    const [home, away] = row.score.split("-").map(Number);
-    return market === "3+ HT" ? row.total >= 3 : market === "7+ FT" ? row.total >= 7 : market === "Other HT" ? home >= 4 || away >= 4 : home >= 5 || away >= 5;
-  }).reduce((sum, row) => sum + row.probability, 0);
-}
-
-function reconcileToScoreline(rawFinal: number, scorelineMass: number) {
-  const delta = rawFinal - scorelineMass;
-  if (Math.abs(delta) <= MAX_MARKET_SCORELINE_DELTA) return rawFinal;
-  return clamp(scorelineMass + Math.sign(delta) * MAX_MARKET_SCORELINE_DELTA);
-}
-
-export function buildPrediction(args: { home: string; away: string; targetDate?: string; language?: string; homePayload: unknown; awayPayload: unknown; h2hPayload: unknown }) {
-  const language = ["vi", "en", "zh", "th", "id"].includes(args.language ?? "") ? args.language! : "vi";
-  const evidence = strictPriorEvidence(args.homePayload, args.awayPayload, args.h2hPayload, args.targetDate);
-  const homeDna = teamDna(args.home, evidence.unique), awayDna = teamDna(args.away, evidence.unique);
-  const homeHt = weightedMean(teamGoalSeries(evidence.streams.home, args.home, "ht")) ?? 0.68;
-  const awayHt = weightedMean(teamGoalSeries(evidence.streams.away, args.away, "ht")) ?? 0.68;
-  const homeFt = weightedMean(teamGoalSeries(evidence.streams.home, args.home, "ft")) ?? 1.35;
-  const awayFt = weightedMean(teamGoalSeries(evidence.streams.away, args.away, "ft")) ?? 1.35;
-  const htGrid = scoreGrid(clamp(homeHt, 0.08, 4.5), clamp(awayHt, 0.08, 4.5), 8);
-  const ftGrid = scoreGrid(clamp(homeFt, 0.08, 6), clamp(awayFt, 0.08, 6), 12);
-  const scorelineMass = Object.fromEntries(MARKET_CODES.map((market) => [market, structuralProbability(market.includes("HT") ? htGrid : ftGrid, market)])) as Record<typeof MARKET_CODES[number], number>;
-  const markets = Object.fromEntries(MARKET_CODES.map((market) => {
-    const eligibleRows = evidence.unique.filter((row) => marketHit(row, market) !== null);
-    const hits = eligibleRows.filter((row) => marketHit(row, market) === true).length;
-    const rawRate = eligibleRows.length ? hits / eligibleRows.length : null;
-    const smoothedRate = (hits + 1.5) / (eligibleRows.length + 7.5);
-    const methodB = scorelineMass[market];
-    const completeness = Math.min(1, eligibleRows.length / 30);
-    const disagreement = Math.abs(smoothedRate - methodB);
-    const weightA = clamp(0.42 + 0.28 * completeness - 0.15 * disagreement, 0.35, 0.72);
-    const rawFinal = clamp(smoothedRate * weightA + methodB * (1 - weightA));
-    const final = reconcileToScoreline(rawFinal, methodB);
-    const rawDelta = Math.abs(rawFinal - methodB);
-    const reconciled = Math.abs(rawFinal - final) > 1e-12;
-    const baseConfidence = eligibleRows.length >= 30 && disagreement < 0.15 ? "HIGH" : eligibleRows.length >= 12 ? "MEDIUM" : "LOW";
-    const confidence = reconciled ? "LOW" : baseConfidence;
-    const opposingFactors = eligibleRows.length < 12 ? ["SMALL_SAMPLE"] : disagreement > 0.25 ? ["MODEL_DISAGREEMENT"] : [];
-    if (reconciled) opposingFactors.push("GLOBAL_SCORELINE_MARKET_CONFLICT");
-    return [market, {
-      methodA: smoothedRate, methodB, rawFinal, final,
-      confidence, hits, eligible: eligibleRows.length, rawRate, smoothedRate,
-      scorelineMass: methodB,
-      consistency: { rawDelta, finalDelta: Math.abs(final - methodB), maxAllowedDelta: MAX_MARKET_SCORELINE_DELTA, reconciled, status: reconciled ? "RECONCILED" : "PASS" },
-      supportingFactors: [`eligible:${eligibleRows.length}`, `method_agreement:${(1 - disagreement).toFixed(3)}`, `scoreline_mass:${methodB.toFixed(4)}`],
-      opposingFactors,
-      calibration: { version: "cfi-calibration-v1", weightA, weightB: 1 - weightA },
-    }];
-  }));
-  const top = (grid: typeof htGrid) => [...grid].sort((a, b) => b.probability - a.probability).slice(0, 3).map(({ score, probability }) => ({ score, probability }));
-  const ht = top(htGrid), ft = top(ftGrid);
-  const warnings = MARKET_CODES.flatMap((market) => (markets[market] as any).consistency.reconciled ? [`${market}:GLOBAL_SCORELINE_MARKET_CONFLICT`] : []);
-  const maxFinal = Math.max(...Object.values(markets).map((market: any) => market.final));
-  const ranking = Object.entries(markets).map(([market, value]: any) => ({ market, probability: value.final, confidence: value.confidence, scorelineMass: value.scorelineMass, consistency: value.consistency.status })).sort((a, b) => b.probability - a.probability);
-  const strongest = ranking[0];
-  const strongestConsistent = strongest ? strongest.consistency === "PASS" : false;
-  const verdict = maxFinal >= 0.6 && strongestConsistent ? "STRONG_SIGNAL" : "NO_STRONG_SIGNAL";
-  const localizedVerdict = {
-    vi: verdict === "STRONG_SIGNAL" ? "CÓ TÍN HIỆU MẠNH" : "CHƯA CÓ TÍN HIỆU MẠNH",
-    en: verdict === "STRONG_SIGNAL" ? "STRONG SIGNAL" : "NO STRONG SIGNAL",
-    zh: verdict === "STRONG_SIGNAL" ? "强信号" : "无强信号",
-    th: verdict === "STRONG_SIGNAL" ? "สัญญาณชัดเจน" : "ไม่มีสัญญาณชัดเจน",
-    id: verdict === "STRONG_SIGNAL" ? "SINYAL KUAT" : "TIDAK ADA SINYAL KUAT",
-  }[language];
-  return {
-    status: evidence.unique.length ? "DATA_READY" : "INSUFFICIENT_DATA",
-    engine: FINAL_VERSION, language,
-    target: { home: args.home, away: args.away, date: args.targetDate ?? null },
-    evidence: { ...evidence.counts, strictPrior: Boolean(args.targetDate) },
-    teamTrendingDNA: { home: homeDna, away: awayDna },
-    context: { standings: "unavailable", opponentStrength: "unavailable", restFatigue: "unavailable", lineupInjuries: "unavailable", tacticalTempo: "unavailable", liveMomentum: "unavailable", randomnessAllowance: 0.025 },
-    markets,
-    scoreline: {
-      ht, ft,
-      expectedGoals: { htHome: homeHt, htAway: awayHt, ftHome: homeFt, ftAway: awayFt },
-      marketMass: scorelineMass,
-      consistencyGate: { scope: "FULL_SCORE_DISTRIBUTION", top3UsedForGate: false, maxAllowedDelta: MAX_MARKET_SCORELINE_DELTA, allFinalWithinTolerance: MARKET_CODES.every((market) => Math.abs((markets[market] as any).final - scorelineMass[market]) <= MAX_MARKET_SCORELINE_DELTA + 1e-12) },
-      mostLikelyPath: `${ht[0]?.score ?? "—"} HT → ${ft[0]?.score ?? "—"} FT`,
-      uncertainty: warnings.length ? "HIGH" : evidence.unique.length >= 30 ? "MEDIUM" : "HIGH",
-      consistencyWarnings: warnings,
-    },
-    ranking,
-    verdict,
-    localized: { verdict: localizedVerdict, probabilityUnit: "0..1", unavailable: language === "vi" ? "không có dữ liệu" : "unavailable" },
-  };
-}
-
-export function walkForwardBacktest(fixtures: CanonicalFixture[]) {
-  const sorted = [...new Map(fixtures.map((row) => [`${row.matchDate}|${row.homeTeam}|${row.awayTeam}`, row])).values()].sort((a, b) => a.matchDate.localeCompare(b.matchDate));
-  const metrics = Object.fromEntries(MARKET_CODES.map((market) => [market, { outcomes: [] as number[], a: [] as number[], b: [] as number[], final: [] as number[] }]));
-  for (let index = 8; index < sorted.length; index++) {
-    const target = sorted[index];
-    const prediction = buildPrediction({ home: target.homeTeam, away: target.awayTeam, targetDate: target.matchDate, homePayload: sorted.slice(0, index), awayPayload: [], h2hPayload: [], language: "en" });
-    for (const market of MARKET_CODES) {
-      const outcome = marketHit(target, market); if (outcome === null) continue;
-      const row = metrics[market]; const model = prediction.markets[market] as any;
-      row.outcomes.push(outcome ? 1 : 0); row.a.push(model.methodA); row.b.push(model.methodB); row.final.push(model.final);
-    }
-  }
-  const brier = (predictions: number[], outcomes: number[]) => predictions.length ? predictions.reduce((sum, p, i) => sum + (p - outcomes[i]) ** 2, 0) / predictions.length : null;
-  return {
-    evaluatedMatches: Math.max(0, sorted.length - 8),
-    markets: Object.fromEntries(MARKET_CODES.map((market) => { const row = metrics[market]; return [market, { eligible: row.outcomes.length, prevalence: mean(row.outcomes), brierMethodA: brier(row.a, row.outcomes), brierMethodB: brier(row.b, row.outcomes), brierFinal: brier(row.final, row.outcomes) }]; })),
-    calibration: { method: "strict-prior-walk-forward", leakage: false, reliabilityBuckets: "available when bucket n >= 10", scorelineConsistency: `final market probability constrained within ${MAX_MARKET_SCORELINE_DELTA} of full score-distribution mass` },
-  };
+export function walkForwardBacktest(fixtures:CanonicalFixture[]){
+ const sorted=[...new Map(fixtures.map(r=>[`${r.matchDate}|${r.homeTeam}|${r.awayTeam}`,r])).values()].sort((a,b)=>a.matchDate.localeCompare(b.matchDate));
+ const marketMetrics:any=Object.fromEntries(MARKET_CODES.map(m=>[m,{n:0,brier:0}]));let htN=0,htHit=0,ftN=0,ftHit=0;
+ for(let i=8;i<sorted.length;i++){const t=sorted[i],prior=sorted.slice(0,i).filter(r=>r.matchDate<t.matchDate);const p=buildPrediction({home:t.homeTeam,away:t.awayTeam,targetDate:t.matchDate,language:'en',homePayload:prior,awayPayload:prior,h2hPayload:prior});for(const m of MARKET_CODES){const y=marketHit(t,m);if(y===null)continue;const row=(p.markets as any)[m];marketMetrics[m].n++;marketMetrics[m].brier+=(row.final-(y?1:0))**2;}if(t.ht){htN++;if(scoreRank((p.scoreline as any).ht.final,`${t.ht.home}-${t.ht.away}`))htHit++;}if(t.ft){ftN++;if(scoreRank((p.scoreline as any).ft.final,`${t.ft.home}-${t.ft.away}`))ftHit++;}}
+ for(const m of MARKET_CODES)marketMetrics[m].brier=marketMetrics[m].n?marketMetrics[m].brier/marketMetrics[m].n:null;
+ return{evaluatedMatches:Math.max(0,sorted.length-8),markets:marketMetrics,scorelineTargets:{'Top-3 HT':{eligible:htN,hitAt3:htHit,accuracy:htN?htHit/htN:null},'Top-3 FT':{eligible:ftN,hitAt3:ftHit,accuracy:ftN?ftHit/ftN:null}},primaryTargets:6,calibration:{method:'strict-prior-walk-forward',leakage:false}};
 }
