@@ -19,8 +19,9 @@ test("GPT Action OpenAPI parses and preserves production operation IDs", () => {
   assert.ok(request.properties.target_date);
   assert.equal(request.properties.matchDate, undefined);
   assert.deepEqual(request.required, ["home", "away"]);
-  assert.match(schema.components.schemas.Prediction.properties.engine.description, /V5\.0\.2/);
-  assert.match(schema.components.schemas.Prediction.properties.scoreline.description, /Authoritative production scoreline output/);
+  assert.equal(schema.components.schemas.Prediction.type, "object");
+  assert.equal(schema.components.schemas.Prediction.additionalProperties, true);
+  assert.match(schema.info.description, /Strict-prior Persistent DB prediction/);
 });
 
 test("GPT Instructions mandate prediction, history, result and settle actions", () => {
