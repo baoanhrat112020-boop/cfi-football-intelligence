@@ -10,6 +10,8 @@ export type CanonicalFixture = {
   awayTeam: string;
   ht: Pair | null;
   ft: Pair | null;
+  competitionId?: string | null;
+  segment?: string | null;
 };
 
 const finite = (value: unknown) => {
@@ -67,7 +69,9 @@ export function normalizeFixture(input: unknown): CanonicalFixture | null {
     normalizePair([row.ft_home ?? row.fthg ?? row.home_ft, row.ft_away ?? row.ftag ?? row.away_ft]);
   if (ht && ft && (ht.home > ft.home || ht.away > ft.away)) return null;
   const identity = `${matchDate}|${homeTeam.toLowerCase()}|${awayTeam.toLowerCase()}`;
-  return { id: String(row.fixture_id ?? row.fixtureId ?? row.id ?? identity), matchDate, homeTeam, awayTeam, ht, ft };
+  const competitionId = String(row.competition_id ?? row.competitionId ?? row.league_id ?? row.leagueId ?? "").trim() || null;
+  const segment = String(row.segment ?? row.competition_segment ?? "").trim() || null;
+  return { id: String(row.fixture_id ?? row.fixtureId ?? row.id ?? identity), matchDate, homeTeam, awayTeam, ht, ft, competitionId, segment };
 }
 
 export function normalizeFixtures(payload: unknown) {
