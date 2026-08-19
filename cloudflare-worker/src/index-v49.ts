@@ -1,7 +1,9 @@
 import base from './index-v48.ts';
 import { buildFutureSixPrediction, FUTURE_SIX_VERSION } from '../../src/prediction/future-six.ts';
+import { buildFutureSixScorelines } from '../../src/prediction/future-six-scoreline.ts';
+import { PRIMARY_TARGETS, strictPriorEvidence } from '../../src/prediction/final-engine.ts';
 
-const DUAL_VERSION='CFI_DUAL_SHADOW_V0.1';
+const DUAL_VERSION='CFI_DUAL_SHADOW_V0.2';
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 
 function unwrap(x:any){return x?.body??x}
@@ -25,8 +27,8 @@ function comparison(production:any,futureSix:any){
   }));
 }
 
-const UI=`<section id="futureSixPanel" style="display:none;margin:14px 0;background:#101c2e;border:1px solid #624c8d;border-radius:12px;padding:14px;color:#eef5ff"><div style="font-weight:900;color:#c5a6ff;margin-bottom:4px">🔮 MODEL B — DỰ ĐOÁN 6 YẾU TỐ TƯƠNG LAI</div><div style="font-size:12px;color:#9aabc0;margin-bottom:12px">FUTURE SIX CHALLENGER · shadow mode · không ghi đè Model A</div><div id="futureSixFactors" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"></div><div style="font-weight:800;margin:14px 0 8px">MODEL COMPARISON — 4 MARKET BÀN THẮNG</div><div id="futureSixMarkets" style="display:grid;gap:6px"></div><div style="margin-top:12px;font-size:12px;color:#ffc76b">Top-3 HT/FT challenger: NOT YET MODELED — không sao chép Top-3 của Model A.</div></section>`;
-const SCRIPT=`<script>(()=>{const nativeFetch=window.fetch.bind(window);const pct=v=>Number.isFinite(Number(v))?(Number(v)*100).toFixed(1)+'%':'—';const names={GOAL_TEMPO:'Goal Tempo',DOMINANCE:'Dominance',COLLAPSE_RISK:'Collapse Risk',COMEBACK_SURGE:'Comeback / Surge',VOLATILITY:'Volatility',EXTREME_SCORE_PRESSURE:'Extreme Score Pressure'};function render(d){const fs=d?.predictionModels?.futureSix;if(!fs)return;futureSixPanel.style.display='block';futureSixFactors.innerHTML=Object.entries(fs.factors||{}).map(([k,v])=>'<div style="background:#0b1627;border:1px solid #283a55;border-radius:9px;padding:10px"><div style="font-size:11px;color:#9aabc0">'+(names[k]||k)+'</div><b style="font-size:20px;color:#b99cff">'+pct(v.probability)+'</b><div style="font-size:11px;color:#8193aa">'+(v.confidence||'—')+' · n='+(v.sampleSize??'—')+'</div></div>').join('');futureSixMarkets.innerHTML=Object.entries(d.modelComparison||{}).map(([k,v])=>'<div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;background:#0b1627;padding:8px;border-radius:8px"><b>'+k+'</b><span>Model A '+pct(v.historicalProduction)+'</span><span style="color:#c5a6ff">Model B '+pct(v.futureSix)+'</span></div>').join('')}window.fetch=async(...args)=>{const res=await nativeFetch(...args);try{const u=typeof args[0]==='string'?args[0]:args[0]?.url||'';if(String(u).includes('/api/predict'))res.clone().json().then(render).catch(()=>{})}catch{}return res}})();</script>`;
+const UI=`<section id="futureSixPanel" style="display:none;margin:14px 0;background:#101c2e;border:1px solid #624c8d;border-radius:12px;padding:14px;color:#eef5ff"><div style="font-weight:900;color:#c5a6ff;margin-bottom:4px">🔮 MODEL B — DỰ ĐOÁN 6 YẾU TỐ TƯƠNG LAI</div><div style="font-size:12px;color:#9aabc0;margin-bottom:12px">FUTURE SIX CHALLENGER · shadow mode · không ghi đè Model A</div><div id="futureSixFactors" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"></div><div style="font-weight:800;margin:14px 0 8px">MODEL COMPARISON — 4 MARKET BÀN THẮNG</div><div id="futureSixMarkets" style="display:grid;gap:6px"></div><div style="font-weight:800;margin:14px 0 8px">MODEL B SCORELINE — TOP-3 HT / FT</div><div id="futureSixTop3" style="display:grid;gap:6px"></div></section>`;
+const SCRIPT=`<script>(()=>{const nativeFetch=window.fetch.bind(window);const pct=v=>Number.isFinite(Number(v))?(Number(v)*100).toFixed(1)+'%':'—';const names={GOAL_TEMPO:'Goal Tempo',DOMINANCE:'Dominance',COLLAPSE_RISK:'Collapse Risk',COMEBACK_SURGE:'Comeback / Surge',VOLATILITY:'Volatility',EXTREME_SCORE_PRESSURE:'Extreme Score Pressure'};function render(d){const fs=d?.predictionModels?.futureSix;if(!fs)return;futureSixPanel.style.display='block';futureSixFactors.innerHTML=Object.entries(fs.factors||{}).map(([k,v])=>'<div style="background:#0b1627;border:1px solid #283a55;border-radius:9px;padding:10px"><div style="font-size:11px;color:#9aabc0">'+(names[k]||k)+'</div><b style="font-size:20px;color:#b99cff">'+pct(v.probability)+'</b><div style="font-size:11px;color:#8193aa">'+(v.confidence||'—')+' · n='+(v.sampleSize??'—')+'</div></div>').join('');futureSixMarkets.innerHTML=Object.entries(d.modelComparison||{}).map(([k,v])=>'<div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;background:#0b1627;padding:8px;border-radius:8px"><b>'+k+'</b><span>Model A '+pct(v.historicalProduction)+'</span><span style="color:#c5a6ff">Model B '+pct(v.futureSix)+'</span></div>').join('');const row=(label,items)=>'<div style="background:#0b1627;padding:8px;border-radius:8px"><b>'+label+'</b> · '+(Array.isArray(items)?items.map(x=>x.score+' '+pct(x.probability)).join(' · '):'—')+'</div>';futureSixTop3.innerHTML=row('HT',fs.top3HT)+row('FT',fs.top3FT)}window.fetch=async(...args)=>{const res=await nativeFetch(...args);try{const u=typeof args[0]==='string'?args[0]:args[0]?.url||'';if(String(u).includes('/api/predict'))res.clone().json().then(render).catch(()=>{})}catch{}return res}})();</script>`;
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   const url=new URL(request.url);
@@ -44,23 +46,34 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     if(!home||!away)return productionResponse;
     try{
       const [homePayload,awayPayload,h2hPayload]=await evidence(request,env,ctx,home,away);
-      const futureSix=buildFutureSixPrediction({home,away,targetDate,homePayload,awayPayload,h2hPayload});
+      const futureSixBase=buildFutureSixPrediction({home,away,targetDate,homePayload,awayPayload,h2hPayload});
+      const strictEvidence=strictPriorEvidence(homePayload,awayPayload,h2hPayload,targetDate);
+      const futureScorelines=buildFutureSixScorelines({home,away,homeRows:strictEvidence.streams.home,awayRows:strictEvidence.streams.away});
+      const futureSix={
+        ...futureSixBase,
+        primaryTargets:{count:6,codes:[...PRIMARY_TARGETS]},
+        scorelineVersion:futureScorelines.version,
+        top3HT:futureScorelines.top3HT,
+        top3FT:futureScorelines.top3FT,
+        scorelineFactors:futureScorelines.factors,
+        scorelineIntensity:futureScorelines.intensity,
+      };
       return Response.json({
         ...production,
         audit:payload?.audit??production?.audit,
-        dualModel:{version:DUAL_VERSION,executionMode:'PARALLEL_SHADOW',productionAuthoritative:true,challengerPersisted:false},
+        dualModel:{version:DUAL_VERSION,executionMode:'PARALLEL_SHADOW',productionAuthoritative:true,challengerPersisted:false,primaryTargets:6},
         predictionModels:{
           historicalProduction:{predictionType:'HISTORICAL_PRODUCTION',label:'DỰ ĐOÁN KIỂU CŨ — HISTORICAL PRODUCTION',authoritative:true,version:production?.engine??production?.version??'CURRENT_PRODUCTION'},
-          futureSix:{predictionType:'FUTURE_SIX_FACTORS',label:'DỰ ĐOÁN 6 YẾU TỐ TƯƠNG LAI — CHALLENGER',authoritative:false,...futureSix,top3HT:'NOT_YET_MODELED',top3FT:'NOT_YET_MODELED'},
+          futureSix:{predictionType:'FUTURE_SIX_FACTORS',label:'DỰ ĐOÁN 6 YẾU TỐ TƯƠNG LAI — CHALLENGER',authoritative:false,...futureSix},
         },
-        modelComparison:comparison(production,futureSix),
+        modelComparison:comparison(production,futureSixBase),
       },{status:productionResponse.status});
     }catch(e:any){
       return Response.json({...production,audit:payload?.audit??production?.audit,dualModel:{version:DUAL_VERSION,executionMode:'PRODUCTION_ONLY_FALLBACK',productionAuthoritative:true},predictionModels:{historicalProduction:{predictionType:'HISTORICAL_PRODUCTION',label:'DỰ ĐOÁN KIỂU CŨ — HISTORICAL PRODUCTION',authoritative:true},futureSix:{predictionType:'FUTURE_SIX_FACTORS',label:'DỰ ĐOÁN 6 YẾU TỐ TƯƠNG LAI — CHALLENGER',authoritative:false,status:'ERROR',version:FUTURE_SIX_VERSION,error:String(e?.message||e)}}},{status:productionResponse.status});
     }
   }
   if(url.pathname==='/health'){
-    const res=await base.fetch(request,env,ctx);const body=await readJson(res);return Response.json({...body,dualModel:true,dualModelVersion:DUAL_VERSION,futureSixVersion:FUTURE_SIX_VERSION,challengerMode:'SHADOW'});
+    const res=await base.fetch(request,env,ctx);const body=await readJson(res);return Response.json({...body,dualModel:true,dualModelVersion:DUAL_VERSION,futureSixVersion:FUTURE_SIX_VERSION,futureSixScoreline:true,primaryTargets:6,challengerMode:'SHADOW'});
   }
   const res=await base.fetch(request,env,ctx);
   if(url.pathname!=='/'||!String(res.headers.get('content-type')).includes('text/html'))return res;

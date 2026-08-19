@@ -38,7 +38,7 @@ test("GPT Instructions pin Scoreline Intelligence to current production ownershi
     assert.match(instructions, new RegExp(token));
 });
 
-test("Worker production entrypoint preserves result bridge and adds dual shadow wrapper", () => {
+test("Worker production entrypoint preserves result bridge and wires Future Six across six targets", () => {
   const resultWorker = readFileSync(new URL("../cloudflare-worker/src/index-v47.ts", import.meta.url), "utf8");
   const compatWorker = readFileSync(new URL("../cloudflare-worker/src/index-v48.ts", import.meta.url), "utf8");
   const dualWorker = readFileSync(new URL("../cloudflare-worker/src/index-v49.ts", import.meta.url), "utf8");
@@ -58,4 +58,10 @@ test("Worker production entrypoint preserves result bridge and adds dual shadow 
   assert.match(dualWorker, /FUTURE_SIX_FACTORS/);
   assert.match(dualWorker, /productionAuthoritative:true/);
   assert.match(dualWorker, /challengerPersisted:false/);
+  assert.match(dualWorker, /buildFutureSixScorelines/);
+  assert.match(dualWorker, /strictPriorEvidence/);
+  assert.match(dualWorker, /top3HT:futureScorelines\.top3HT/);
+  assert.match(dualWorker, /top3FT:futureScorelines\.top3FT/);
+  assert.match(dualWorker, /primaryTargets:6/);
+  assert.doesNotMatch(dualWorker, /NOT_YET_MODELED/);
 });
