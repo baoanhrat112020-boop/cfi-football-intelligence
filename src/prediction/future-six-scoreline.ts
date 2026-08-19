@@ -1,4 +1,4 @@
-export const FUTURE_SIX_SCORELINE_VERSION = 'CFI_FUTURE_SIX_SCORELINE_V0.2';
+export const FUTURE_SIX_SCORELINE_VERSION = 'CFI_FUTURE_SIX_SCORELINE_V0.3';
 
 export type Pair = { home:number; away:number };
 export type Fixture = { matchDate:string; homeTeam:string; awayTeam:string; ht:Pair|null; ft:Pair|null };
@@ -14,7 +14,7 @@ function rowsFor(rows:Fixture[],team:string){const k=team.toLowerCase();return r
 function venueRows(rows:Fixture[],team:string,venue:'home'|'away'){const k=team.toLowerCase();return rowsFor(rows,team).filter(r=>venue==='home'?r.homeTeam.toLowerCase()===k:r.awayTeam.toLowerCase()===k);}
 function goals(rows:Fixture[],team:string,part:'ht'|'ft',gf:boolean){const k=team.toLowerCase();return rowsFor(rows,team).flatMap(r=>{const p=r[part];if(!p)return[];const h=r.homeTeam.toLowerCase()===k;return [gf?(h?p.home:p.away):(h?p.away:p.home)];});}
 function venueGoals(rows:Fixture[],team:string,part:'ht'|'ft',gf:boolean,venue:'home'|'away'){const k=team.toLowerCase();return venueRows(rows,team,venue).flatMap(r=>{const p=r[part];if(!p)return[];const h=r.homeTeam.toLowerCase()===k;return [gf?(h?p.home:p.away):(h?p.away:p.home)];});}
-function matchupMean(rows:Fixture[],team:string,part:'ht'|'ft',gf:boolean,venue:'home'|'away',fallback:number){const all=weightedMean(goals(rows,team,part,gf));const split=weightedMean(venueGoals(rows,team,part,gf,venue));if(split>0&&all>0)return .65*split+.35*all;return split||all||fallback;}
+function matchupMean(rows:Fixture[],team:string,part:'ht'|'ft',gf:boolean,venue:'home'|'away',fallback:number){const allXs=goals(rows,team,part,gf),splitXs=venueGoals(rows,team,part,gf,venue);const all=weightedMean(allXs),split=weightedMean(splitXs);if(splitXs.length&&allXs.length)return .65*split+.35*all;if(splitXs.length)return split;if(allXs.length)return all;return fallback;}
 function rate(xs:number[],predicate:(x:number)=>boolean){return xs.length?xs.filter(predicate).length/xs.length:0;}
 
 export function buildFutureSixFactors(args:{home:string;away:string;homeRows:Fixture[];awayRows:Fixture[]}):FutureSixFactors{
@@ -40,6 +40,7 @@ function addTailPressure(grid:GridRow[],f:FutureSixFactors,part:'ht'|'ft'){const
 function fingerprint(grid:GridRow[]){let h=2166136261;for(const r of grid){const s=`${r.score}:${r.probability.toFixed(8)}`;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}}return (h>>>0).toString(16).padStart(8,'0');}
 function top3(g:GridRow[]){return [...g].sort((a,b)=>b.probability-a.probability).slice(0,3).map(({score,probability})=>({score,probability}));}
 function top3Invariant(g:GridRow[]){const expected=top3(g).map(x=>x.score).join('|');const actual=[...g].sort((a,b)=>b.probability-a.probability).slice(0,3).map(x=>x.score).join('|');return expected===actual;}
+function directionalMass(g:GridRow[]){return g.reduce((o,r)=>{if(r.home>r.away)o.home+=r.probability;else if(r.away>r.home)o.away+=r.probability;else o.draw+=r.probability;return o;},{home:0,draw:0,away:0});}
 
 export function buildFutureSixScorelines(args:{home:string;away:string;homeRows:Fixture[];awayRows:Fixture[]}){
  const factors=buildFutureSixFactors(args),dir=factors.dominance,tempoHT=.82+factors.goalTempo*.46,surgeFT=.88+factors.comebackSurge*.28+factors.goalTempo*.14;
@@ -47,6 +48,10 @@ export function buildFutureSixScorelines(args:{home:string;away:string;homeRows:
  const hFtGF=matchupMean(args.homeRows,args.home,'ft',true,'home',1.35),hFtGA=matchupMean(args.homeRows,args.home,'ft',false,'home',1.35),aFtGF=matchupMean(args.awayRows,args.away,'ft',true,'away',1.35),aFtGA=matchupMean(args.awayRows,args.away,'ft',false,'away',1.35);
  const htHome=clamp(((hGF+aGA)/2)*tempoHT*(1+.22*Math.max(0,dir)+.24*factors.collapseRiskAway),.08,4.8),htAway=clamp(((aGF+hGA)/2)*tempoHT*(1+.22*Math.max(0,-dir)+.24*factors.collapseRiskHome),.08,4.8);
  const ftHome=clamp(((hFtGF+aFtGA)/2)*surgeFT*(1+.28*Math.max(0,dir)+.32*factors.collapseRiskAway),.08,7),ftAway=clamp(((aFtGF+hFtGA)/2)*surgeFT*(1+.28*Math.max(0,-dir)+.32*factors.collapseRiskHome),.08,7);
- const dispersion=.04+.72*factors.volatility+.34*factors.extremeScorePressure,ht=addTailPressure(independentGrid(htHome,htAway,8,dispersion*.72),factors,'ht'),ft=addTailPressure(independentGrid(ftHome,ftAway,12,dispersion),factors,'ft');
- return{version:FUTURE_SIX_SCORELINE_VERSION,factors,intensity:{htHome,htAway,ftHome,ftAway,dispersion},ht,ft,top3HT:top3(ht),top3FT:top3(ft),audit:{matchupConditioned:true,venueWeight:.65,htFingerprint:fingerprint(ht),ftFingerprint:fingerprint(ft),top3HTInvariant:top3Invariant(ht),top3FTInvariant:top3Invariant(ft)}};
+ // V0.3: keep genuine over-dispersion, but do not let volatility manufacture an artificial 0-0 mode.
+ // Extreme-tail pressure is applied separately below, so counting it again in NB dispersion double-counted uncertainty in V0.2.
+ const dispersion=.035+.32*factors.volatility+.16*factors.extremeScorePressure;
+ const ht=addTailPressure(independentGrid(htHome,htAway,8,dispersion*.62),factors,'ht'),ft=addTailPressure(independentGrid(ftHome,ftAway,12,dispersion),factors,'ft');
+ const htDirection=directionalMass(ht),ftDirection=directionalMass(ft);
+ return{version:FUTURE_SIX_SCORELINE_VERSION,factors,intensity:{htHome,htAway,ftHome,ftAway,dispersion},ht,ft,top3HT:top3(ht),top3FT:top3(ft),audit:{matchupConditioned:true,venueWeight:.65,zeroGoalVenueSamplePreserved:true,tailDispersionDoubleCountRemoved:true,htFingerprint:fingerprint(ht),ftFingerprint:fingerprint(ft),top3HTInvariant:top3Invariant(ht),top3FTInvariant:top3Invariant(ft),htDirection,ftDirection,intensityDirection:{ht:htHome>htAway?'HOME':htAway>htHome?'AWAY':'EVEN',ft:ftHome>ftAway?'HOME':ftAway>ftHome?'AWAY':'EVEN'}}};
 }
