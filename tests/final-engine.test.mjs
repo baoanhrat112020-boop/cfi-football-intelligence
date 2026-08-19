@@ -40,8 +40,13 @@ test("native prediction is complete, localized, covered and six-target normalize
     assert.equal(result.scoreline[side].final.length,3);
     assert.ok(result.scoreline[side].final.reduce((sum,row)=>sum+row.probability,0)<=1);
   }
-  assert.equal(result.scoreline.futureSix.version,"CFI_FUTURE_SIX_SCORELINE_V0.1");
-  assert.equal(result.ranking.length, 6);
+  assert.equal(result.scoreline.futureSix.version,"CFI_FUTURE_SIX_SCORELINE_V0.3");
+  assert.equal(result.scoreline.futureSix.audit.top3HTInvariant,true);
+  assert.equal(result.scoreline.futureSix.audit.top3FTInvariant,true);
+  assert.ok(result.scoreline.reconciliation.ht.fingerprint);
+  assert.ok(result.scoreline.reconciliation.ft.fingerprint);
+  assert.equal(result.ranking.length, 4);
+  assert.equal(result.primaryTargets.count,6);
   assert.equal(result.localized.probabilityUnit, "0..1");
 });
 
@@ -63,6 +68,18 @@ test("scoreline intensities use target-team goals and opponent concessions acros
   assert.notEqual(result.scoreline.expectedGoals.ftAway, 7);
   assert.ok(result.scoreline.futureSix.intensity.ftHome > 0);
   assert.ok(result.scoreline.futureSix.intensity.ftAway > 0);
+});
+
+test("FINAL exact-score reconciliation respects a strong away matchup direction", () => {
+  const homeHistory=Array.from({length:18},(_,i)=>({id:`h${i}`,matchDate:`2025-01-${String(i+1).padStart(2,'0')}`,homeTeam:i%2?'WeakHome':'X',awayTeam:i%2?'X':'WeakHome',ht:i%2?'0-1':'1-0',ft:i%2?'0-2':'2-0'}));
+  const awayHistory=Array.from({length:18},(_,i)=>({id:`a${i}`,matchDate:`2025-02-${String(i+1).padStart(2,'0')}`,homeTeam:i%2?'StrongAway':'Y',awayTeam:i%2?'Y':'StrongAway',ht:i%2?'2-0':'0-2',ft:i%2?'4-0':'0-4'}));
+  const result=buildPrediction({home:'WeakHome',away:'StrongAway',targetDate:'2025-04-01',homePayload:homeHistory,awayPayload:awayHistory,h2hPayload:[],language:'en'});
+  assert.equal(result.scoreline.reconciliation.ft.direction,'AWAY');
+  assert.ok(result.scoreline.reconciliation.ft.directionalStrength>0.25);
+  assert.ok(result.scoreline.reconciliation.ft.scorelineWeightA<=0.56);
+  const aligned=result.scoreline.ft.final.filter(({score})=>{const[h,a]=score.split('-').map(Number);return a>h;}).length;
+  assert.ok(aligned>=1,JSON.stringify(result.scoreline.ft.final));
+  assert.ok(!result.scoreline.consistencyWarnings.includes('FINAL_FT_DIRECTION_MISMATCH'));
 });
 
 test("Young Violets regression has 44/44 coverage without lambda-floor artifacts", () => {
