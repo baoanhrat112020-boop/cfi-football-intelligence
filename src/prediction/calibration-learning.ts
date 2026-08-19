@@ -1,8 +1,10 @@
 import { buildPrediction, marketHit, MARKET_CODES, type CanonicalFixture } from './final-engine.ts';
 
-export const CALIBRATION_LEARNER_VERSION = 'CFI_CAL_LEARNER_V1';
+export const CALIBRATION_LEARNER_VERSION = 'CFI_CAL_LEARNER_V1.1';
+export const PRIMARY_TARGET_CODES = [...MARKET_CODES, 'Top-3 HT', 'Top-3 FT'] as const;
 const CANDIDATE_WEIGHT_A = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1] as const;
 const MIN_HISTORY_TO_SELECT = 20;
+const MIN_SCORELINE_EVAL_TO_PROMOTE = 80;
 
 const key = (x: CanonicalFixture) => `${x.matchDate}|${x.homeTeam.toLowerCase()}|${x.awayTeam.toLowerCase()}`;
 const brier = (p: number, y: number) => (p - y) ** 2;
@@ -19,6 +21,12 @@ function streamsForTarget(prior: CanonicalFixture[], target: CanonicalFixture) {
   };
 }
 
+export function scorelineRank(candidates: Array<{score:string}> | null | undefined, actual: string) {
+  if (!Array.isArray(candidates) || !actual) return null;
+  const index = candidates.slice(0,3).findIndex((row)=>row?.score === actual);
+  return index < 0 ? null : index + 1;
+}
+
 export type ReplayPoint = {
   targetKey: string;
   matchDate: string;
@@ -32,10 +40,22 @@ export type ReplayPoint = {
   selectionHistory: number;
 };
 
+export type ScorelineReplayPoint = {
+  targetKey: string;
+  matchDate: string;
+  target: 'Top-3 HT' | 'Top-3 FT';
+  actual: string;
+  rank: number | null;
+  hit1: boolean;
+  hit3: boolean;
+  reciprocalRank: number;
+};
+
 export function strictPriorOnlineTournament(fixtures: CanonicalFixture[]) {
   const sorted = [...new Map(fixtures.map((row) => [key(row), row])).values()].sort((a,b)=>a.matchDate.localeCompare(b.matchDate));
   const candidateHistory = Object.fromEntries(MARKET_CODES.map((m)=>[m, new Map<number, number[]>(CANDIDATE_WEIGHT_A.map((w)=>[w, []]))])) as Record<typeof MARKET_CODES[number], Map<number, number[]>>;
   const points: ReplayPoint[] = [];
+  const scorelinePoints: ScorelineReplayPoint[] = [];
 
   for (let index=0; index<sorted.length; index++) {
     const target = sorted[index];
@@ -59,6 +79,17 @@ export function strictPriorOnlineTournament(fixtures: CanonicalFixture[]) {
         history.get(weightA)!.push(brier(p,outcome));
       }
     }
+
+    if (target.ht) {
+      const actual = `${target.ht.home}-${target.ht.away}`;
+      const rank = scorelineRank((prediction as any).scoreline?.ht, actual);
+      scorelinePoints.push({targetKey:key(target),matchDate:target.matchDate,target:'Top-3 HT',actual,rank,hit1:rank===1,hit3:rank!==null,reciprocalRank:rank ? 1/rank : 0});
+    }
+    if (target.ft) {
+      const actual = `${target.ft.home}-${target.ft.away}`;
+      const rank = scorelineRank((prediction as any).scoreline?.ft, actual);
+      scorelinePoints.push({targetKey:key(target),matchDate:target.matchDate,target:'Top-3 FT',actual,rank,hit1:rank===1,hit3:rank!==null,reciprocalRank:rank ? 1/rank : 0});
+    }
   }
 
   const markets = Object.fromEntries(MARKET_CODES.map((market)=>{
@@ -75,16 +106,35 @@ export function strictPriorOnlineTournament(fixtures: CanonicalFixture[]) {
       meanSelectedWeightA:mean(mature.map((p)=>p.selectedWeightA)),
     }];
   }));
+
+  const scorelines = Object.fromEntries((['Top-3 HT','Top-3 FT'] as const).map((targetCode)=>{
+    const rows=scorelinePoints.filter((p)=>p.target===targetCode);
+    return [targetCode,{
+      eligible:rows.length,
+      hitAt1:mean(rows.map((p)=>p.hit1 ? 1 : 0)),
+      hitAt3:mean(rows.map((p)=>p.hit3 ? 1 : 0)),
+      meanReciprocalRank:mean(rows.map((p)=>p.reciprocalRank)),
+      rank1:rows.filter((p)=>p.rank===1).length,
+      rank2:rows.filter((p)=>p.rank===2).length,
+      rank3:rows.filter((p)=>p.rank===3).length,
+      miss:rows.filter((p)=>p.rank===null).length,
+    }];
+  }));
+
   const marketRows=Object.values(markets) as any[];
+  const scorelineRows=Object.values(scorelines) as any[];
   const minMature=Math.min(...marketRows.map((m)=>m.matureEligible));
+  const minScorelineEligible=Math.min(...scorelineRows.map((m)=>m.eligible));
   const avgImprovement=mean(marketRows.map((m)=>m.brierImprovement).filter((x):x is number=>x!==null));
   const maxDegradation=Math.max(...marketRows.map((m)=>m.brierImprovement===null?0:-m.brierImprovement));
   const promotion = {
-    eligible: minMature >= 80 && (avgImprovement ?? -1) >= 0.002 && maxDegradation <= 0.005,
-    reason: minMature < 80 ? 'INSUFFICIENT_OUT_OF_SAMPLE_REPLAY' : (avgImprovement ?? -1) < 0.002 ? 'NO_MEANINGFUL_BRIER_GAIN' : maxDegradation > 0.005 ? 'MARKET_REGRESSION' : 'PROMOTION_GATE_PASSED',
+    eligible: minMature >= 80 && minScorelineEligible >= MIN_SCORELINE_EVAL_TO_PROMOTE && (avgImprovement ?? -1) >= 0.002 && maxDegradation <= 0.005,
+    reason: minMature < 80 ? 'INSUFFICIENT_OUT_OF_SAMPLE_REPLAY' : minScorelineEligible < MIN_SCORELINE_EVAL_TO_PROMOTE ? 'INSUFFICIENT_TOP3_REPLAY' : (avgImprovement ?? -1) < 0.002 ? 'NO_MEANINGFUL_BRIER_GAIN' : maxDegradation > 0.005 ? 'MARKET_REGRESSION' : 'PROMOTION_GATE_PASSED',
     minMaturePerMarket:minMature,
+    minScorelineEligible,
     averageBrierImprovement:avgImprovement,
     maxMarketDegradation:maxDegradation,
+    primaryTargets:[...PRIMARY_TARGET_CODES],
   };
-  return {learner:CALIBRATION_LEARNER_VERSION,strictPrior:true,antiLeakage:'candidate selection for each pseudo-match uses losses from earlier pseudo-matches only',candidateWeightsA:[...CANDIDATE_WEIGHT_A],points,markets,promotion};
+  return {learner:CALIBRATION_LEARNER_VERSION,strictPrior:true,antiLeakage:'candidate selection for each pseudo-match uses losses from earlier pseudo-matches only',candidateWeightsA:[...CANDIDATE_WEIGHT_A],points,scorelinePoints,markets,scorelines,promotion};
 }
