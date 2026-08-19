@@ -1,7 +1,6 @@
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, marketHit, normalizeFixtures, type CanonicalFixture } from "../prediction/final-engine.ts";
-import { buildFutureSixPrediction, FUTURE_SIX_VERSION } from "../prediction/future-six.ts";
 
-export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.1";
+export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.2";
 export const MODEL_TYPES = ["HISTORICAL_PRODUCTION", "FUTURE_SIX_FACTORS"] as const;
 export type ModelType = typeof MODEL_TYPES[number];
 
@@ -74,18 +73,18 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
   const evaluations: Eval[] = [];
 
   for (const target of fixtures) {
-    const prior = fixtures.filter((f) => f.matchDate < target.matchDate); // same-date fixtures excluded by design
+    const prior = fixtures.filter((f) => f.matchDate < target.matchDate);
     if (prior.length < minPrior) continue;
     const payloads = streams(prior, target);
-    const production = buildPrediction({ home: target.homeTeam, away: target.awayTeam, targetDate: target.matchDate, language: "en", ...payloads });
-    const challenger = buildFutureSixPrediction({ home: target.homeTeam, away: target.awayTeam, targetDate: target.matchDate, ...payloads });
+    const prediction = buildPrediction({ home: target.homeTeam, away: target.awayTeam, targetDate: target.matchDate, language: "en", ...payloads });
     const outcomes = Object.fromEntries(MARKET_CODES.map((market) => {
       const y = marketHit(target, market);
       return [market, y === null ? null : y ? 1 : 0];
     })) as Record<string, 0 | 1 | null>;
-    const prodProb = Object.fromEntries(MARKET_CODES.map((market) => [market, Number((production.markets[market] as any).final)]));
-    const futureProb = Object.fromEntries(MARKET_CODES.map((market) => [market, Number(challenger.marketSignals[market])]));
+    const prodProb = Object.fromEntries(MARKET_CODES.map((market) => [market, Number((prediction.markets[market] as any).methodA)]));
+    const futureProb = Object.fromEntries(MARKET_CODES.map((market) => [market, Number((prediction.markets[market] as any).methodB)]));
     const actualHT = score(target.ht), actualFT = score(target.ft);
+    const futureVersion = prediction.scoreline.futureSix.version;
     const baseKey = `${key(target)}|${DUAL_REPLAY_VERSION}`;
 
     evaluations.push({
@@ -93,15 +92,16 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
       fixtureId: target.id, targetDate: target.matchDate, homeTeam: target.homeTeam, awayTeam: target.awayTeam,
       modelType: "HISTORICAL_PRODUCTION", modelVersion: FINAL_VERSION, probabilities: prodProb, outcomes,
       brier: Object.fromEntries(MARKET_CODES.map((m) => [m, brier(prodProb[m], outcomes[m])])),
-      top3HT: top3Audit(production.scoreline?.ht, actualHT), top3FT: top3Audit(production.scoreline?.ft, actualFT),
+      top3HT: top3Audit(prediction.scoreline.ht.methodA, actualHT), top3FT: top3Audit(prediction.scoreline.ft.methodA, actualFT),
     });
     evaluations.push({
-      replayKey: `${baseKey}|FUTURE_SIX_FACTORS|${FUTURE_SIX_VERSION}`,
+      replayKey: `${baseKey}|FUTURE_SIX_FACTORS|${futureVersion}`,
       fixtureId: target.id, targetDate: target.matchDate, homeTeam: target.homeTeam, awayTeam: target.awayTeam,
-      modelType: "FUTURE_SIX_FACTORS", modelVersion: FUTURE_SIX_VERSION, probabilities: futureProb, outcomes,
+      modelType: "FUTURE_SIX_FACTORS", modelVersion: futureVersion, probabilities: futureProb, outcomes,
       brier: Object.fromEntries(MARKET_CODES.map((m) => [m, brier(futureProb[m], outcomes[m])])),
-      top3HT: { status: "NOT_YET_MODELED", top1Hit: null, top3Hit: null, rankOfHit: null },
-      top3FT: { status: "NOT_YET_MODELED", top1Hit: null, top3Hit: null, rankOfHit: null }, factors: challenger.factors,
+      top3HT: top3Audit(prediction.scoreline.ht.methodB, actualHT),
+      top3FT: top3Audit(prediction.scoreline.ft.methodB, actualFT),
+      factors: prediction.scoreline.futureSix.factors,
     });
   }
 
