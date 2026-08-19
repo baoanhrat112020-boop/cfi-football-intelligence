@@ -34,6 +34,7 @@ test('six factors stay bounded and directional dominance is preserved',()=>{
   }
   assert.ok(Number.isFinite(r.intensity.ftHome));
   assert.ok(Number.isFinite(r.intensity.ftAway));
+  assert.ok(r.audit.ftDirection.home+r.audit.ftDirection.draw+r.audit.ftDirection.away>.999999);
 });
 
 test('collapse and volatility materially change the Model B tail',()=>{
@@ -49,5 +50,9 @@ test('Future Six Top-3 comes from its own score distribution',()=>{
   const r=buildFutureSixScorelines({home:'Alpha',away:'Beta',homeRows,awayRows});
   const expected=[...r.ft].sort((a,b)=>b.probability-a.probability).slice(0,3).map(x=>x.score);
   assert.deepEqual(r.top3FT.map(x=>x.score),expected);
-  assert.equal(r.version,'CFI_FUTURE_SIX_SCORELINE_V0.1');
+  assert.equal(r.version,'CFI_FUTURE_SIX_SCORELINE_V0.3');
+  assert.equal(r.audit.top3HTInvariant,true);
+  assert.equal(r.audit.top3FTInvariant,true);
+  assert.equal(r.audit.zeroGoalVenueSamplePreserved,true);
+  assert.equal(r.audit.tailDispersionDoubleCountRemoved,true);
 });
