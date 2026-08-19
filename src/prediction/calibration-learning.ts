@@ -1,6 +1,6 @@
 import { buildPrediction, marketHit, MARKET_CODES, type CanonicalFixture } from './final-engine.ts';
 
-export const CALIBRATION_LEARNER_VERSION = 'CFI_CAL_LEARNER_V1.1';
+export const CALIBRATION_LEARNER_VERSION = 'CFI_CAL_LEARNER_V1.2';
 export const PRIMARY_TARGET_CODES = [...MARKET_CODES, 'Top-3 HT', 'Top-3 FT'] as const;
 const CANDIDATE_WEIGHT_A = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1] as const;
 const MIN_HISTORY_TO_SELECT = 20;
@@ -45,10 +45,12 @@ export type ScorelineReplayPoint = {
   matchDate: string;
   target: 'Top-3 HT' | 'Top-3 FT';
   actual: string;
-  rank: number | null;
-  hit1: boolean;
-  hit3: boolean;
-  reciprocalRank: number;
+  rankA: number | null;
+  rankB: number | null;
+  rankFinal: number | null;
+  hit3A: boolean;
+  hit3B: boolean;
+  hit3Final: boolean;
 };
 
 export function strictPriorOnlineTournament(fixtures: CanonicalFixture[]) {
@@ -82,13 +84,15 @@ export function strictPriorOnlineTournament(fixtures: CanonicalFixture[]) {
 
     if (target.ht) {
       const actual = `${target.ht.home}-${target.ht.away}`;
-      const rank = scorelineRank((prediction as any).scoreline?.ht, actual);
-      scorelinePoints.push({targetKey:key(target),matchDate:target.matchDate,target:'Top-3 HT',actual,rank,hit1:rank===1,hit3:rank!==null,reciprocalRank:rank ? 1/rank : 0});
+      const group = (prediction as any).scoreline?.ht;
+      const rankA=scorelineRank(group?.methodA,actual), rankB=scorelineRank(group?.methodB,actual), rankFinal=scorelineRank(group?.final,actual);
+      scorelinePoints.push({targetKey:key(target),matchDate:target.matchDate,target:'Top-3 HT',actual,rankA,rankB,rankFinal,hit3A:rankA!==null,hit3B:rankB!==null,hit3Final:rankFinal!==null});
     }
     if (target.ft) {
       const actual = `${target.ft.home}-${target.ft.away}`;
-      const rank = scorelineRank((prediction as any).scoreline?.ft, actual);
-      scorelinePoints.push({targetKey:key(target),matchDate:target.matchDate,target:'Top-3 FT',actual,rank,hit1:rank===1,hit3:rank!==null,reciprocalRank:rank ? 1/rank : 0});
+      const group = (prediction as any).scoreline?.ft;
+      const rankA=scorelineRank(group?.methodA,actual), rankB=scorelineRank(group?.methodB,actual), rankFinal=scorelineRank(group?.final,actual);
+      scorelinePoints.push({targetKey:key(target),matchDate:target.matchDate,target:'Top-3 FT',actual,rankA,rankB,rankFinal,hit3A:rankA!==null,hit3B:rankB!==null,hit3Final:rankFinal!==null});
     }
   }
 
@@ -109,16 +113,16 @@ export function strictPriorOnlineTournament(fixtures: CanonicalFixture[]) {
 
   const scorelines = Object.fromEntries((['Top-3 HT','Top-3 FT'] as const).map((targetCode)=>{
     const rows=scorelinePoints.filter((p)=>p.target===targetCode);
-    return [targetCode,{
-      eligible:rows.length,
-      hitAt1:mean(rows.map((p)=>p.hit1 ? 1 : 0)),
-      hitAt3:mean(rows.map((p)=>p.hit3 ? 1 : 0)),
-      meanReciprocalRank:mean(rows.map((p)=>p.reciprocalRank)),
-      rank1:rows.filter((p)=>p.rank===1).length,
-      rank2:rows.filter((p)=>p.rank===2).length,
-      rank3:rows.filter((p)=>p.rank===3).length,
-      miss:rows.filter((p)=>p.rank===null).length,
-    }];
+    const summarize=(rankKey:'rankA'|'rankB'|'rankFinal',hitKey:'hit3A'|'hit3B'|'hit3Final')=>({
+      hitAt1:mean(rows.map((p)=>p[rankKey]===1?1:0)),
+      hitAt3:mean(rows.map((p)=>p[hitKey]?1:0)),
+      meanReciprocalRank:mean(rows.map((p)=>p[rankKey]?1/(p[rankKey] as number):0)),
+      rank1:rows.filter((p)=>p[rankKey]===1).length,
+      rank2:rows.filter((p)=>p[rankKey]===2).length,
+      rank3:rows.filter((p)=>p[rankKey]===3).length,
+      miss:rows.filter((p)=>p[rankKey]===null).length,
+    });
+    return [targetCode,{eligible:rows.length,methodA:summarize('rankA','hit3A'),methodB:summarize('rankB','hit3B'),final:summarize('rankFinal','hit3Final')}];
   }));
 
   const marketRows=Object.values(markets) as any[];
