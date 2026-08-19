@@ -45,7 +45,7 @@ test("native prediction is complete, localized, covered and six-target normalize
   assert.equal(result.localized.probabilityUnit, "0..1");
 });
 
-test("scoreline lambdas follow target-team goals across mixed home/away history", () => {
+test("scoreline intensities use target-team goals and opponent concessions across mixed home-away history", () => {
   const homeHistory = [
     { id: "h1", matchDate: "2025-01-01", homeTeam: "HJK", awayTeam: "X", ht: "1-0", ft: "2-0" },
     { id: "h2", matchDate: "2025-01-02", homeTeam: "Y", awayTeam: "HJK", ht: "5-1", ft: "8-2" },
@@ -55,10 +55,10 @@ test("scoreline lambdas follow target-team goals across mixed home/away history"
     { id: "a2", matchDate: "2025-01-02", homeTeam: "W", awayTeam: "Jaro", ht: "3-0", ft: "6-1" },
   ];
   const result = buildPrediction({ home: "HJK", away: "Jaro", targetDate: "2025-02-01", homePayload: homeHistory, awayPayload: awayHistory, h2hPayload: [], language: "en" });
-  assert.equal(result.scoreline.expectedGoals.htHome, 1);
-  assert.equal(result.scoreline.expectedGoals.ftHome, 2);
-  assert.equal(result.scoreline.expectedGoals.htAway, 0);
-  assert.equal(result.scoreline.expectedGoals.ftAway, 1);
+  assert.ok(result.scoreline.expectedGoals.htHome > 1 && result.scoreline.expectedGoals.htHome < 4);
+  assert.ok(result.scoreline.expectedGoals.ftHome > 2 && result.scoreline.expectedGoals.ftHome < 5);
+  assert.ok(result.scoreline.expectedGoals.htAway >= 0 && result.scoreline.expectedGoals.htAway < 3);
+  assert.ok(result.scoreline.expectedGoals.ftAway > 0 && result.scoreline.expectedGoals.ftAway < 5);
   assert.notEqual(result.scoreline.expectedGoals.ftHome, 8);
   assert.notEqual(result.scoreline.expectedGoals.ftAway, 7);
   assert.ok(result.scoreline.futureSix.intensity.ftHome > 0);
