@@ -1,5 +1,6 @@
-export const FINAL_VERSION = "CFI_FINAL_V5.0.1";
+export const FINAL_VERSION = "CFI_FINAL_V5.0.2";
 export const MARKET_CODES = ["3+ HT", "7+ FT", "Other HT", "Other FT"] as const;
+export const MAX_MARKET_SCORELINE_DELTA = 0.08;
 
 export type Pair = { home: number; away: number };
 export type CanonicalFixture = {
@@ -152,46 +153,58 @@ function structuralProbability(grid: Array<{ score: string; probability: number;
   }).reduce((sum, row) => sum + row.probability, 0);
 }
 
+function reconcileToScoreline(rawFinal: number, scorelineMass: number) {
+  const delta = rawFinal - scorelineMass;
+  if (Math.abs(delta) <= MAX_MARKET_SCORELINE_DELTA) return rawFinal;
+  return clamp(scorelineMass + Math.sign(delta) * MAX_MARKET_SCORELINE_DELTA);
+}
+
 export function buildPrediction(args: { home: string; away: string; targetDate?: string; language?: string; homePayload: unknown; awayPayload: unknown; h2hPayload: unknown }) {
   const language = ["vi", "en", "zh", "th", "id"].includes(args.language ?? "") ? args.language! : "vi";
   const evidence = strictPriorEvidence(args.homePayload, args.awayPayload, args.h2hPayload, args.targetDate);
   const homeDna = teamDna(args.home, evidence.unique), awayDna = teamDna(args.away, evidence.unique);
-  // Scoreline lambdas must follow the target team's goals regardless of whether that team
-  // appeared as HOME or AWAY in each historical fixture. The previous implementation read
-  // the fixture-side column (row.ht.home / row.ft.home etc.), which could accidentally use
-  // an opponent's goals whenever the target team played on the opposite venue side.
   const homeHt = weightedMean(teamGoalSeries(evidence.streams.home, args.home, "ht")) ?? 0.68;
   const awayHt = weightedMean(teamGoalSeries(evidence.streams.away, args.away, "ht")) ?? 0.68;
   const homeFt = weightedMean(teamGoalSeries(evidence.streams.home, args.home, "ft")) ?? 1.35;
   const awayFt = weightedMean(teamGoalSeries(evidence.streams.away, args.away, "ft")) ?? 1.35;
   const htGrid = scoreGrid(clamp(homeHt, 0.08, 4.5), clamp(awayHt, 0.08, 4.5), 8);
   const ftGrid = scoreGrid(clamp(homeFt, 0.08, 6), clamp(awayFt, 0.08, 6), 12);
+  const scorelineMass = Object.fromEntries(MARKET_CODES.map((market) => [market, structuralProbability(market.includes("HT") ? htGrid : ftGrid, market)])) as Record<typeof MARKET_CODES[number], number>;
   const markets = Object.fromEntries(MARKET_CODES.map((market) => {
     const eligibleRows = evidence.unique.filter((row) => marketHit(row, market) !== null);
     const hits = eligibleRows.filter((row) => marketHit(row, market) === true).length;
     const rawRate = eligibleRows.length ? hits / eligibleRows.length : null;
     const smoothedRate = (hits + 1.5) / (eligibleRows.length + 7.5);
-    const methodB = structuralProbability(market.includes("HT") ? htGrid : ftGrid, market);
+    const methodB = scorelineMass[market];
     const completeness = Math.min(1, eligibleRows.length / 30);
     const disagreement = Math.abs(smoothedRate - methodB);
     const weightA = clamp(0.42 + 0.28 * completeness - 0.15 * disagreement, 0.35, 0.72);
-    const final = clamp(smoothedRate * weightA + methodB * (1 - weightA));
+    const rawFinal = clamp(smoothedRate * weightA + methodB * (1 - weightA));
+    const final = reconcileToScoreline(rawFinal, methodB);
+    const rawDelta = Math.abs(rawFinal - methodB);
+    const reconciled = Math.abs(rawFinal - final) > 1e-12;
+    const baseConfidence = eligibleRows.length >= 30 && disagreement < 0.15 ? "HIGH" : eligibleRows.length >= 12 ? "MEDIUM" : "LOW";
+    const confidence = reconciled ? "LOW" : baseConfidence;
+    const opposingFactors = eligibleRows.length < 12 ? ["SMALL_SAMPLE"] : disagreement > 0.25 ? ["MODEL_DISAGREEMENT"] : [];
+    if (reconciled) opposingFactors.push("GLOBAL_SCORELINE_MARKET_CONFLICT");
     return [market, {
-      methodA: smoothedRate, methodB, final,
-      confidence: eligibleRows.length >= 30 && disagreement < 0.15 ? "HIGH" : eligibleRows.length >= 12 ? "MEDIUM" : "LOW",
-      hits, eligible: eligibleRows.length, rawRate, smoothedRate,
-      supportingFactors: [`eligible:${eligibleRows.length}`, `method_agreement:${(1 - disagreement).toFixed(3)}`],
-      opposingFactors: eligibleRows.length < 12 ? ["SMALL_SAMPLE"] : disagreement > 0.25 ? ["MODEL_DISAGREEMENT"] : [],
+      methodA: smoothedRate, methodB, rawFinal, final,
+      confidence, hits, eligible: eligibleRows.length, rawRate, smoothedRate,
+      scorelineMass: methodB,
+      consistency: { rawDelta, finalDelta: Math.abs(final - methodB), maxAllowedDelta: MAX_MARKET_SCORELINE_DELTA, reconciled, status: reconciled ? "RECONCILED" : "PASS" },
+      supportingFactors: [`eligible:${eligibleRows.length}`, `method_agreement:${(1 - disagreement).toFixed(3)}`, `scoreline_mass:${methodB.toFixed(4)}`],
+      opposingFactors,
       calibration: { version: "cfi-calibration-v1", weightA, weightB: 1 - weightA },
     }];
   }));
   const top = (grid: typeof htGrid) => [...grid].sort((a, b) => b.probability - a.probability).slice(0, 3).map(({ score, probability }) => ({ score, probability }));
   const ht = top(htGrid), ft = top(ftGrid);
-  const warnings = [] as string[];
-  if ((markets["3+ HT"] as any).final < 0.25 && htGrid.filter((row) => row.total >= 3).reduce((s, r) => s + r.probability, 0) > 0.45) warnings.push("HT_SCORELINE_MARKET_INCONSISTENCY");
+  const warnings = MARKET_CODES.flatMap((market) => (markets[market] as any).consistency.reconciled ? [`${market}:GLOBAL_SCORELINE_MARKET_CONFLICT`] : []);
   const maxFinal = Math.max(...Object.values(markets).map((market: any) => market.final));
-  const ranking = Object.entries(markets).map(([market, value]: any) => ({ market, probability: value.final, confidence: value.confidence })).sort((a, b) => b.probability - a.probability);
-  const verdict = maxFinal >= 0.6 ? "STRONG_SIGNAL" : "NO_STRONG_SIGNAL";
+  const ranking = Object.entries(markets).map(([market, value]: any) => ({ market, probability: value.final, confidence: value.confidence, scorelineMass: value.scorelineMass, consistency: value.consistency.status })).sort((a, b) => b.probability - a.probability);
+  const strongest = ranking[0];
+  const strongestConsistent = strongest ? strongest.consistency === "PASS" : false;
+  const verdict = maxFinal >= 0.6 && strongestConsistent ? "STRONG_SIGNAL" : "NO_STRONG_SIGNAL";
   const localizedVerdict = {
     vi: verdict === "STRONG_SIGNAL" ? "CÓ TÍN HIỆU MẠNH" : "CHƯA CÓ TÍN HIỆU MẠNH",
     en: verdict === "STRONG_SIGNAL" ? "STRONG SIGNAL" : "NO STRONG SIGNAL",
@@ -210,8 +223,10 @@ export function buildPrediction(args: { home: string; away: string; targetDate?:
     scoreline: {
       ht, ft,
       expectedGoals: { htHome: homeHt, htAway: awayHt, ftHome: homeFt, ftAway: awayFt },
+      marketMass: scorelineMass,
+      consistencyGate: { scope: "FULL_SCORE_DISTRIBUTION", top3UsedForGate: false, maxAllowedDelta: MAX_MARKET_SCORELINE_DELTA, allFinalWithinTolerance: MARKET_CODES.every((market) => Math.abs((markets[market] as any).final - scorelineMass[market]) <= MAX_MARKET_SCORELINE_DELTA + 1e-12) },
       mostLikelyPath: `${ht[0]?.score ?? "—"} HT → ${ft[0]?.score ?? "—"} FT`,
-      uncertainty: evidence.unique.length >= 30 ? "MEDIUM" : "HIGH",
+      uncertainty: warnings.length ? "HIGH" : evidence.unique.length >= 30 ? "MEDIUM" : "HIGH",
       consistencyWarnings: warnings,
     },
     ranking,
@@ -236,6 +251,6 @@ export function walkForwardBacktest(fixtures: CanonicalFixture[]) {
   return {
     evaluatedMatches: Math.max(0, sorted.length - 8),
     markets: Object.fromEntries(MARKET_CODES.map((market) => { const row = metrics[market]; return [market, { eligible: row.outcomes.length, prevalence: mean(row.outcomes), brierMethodA: brier(row.a, row.outcomes), brierMethodB: brier(row.b, row.outcomes), brierFinal: brier(row.final, row.outcomes) }]; })),
-    calibration: { method: "strict-prior-walk-forward", leakage: false, reliabilityBuckets: "available when bucket n >= 10" },
+    calibration: { method: "strict-prior-walk-forward", leakage: false, reliabilityBuckets: "available when bucket n >= 10", scorelineConsistency: `final market probability constrained within ${MAX_MARKET_SCORELINE_DELTA} of full score-distribution mass` },
   };
 }
