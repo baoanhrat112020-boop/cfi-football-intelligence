@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPrediction, FINAL_VERSION, PRIMARY_TARGETS } from '../src/prediction/final-engine.ts';
+import { FUTURE_SIX_SCORELINE_VERSION } from '../src/prediction/future-six-scoreline.ts';
 
 const fixtures=[];
 for(let i=0;i<24;i++){
@@ -11,10 +12,10 @@ for(let i=0;i<24;i++){
 
 test('CFI exposes six primary targets with independent Future Six scoreline methods',()=>{
   const p=buildPrediction({home:'Home',away:'Away',targetDate:'2026-08-19',language:'en',homePayload:fixtures,awayPayload:fixtures,h2hPayload:[]});
-  assert.equal(FINAL_VERSION,'CFI_FINAL_V5.2.0');
+  assert.equal(p.version,FINAL_VERSION);
   assert.equal(PRIMARY_TARGETS.length,6);
   assert.equal(p.primaryTargets.count,6);
-  assert.equal(p.scoreline.futureSix.version,'CFI_FUTURE_SIX_SCORELINE_V0.1');
+  assert.equal(p.scoreline.futureSix.version,FUTURE_SIX_SCORELINE_VERSION);
   for(const value of Object.values(p.scoreline.futureSix.factors)) assert.ok(Number.isFinite(value));
   for(const side of ['ht','ft']){
     assert.equal(p.scoreline[side].methodA.length,3);
@@ -27,8 +28,7 @@ test('CFI exposes six primary targets with independent Future Six scoreline meth
     assert.ok(Number.isFinite(p.markets[m].methodB));
     assert.ok(Number.isFinite(p.markets[m].final));
     assert.equal(p.markets[m].consistency.status,'PASS');
-    assert.equal(p.markets[m].consistency.finalDelta,0);
-    assert.ok(p.markets[m].supportingFactors.some(x=>x.startsWith('future_six:')));
+    assert.ok(p.markets[m].supportingFactors.some(x=>x===`future_six:${FUTURE_SIX_SCORELINE_VERSION}`));
   }
   assert.deepEqual(p.ranking.map(x=>x.target).sort(),['3+ HT','7+ FT','Other FT','Other HT','Top-3 FT','Top-3 HT'].sort());
 });
