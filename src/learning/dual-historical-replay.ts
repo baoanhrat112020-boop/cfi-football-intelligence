@@ -1,7 +1,7 @@
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, marketHit, normalizeFixtures, type CanonicalFixture } from "../prediction/final-engine.ts";
 
-export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.2";
-export const MODEL_TYPES = ["HISTORICAL_PRODUCTION", "FUTURE_SIX_FACTORS"] as const;
+export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.3";
+export const MODEL_TYPES = ["HISTORICAL_PRODUCTION", "FUTURE_SIX_FACTORS", "FINAL_CFI"] as const;
 export type ModelType = typeof MODEL_TYPES[number];
 
 type Eval = {
@@ -21,22 +21,14 @@ type Eval = {
 };
 
 const key = (f: CanonicalFixture) => `${f.matchDate}|${f.homeTeam.toLowerCase()}|${f.awayTeam.toLowerCase()}`;
+const teamKey = (name: string) => name.toLowerCase();
+const pairKey = (a: string, b: string) => [teamKey(a), teamKey(b)].sort().join("|");
 const score = (p: { home: number; away: number } | null) => p ? `${p.home}-${p.away}` : null;
 const brier = (p: number, y: 0 | 1 | null) => y === null ? null : (p - y) ** 2;
 
 function dedupeAndSort(fixtures: CanonicalFixture[]) {
   return [...new Map(fixtures.map((f) => [key(f), f])).values()]
     .sort((a, b) => a.matchDate.localeCompare(b.matchDate) || key(a).localeCompare(key(b)));
-}
-
-function streams(prior: CanonicalFixture[], target: CanonicalFixture) {
-  const homeKey = target.homeTeam.toLowerCase(), awayKey = target.awayTeam.toLowerCase();
-  const involves = (f: CanonicalFixture, team: string) => f.homeTeam.toLowerCase() === team || f.awayTeam.toLowerCase() === team;
-  return {
-    homePayload: prior.filter((f) => involves(f, homeKey)),
-    awayPayload: prior.filter((f) => involves(f, awayKey)),
-    h2hPayload: prior.filter((f) => (f.homeTeam.toLowerCase() === homeKey && f.awayTeam.toLowerCase() === awayKey) || (f.homeTeam.toLowerCase() === awayKey && f.awayTeam.toLowerCase() === homeKey)),
-  };
 }
 
 function top3Audit(candidates: Array<{ score: string; probability: number }> | undefined, actual: string | null) {
@@ -64,45 +56,124 @@ function summarize(rows: Eval[], modelType: ModelType) {
     markets,
     top3HTAccuracy: ht.length ? ht.filter((r) => r.top3HT.top3Hit).length / ht.length : null,
     top3FTAccuracy: ft.length ? ft.filter((r) => r.top3FT.top3Hit).length / ft.length : null,
+    top1HTAccuracy: ht.length ? ht.filter((r) => r.top3HT.top1Hit).length / ht.length : null,
+    top1FTAccuracy: ft.length ? ft.filter((r) => r.top3FT.top1Hit).length / ft.length : null,
   };
 }
 
+function probabilities(prediction: any, field: "methodA" | "methodB" | "final") {
+  return Object.fromEntries(MARKET_CODES.map((market) => [market, Number(prediction.markets[market]?.[field])]));
+}
+
+function pushEvaluation(args: {
+  evaluations: Eval[];
+  target: CanonicalFixture;
+  modelType: ModelType;
+  modelVersion: string;
+  probabilities: Record<string, number>;
+  outcomes: Record<string, 0 | 1 | null>;
+  top3HT?: Array<{ score: string; probability: number }>;
+  top3FT?: Array<{ score: string; probability: number }>;
+  actualHT: string | null;
+  actualFT: string | null;
+  factors?: unknown;
+}) {
+  const baseKey = `${key(args.target)}|${DUAL_REPLAY_VERSION}`;
+  args.evaluations.push({
+    replayKey: `${baseKey}|${args.modelType}|${args.modelVersion}`,
+    fixtureId: args.target.id,
+    targetDate: args.target.matchDate,
+    homeTeam: args.target.homeTeam,
+    awayTeam: args.target.awayTeam,
+    modelType: args.modelType,
+    modelVersion: args.modelVersion,
+    probabilities: args.probabilities,
+    outcomes: args.outcomes,
+    brier: Object.fromEntries(MARKET_CODES.map((m) => [m, brier(args.probabilities[m], args.outcomes[m])])),
+    top3HT: top3Audit(args.top3HT, args.actualHT),
+    top3FT: top3Audit(args.top3FT, args.actualFT),
+    ...(args.factors === undefined ? {} : { factors: args.factors }),
+  });
+}
+
+/**
+ * Strict-prior historical replay designed for large corpora.
+ *
+ * V0.3 removes the O(N^2) full-history scan used by V0.2. Histories are indexed
+ * incrementally by team and H2H pair. Fixtures on the same date are evaluated as
+ * one batch and are only inserted into the prior indexes AFTER the whole date has
+ * been evaluated, preserving sameDateLeakage=false.
+ */
 export function replayDualHistorical(input: unknown, options: { minPrior?: number } = {}) {
   const minPrior = Math.max(0, options.minPrior ?? 8);
   const fixtures = dedupeAndSort(normalizeFixtures(input));
   const evaluations: Eval[] = [];
+  const teamPrior = new Map<string, CanonicalFixture[]>();
+  const h2hPrior = new Map<string, CanonicalFixture[]>();
+  let globalPriorCount = 0;
 
-  for (const target of fixtures) {
-    const prior = fixtures.filter((f) => f.matchDate < target.matchDate);
-    if (prior.length < minPrior) continue;
-    const payloads = streams(prior, target);
-    const prediction = buildPrediction({ home: target.homeTeam, away: target.awayTeam, targetDate: target.matchDate, language: "en", ...payloads });
-    const outcomes = Object.fromEntries(MARKET_CODES.map((market) => {
-      const y = marketHit(target, market);
-      return [market, y === null ? null : y ? 1 : 0];
-    })) as Record<string, 0 | 1 | null>;
-    const prodProb = Object.fromEntries(MARKET_CODES.map((market) => [market, Number((prediction.markets[market] as any).methodA)]));
-    const futureProb = Object.fromEntries(MARKET_CODES.map((market) => [market, Number((prediction.markets[market] as any).methodB)]));
-    const actualHT = score(target.ht), actualFT = score(target.ft);
-    const futureVersion = prediction.scoreline.futureSix.version;
-    const baseKey = `${key(target)}|${DUAL_REPLAY_VERSION}`;
+  for (let start = 0; start < fixtures.length;) {
+    const date = fixtures[start].matchDate;
+    let end = start + 1;
+    while (end < fixtures.length && fixtures[end].matchDate === date) end++;
+    const dateBatch = fixtures.slice(start, end);
 
-    evaluations.push({
-      replayKey: `${baseKey}|HISTORICAL_PRODUCTION|${FINAL_VERSION}`,
-      fixtureId: target.id, targetDate: target.matchDate, homeTeam: target.homeTeam, awayTeam: target.awayTeam,
-      modelType: "HISTORICAL_PRODUCTION", modelVersion: FINAL_VERSION, probabilities: prodProb, outcomes,
-      brier: Object.fromEntries(MARKET_CODES.map((m) => [m, brier(prodProb[m], outcomes[m])])),
-      top3HT: top3Audit(prediction.scoreline.ht.methodA, actualHT), top3FT: top3Audit(prediction.scoreline.ft.methodA, actualFT),
-    });
-    evaluations.push({
-      replayKey: `${baseKey}|FUTURE_SIX_FACTORS|${futureVersion}`,
-      fixtureId: target.id, targetDate: target.matchDate, homeTeam: target.homeTeam, awayTeam: target.awayTeam,
-      modelType: "FUTURE_SIX_FACTORS", modelVersion: futureVersion, probabilities: futureProb, outcomes,
-      brier: Object.fromEntries(MARKET_CODES.map((m) => [m, brier(futureProb[m], outcomes[m])])),
-      top3HT: top3Audit(prediction.scoreline.ht.methodB, actualHT),
-      top3FT: top3Audit(prediction.scoreline.ft.methodB, actualFT),
-      factors: prediction.scoreline.futureSix.factors,
-    });
+    for (const target of dateBatch) {
+      if (globalPriorCount < minPrior) continue;
+      const homePayload = teamPrior.get(teamKey(target.homeTeam)) ?? [];
+      const awayPayload = teamPrior.get(teamKey(target.awayTeam)) ?? [];
+      const h2hPayload = h2hPrior.get(pairKey(target.homeTeam, target.awayTeam)) ?? [];
+      const prediction = buildPrediction({
+        home: target.homeTeam,
+        away: target.awayTeam,
+        targetDate: target.matchDate,
+        language: "en",
+        homePayload,
+        awayPayload,
+        h2hPayload,
+      });
+      const outcomes = Object.fromEntries(MARKET_CODES.map((market) => {
+        const y = marketHit(target, market);
+        return [market, y === null ? null : y ? 1 : 0];
+      })) as Record<string, 0 | 1 | null>;
+      const actualHT = score(target.ht), actualFT = score(target.ft);
+      const futureVersion = prediction.scoreline.futureSix.version;
+
+      pushEvaluation({
+        evaluations, target, modelType: "HISTORICAL_PRODUCTION", modelVersion: FINAL_VERSION,
+        probabilities: probabilities(prediction, "methodA"), outcomes,
+        top3HT: prediction.scoreline.ht.methodA, top3FT: prediction.scoreline.ft.methodA,
+        actualHT, actualFT,
+      });
+      pushEvaluation({
+        evaluations, target, modelType: "FUTURE_SIX_FACTORS", modelVersion: futureVersion,
+        probabilities: probabilities(prediction, "methodB"), outcomes,
+        top3HT: prediction.scoreline.ht.methodB, top3FT: prediction.scoreline.ft.methodB,
+        actualHT, actualFT, factors: prediction.scoreline.futureSix.factors,
+      });
+      pushEvaluation({
+        evaluations, target, modelType: "FINAL_CFI", modelVersion: FINAL_VERSION,
+        probabilities: probabilities(prediction, "final"), outcomes,
+        top3HT: prediction.scoreline.ht.final, top3FT: prediction.scoreline.ft.final,
+        actualHT, actualFT,
+      });
+    }
+
+    // Commit the date only after every target on that date was replayed.
+    for (const fixture of dateBatch) {
+      for (const name of [fixture.homeTeam, fixture.awayTeam]) {
+        const tk = teamKey(name);
+        const rows = teamPrior.get(tk) ?? [];
+        rows.push(fixture);
+        teamPrior.set(tk, rows);
+      }
+      const pk = pairKey(fixture.homeTeam, fixture.awayTeam);
+      const pairRows = h2hPrior.get(pk) ?? [];
+      pairRows.push(fixture);
+      h2hPrior.set(pk, pairRows);
+    }
+    globalPriorCount += dateBatch.length;
+    start = end;
   }
 
   return {
@@ -110,6 +181,7 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
     strictPrior: true,
     sameDateLeakage: false,
     canonicalFixtureMutations: 0,
+    algorithm: "DATE_BATCHED_INCREMENTAL_INDEX",
     fixtureCount: fixtures.length,
     evaluatedFixtures: new Set(evaluations.map((r) => r.fixtureId)).size,
     evaluationRows: evaluations.length,
@@ -117,6 +189,7 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
     scoreboard: {
       historicalProduction: summarize(evaluations, "HISTORICAL_PRODUCTION"),
       futureSix: summarize(evaluations, "FUTURE_SIX_FACTORS"),
+      finalCFI: summarize(evaluations, "FINAL_CFI"),
     },
   };
 }
