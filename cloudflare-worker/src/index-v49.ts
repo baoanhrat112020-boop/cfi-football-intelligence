@@ -2,6 +2,7 @@ import base from './index-v48.ts';
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS } from '../../src/prediction/final-engine.ts';
 
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.1';
+const BIG_DB_RETRIEVAL_VERSION='CFI_BIG_DB_RETRIEVAL_V1';
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 
 function unwrap(x:any){return x?.body??x}
@@ -9,6 +10,9 @@ async function readJson(res:Response){try{return await res.clone().json()}catch{
 async function internal(request:Request,env:Env,ctx:ExecutionContext,path:string){
   return base.fetch(new Request(new URL(path,request.url),{method:'GET',headers:{accept:'application/json'}}),env,ctx);
 }
+function payloadBody(x:any){return unwrap(x)??x??{}}
+function payloadFixtures(x:any){const b=payloadBody(x);return Array.isArray(b?.fixtures)?b.fixtures:[]}
+function retrievalStatus(x:any){const b=payloadBody(x);return String(b?.status??x?.status??'UNKNOWN')}
 async function evidence(request:Request,env:Env,ctx:ExecutionContext,home:string,away:string){
   const [hr,ar,xr]=await Promise.all([
     internal(request,env,ctx,`/api/team-history?team=${encodeURIComponent(home)}`),
@@ -101,26 +105,46 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const targetDate=String(input?.target_date||input?.matchDate||'').slice(0,10)||undefined;
     if(!home||!away)return Response.json({status:'INVALID_REQUEST',error:'HOME_AWAY_REQUIRED'},{status:400});
     try{
+      // BIG DB retrieval is mandatory for every GPT production prediction.
+      // Screenshot/import evidence can enrich Persistent DB, but never replaces this lookup.
       const [homePayload,awayPayload,h2hPayload]=await evidence(request,env,ctx,home,away);
+      if(!homePayload||!awayPayload||!h2hPayload){
+        return Response.json({status:'BIG_DB_RETRIEVAL_ERROR',error:'PERSISTENT_DB_EVIDENCE_UNAVAILABLE',retrieval:{version:BIG_DB_RETRIEVAL_VERSION,required:true,home,away}},{status:503});
+      }
+      const homeFixtures=payloadFixtures(homePayload);
+      const awayFixtures=payloadFixtures(awayPayload);
+      const h2hFixtures=payloadFixtures(h2hPayload);
+      const retrieval={
+        version:BIG_DB_RETRIEVAL_VERSION,
+        required:true,
+        mode:'EXACT_TEAM_HISTORY_PLUS_H2H',
+        source:'PERSISTENT_DB',
+        screenshotRole:'IDENTITY_CURRENT_CONTEXT_AND_DB_ENRICHMENT',
+        targetDate:targetDate??null,
+        home:{team:home,status:retrievalStatus(homePayload),fixtureCount:homeFixtures.length},
+        away:{team:away,status:retrievalStatus(awayPayload),fixtureCount:awayFixtures.length},
+        h2h:{status:retrievalStatus(h2hPayload),fixtureCount:h2hFixtures.length},
+        note:'Prediction always retrieves Persistent DB history after HOME/AWAY identity is known. Strict-prior filtering is applied by the prediction engine against targetDate.'
+      };
       const prediction=buildPrediction({home,away,targetDate,language:String(input?.language||'vi'),homePayload,awayPayload,h2hPayload});
       const matrix=sixTargetMatrix(prediction);
       if(!matrix.verification.complete){
-        return Response.json({...prediction,sixTargetMatrix:matrix,runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION},status:'RUNTIME_CONTRACT_ERROR',error:'INCOMPLETE_2_METHODS_X_6_TARGETS'},{status:500});
+        return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION},status:'RUNTIME_CONTRACT_ERROR',error:'INCOMPLETE_2_METHODS_X_6_TARGETS'},{status:500});
       }
       const report=renderedReport(prediction,matrix);
-      const audit=await recordAudit(env,input,prediction);
-      return Response.json({...prediction,sixTargetMatrix:matrix,renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract},runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6},audit});
+      const audit=await recordAudit(env,input,{...prediction,bigDbRetrieval:retrieval});
+      return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract},runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION},audit});
     }catch(e:any){
-      return Response.json({status:'ERROR',error:'PREDICTION_RUNTIME_FAILURE',message:String(e?.message||e),runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION}},{status:500});
+      return Response.json({status:'ERROR',error:'PREDICTION_RUNTIME_FAILURE',message:String(e?.message||e),runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:500});
     }
   }
   if(url.pathname==='/api/status'&&request.method==='GET'){
     const res=await base.fetch(request,env,ctx);const body=await readJson(res);
-    return Response.json({...unwrap(body),runtime:{...(unwrap(body)?.runtime??{}),version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6,sixTargetContract:'CFI_2_METHODS_X_6_TARGETS_V1'}},{status:res.status});
+    return Response.json({...unwrap(body),runtime:{...(unwrap(body)?.runtime??{}),version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6,sixTargetContract:'CFI_2_METHODS_X_6_TARGETS_V1',bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:res.status});
   }
   if(url.pathname==='/health'){
     const res=await base.fetch(request,env,ctx);const body=await readJson(res);
-    return Response.json({...body,status:'OK',service:'CFI Football Intelligence',version:FINAL_VERSION,runtimeVersion:RUNTIME_VERSION,primaryTargets:6,sixTargetContract:'CFI_2_METHODS_X_6_TARGETS_V1'});
+    return Response.json({...body,status:'OK',service:'CFI Football Intelligence',version:FINAL_VERSION,runtimeVersion:RUNTIME_VERSION,primaryTargets:6,sixTargetContract:'CFI_2_METHODS_X_6_TARGETS_V1',bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION});
   }
   const res=await base.fetch(request,env,ctx);
   if(url.pathname!=='/'||!String(res.headers.get('content-type')).includes('text/html'))return res;
