@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: CFI Football Intelligence Production API
-  version: 5.2.1
-  description: Strict-prior Persistent DB prediction, prediction-history, result-collection and settlement API for the CFI Football Intelligence Custom GPT. Prediction responses expose a mandatory CFI_2_METHODS_X_6_TARGETS_V1 contract plus a canonical renderedReport.
+  version: 5.2.5
+  description: Strict-prior Persistent DB prediction, live prediction, history, result collection and settlement API for CFI Football Intelligence.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
 paths:
@@ -29,7 +29,7 @@ paths:
     post:
       operationId: cfiPredictMatch
       summary: Run a complete CFI pre-match prediction with Method A, Method B and FINAL for all six primary targets
-      description: Always present the returned renderedReport as the canonical 2-methods-by-6-targets result. Do not collapse Top-3 HT or Top-3 FT into one unlabeled list.
+      description: target_date is mandatory. For countdown/warm-up screenshots, resolve the nearest imminent kickoff date before calling; normally this is the user's current local date. Never ask the user for a date when the countdown itself proves kickoff is imminent. Always present renderedReport as the canonical 2-methods-by-6-targets result only when status=SUCCESS.
       requestBody:
         required: true
         content:
@@ -37,7 +37,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [home, away]
+              required: [home, away, target_date]
               properties:
                 home: { type: string, minLength: 1 }
                 away: { type: string, minLength: 1 }
@@ -49,8 +49,64 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Prediction" }
+        "422":
+          description: Exact-team evidence is insufficient; normal prediction output is deliberately suppressed
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
         "500":
           description: Runtime contract failure; never manufacture missing target outputs
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /api/predict-live:
+    post:
+      operationId: cfiPredictLive
+      summary: Run CFI LIVE V1 using read-only PREMATCH V5.2.5 prior plus current live match state
+      description: Use only after positive evidence that play has started. Never use countdown/warm-up as live state. Live evidence is separated and never written back into the immutable prematch prediction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [home, away, target_date, live]
+              properties:
+                home: { type: string, minLength: 1 }
+                away: { type: string, minLength: 1 }
+                target_date: { type: string, format: date }
+                language: { type: string, enum: [vi, en, zh, th, id], default: vi }
+                live:
+                  type: object
+                  additionalProperties: false
+                  required: [minute, period, homeGoals, awayGoals]
+                  properties:
+                    minute: { type: number, minimum: 0, maximum: 130 }
+                    period: { type: string, enum: [1H, HT, 2H] }
+                    homeGoals: { type: integer, minimum: 0 }
+                    awayGoals: { type: integer, minimum: 0 }
+                    htHomeGoals: { type: integer, minimum: 0 }
+                    htAwayGoals: { type: integer, minimum: 0 }
+                    shotsOnTargetHome: { type: number, minimum: 0 }
+                    shotsOnTargetAway: { type: number, minimum: 0 }
+                    dangerousAttacksHome: { type: number, minimum: 0 }
+                    dangerousAttacksAway: { type: number, minimum: 0 }
+                    redCardsHome: { type: number, minimum: 0 }
+                    redCardsAway: { type: number, minimum: 0 }
+      responses:
+        "200":
+          description: CFI LIVE V1 prediction
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400":
+          description: Invalid live state or missing required strict-prior target date
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "500":
+          description: LIVE fail-closed runtime error
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
