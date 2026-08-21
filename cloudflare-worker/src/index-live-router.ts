@@ -20,9 +20,9 @@ async function fetchBigDb(env:Env,input:any){
   return b;
 }
 
+function sidePresent(x:any){return typeof x==='string'?x.trim().length>0:Boolean(x&&typeof x==='object');}
 function sideVerified(x:any){
-  if(!x)return false;
-  if(typeof x==='string')return x.trim().length>0;
+  if(!x||typeof x!=='object')return false;
   if(x.verified===true||x.exact===true||x.matched===true)return true;
   const status=String(x.status??x.matchStatus??x.identityStatus??'').toUpperCase();
   return ['VERIFIED','EXACT','EXACT_MATCH','MATCHED'].includes(status);
@@ -31,7 +31,7 @@ export function verifyExactTeamPair(exact:any){
   if(!exact||typeof exact!=='object')return false;
   const rootStatus=String(exact.status??exact.identityStatus??'').toUpperCase();
   const rootVerified=exact.verified===true||['VERIFIED','EXACT','EXACT_MATCH','MATCHED'].includes(rootStatus);
-  if(rootVerified)return sideVerified(exact.home)&&sideVerified(exact.away);
+  if(rootVerified)return sidePresent(exact.home)&&sidePresent(exact.away);
   return sideVerified(exact.home)&&sideVerified(exact.away);
 }
 
