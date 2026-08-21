@@ -4,16 +4,27 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 
 const TARGET_DATE='2026-08-22';
 const HOME='Cardiff';
 const AWAY='Plymouth';
-const bundlePath=join(tmpdir(),`cfi-live-router-e2e-${process.pid}.mjs`);
-const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outfile',bundlePath],{encoding:'utf8'});
+const bundleDir=mkdtempSync(join(tmpdir(),'cfi-live-router-e2e-'));
+const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
 assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
-const {default:router}=await import(`${pathToFileURL(bundlePath).href}?v=${Date.now()}`);
-process.on('exit',()=>{try{rmSync(bundlePath,{force:true});}catch{}});
+function jsFiles(dir:string):string[]{
+  const out:string[]=[];
+  for(const entry of readdirSync(dir,{withFileTypes:true})){
+    const path=join(dir,entry.name);
+    if(entry.isDirectory())out.push(...jsFiles(path));
+    else if(/\.(?:m?js)$/.test(entry.name))out.push(path);
+  }
+  return out;
+}
+const candidates=jsFiles(bundleDir).sort((a,b)=>statSync(b).size-statSync(a).size);
+assert.ok(candidates.length>0,`Wrangler produced no importable JS module in ${bundleDir}`);
+const {default:router}=await import(`${pathToFileURL(candidates[0]).href}?v=${Date.now()}`);
+process.on('exit',()=>{try{rmSync(bundleDir,{recursive:true,force:true});}catch{}});
 
 function historicalRows(){
   return Array.from({length:44},(_,index)=>({
