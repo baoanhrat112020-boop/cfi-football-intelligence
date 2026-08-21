@@ -44,6 +44,13 @@ function assertFiniteProbability(value: number, label: string) {
   if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`INVALID_PROBABILITY:${label}:${value}`);
 }
 
+function assertReplayInvariants(replay: any) {
+  if (replay.strictPrior !== true) throw new Error("STRICT_PRIOR_REPLAY_REQUIRED");
+  if (replay.sameDateLeakage !== false) throw new Error("SAME_DATE_LEAKAGE_DETECTED");
+  if (replay.canonicalFixtureMutations !== 0) throw new Error("CANONICAL_FIXTURE_MUTATION_DETECTED");
+  if (replay.evaluationRows !== replay.evaluatedFixtures * 3) throw new Error(`MODEL_ROW_COUNT_MISMATCH:${replay.evaluationRows}:${replay.evaluatedFixtures}`);
+}
+
 export function assertResearchFixture(input: any, cutoff = V3_3_RESEARCH_CUTOFF) {
   const date = String(input?.matchDate ?? input?.match_date ?? "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("INVALID_MATCH_DATE");
@@ -53,7 +60,7 @@ export function assertResearchFixture(input: any, cutoff = V3_3_RESEARCH_CUTOFF)
 
 export function evaluationToStageRows(evaluation: ReplayEvaluation, replayVersion = DUAL_REPLAY_VERSION): StageRow[] {
   if (!MODEL_TYPES.includes(evaluation.modelType as any)) throw new Error(`INVALID_MODEL_TYPE:${evaluation.modelType}`);
-  if (!Number.isInteger(evaluation.priorSample) || evaluation.priorSample < 0) throw new Error(`INVALID_PRIOR_SAMPLE:${evaluation.priorSample}`);
+  if (!Number.isInteger(evaluation.priorSample) || evaluation.priorSample < 1) throw new Error(`INVALID_PRIOR_SAMPLE:${evaluation.priorSample}`);
 
   const factors = evaluation.modelType === "FUTURE_SIX_FACTORS" ? (evaluation.factors ?? null) : null;
   const common = {
@@ -88,10 +95,11 @@ export function evaluationToStageRows(evaluation: ReplayEvaluation, replayVersio
     };
   });
 
-  const topRows: StageRow[] = [
+  return [
+    ...thresholdRows,
     {
       ...common,
-      market: "Top-3 HT",
+      market: "Top-3 HT" as const,
       predicted_probability: null,
       outcome_boolean: null,
       brier: null,
@@ -101,7 +109,7 @@ export function evaluationToStageRows(evaluation: ReplayEvaluation, replayVersio
     },
     {
       ...common,
-      market: "Top-3 FT",
+      market: "Top-3 FT" as const,
       predicted_probability: null,
       outcome_boolean: null,
       brier: null,
@@ -110,16 +118,13 @@ export function evaluationToStageRows(evaluation: ReplayEvaluation, replayVersio
       rank_of_hit: evaluation.top3FT.rankOfHit,
     },
   ];
-  return [...thresholdRows, ...topRows];
 }
 
 export function replayToStageRows(input: unknown, options: { minPrior?: number; cutoff?: string } = {}) {
   const cutoff = options.cutoff ?? V3_3_RESEARCH_CUTOFF;
   if (Array.isArray(input)) input.forEach((fixture) => assertResearchFixture(fixture, cutoff));
   const replay = replayDualHistorical(input, { minPrior: options.minPrior ?? 10 });
-  if (replay.strictPrior !== true) throw new Error("STRICT_PRIOR_REPLAY_REQUIRED");
-  if (replay.sameDateLeakage !== false) throw new Error("SAME_DATE_LEAKAGE_DETECTED");
-  if (replay.canonicalFixtureMutations !== 0) throw new Error("CANONICAL_FIXTURE_MUTATION_DETECTED");
+  assertReplayInvariants(replay);
   const rows = replay.evaluations.flatMap((evaluation: ReplayEvaluation) => evaluationToStageRows(evaluation, replay.replayVersion));
   const expectedRows = replay.evaluationRows * 6;
   if (rows.length !== expectedRows) throw new Error(`ROW_COUNT_MISMATCH:${rows.length}:${expectedRows}`);
@@ -133,17 +138,34 @@ export async function runV3_3Replay(args: {
   batchSize?: number;
   cutoff?: string;
 }) {
+  const cutoff = args.cutoff ?? V3_3_RESEARCH_CUTOFF;
   const fixtures = await args.loadFixtures();
-  fixtures.forEach((fixture) => assertResearchFixture(fixture, args.cutoff ?? V3_3_RESEARCH_CUTOFF));
-  const { replay, rows } = replayToStageRows(fixtures, { minPrior: args.minPrior, cutoff: args.cutoff });
+  fixtures.forEach((fixture) => assertResearchFixture(fixture, cutoff));
+  const replay = replayDualHistorical(fixtures, { minPrior: args.minPrior ?? 10 });
+  assertReplayInvariants(replay);
   const batchSize = Math.max(1, args.batchSize ?? 500);
-  for (let i = 0; i < rows.length; i += batchSize) await args.upsertRows(rows.slice(i, i + batchSize));
+  let pending: StageRow[] = [];
+  let stageRows = 0;
+  for (const evaluation of replay.evaluations as ReplayEvaluation[]) {
+    pending.push(...evaluationToStageRows(evaluation, replay.replayVersion));
+    if (pending.length >= batchSize) {
+      await args.upsertRows(pending);
+      stageRows += pending.length;
+      pending = [];
+    }
+  }
+  if (pending.length) {
+    await args.upsertRows(pending);
+    stageRows += pending.length;
+  }
+  const expectedRows = replay.evaluationRows * 6;
+  if (stageRows !== expectedRows) throw new Error(`WRITE_ROW_COUNT_MISMATCH:${stageRows}:${expectedRows}`);
   return {
     replayVersion: replay.replayVersion,
     fixtureCount: replay.fixtureCount,
     evaluatedFixtures: replay.evaluatedFixtures,
     evaluationRows: replay.evaluationRows,
-    stageRows: rows.length,
+    stageRows,
     scoreboard: replay.scoreboard,
   };
 }
