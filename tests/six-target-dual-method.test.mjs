@@ -15,6 +15,7 @@ test('CFI exposes six primary targets with independent Future Six scoreline meth
   assert.equal(p.engine,FINAL_VERSION);
   assert.equal(PRIMARY_TARGETS.length,6);
   assert.equal(p.primaryTargets.count,6);
+  assert.deepEqual(p.primaryTargets.codes,[...PRIMARY_TARGETS]);
   assert.equal(p.scoreline.futureSix.version,FUTURE_SIX_SCORELINE_VERSION);
   for(const value of Object.values(p.scoreline.futureSix.factors)) assert.ok(Number.isFinite(value));
   for(const side of ['ht','ft']){
@@ -32,5 +33,7 @@ test('CFI exposes six primary targets with independent Future Six scoreline meth
     assert.equal(p.markets[m].final,p.markets[m].scorelineMass);
     assert.ok(p.markets[m].supportingFactors.some(x=>x===`future_six:${FUTURE_SIX_SCORELINE_VERSION}`));
   }
-  assert.deepEqual(p.ranking.map(x=>x.target).sort(),['3+ HT','7+ FT','Other FT','Other HT','Top-3 FT','Top-3 HT'].sort());
+  assert.deepEqual(p.ranking.map(x=>x.target).sort(),['3+ HT','7+ FT','Other FT','Other HT'].sort());
+  assert.deepEqual(Object.keys(p.primaryTargets.scorelineTargets).sort(),['Top-3 FT','Top-3 HT'].sort());
+  assert.equal(p.rankingPolicy.crossTypeRanking,false);
 });
