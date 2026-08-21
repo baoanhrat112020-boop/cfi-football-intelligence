@@ -1,0 +1,73 @@
+import fs from 'node:fs/promises';
+import { replayDualHistorical } from '../src/learning/dual-historical-replay.ts';
+import { scoreReplayAllModels } from './replay-promotion-adapter.mjs';
+
+export const R0_DATASET_CONTRACT = Object.freeze({
+  manifestVersion: 'CFI_TIME_MACHINE_V2',
+  warmupStart: '2015-01-01',
+  researchStart: '2016-01-01',
+  researchEnd: '2026-08-19',
+  prospectiveHoldoutStart: '2026-08-20',
+  minTeamPrior: 10,
+  strictPrior: true,
+  sameDayExcluded: true,
+  productionChampion: 'CFI_FINAL_V5.2.2',
+});
+
+function dateOf(row) {
+  return String(row?.matchDate ?? row?.match_date ?? row?.date ?? '').slice(0, 10);
+}
+
+export function freezeR0Corpus(input) {
+  const rows = Array.isArray(input) ? input : (input?.fixtures ?? input?.rows ?? input?.data ?? []);
+  if (!Array.isArray(rows)) throw new Error('R0_CORPUS_REQUIRED');
+  const frozen = rows.filter(row => {
+    const d = dateOf(row);
+    return d >= R0_DATASET_CONTRACT.warmupStart && d < R0_DATASET_CONTRACT.prospectiveHoldoutStart;
+  });
+  if (frozen.some(row => dateOf(row) >= R0_DATASET_CONTRACT.prospectiveHoldoutStart)) {
+    throw new Error('R0_HOLDOUT_LEAKAGE');
+  }
+  return frozen;
+}
+
+export function runR0Bulk(input, options = {}) {
+  const corpus = freezeR0Corpus(input);
+  const replay = replayDualHistorical(corpus, { minPrior: options.minPrior ?? 8 });
+  const scores = scoreReplayAllModels(replay, options.scoreOptions ?? {});
+  const champion = scores.FINAL_CFI ?? null;
+  return {
+    contract: R0_DATASET_CONTRACT,
+    corpusCount: corpus.length,
+    replay: {
+      replayVersion: replay.replayVersion,
+      fixtureCount: replay.fixtureCount,
+      evaluatedFixtures: replay.evaluatedFixtures,
+      evaluationRows: replay.evaluationRows,
+      strictPrior: replay.strictPrior,
+      sameDateLeakage: replay.sameDateLeakage,
+      temporalProvenanceComplete: replay.temporalProvenanceComplete,
+    },
+    scores,
+    r0: champion,
+    promotionDecision: champion?.shadowEligible ? 'SHADOW_ELIGIBLE_ONLY' : 'HOLD',
+    productionMutationAllowed: false,
+  };
+}
+
+async function main() {
+  const file = process.argv[2];
+  if (!file) throw new Error('Usage: node --experimental-strip-types research/run-r0-bulk.mjs <corpus.json> [output.json]');
+  const raw = JSON.parse(await fs.readFile(file, 'utf8'));
+  const result = runR0Bulk(raw);
+  const text = JSON.stringify(result, null, 2);
+  if (process.argv[3]) await fs.writeFile(process.argv[3], text + '\n');
+  else process.stdout.write(text + '\n');
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => {
+    console.error(err?.stack ?? String(err));
+    process.exitCode = 1;
+  });
+}
