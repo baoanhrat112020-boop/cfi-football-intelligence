@@ -1,6 +1,6 @@
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, marketHit, normalizeFixtures, type CanonicalFixture } from "../prediction/final-engine.ts";
 
-export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.3";
+export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.4";
 export const MODEL_TYPES = ["HISTORICAL_PRODUCTION", "FUTURE_SIX_FACTORS", "FINAL_CFI"] as const;
 export type ModelType = typeof MODEL_TYPES[number];
 
@@ -12,6 +12,7 @@ type Eval = {
   awayTeam: string;
   modelType: ModelType;
   modelVersion: string;
+  priorSample: number;
   probabilities: Record<string, number>;
   outcomes: Record<string, 0 | 1 | null>;
   brier: Record<string, number | null>;
@@ -70,6 +71,7 @@ function pushEvaluation(args: {
   target: CanonicalFixture;
   modelType: ModelType;
   modelVersion: string;
+  priorSample: number;
   probabilities: Record<string, number>;
   outcomes: Record<string, 0 | 1 | null>;
   top3HT?: Array<{ score: string; probability: number }>;
@@ -87,6 +89,7 @@ function pushEvaluation(args: {
     awayTeam: args.target.awayTeam,
     modelType: args.modelType,
     modelVersion: args.modelVersion,
+    priorSample: args.priorSample,
     probabilities: args.probabilities,
     outcomes: args.outcomes,
     brier: Object.fromEntries(MARKET_CODES.map((m) => [m, brier(args.probabilities[m], args.outcomes[m])])),
@@ -99,10 +102,10 @@ function pushEvaluation(args: {
 /**
  * Strict-prior historical replay designed for large corpora.
  *
- * V0.3 removes the O(N^2) full-history scan used by V0.2. Histories are indexed
- * incrementally by team and H2H pair. Fixtures on the same date are evaluated as
- * one batch and are only inserted into the prior indexes AFTER the whole date has
- * been evaluated, preserving sameDateLeakage=false.
+ * V0.4 retains date-batched incremental indexes, exposes the canonical
+ * strict-prior evidence count, and requires minPrior independently for both
+ * target teams. Fixtures on the same date are inserted only AFTER all targets
+ * on that date are evaluated, preserving sameDateLeakage=false.
  */
 export function replayDualHistorical(input: unknown, options: { minPrior?: number } = {}) {
   const minPrior = Math.max(0, options.minPrior ?? 8);
@@ -110,7 +113,6 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
   const evaluations: Eval[] = [];
   const teamPrior = new Map<string, CanonicalFixture[]>();
   const h2hPrior = new Map<string, CanonicalFixture[]>();
-  let globalPriorCount = 0;
 
   for (let start = 0; start < fixtures.length;) {
     const date = fixtures[start].matchDate;
@@ -119,10 +121,10 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
     const dateBatch = fixtures.slice(start, end);
 
     for (const target of dateBatch) {
-      if (globalPriorCount < minPrior) continue;
       const homePayload = teamPrior.get(teamKey(target.homeTeam)) ?? [];
       const awayPayload = teamPrior.get(teamKey(target.awayTeam)) ?? [];
       const h2hPayload = h2hPrior.get(pairKey(target.homeTeam, target.awayTeam)) ?? [];
+      if (homePayload.length < minPrior || awayPayload.length < minPrior) continue;
       const prediction = buildPrediction({
         home: target.homeTeam,
         away: target.awayTeam,
@@ -132,6 +134,7 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
         awayPayload,
         h2hPayload,
       });
+      const priorSample = Number(prediction?.evidence?.uniqueCanonical ?? 0);
       const outcomes = Object.fromEntries(MARKET_CODES.map((market) => {
         const y = marketHit(target, market);
         return [market, y === null ? null : y ? 1 : 0];
@@ -140,26 +143,25 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
       const futureVersion = prediction.scoreline.futureSix.version;
 
       pushEvaluation({
-        evaluations, target, modelType: "HISTORICAL_PRODUCTION", modelVersion: FINAL_VERSION,
+        evaluations, target, modelType: "HISTORICAL_PRODUCTION", modelVersion: FINAL_VERSION, priorSample,
         probabilities: probabilities(prediction, "methodA"), outcomes,
         top3HT: prediction.scoreline.ht.methodA, top3FT: prediction.scoreline.ft.methodA,
         actualHT, actualFT,
       });
       pushEvaluation({
-        evaluations, target, modelType: "FUTURE_SIX_FACTORS", modelVersion: futureVersion,
+        evaluations, target, modelType: "FUTURE_SIX_FACTORS", modelVersion: futureVersion, priorSample,
         probabilities: probabilities(prediction, "methodB"), outcomes,
         top3HT: prediction.scoreline.ht.methodB, top3FT: prediction.scoreline.ft.methodB,
         actualHT, actualFT, factors: prediction.scoreline.futureSix.factors,
       });
       pushEvaluation({
-        evaluations, target, modelType: "FINAL_CFI", modelVersion: FINAL_VERSION,
+        evaluations, target, modelType: "FINAL_CFI", modelVersion: FINAL_VERSION, priorSample,
         probabilities: probabilities(prediction, "final"), outcomes,
         top3HT: prediction.scoreline.ht.final, top3FT: prediction.scoreline.ft.final,
         actualHT, actualFT,
       });
     }
 
-    // Commit the date only after every target on that date was replayed.
     for (const fixture of dateBatch) {
       for (const name of [fixture.homeTeam, fixture.awayTeam]) {
         const tk = teamKey(name);
@@ -172,7 +174,6 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
       pairRows.push(fixture);
       h2hPrior.set(pk, pairRows);
     }
-    globalPriorCount += dateBatch.length;
     start = end;
   }
 
@@ -181,7 +182,8 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
     strictPrior: true,
     sameDateLeakage: false,
     canonicalFixtureMutations: 0,
-    algorithm: "DATE_BATCHED_INCREMENTAL_INDEX",
+    algorithm: "DATE_BATCHED_INCREMENTAL_INDEX_PER_TEAM_MIN_PRIOR",
+    minPriorPerTeam: minPrior,
     fixtureCount: fixtures.length,
     evaluatedFixtures: new Set(evaluations.map((r) => r.fixtureId)).size,
     evaluationRows: evaluations.length,
