@@ -1,4 +1,4 @@
-import { evaluateRun } from './promotion-gate.mjs';
+import { deriveTemporalStability, evaluateRun } from './promotion-gate.mjs';
 
 export const CFI_REPLAY_MARKETS = Object.freeze(['3+ HT', '7+ FT', 'Other HT', 'Other FT']);
 
@@ -28,12 +28,14 @@ export function scoreReplayModel(replay, modelType, options = {}) {
   if (!evaluations.length) {
     return { modelType, sampleCount: 0, score: 0, status: 'FAIL_HARD_GATE', productionEligible: false, shadowEligible: false, hardFailures: ['INSUFFICIENT_REAL_EVIDENCE'] };
   }
-  // Replay rows use the production CFI market labels. Always bind the scorer to
-  // that canonical contract unless a caller explicitly supplies another market set.
-  // This prevents a silent all-NaN score when generic promotion-gate demo keys are used.
-  const scoreOptions = { ...options, markets: options.markets ?? CFI_REPLAY_MARKETS };
-  const result = evaluateRun(evaluations.map(toPromotionRow), scoreOptions);
-  return { modelType, sampleCount: evaluations.length, ...result };
+  const rows = evaluations.map(toPromotionRow);
+  const markets = options.markets ?? CFI_REPLAY_MARKETS;
+  const stabilityAudit = options.stability === undefined
+    ? deriveTemporalStability(rows, markets, options.stabilityOptions ?? {})
+    : { score: options.stability, windows: [], reason: 'CALLER_SUPPLIED' };
+  const scoreOptions = { ...options, markets, stability: stabilityAudit.score };
+  const result = evaluateRun(rows, scoreOptions);
+  return { modelType, sampleCount: evaluations.length, stabilityAudit, ...result };
 }
 
 export function scoreReplayAllModels(replay, options = {}) {
