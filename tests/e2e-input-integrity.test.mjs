@@ -15,9 +15,10 @@ test('zero exact-team evidence fails closed before normal prediction rendering',
 
 test('countdown is prematch and target_date must be supplied by the action layer',()=>{
   assert.match(instructions,/COUNTDOWN TO KICKOFF/);
-  assert.match(instructions,/nearest imminent kickoff/i);
-  assert.match(instructions,/normally today/i);
-  assert.match(instructions,/Never pick a fixture several days away/i);
+  assert.match(instructions,/imminent fixture/i);
+  assert.match(instructions,/current local calendar date/i);
+  assert.match(instructions,/fixture several days away/i);
+  assert.match(instructions,/do not send a `TARGET_DATE_REQUIRED` question/i);
   assert.match(schema,/required:\s*\[home, away, target_date\]/);
 });
 
