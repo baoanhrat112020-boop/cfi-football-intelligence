@@ -7,7 +7,7 @@ const row = (i, positive, p) => ({
   targetTimestamp: `2026-01-${String(10+i).padStart(2,'0')}T12:00:00Z`,
   maxEvidenceTimestamp: `2026-01-${String(9+i).padStart(2,'0')}T23:00:00Z`,
   probabilities: Object.fromEntries(markets.map((m, j) => [m, Math.max(0.01, Math.min(0.99, p - j*0.03))])),
-  actual: Object.fromEntries(markets.map((m, j) => [m, positive ? (j < 2 ? 1 : 0) : (j < 2 ? 0 : 1)])),
+  actual: Object.fromEntries(markets.map(m => [m, positive ? 1 : 0])),
   top3HT: positive ? ['1-1','2-1','1-0'] : ['0-0','1-0','0-1'],
   top3FT: positive ? ['2-1','3-1','2-2'] : ['1-1','1-0','0-1'],
   actualScore: { ht: positive ? '1-1' : '0-0', ft: positive ? '2-1' : '1-1' },
