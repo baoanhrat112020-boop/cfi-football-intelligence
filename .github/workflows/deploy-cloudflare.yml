@@ -20,8 +20,31 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      - name: Deploy Worker
-        run: npx wrangler deploy
+      - name: Verify Wrangler config and bundle
+        run: |
+          set -euo pipefail
+          node --version
+          npx wrangler --version
+          npx wrangler deploy --dry-run
+      - name: Verify Cloudflare credentials are configured
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error title=Cloudflare deploy blocked::Missing repository secret CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error title=Cloudflare deploy blocked::Missing repository secret CLOUDFLARE_ACCOUNT_ID"
+            exit 1
+          fi
+          echo "Cloudflare credential presence check: PASS"
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx wrangler deploy
