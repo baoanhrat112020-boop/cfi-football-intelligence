@@ -60,6 +60,10 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     body.consistencyGuard={status:'PASS',violations:[]};
     rebuildMatrix(body);
     body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION};
+    if(body?.status==='DATA_READY'){
+      body.upstreamStatus='DATA_READY';
+      body.status='SUCCESS';
+    }
   } else if(body?.error==='TARGET_DATE_REQUIRED'||body?.status==='STRICT_PRIOR_GATE_ERROR') {
     body.runtime={...(body.runtime??{}),predictionPath:'STRICT_PRIOR_FAIL_CLOSED'};
   }
