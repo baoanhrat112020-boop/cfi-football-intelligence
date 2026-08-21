@@ -1,6 +1,6 @@
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, marketHit, normalizeFixtures, type CanonicalFixture } from "../prediction/final-engine.ts";
 
-export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.3";
+export const DUAL_REPLAY_VERSION = "CFI_DUAL_HISTORICAL_REPLAY_V0.4";
 export const MODEL_TYPES = ["HISTORICAL_PRODUCTION", "FUTURE_SIX_FACTORS", "FINAL_CFI"] as const;
 export type ModelType = typeof MODEL_TYPES[number];
 
@@ -8,6 +8,9 @@ type Eval = {
   replayKey: string;
   fixtureId: string;
   targetDate: string;
+  targetTimestamp: string;
+  maxEvidenceTimestamp: string | null;
+  evidenceCount: number;
   homeTeam: string;
   awayTeam: string;
   modelType: ModelType;
@@ -25,6 +28,8 @@ const teamKey = (name: string) => name.toLowerCase();
 const pairKey = (a: string, b: string) => [teamKey(a), teamKey(b)].sort().join("|");
 const score = (p: { home: number; away: number } | null) => p ? `${p.home}-${p.away}` : null;
 const brier = (p: number, y: 0 | 1 | null) => y === null ? null : (p - y) ** 2;
+const startOfDate = (date: string) => `${date}T00:00:00.000Z`;
+const endOfDate = (date: string) => `${date}T23:59:59.999Z`;
 
 function dedupeAndSort(fixtures: CanonicalFixture[]) {
   return [...new Map(fixtures.map((f) => [key(f), f])).values()]
@@ -68,6 +73,9 @@ function probabilities(prediction: any, field: "methodA" | "methodB" | "final") 
 function pushEvaluation(args: {
   evaluations: Eval[];
   target: CanonicalFixture;
+  targetTimestamp: string;
+  maxEvidenceTimestamp: string | null;
+  evidenceCount: number;
   modelType: ModelType;
   modelVersion: string;
   probabilities: Record<string, number>;
@@ -83,6 +91,9 @@ function pushEvaluation(args: {
     replayKey: `${baseKey}|${args.modelType}|${args.modelVersion}`,
     fixtureId: args.target.id,
     targetDate: args.target.matchDate,
+    targetTimestamp: args.targetTimestamp,
+    maxEvidenceTimestamp: args.maxEvidenceTimestamp,
+    evidenceCount: args.evidenceCount,
     homeTeam: args.target.homeTeam,
     awayTeam: args.target.awayTeam,
     modelType: args.modelType,
@@ -96,14 +107,18 @@ function pushEvaluation(args: {
   });
 }
 
-/**
- * Strict-prior historical replay designed for large corpora.
- *
- * V0.3 removes the O(N^2) full-history scan used by V0.2. Histories are indexed
- * incrementally by team and H2H pair. Fixtures on the same date are evaluated as
- * one batch and are only inserted into the prior indexes AFTER the whole date has
- * been evaluated, preserving sameDateLeakage=false.
- */
+function evidenceProvenance(target: CanonicalFixture, payloads: CanonicalFixture[][]) {
+  const rows = [...new Map(payloads.flat().map((f) => [key(f), f])).values()];
+  if (!rows.length) return { targetTimestamp: startOfDate(target.matchDate), maxEvidenceTimestamp: null, evidenceCount: 0 };
+  const maxDate = rows.reduce((max, f) => f.matchDate > max ? f.matchDate : max, rows[0].matchDate);
+  return {
+    targetTimestamp: startOfDate(target.matchDate),
+    maxEvidenceTimestamp: endOfDate(maxDate),
+    evidenceCount: rows.length,
+  };
+}
+
+/** Strict-prior, date-batched historical replay with explicit temporal provenance. */
 export function replayDualHistorical(input: unknown, options: { minPrior?: number } = {}) {
   const minPrior = Math.max(0, options.minPrior ?? 8);
   const fixtures = dedupeAndSort(normalizeFixtures(input));
@@ -123,6 +138,7 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
       const homePayload = teamPrior.get(teamKey(target.homeTeam)) ?? [];
       const awayPayload = teamPrior.get(teamKey(target.awayTeam)) ?? [];
       const h2hPayload = h2hPrior.get(pairKey(target.homeTeam, target.awayTeam)) ?? [];
+      const provenance = evidenceProvenance(target, [homePayload, awayPayload, h2hPayload]);
       const prediction = buildPrediction({
         home: target.homeTeam,
         away: target.awayTeam,
@@ -139,27 +155,18 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
       const actualHT = score(target.ht), actualFT = score(target.ft);
       const futureVersion = prediction.scoreline.futureSix.version;
 
-      pushEvaluation({
-        evaluations, target, modelType: "HISTORICAL_PRODUCTION", modelVersion: FINAL_VERSION,
+      pushEvaluation({ evaluations, target, ...provenance, modelType: "HISTORICAL_PRODUCTION", modelVersion: FINAL_VERSION,
         probabilities: probabilities(prediction, "methodA"), outcomes,
-        top3HT: prediction.scoreline.ht.methodA, top3FT: prediction.scoreline.ft.methodA,
-        actualHT, actualFT,
-      });
-      pushEvaluation({
-        evaluations, target, modelType: "FUTURE_SIX_FACTORS", modelVersion: futureVersion,
+        top3HT: prediction.scoreline.ht.methodA, top3FT: prediction.scoreline.ft.methodA, actualHT, actualFT });
+      pushEvaluation({ evaluations, target, ...provenance, modelType: "FUTURE_SIX_FACTORS", modelVersion: futureVersion,
         probabilities: probabilities(prediction, "methodB"), outcomes,
-        top3HT: prediction.scoreline.ht.methodB, top3FT: prediction.scoreline.ft.methodB,
-        actualHT, actualFT, factors: prediction.scoreline.futureSix.factors,
-      });
-      pushEvaluation({
-        evaluations, target, modelType: "FINAL_CFI", modelVersion: FINAL_VERSION,
+        top3HT: prediction.scoreline.ht.methodB, top3FT: prediction.scoreline.ft.methodB, actualHT, actualFT,
+        factors: prediction.scoreline.futureSix.factors });
+      pushEvaluation({ evaluations, target, ...provenance, modelType: "FINAL_CFI", modelVersion: FINAL_VERSION,
         probabilities: probabilities(prediction, "final"), outcomes,
-        top3HT: prediction.scoreline.ht.final, top3FT: prediction.scoreline.ft.final,
-        actualHT, actualFT,
-      });
+        top3HT: prediction.scoreline.ht.final, top3FT: prediction.scoreline.ft.final, actualHT, actualFT });
     }
 
-    // Commit the date only after every target on that date was replayed.
     for (const fixture of dateBatch) {
       for (const name of [fixture.homeTeam, fixture.awayTeam]) {
         const tk = teamKey(name);
@@ -176,10 +183,12 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
     start = end;
   }
 
+  const temporalProvenanceComplete = evaluations.every((r) => r.evidenceCount === 0 || (r.maxEvidenceTimestamp !== null && Date.parse(r.maxEvidenceTimestamp) < Date.parse(r.targetTimestamp)));
   return {
     replayVersion: DUAL_REPLAY_VERSION,
     strictPrior: true,
     sameDateLeakage: false,
+    temporalProvenanceComplete,
     canonicalFixtureMutations: 0,
     algorithm: "DATE_BATCHED_INCREMENTAL_INDEX",
     fixtureCount: fixtures.length,
