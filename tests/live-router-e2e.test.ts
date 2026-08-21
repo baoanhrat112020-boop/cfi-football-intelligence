@@ -1,10 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import router from '../cloudflare-worker/src/index-live-router.ts';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { rmSync } from 'node:fs';
 
 const TARGET_DATE='2026-08-22';
 const HOME='Cardiff';
 const AWAY='Plymouth';
+const bundlePath=join(tmpdir(),`cfi-live-router-e2e-${process.pid}.mjs`);
+const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outfile',bundlePath],{encoding:'utf8'});
+assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
+const {default:router}=await import(`${pathToFileURL(bundlePath).href}?v=${Date.now()}`);
+process.on('exit',()=>{try{rmSync(bundlePath,{force:true});}catch{}});
 
 function historicalRows(){
   return Array.from({length:44},(_,index)=>({
