@@ -52,18 +52,28 @@ export function expectedCalibrationError(rows, market, bins = 10) {
   return ece;
 }
 
+// Exact Mann-Whitney AUC with average ranks for ties. This is mathematically
+// equivalent to the previous pairwise implementation, but O(n log n) instead
+// of O(n_pos * n_neg), which makes full historical runs tractable.
 function rankAuc(rows, market) {
-  const xs = rows.filter(r => Number.isFinite(r?.probabilities?.[market]) && [0,1].includes(r?.actual?.[market]));
-  const pos = xs.filter(r => r.actual[market] === 1);
-  const neg = xs.filter(r => r.actual[market] === 0);
-  if (!pos.length || !neg.length) return 0.5;
-  let wins = 0;
-  let ties = 0;
-  for (const p of pos) for (const n of neg) {
-    if (p.probabilities[market] > n.probabilities[market]) wins++;
-    else if (p.probabilities[market] === n.probabilities[market]) ties++;
+  const xs = rows
+    .filter(r => Number.isFinite(r?.probabilities?.[market]) && [0,1].includes(r?.actual?.[market]))
+    .map(r => ({ p: r.probabilities[market], y: r.actual[market] }))
+    .sort((a, b) => a.p - b.p);
+  const nPos = xs.filter(x => x.y === 1).length;
+  const nNeg = xs.length - nPos;
+  if (!nPos || !nNeg) return 0.5;
+  let rankSumPos = 0;
+  let i = 0;
+  while (i < xs.length) {
+    let j = i + 1;
+    while (j < xs.length && xs[j].p === xs[i].p) j++;
+    const avgRank = ((i + 1) + j) / 2;
+    for (let k = i; k < j; k++) if (xs[k].y === 1) rankSumPos += avgRank;
+    i = j;
   }
-  return (wins + 0.5 * ties) / (pos.length * neg.length);
+  const u = rankSumPos - (nPos * (nPos + 1)) / 2;
+  return u / (nPos * nNeg);
 }
 
 function top3Accuracy(rows, key) {
@@ -76,6 +86,30 @@ function marketSkill(rows, markets) {
   const values = markets.map(m => brierScore(rows, m)).filter(Number.isFinite);
   if (!values.length) return 0;
   return clamp01(1 - mean(values) / 0.25);
+}
+
+export function deriveTemporalStability(rows, markets, options = {}) {
+  const minRowsPerWindow = options.minRowsPerWindow ?? 20;
+  const driftScale = options.driftScale ?? 0.10;
+  const groups = new Map();
+  for (const row of rows) {
+    const t = Date.parse(row?.targetTimestamp);
+    if (!Number.isFinite(t)) continue;
+    const year = new Date(t).getUTCFullYear();
+    const bucket = groups.get(year) ?? [];
+    bucket.push(row);
+    groups.set(year, bucket);
+  }
+  const windows = [...groups.entries()].sort((a,b)=>a[0]-b[0]).flatMap(([year, bucket]) => {
+    if (bucket.length < minRowsPerWindow) return [];
+    const values = markets.map(m => brierScore(bucket, m)).filter(Number.isFinite);
+    if (!values.length) return [];
+    return [{ year, n: bucket.length, meanBrier: mean(values) }];
+  });
+  if (windows.length < 2) return { score: 0.5, windows, reason: 'INSUFFICIENT_TEMPORAL_WINDOWS' };
+  const center = mean(windows.map(w => w.meanBrier));
+  const mad = mean(windows.map(w => Math.abs(w.meanBrier - center)));
+  return { score: clamp01(1 - mad / driftScale), windows, meanBrier: center, mad, driftScale, reason: null };
 }
 
 export function detectCollapse(rows, markets, tolerance = 0.015) {
