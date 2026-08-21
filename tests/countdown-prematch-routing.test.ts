@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { classifyMatchState } from '../cloudflare-worker/src/index-live-router.ts';
+import { classifyMatchState } from '../src/runtime/match-state-routing.ts';
 
 test('scheduled countdown states are classified as PREMATCH',()=>{
-  for(const status of ['SCHEDULED','COUNTDOWN','NOT_STARTED','NS','PREMATCH','UPCOMING']){
-    assert.equal(classifyMatchState({status}), 'PREMATCH', status);
-  }
+  for(const status of ['SCHEDULED','COUNTDOWN','NOT_STARTED','NS','PREMATCH','UPCOMING'])assert.equal(classifyMatchState({status}),'PREMATCH',status);
 });
 
 test('actual live period overrides stale countdown status',()=>{
@@ -20,7 +18,5 @@ test('terminal states fail closed instead of becoming prematch',()=>{
 
 test('production router reroutes pre-kickoff live-endpoint requests to prematch without changing target date',()=>{
   const src=readFileSync(new URL('../cloudflare-worker/src/index-live-router.ts',import.meta.url),'utf8');
-  for(const token of ["url.pathname='/api/predict'","target_date:String(input?.target_date??input?.matchDate??'').slice(0,10)","reason:'PRE_KICKOFF_COUNTDOWN_IS_PREMATCH'","requestedEndpoint:'/api/predict-live'","executedEndpoint:'/api/predict'"]){
-    assert.ok(src.includes(token),token);
-  }
+  for(const token of ["classifyMatchState(input)","url.pathname='/api/predict'","target_date:String(input?.target_date??input?.matchDate??'').slice(0,10)","reason:'PRE_KICKOFF_COUNTDOWN_IS_PREMATCH'","requestedEndpoint:'/api/predict-live'","executedEndpoint:'/api/predict'"])assert.ok(src.includes(token),token);
 });
