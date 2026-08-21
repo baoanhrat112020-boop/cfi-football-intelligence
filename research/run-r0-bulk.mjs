@@ -8,7 +8,7 @@ export const R0_DATASET_CONTRACT = Object.freeze({
   researchStart: '2016-01-01',
   researchEnd: '2026-08-19',
   prospectiveHoldoutStart: '2026-08-20',
-  minTeamPrior: 10,
+  minGlobalPriorFixtures: 8,
   strictPrior: true,
   sameDayExcluded: true,
   productionChampion: 'CFI_FINAL_V5.2.5',
@@ -36,9 +36,27 @@ export function freezeR0Corpus(input) {
   return frozen;
 }
 
+export function restrictReplayToResearchWindow(replay) {
+  const start = R0_DATASET_CONTRACT.researchStart;
+  const endExclusive = R0_DATASET_CONTRACT.prospectiveHoldoutStart;
+  const evaluations = (replay?.evaluations ?? []).filter(row => {
+    const d = String(row?.targetDate ?? '').slice(0, 10);
+    return d >= start && d < endExclusive;
+  });
+  return {
+    ...replay,
+    evaluations,
+    evaluatedFixtures: new Set(evaluations.map(row => row.fixtureId)).size,
+    evaluationRows: evaluations.length,
+  };
+}
+
 export function runR0Bulk(input, options = {}) {
   const corpus = freezeR0Corpus(input);
-  const replay = replayDualHistorical(corpus, { minPrior: options.minPrior ?? 8 });
+  const replayFull = replayDualHistorical(corpus, {
+    minPrior: options.minPrior ?? R0_DATASET_CONTRACT.minGlobalPriorFixtures,
+  });
+  const replay = restrictReplayToResearchWindow(replayFull);
   const scores = scoreReplayAllModels(replay, options.scoreOptions ?? {});
   const champion = scores.FINAL_CFI ?? null;
   return {
@@ -53,12 +71,13 @@ export function runR0Bulk(input, options = {}) {
     corpusCount: corpus.length,
     replay: {
       replayVersion: replay.replayVersion,
-      fixtureCount: replay.fixtureCount,
+      fixtureCount: replayFull.fixtureCount,
       evaluatedFixtures: replay.evaluatedFixtures,
       evaluationRows: replay.evaluationRows,
       strictPrior: replay.strictPrior,
       sameDateLeakage: replay.sameDateLeakage,
       temporalProvenanceComplete: replay.temporalProvenanceComplete,
+      scoringWindow: { start: R0_DATASET_CONTRACT.researchStart, end: R0_DATASET_CONTRACT.researchEnd },
     },
     scores,
     r0: champion,
