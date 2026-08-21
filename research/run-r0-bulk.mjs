@@ -11,7 +11,12 @@ export const R0_DATASET_CONTRACT = Object.freeze({
   minTeamPrior: 10,
   strictPrior: true,
   sameDayExcluded: true,
-  productionChampion: 'CFI_FINAL_V5.2.2',
+  productionChampion: 'CFI_FINAL_V5.2.5',
+  productionEntrypoint: 'cloudflare-worker/src/index-v55.ts',
+  productionRuntime: 'CFI_SIX_TARGET_RUNTIME_V1.4',
+  bigDbRetrieval: 'CFI_BIG_DB_RETRIEVAL_V2.1.2',
+  numericalCore: 'src/prediction/final-engine.ts::buildPrediction',
+  parityBasis: 'index-v50 invokes buildPrediction; v51-v55 add strict-prior telemetry/release/consistency/diversity guards without direct global-prior shrinkage of six-target outputs',
 });
 
 function dateOf(row) {
@@ -38,6 +43,13 @@ export function runR0Bulk(input, options = {}) {
   const champion = scores.FINAL_CFI ?? null;
   return {
     contract: R0_DATASET_CONTRACT,
+    productionParity: {
+      releaseEngine: R0_DATASET_CONTRACT.productionChampion,
+      numericalCore: R0_DATASET_CONTRACT.numericalCore,
+      productionEntrypoint: R0_DATASET_CONTRACT.productionEntrypoint,
+      directGlobalPriorShrinkage: false,
+      verifiedBySourceContract: true,
+    },
     corpusCount: corpus.length,
     replay: {
       replayVersion: replay.replayVersion,
