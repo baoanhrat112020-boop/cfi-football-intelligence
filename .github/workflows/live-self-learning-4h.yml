@@ -1,0 +1,39 @@
+name: CFI LIVE Self-Learning 4H
+
+on:
+  schedule:
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  research-shadow-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install
+      - name: Regression suite
+        run: npm test
+      - name: Evaluate LIVE challenger artifact
+        run: node research/live-self-learning-v1.mjs research/live-candidate.json
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-live-self-learning-audit
+          path: artifacts/live-self-learning-result.json
+          retention-days: 30
+
+# Safety contract:
+# - This workflow never deploys or mutates production.
+# - Research agents may update research/live-candidate.json through reviewed evidence.
+# - Only SHADOW_ELIGIBLE challengers may proceed to a separate canary/promotion workflow.
