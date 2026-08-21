@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "lab:v3-3-replay": "node --experimental-strip-types scripts/run-v3-3-replay.mjs",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev"
   },
