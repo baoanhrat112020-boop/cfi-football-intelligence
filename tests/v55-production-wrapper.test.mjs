@@ -18,7 +18,11 @@ test('V5.2.5 declares both global-prior direct shrinkage paths disabled',()=>{
   assert.match(source,/mode:'NATIVE_MATCH_SPECIFIC_DISTRIBUTION_ONLY'/);
 });
 
-test('production Wrangler entrypoint is V5.2.5 wrapper',()=>{
+test('production entrypoint may route live but must delegate prematch to V5.2.5',()=>{
   const wrangler=readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8');
-  assert.match(wrangler,/"main"\s*:\s*"cloudflare-worker\/src\/index-v55\.ts"/);
+  const router=readFileSync(new URL('../cloudflare-worker/src/index-live-router.ts',import.meta.url),'utf8');
+  assert.match(wrangler,/"main"\s*:\s*"cloudflare-worker\/src\/index-live-router\.ts"/);
+  assert.match(router,/import prematch from '\.\/index-v55\.ts'/);
+  assert.match(router,/if\(url\.pathname!=='\/api\/predict-live'/);
+  assert.match(router,/return prematch\.fetch\(request,env,ctx\)/);
 });
