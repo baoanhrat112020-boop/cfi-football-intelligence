@@ -102,11 +102,10 @@ function pushEvaluation(args: {
 /**
  * Strict-prior historical replay designed for large corpora.
  *
- * V0.4 retains the V0.3 date-batched incremental indexes and additionally
- * exposes the canonical strict-prior evidence count used for each target.
- * Histories are indexed incrementally by team and H2H pair. Fixtures on the
- * same date are evaluated as one batch and are only inserted into the prior
- * indexes AFTER the whole date has been evaluated, preserving sameDateLeakage=false.
+ * V0.4 retains date-batched incremental indexes, exposes the canonical
+ * strict-prior evidence count, and requires minPrior independently for both
+ * target teams. Fixtures on the same date are inserted only AFTER all targets
+ * on that date are evaluated, preserving sameDateLeakage=false.
  */
 export function replayDualHistorical(input: unknown, options: { minPrior?: number } = {}) {
   const minPrior = Math.max(0, options.minPrior ?? 8);
@@ -114,7 +113,6 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
   const evaluations: Eval[] = [];
   const teamPrior = new Map<string, CanonicalFixture[]>();
   const h2hPrior = new Map<string, CanonicalFixture[]>();
-  let globalPriorCount = 0;
 
   for (let start = 0; start < fixtures.length;) {
     const date = fixtures[start].matchDate;
@@ -123,10 +121,10 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
     const dateBatch = fixtures.slice(start, end);
 
     for (const target of dateBatch) {
-      if (globalPriorCount < minPrior) continue;
       const homePayload = teamPrior.get(teamKey(target.homeTeam)) ?? [];
       const awayPayload = teamPrior.get(teamKey(target.awayTeam)) ?? [];
       const h2hPayload = h2hPrior.get(pairKey(target.homeTeam, target.awayTeam)) ?? [];
+      if (homePayload.length < minPrior || awayPayload.length < minPrior) continue;
       const prediction = buildPrediction({
         home: target.homeTeam,
         away: target.awayTeam,
@@ -176,7 +174,6 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
       pairRows.push(fixture);
       h2hPrior.set(pk, pairRows);
     }
-    globalPriorCount += dateBatch.length;
     start = end;
   }
 
@@ -185,7 +182,8 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
     strictPrior: true,
     sameDateLeakage: false,
     canonicalFixtureMutations: 0,
-    algorithm: "DATE_BATCHED_INCREMENTAL_INDEX",
+    algorithm: "DATE_BATCHED_INCREMENTAL_INDEX_PER_TEAM_MIN_PRIOR",
+    minPriorPerTeam: minPrior,
     fixtureCount: fixtures.length,
     evaluatedFixtures: new Set(evaluations.map((r) => r.fixtureId)).size,
     evaluationRows: evaluations.length,
