@@ -12,7 +12,7 @@ for(let i=0;i<24;i++){
 
 test('CFI exposes six primary targets with independent Future Six scoreline methods',()=>{
   const p=buildPrediction({home:'Home',away:'Away',targetDate:'2026-08-19',language:'en',homePayload:fixtures,awayPayload:fixtures,h2hPayload:[]});
-  assert.equal(p.version,FINAL_VERSION);
+  assert.equal(p.engine,FINAL_VERSION);
   assert.equal(PRIMARY_TARGETS.length,6);
   assert.equal(p.primaryTargets.count,6);
   assert.equal(p.scoreline.futureSix.version,FUTURE_SIX_SCORELINE_VERSION);
@@ -28,6 +28,8 @@ test('CFI exposes six primary targets with independent Future Six scoreline meth
     assert.ok(Number.isFinite(p.markets[m].methodB));
     assert.ok(Number.isFinite(p.markets[m].final));
     assert.equal(p.markets[m].consistency.status,'PASS');
+    assert.equal(p.markets[m].consistency.finalDelta,0);
+    assert.equal(p.markets[m].final,p.markets[m].scorelineMass);
     assert.ok(p.markets[m].supportingFactors.some(x=>x===`future_six:${FUTURE_SIX_SCORELINE_VERSION}`));
   }
   assert.deepEqual(p.ranking.map(x=>x.target).sort(),['3+ HT','7+ FT','Other FT','Other HT','Top-3 FT','Top-3 HT'].sort());
