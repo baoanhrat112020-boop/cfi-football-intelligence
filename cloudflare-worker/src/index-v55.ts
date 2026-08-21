@@ -41,6 +41,18 @@ function normalizeReleaseTelemetry(body:any){
   body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT};
   body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
 }
+const nonNegativeCount=(v:any)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
+function zeroEvidenceGuard(body:any){
+  const exact=body?.bigDbRetrieval?.exactTeam;
+  const input=body?.bigDbRetrieval?.predictionInput;
+  const counts=body?.evidence?.counts;
+  const home=nonNegativeCount(exact?.home?.retrieved)??nonNegativeCount(input?.homeFixtures)??nonNegativeCount(counts?.homeFixtures);
+  const away=nonNegativeCount(exact?.away?.retrieved)??nonNegativeCount(input?.awayFixtures)??nonNegativeCount(counts?.awayFixtures);
+  const h2h=nonNegativeCount(exact?.h2h?.retrieved)??nonNegativeCount(input?.h2hFixtures)??nonNegativeCount(counts?.h2hFixtures);
+  const observed=home!==null||away!==null||h2h!==null;
+  const blocked=observed&&((home??0)<=0||(away??0)<=0);
+  return {blocked,home,away,h2h,reason:blocked?'ZERO_EXACT_TEAM_EVIDENCE':null};
+}
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   const response=await v54.fetch(request,env,ctx);const url=new URL(request.url);
@@ -49,6 +61,14 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   let body:any;try{body=await response.clone().json()}catch{return response}
   normalizeReleaseTelemetry(body);
   if(response.ok){
+    const z=zeroEvidenceGuard(body);
+    if(z.blocked){
+      body.status='INSUFFICIENT_DATA';body.error='ZERO_EXACT_TEAM_EVIDENCE';
+      body.zeroEvidenceGuard={status:'FAIL_CLOSED',...z,globalPriorFallbackAllowed:false,normalPredictionRendered:false};
+      body.runtime={...(body.runtime??{}),predictionPath:'EXACT_TEAM_EVIDENCE_FAIL_CLOSED',diversityGuard:DIVERSITY_GUARD_VERSION};
+      delete body.renderedReport;delete body.presentationContract;delete body.sixTargetMatrix;delete body.markets;delete body.scoreline;delete body.ranking;delete body.verdict;
+      return Response.json(body,{status:422});
+    }
     preserveNativeScorelines(body);
     const violations=consistencyViolations(body);
     if(violations.length){
