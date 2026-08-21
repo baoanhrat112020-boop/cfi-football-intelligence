@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { replayDualHistorical } from '../src/learning/dual-historical-replay.ts';
-import { scoreReplayAllModels } from '../research/replay-promotion-adapter.mjs';
+import { CFI_REPLAY_MARKETS, scoreReplayAllModels } from '../research/replay-promotion-adapter.mjs';
 
 const fixtures = Array.from({ length: 24 }, (_, i) => ({
   id:`rf${i+1}`,
@@ -25,14 +25,21 @@ test('replay exports real date-bounded temporal provenance', () => {
   }
 });
 
-test('promotion adapter scores all replay models without inferred timestamps', () => {
+test('promotion adapter scores all replay models using canonical CFI market keys', () => {
   const replay = replayDualHistorical(fixtures,{minPrior:8});
   const scored = scoreReplayAllModels(replay,{stability:.9,robustness:1});
+  assert.deepEqual([...CFI_REPLAY_MARKETS], ['3+ HT','7+ FT','Other HT','Other FT']);
   for (const type of ['HISTORICAL_PRODUCTION','FUTURE_SIX_FACTORS','FINAL_CFI']) {
     assert.ok(scored[type]);
     assert.ok(scored[type].sampleCount>0);
     assert.equal(scored[type].productionEligible,false);
     assert.ok(Number.isFinite(scored[type].score));
+    assert.ok(Number.isFinite(scored[type].metrics.meanBrier), `${type} meanBrier must use real replay markets`);
+    assert.ok(Number.isFinite(scored[type].metrics.meanEce), `${type} meanEce must use real replay markets`);
+    assert.ok(Number.isFinite(scored[type].metrics.auc), `${type} auc must use real replay markets`);
+    for (const market of CFI_REPLAY_MARKETS) {
+      assert.ok(Object.hasOwn(scored[type].metrics.collapse.spread, market), `${type} collapse audit missing ${market}`);
+    }
     assert.ok(!scored[type].hardFailures.includes('STRICT_PRIOR_FAILURE'));
   }
 });
