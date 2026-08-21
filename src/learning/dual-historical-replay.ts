@@ -136,7 +136,7 @@ export function replayDualHistorical(input: unknown, options: { minPrior?: numbe
         awayPayload,
         h2hPayload,
       });
-      const priorSample = Number(prediction?.evidence?.counts?.uniqueCanonical ?? 0);
+      const priorSample = Number(prediction?.evidence?.uniqueCanonical ?? 0);
       const outcomes = Object.fromEntries(MARKET_CODES.map((market) => {
         const y = marketHit(target, market);
         return [market, y === null ? null : y ? 1 : 0];
