@@ -8,31 +8,23 @@ const DIVERSITY_GUARD_VERSION='CFI_MATCH_DIVERSITY_GUARD_V1';
 const PRODUCTION_ENTRYPOINT='index-v55.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
-const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x));
 const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
 const list=(rows:any)=>Array.isArray(rows)?rows.map((r:any,i:number)=>`${i+1}) ${r.score} ${pct(r.probability)}`).join(' · '):'—';
 
-function restoreMatchSpecificThresholds(body:any){
-  const markets=body?.markets??{};
-  for(const market of MARKET_CODES){
-    const r=markets?.[market]; if(!r)continue;
-    const c=r?.calibration??{};
-    const structuralA=Number(c.structuralA),structuralB=Number(c.structuralB),weightA=Number(c.weightA);
-    const rawRate=c.empiricalAnchor===null?null:Number(c.empiricalAnchor);
-    const eligible=Number(r.eligible??0);
-    if(!Number.isFinite(structuralA)||!Number.isFinite(structuralB)||!Number.isFinite(weightA))continue;
-    const reliability=clamp(eligible/60,0,1),modelWeight=.15+.20*reliability,maxLift=.04+.10*reliability;
-    const calibrate=(structural:number,challenger:number)=>{const empirical=rawRate??0,modelBlend=.5*structural+.5*challenger,unbounded=(1-modelWeight)*empirical+modelWeight*modelBlend;return clamp(unbounded,clamp(empirical-maxLift),clamp(empirical+maxLift));};
-    const methodA=calibrate(structuralA,structuralA),methodB=calibrate(structuralB,structuralB);
-    const rawFinal=weightA*structuralA+(1-weightA)*structuralB;
-    const final=calibrate(rawFinal,(methodA+methodB)/2);
-    r.methodA=methodA;r.methodB=methodB;r.final=final;
-    r.calibration={...c,diversityFix:DIVERSITY_GUARD_VERSION,bigDbPriorRole:'CONTEXT_ONLY_NOT_DIRECT_OUTPUT_SHRINKAGE'};
-  }
+function preserveNativeScorelines(body:any){
+  if(!body?.scoreline)return;
+  body.scorelinePriorPolicy={version:DIVERSITY_GUARD_VERSION,mode:'NATIVE_MATCH_SPECIFIC_DISTRIBUTION_ONLY',reason:'Global scoreline statistics are context/provenance only and must not mutate Top-3 or threshold outputs.'};
 }
-function restoreMatchSpecificScorelines(body:any){
-  const scoreline=body?.scoreline;if(!scoreline)return;
-  body.scorelinePriorPolicy={version:DIVERSITY_GUARD_VERSION,mode:'DISABLE_DIRECT_GLOBAL_TOP3_SHRINKAGE_NEXT_NATIVE_ENGINE',reason:'Global scoreline prior must not collapse distinct matches toward identical Top-3 outputs.'};
+function consistencyViolations(body:any){
+  const violations:string[]=[];
+  for(const market of MARKET_CODES){
+    const r=body?.markets?.[market];
+    if(!r)continue;
+    const final=Number(r.final),scorelineMass=Number(r.scorelineMass);
+    if(!Number.isFinite(final)||!Number.isFinite(scorelineMass)||final!==scorelineMass)violations.push(market);
+    if(r?.consistency&&(r.consistency.status!=='PASS'||Number(r.consistency.finalDelta)!==0))violations.push(`${market}:consistency`);
+  }
+  return violations;
 }
 function rebuildMatrix(body:any){
   if(!body?.sixTargetMatrix)return;
@@ -47,7 +39,7 @@ function normalizeReleaseTelemetry(body:any){
   body.runtime={...(body.runtime??{}),version:RUNTIME_VERSION,engine:ENGINE_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT};
   body.bigDbRetrieval={...(body.bigDbRetrieval??{}),version:BIGDB_VERSION};
   body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT};
-  body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorWarning:true,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
+  body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
 }
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
@@ -57,7 +49,16 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   let body:any;try{body=await response.clone().json()}catch{return response}
   normalizeReleaseTelemetry(body);
   if(response.ok){
-    restoreMatchSpecificThresholds(body);restoreMatchSpecificScorelines(body);rebuildMatrix(body);
+    preserveNativeScorelines(body);
+    const violations=consistencyViolations(body);
+    if(violations.length){
+      body.status='CFI_CONSISTENCY_GATE_ERROR';body.error='SCORELINE_MARKET_INCONSISTENCY';
+      body.consistencyGuard={status:'FAIL',violations};
+      body.runtime={...(body.runtime??{}),predictionPath:'CONSISTENCY_FAIL_CLOSED',diversityGuard:DIVERSITY_GUARD_VERSION};
+      return Response.json(body,{status:500});
+    }
+    body.consistencyGuard={status:'PASS',violations:[]};
+    rebuildMatrix(body);
     body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION};
   } else if(body?.error==='TARGET_DATE_REQUIRED'||body?.status==='STRICT_PRIOR_GATE_ERROR') {
     body.runtime={...(body.runtime??{}),predictionPath:'STRICT_PRIOR_FAIL_CLOSED'};
