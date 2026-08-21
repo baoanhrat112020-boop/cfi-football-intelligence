@@ -1,35 +1,24 @@
 import prematch from './index-v55.ts';
 import { buildPrediction } from '../../src/prediction/final-engine.ts';
 import { buildLivePrediction, CFI_LIVE_VERSION } from '../../src/prediction/live-engine.ts';
+import { classifyMatchState, normalizeMatchState } from '../../src/runtime/match-state-routing.ts';
 
 const PREMATCH_ENGINE='CFI_FINAL_V5.2.5';
 const PREMATCH_RUNTIME='CFI_SIX_TARGET_RUNTIME_V1.4';
 const PREMATCH_PATH='NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2';
 const BIGDB_VERSION='CFI_BIG_DB_RETRIEVAL_V2.1.2';
 const DIVERSITY_GUARD='CFI_MATCH_DIVERSITY_GUARD_V1';
-const PREMATCH_STATES=new Set(['SCHEDULED','COUNTDOWN','NOT_STARTED','NOTSTARTED','NS','PREMATCH','PRE_MATCH','UPCOMING']);
-const TERMINAL_STATES=new Set(['FT','FINISHED','FINAL','CANCELLED','CANCELED','POSTPONED','ABANDONED']);
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 
 async function readJson(r:Response){try{return await r.clone().json()}catch{return null}}
-function normalizeState(v:any){return String(v??'').trim().toUpperCase().replace(/[\s-]+/g,'_');}
-export function classifyMatchState(input:any){
-  const period=normalizeState(input?.live?.period);
-  if(['1H','HT','2H'].includes(period))return 'LIVE';
-  const explicit=normalizeState(input?.matchStatus??input?.fixtureStatus??input?.match_state??input?.fixture_state??input?.status);
-  if(PREMATCH_STATES.has(explicit))return 'PREMATCH';
-  if(TERMINAL_STATES.has(explicit))return 'TERMINAL';
-  if(input?.live&&Number.isFinite(Number(input.live.minute)))return 'LIVE';
-  return 'UNKNOWN';
-}
 async function routePreKickoffToPrematch(request:Request,input:any,env:Env,ctx:ExecutionContext){
   const url=new URL(request.url);url.pathname='/api/predict';
   const headers=new Headers(request.headers);headers.delete('content-length');headers.set('content-type','application/json');headers.set('accept','application/json');
   const payload={home:String(input?.home??'').trim(),away:String(input?.away??'').trim(),target_date:String(input?.target_date??input?.matchDate??'').slice(0,10),language:String(input?.language??'vi')};
   const response=await prematch.fetch(new Request(url.toString(),{method:'POST',headers,body:JSON.stringify(payload)}),env,ctx);
   const body:any=await readJson(response);if(!body||typeof body!=='object')return response;
-  body.matchStateRouting={inputState:normalizeState(input?.matchStatus??input?.fixtureStatus??input?.match_state??input?.fixture_state??input?.status),classifiedAs:'PREMATCH',requestedEndpoint:'/api/predict-live',executedEndpoint:'/api/predict',reason:'PRE_KICKOFF_COUNTDOWN_IS_PREMATCH'};
+  body.matchStateRouting={inputState:normalizeMatchState(input?.matchStatus??input?.fixtureStatus??input?.match_state??input?.fixture_state??input?.status),classifiedAs:'PREMATCH',requestedEndpoint:'/api/predict-live',executedEndpoint:'/api/predict',reason:'PRE_KICKOFF_COUNTDOWN_IS_PREMATCH'};
   body.runtime={...(body.runtime??{}),matchStateRouting:'PRE_KICKOFF_TO_PREMATCH'};
   return Response.json(body,{status:response.status});
 }
@@ -66,7 +55,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return Response.json({status:'STRICT_PRIOR_GATE_ERROR',error:'TARGET_DATE_REQUIRED',strictPrior:{required:true,verified:false,targetDate:null,failClosed:true},runtime:{engine:CFI_LIVE_VERSION,predictionPath:'LIVE_PRIOR_STRICT_FAIL_CLOSED'}},{status:400});
   const matchState=classifyMatchState(input);
   if(matchState==='PREMATCH')return routePreKickoffToPrematch(request,input,env,ctx);
-  if(matchState==='TERMINAL')return Response.json({status:'MATCH_STATE_ERROR',error:'MATCH_NOT_PREDICTABLE',matchState:normalizeState(input?.matchStatus??input?.fixtureStatus??input?.status)},{status:409});
+  if(matchState==='TERMINAL')return Response.json({status:'MATCH_STATE_ERROR',error:'MATCH_NOT_PREDICTABLE',matchState:normalizeMatchState(input?.matchStatus??input?.fixtureStatus??input?.status)},{status:409});
   if(!input?.live)return Response.json({status:'LIVE_INPUT_ERROR',error:'LIVE_STATE_REQUIRED'},{status:400});
   try{
     const big=await fetchBigDb(env,{home,away,target_date:targetDate});
