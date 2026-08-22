@@ -1,5 +1,6 @@
 import v54 from './index-v54.ts';
 import { MARKET_CODES } from '../../src/prediction/final-engine.ts';
+import { attachMultiMarketShadow } from '../../src/prediction/multi-market-integration.ts';
 
 const ENGINE_VERSION='CFI_FINAL_V5.2.5';
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.4';
@@ -80,6 +81,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     }
     body.consistencyGuard={status:'PASS',violations:[]};
     rebuildMatrix(body);
+    attachMultiMarketShadow(body);
     body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION};
     if(body?.status==='DATA_READY'){
       body.upstreamStatus='DATA_READY';
