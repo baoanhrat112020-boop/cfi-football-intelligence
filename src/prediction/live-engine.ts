@@ -43,10 +43,23 @@ function momentum(s:LiveState){
   const red=finite(s.redCardsAway)-finite(s.redCardsHome);
   return clamp(.12*sot+.08*da+.35*red,-1.5,1.5);
 }
+function productionFtExpectation(prematch:any){
+  // final-engine.ts exposes scoreline.expectedGoals.ftHome/ftAway. Keep legacy shapes
+  // as compatibility fallbacks, but production output must be the first source used.
+  const home=finite(
+    prematch?.scoreline?.expectedGoals?.ftHome,
+    finite(prematch?.scoreline?.expected?.ft?.home,finite(prematch?.expectedGoals?.ft?.home,1.35))
+  );
+  const away=finite(
+    prematch?.scoreline?.expectedGoals?.ftAway,
+    finite(prematch?.scoreline?.expected?.ft?.away,finite(prematch?.expectedGoals?.ft?.away,1.35))
+  );
+  return {home,away,total:home+away};
+}
 function projectedRemainingGoals(prematch:any,s:LiveState){
   const minute=Math.min(95,Math.max(0,s.minute));
   const remaining=Math.max(0,95-minute)/95;
-  const ftExp=finite(prematch?.scoreline?.expected?.ft?.home,finite(prematch?.expectedGoals?.ft?.home,1.35))+finite(prematch?.scoreline?.expected?.ft?.away,finite(prematch?.expectedGoals?.ft?.away,1.35));
+  const ftExp=productionFtExpectation(prematch).total;
   const observed=s.homeGoals+s.awayGoals;
   const pace=minute>8?observed/(minute/95):ftExp;
   return clamp((.72*ftExp+.28*pace)*remaining,0,6);
@@ -75,5 +88,5 @@ export function buildLivePrediction(prematch:any,rawState:any){
     markets:{'3+ HT':{final:threeHt,resolved:s.period!=='1H'},'7+ FT':{final:sevenFt},'Other HT':{final:otherHt,resolved:s.period!=='1H'},'Other FT':{final:otherFt}},
     scoreline:{ht:{final:top3Ht,resolved:s.period!=='1H'},ft:{final:top3Ft},uncertainty:remaining>2.2?'HIGH':remaining>1?'MEDIUM':'LOW'},
     mostLikelyPath:`${top3Ht[0]?.score} HT → ${top3Ft[0]?.score} FT`,
-    audit:{version:CFI_LIVE_VERSION,deterministic:true,remainingGoalExpectation:remaining,momentum:momentum(s),usesLiveEvidence:true,mutatesPrematch:false,resolvedHtUsesActualHalftimeScore:s.period!=='1H'}};
+    audit:{version:CFI_LIVE_VERSION,deterministic:true,remainingGoalExpectation:remaining,prematchFtExpectation:productionFtExpectation(prematch),momentum:momentum(s),usesLiveEvidence:true,mutatesPrematch:false,resolvedHtUsesActualHalftimeScore:s.period!=='1H'}};
 }
