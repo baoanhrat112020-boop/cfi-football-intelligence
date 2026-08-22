@@ -24,7 +24,7 @@ function stake(c:Card,risk:BoardRow['risk']){
   if(c.status!=='BET')return 0;
   const k=kelly(c)??0;
   const quarterKelly=k*.25;
-  const cap=risk==='LOW'?1.5:risk==='MEDIUM'?1.25:risk==='HIGH'?.75:.5;
+  const cap=risk==='LOW'?1.5:risk==='MEDIUM'?1.25:risk==='HIGH'?0.75:0.5;
   return round(clamp(quarterKelly*10,0,cap),2);
 }
 function classify(c:Card):BoardRow{
