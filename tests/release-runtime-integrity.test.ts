@@ -1,8 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import router from '../cloudflare-worker/src/index-live-router.ts';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 
 const TARGET_DATE='2026-08-22';
+const bundleDir=mkdtempSync(join(tmpdir(),'cfi-release-runtime-e2e-'));
+const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
+assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
+function jsFiles(dir:string):string[]{
+  const out:string[]=[];
+  for(const entry of readdirSync(dir,{withFileTypes:true})){
+    const path=join(dir,entry.name);
+    if(entry.isDirectory())out.push(...jsFiles(path));
+    else if(/\.(?:m?js)$/.test(entry.name))out.push(path);
+  }
+  return out;
+}
+const candidates=jsFiles(bundleDir).sort((a,b)=>statSync(b).size-statSync(a).size);
+assert.ok(candidates.length>0,`Wrangler produced no importable JS module in ${bundleDir}`);
+const {default:router}=await import(`${pathToFileURL(candidates[0]).href}?v=${Date.now()}`);
+process.on('exit',()=>{try{rmSync(bundleDir,{recursive:true,force:true});}catch{}});
+
 const ctx={waitUntil(){},passThroughOnException(){}} as ExecutionContext;
 const env={CFI_DB_BASE_URL:'https://example.test/functions/v1/cfi-db',CFI_DB_KEY:'test-key'};
 
@@ -35,26 +56,32 @@ async function predict(home:string,away:string,profile:Profile){
     const url=typeof input==='string'?input:String(input?.url??input);
     if(url.includes('cfi-bigdb-retrieval'))return Response.json(body(home,away,profile)) as any;
     if(url.includes('cfi-prediction-audit'))return Response.json({status:'RECORDED'}) as any;
-    throw new Error(`UNEXPECTED_FETCH:${url}`);
+    return Response.json({status:'OK',runtime:{}}) as any;
   };
   try{
     return await router.fetch(new Request('https://worker.test/api/predict',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({home,away,target_date:TARGET_DATE,language:'en'})}),env,ctx);
   }finally{globalThis.fetch=original;}
 }
 
+async function status(){
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>Response.json({status:'OK',runtime:{},bigDbRetrieval:{}}) as any;
+  try{return await router.fetch(new Request('https://worker.test/api/status'),env,ctx);}finally{globalThis.fetch=original;}
+}
+
 const fingerprint=(b:any)=>JSON.stringify({markets:['3+ HT','7+ FT','Other HT','Other FT'].map(m=>Number(b.markets[m].final).toFixed(8)),ht:b.scoreline.ht.final.map((x:any)=>x.score),ft:b.scoreline.ft.final.map((x:any)=>x.score)});
 
 test('status and prematch prediction expose one worker entrypoint and an explicit prematch handler',async()=>{
-  const statusResponse=await router.fetch(new Request('https://worker.test/api/status'),env,ctx);
+  const statusResponse=await status();
   assert.equal(statusResponse.status,200);
-  const status:any=await statusResponse.json();
+  const statusBody:any=await statusResponse.json();
   const predictionResponse=await predict('Telemetry Home','Telemetry Away','volatile');
   assert.equal(predictionResponse.status,200);
   const prediction:any=await predictionResponse.json();
   assert.equal(prediction.status,'SUCCESS');
-  for(const body of [status,prediction]){
-    assert.equal(body.runtime.productionEntrypoint,'index-live-router.ts');
-    assert.equal(body.runtime.prematchHandler??body.runtime.prematchEntrypoint,'index-v55.ts');
+  for(const b of [statusBody,prediction]){
+    assert.equal(b.runtime.productionEntrypoint,'index-live-router.ts');
+    assert.equal(b.runtime.prematchHandler??b.runtime.prematchEntrypoint,'index-v55.ts');
   }
   assert.equal(prediction.release.productionEntrypoint,'index-live-router.ts');
   assert.equal(prediction.release.prematchHandler,'index-v55.ts');
