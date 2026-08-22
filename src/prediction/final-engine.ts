@@ -10,7 +10,7 @@ export type CanonicalFixture = { id:string; matchDate:string; homeTeam:string; a
 type GridRow = { score:string; probability:number; total:number };
 
 const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x));
-const finite=(v:unknown)=>{ if(v===null||v===undefined||v==='') return null; const n=Number(v); return Number.isFinite(n)&&n>=0?n:null; };
+const finite=(v:unknown)=>{ if(v===null||v===undefined||v==='') return null; const n=Number(v); return Number.isSafeInteger(n)&&n>=0?n:null; };
 const mean=(xs:number[])=>xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;
 const recencyWeight=(age:number)=>Math.pow(.92,age);
 
@@ -101,7 +101,7 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
  const ftRecon=reconcileScoreGrid(ftA,ftB,weightA,ftExpectedHome,ftExpectedAway,futureSix.intensity.ftHome,futureSix.intensity.ftAway);
  const htFinal=htRecon.grid,ftFinal=ftRecon.grid;
  const markets=Object.fromEntries(MARKET_CODES.map(m=>{
-   const gA=m.includes('HT')?htA:ftA,gB=m.includes('HT')?htB:ftB,gFinal=m.includes('HT')?htFinal:ftFinal;
+   const isHt=m.includes('HT'),gA=isHt?htA:ftA,gB=isHt?htB:ftB,gFinal=isHt?htFinal:ftFinal,recon=isHt?htRecon:ftRecon;
    const structuralA=structuralMass(gA,m),structuralB=structuralMass(gB,m),finalMass=structuralMass(gFinal,m);
    const eligible=evidence.unique.filter(r=>marketHit(r,m)!==null),hits=eligible.filter(r=>marketHit(r,m)===true).length;
    const rawRate=eligible.length?hits/eligible.length:null;
@@ -109,7 +109,7 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
    const methodB=calibrateMarketProbability({rawRate,structural:structuralB,challenger:structuralB,eligible:eligible.length,hits});
    const final=finalMass;
    const sConfidence=sampleConfidence(eligible.length),pConfidence=predictiveConfidence(final,rawRate,eligible.length);
-   return[m,{methodA,methodB,final,confidence:pConfidence,sampleConfidence:sConfidence,predictiveConfidence:pConfidence,hits,eligible:eligible.length,rawRate,smoothedRate:structuralA,scorelineMass:finalMass,consistency:{status:'PASS',construction:'FINAL_MARKET_IS_INTEGRAL_OF_FINAL_SCORE_DISTRIBUTION',rawDistributionMass:finalMass,calibratedFinal:final,finalDelta:0},supportingFactors:[`dual_distribution:true`,`future_six:${futureSix.version}`,`scoreline_integral:true`,`empirical_anchor:${rawRate===null?'NA':rawRate.toFixed(4)}`],opposingFactors:eligible.length<12?['SMALL_SAMPLE']:[],calibration:{version:'final-score-distribution-integral-v1',weightA:htRecon.audit.baseWeightA,weightB:1-htRecon.audit.baseWeightA,empiricalAnchor:rawRate,structuralA,structuralB,rawFinal:finalMass}}];
+   return[m,{methodA,methodB,final,confidence:pConfidence,sampleConfidence:sConfidence,predictiveConfidence:pConfidence,hits,eligible:eligible.length,rawRate,smoothedRate:structuralA,scorelineMass:finalMass,consistency:{status:'PASS',construction:'FINAL_MARKET_IS_INTEGRAL_OF_FINAL_SCORE_DISTRIBUTION',rawDistributionMass:finalMass,calibratedFinal:final,finalDelta:0},supportingFactors:[`dual_distribution:true`,`future_six:${futureSix.version}`,`scoreline_integral:true`,`empirical_anchor:${rawRate===null?'NA':rawRate.toFixed(4)}`],opposingFactors:eligible.length<12?['SMALL_SAMPLE']:[],calibration:{version:'final-score-distribution-integral-v1',baseWeightA:recon.audit.baseWeightA,weightA:recon.audit.scorelineWeightA,weightB:recon.audit.scorelineWeightB,empiricalAnchor:rawRate,structuralA,structuralB,rawFinal:finalMass}}];
  }));
  const warnings:string[]=[];
  if(ftRecon.audit.direction!=='BALANCED'&&ftRecon.audit.directionalStrength>=.35&&ftRecon.audit.top3AlignedCount===0)warnings.push('FINAL_FT_DIRECTION_MISMATCH');
