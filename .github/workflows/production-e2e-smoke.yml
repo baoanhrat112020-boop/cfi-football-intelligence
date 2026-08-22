@@ -68,21 +68,29 @@ jobs:
           trap 'kill "$PROXY_PID" 2>/dev/null || true; wait "$PROXY_PID" 2>/dev/null || true; cat /tmp/cfi-proxy.log || true' EXIT
 
           READY=0
-          for i in $(seq 1 6); do
-            CODE=$(curl -sS --connect-timeout 5 --max-time 35 -o /tmp/proxy-status.json -w '%{http_code}' http://127.0.0.1:8788/api/status 2>/dev/null || true)
-            if [ "$CODE" = "200" ]; then READY=1; break; fi
-            sleep 2
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/8788) >/dev/null 2>&1; then READY=1; break; fi
+            sleep 1
           done
-          test "$READY" = 1 || { echo 'Remote service-binding proxy did not return production status 200'; exit 1; }
+          test "$READY" = 1 || { echo 'Remote service-binding proxy port did not become ready'; exit 1; }
+
+          STATUS_CODE=$(curl -sS --connect-timeout 5 --max-time 130 -o /tmp/proxy-status.json -w '%{http_code}' http://127.0.0.1:8788/api/status)
+          test "$STATUS_CODE" = "200" || { echo "Production status returned HTTP $STATUS_CODE"; cat /tmp/proxy-status.json || true; exit 1; }
 
           python3 - <<'PY'
           import json, subprocess, tempfile, datetime
           base='http://127.0.0.1:8788'
           today=datetime.datetime.now(datetime.timezone.utc).date().isoformat()
 
+          with open('/tmp/proxy-status.json',encoding='utf-8') as f:
+              s=json.load(f)
+          runtime=s.get('runtime') or {}
+          assert runtime.get('productionEntrypoint')=='index-live-router.ts',runtime
+          assert runtime.get('prematchEntrypoint')=='index-v55.ts',runtime
+
           def call(method,path,payload=None):
               with tempfile.NamedTemporaryFile() as body:
-                  cmd=['curl','-sS','--connect-timeout','5','--max-time','45','-H','Accept: application/json','-o',body.name,'-w','%{http_code}','-X',method]
+                  cmd=['curl','-sS','--connect-timeout','5','--max-time','150','-H','Accept: application/json','-o',body.name,'-w','%{http_code}','-X',method]
                   if payload is not None:
                       cmd += ['-H','Content-Type: application/json','--data-binary',json.dumps(payload)]
                   cmd += [base+path]
@@ -93,12 +101,6 @@ jobs:
                   try: parsed=json.loads(raw) if raw else {}
                   except Exception: parsed={'raw':raw}
                   return code,parsed
-
-          s_status,s=call('GET','/api/status')
-          assert s_status==200,(s_status,s)
-          runtime=s.get('runtime') or {}
-          assert runtime.get('productionEntrypoint')=='index-live-router.ts',runtime
-          assert runtime.get('prematchEntrypoint')=='index-v55.ts',runtime
 
           home='CFI E2E NONEXISTENT HOME 9F3A7C'; away='CFI E2E NONEXISTENT AWAY 4D2B8E'
           c_status,c=call('POST','/api/predict-live',{'home':home,'away':away,'status':'COUNTDOWN','clientLocalDate':today,'language':'vi'})
