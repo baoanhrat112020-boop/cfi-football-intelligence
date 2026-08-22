@@ -15,14 +15,15 @@ function fixtures():CanonicalFixture[]{
 }
 
 test('strict-prior multi-market benchmark produces bounded out-of-sample metrics',()=>{
-  const result:any=walkForwardMultiMarketBacktest(fixtures(),8);
+  const result:any=walkForwardMultiMarketBacktest(fixtures());
   assert.equal(result.version,'CFI_MULTI_MARKET_WALK_FORWARD_V2');
   assert.equal(result.status,'RESEARCH_ONLY');
   assert.equal(result.strictPrior,true);
   assert.equal(result.sameDateExcluded,true);
   assert.equal(result.leakage,false);
   assert.equal(result.decisionUse,false);
-  assert.equal(result.minTeamPrior,8);
+  assert.equal(result.minTeamPrior,1);
+  assert.equal(result.historyCap,10);
   assert.ok(result.evaluatedMatches>0);
   for(const part of ['ht','ft']){
     assert.ok(result.oneXTwo[part].n>0);
@@ -36,12 +37,12 @@ test('strict-prior multi-market benchmark produces bounded out-of-sample metrics
 });
 
 test('benchmark is deterministic and does not depend on input ordering',()=>{
-  const a=walkForwardMultiMarketBacktest(fixtures(),8);
-  const b=walkForwardMultiMarketBacktest([...fixtures()].reverse(),8);
+  const a=walkForwardMultiMarketBacktest(fixtures());
+  const b=walkForwardMultiMarketBacktest([...fixtures()].reverse());
   assert.deepEqual(a,b);
 });
 
-test('replay requires independent home and away minimum prior and excludes same-date evidence',()=>{
+test('replay supports stricter evidence sensitivity and excludes same-date evidence',()=>{
   const rows:CanonicalFixture[]=[
     ...Array.from({length:12},(_,i)=>({id:`a-${i}`,matchDate:`2025-01-${String(i+1).padStart(2,'0')}`,homeTeam:'Alpha',awayTeam:'Gamma',ht:{home:1,away:0},ft:{home:2,away:0}})),
     ...Array.from({length:7},(_,i)=>({id:`b-${i}`,matchDate:`2025-02-${String(i+1).padStart(2,'0')}`,homeTeam:'Beta',awayTeam:'Gamma',ht:{home:1,away:0},ft:{home:2,away:1}})),
@@ -50,11 +51,18 @@ test('replay requires independent home and away minimum prior and excludes same-
     {id:'target-ok',matchDate:'2025-03-03',homeTeam:'Alpha',awayTeam:'Beta',ht:{home:1,away:0},ft:{home:2,away:0}},
     {id:'same-day',matchDate:'2025-03-03',homeTeam:'Beta',awayTeam:'Gamma',ht:{home:4,away:0},ft:{home:6,away:0}},
   ];
-  const points=buildMultiMarketReplayPoints(rows,8);
-  assert.equal(points.some(r=>r.fixtureId==='target-too-early'),false);
-  const target=points.find(r=>r.fixtureId==='target-ok');
+  const strict8=buildMultiMarketReplayPoints(rows,8,10);
+  assert.equal(strict8.some(r=>r.fixtureId==='target-too-early'),false);
+  const target=strict8.find(r=>r.fixtureId==='target-ok');
   assert.ok(target);
   assert.ok(target!.homePriorCount>=8);
   assert.ok(target!.awayPriorCount>=8);
+  assert.ok(target!.homePriorCount<=10);
+  assert.ok(target!.awayPriorCount<=10);
   assert.ok(target!.maxEvidenceDate<'2025-03-03');
+
+  const benchmarkProtocol=buildMultiMarketReplayPoints(rows,1,10);
+  assert.ok(benchmarkProtocol.length>=strict8.length);
+  assert.ok(benchmarkProtocol.every(r=>r.homePriorCount>=1&&r.awayPriorCount>=1));
+  assert.ok(benchmarkProtocol.every(r=>r.homePriorCount<=10&&r.awayPriorCount<=10));
 });
