@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildLivePrediction, validateLiveState, CFI_LIVE_VERSION } from '../src/prediction/live-engine.ts';
 
-const prematch={engine:'CFI_FINAL_V5.2.5',scoreline:{expected:{ft:{home:1.7,away:1.4}}}};
+const prematch={engine:'CFI_FINAL_V5.2.5',scoreline:{expectedGoals:{ftHome:1.7,ftAway:1.4}}};
 
 test('live engine is deterministic for identical state',()=>{
   const state={minute:62,period:'2H',homeGoals:1,awayGoals:1,htHomeGoals:0,htAwayGoals:1,shotsOnTargetHome:5,shotsOnTargetAway:3,dangerousAttacksHome:42,dangerousAttacksAway:31};
@@ -12,6 +12,17 @@ test('live engine is deterministic for identical state',()=>{
   assert.equal(a.status,'SUCCESS');
   assert.equal(a.prematchSnapshotPolicy,'READ_ONLY_PRIOR_NO_WRITEBACK');
   assert.deepEqual(a.scoreline.ht.final,[{score:'0-1',probability:1}]);
+  assert.deepEqual(a.audit.prematchFtExpectation,{home:1.7,away:1.4,total:3.1});
+});
+
+test('production final-engine expectedGoals shape drives live remaining-goal projection',()=>{
+  const state={minute:20,period:'1H',homeGoals:0,awayGoals:0};
+  const low=buildLivePrediction({scoreline:{expectedGoals:{ftHome:.6,ftAway:.5}}},state);
+  const high=buildLivePrediction({scoreline:{expectedGoals:{ftHome:3.2,ftAway:2.6}}},state);
+  assert.deepEqual(low.audit.prematchFtExpectation,{home:.6,away:.5,total:1.1});
+  assert.deepEqual(high.audit.prematchFtExpectation,{home:3.2,away:2.6,total:5.800000000000001});
+  assert.ok(high.audit.remainingGoalExpectation>low.audit.remainingGoalExpectation);
+  assert.ok(high.markets['7+ FT'].final>low.markets['7+ FT'].final);
 });
 
 test('already-hit threshold becomes probability 1',()=>{
