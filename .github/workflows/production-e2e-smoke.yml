@@ -24,103 +24,81 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Verify production countdown and LIVE routing
-        env:
-          BASE_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev
+      - name: Locate Chrome
+        id: chrome
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json, os, time, urllib.request, urllib.error, datetime
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$CHROME" ]; then
+            echo "Chrome/Chromium not found on runner" >&2
+            exit 1
+          fi
+          echo "path=$CHROME" >> "$GITHUB_OUTPUT"
+          "$CHROME" --version
+      - name: Install Playwright core
+        run: npm install --no-save --ignore-scripts playwright-core@1.55.0
+      - name: Verify production countdown and LIVE routing in real Chromium
+        env:
+          BASE_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev
+          CHROME_PATH: ${{ steps.chrome.outputs.path }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright-core';
 
-          base=os.environ['BASE_URL'].rstrip('/')
-          today=datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-          browser_headers={
-              'content-type':'application/json',
-              'accept':'application/json,text/plain,*/*',
-              'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-              'accept-language':'en-US,en;q=0.9',
-              'cache-control':'no-cache'
+          const base=process.env.BASE_URL.replace(/\/$/,'');
+          const today=new Date().toISOString().slice(0,10);
+          const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH,args:['--no-sandbox','--disable-dev-shm-usage']});
+          const context=await browser.newContext({
+            userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+            extraHTTPHeaders:{accept:'application/json,text/plain,*/*','accept-language':'en-US,en;q=0.9'}
+          });
+          const page=await context.newPage();
+          page.setDefaultTimeout(30000);
+
+          async function readResponse(response){
+            let body={};
+            try{body=await response.json()}catch{body={raw:await response.text().catch(()=> '')}}
+            return {status:response.status(),body};
+          }
+          async function post(path,payload){
+            return await page.evaluate(async({path,payload})=>{
+              const r=await fetch(path,{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify(payload)});
+              let body={}; try{body=await r.json()}catch{body={raw:await r.text()}}
+              return {status:r.status,body};
+            },{path,payload});
           }
 
-          def call(method,path,payload=None):
-              data=None if payload is None else json.dumps(payload).encode()
-              req=urllib.request.Request(base+path,data=data,method=method,headers=browser_headers)
-              try:
-                  with urllib.request.urlopen(req,timeout=20) as r:
-                      raw=r.read().decode()
-                      return r.status,json.loads(raw) if raw else {}
-              except urllib.error.HTTPError as e:
-                  raw=e.read().decode()
-                  try: body=json.loads(raw) if raw else {}
-                  except Exception: body={'raw':raw}
-                  return e.code,body
+          try{
+            const statusResponse=await page.goto(base+'/api/status',{waitUntil:'domcontentloaded',timeout:30000});
+            if(!statusResponse) throw new Error('NO_STATUS_RESPONSE');
+            const status=await readResponse(statusResponse);
+            if(status.status!==200) throw new Error('STATUS_HTTP_'+status.status+': '+JSON.stringify(status.body));
+            const runtime=status.body?.runtime??{};
+            if(runtime.productionEntrypoint!=='index-live-router.ts') throw new Error('BAD_PRODUCTION_ENTRYPOINT: '+JSON.stringify(runtime));
+            if(runtime.prematchEntrypoint!=='index-v55.ts') throw new Error('BAD_PREMATCH_ENTRYPOINT: '+JSON.stringify(runtime));
 
-          last=None
-          for attempt in range(1,7):
-              try:
-                  s_status,s=call('GET','/api/status')
-                  assert s_status==200,(s_status,s)
-                  runtime=s.get('runtime') or {}
-                  assert runtime.get('productionEntrypoint')=='index-live-router.ts',runtime
-                  assert runtime.get('prematchEntrypoint')=='index-v55.ts',runtime
+            const home='CFI E2E NONEXISTENT HOME 9F3A7C';
+            const away='CFI E2E NONEXISTENT AWAY 4D2B8E';
 
-                  synthetic_home='CFI E2E NONEXISTENT HOME 9F3A7C'
-                  synthetic_away='CFI E2E NONEXISTENT AWAY 4D2B8E'
+            const countdown=await post('/api/predict-live',{home,away,status:'COUNTDOWN',clientLocalDate:today,language:'vi'});
+            if(countdown.status!==422 || countdown.body?.status!=='INSUFFICIENT_DATA') throw new Error('COUNTDOWN_FAIL: '+JSON.stringify(countdown));
+            const route=countdown.body?.matchStateRouting??{};
+            for(const [k,v] of Object.entries({classifiedAs:'PREMATCH',requestedEndpoint:'/api/predict-live',executedEndpoint:'/api/predict',targetDate:today,targetDateSource:'clientLocalDate'})){
+              if(route[k]!==v) throw new Error(`COUNTDOWN_ROUTE_${k}: ${JSON.stringify(route)}`);
+            }
 
-                  c_status,c=call('POST','/api/predict-live',{
-                      'home':synthetic_home,
-                      'away':synthetic_away,
-                      'status':'COUNTDOWN',
-                      'clientLocalDate':today,
-                      'language':'vi'
-                  })
-                  assert c_status==422,(c_status,c)
-                  assert c.get('status')=='INSUFFICIENT_DATA',c
-                  route=c.get('matchStateRouting') or {}
-                  assert route.get('classifiedAs')=='PREMATCH',route
-                  assert route.get('requestedEndpoint')=='/api/predict-live',route
-                  assert route.get('executedEndpoint')=='/api/predict',route
-                  assert route.get('targetDate')==today,route
-                  assert route.get('targetDateSource')=='clientLocalDate',route
+            const missing=await post('/api/predict-live',{home,away,status:'COUNTDOWN',language:'vi'});
+            if(missing.status!==400 || missing.body?.error!=='TARGET_DATE_REQUIRED') throw new Error('MISSING_DATE_FAIL: '+JSON.stringify(missing));
+            const missingRoute=missing.body?.matchStateRouting??{};
+            if(missingRoute.classifiedAs!=='PREMATCH' || missingRoute.executedEndpoint!==null || missingRoute.reason!=='PRE_KICKOFF_TARGET_DATE_UNRESOLVED') throw new Error('MISSING_DATE_ROUTE_FAIL: '+JSON.stringify(missingRoute));
 
-                  m_status,m=call('POST','/api/predict-live',{
-                      'home':synthetic_home,
-                      'away':synthetic_away,
-                      'status':'COUNTDOWN',
-                      'language':'vi'
-                  })
-                  assert m_status==400,(m_status,m)
-                  assert m.get('error')=='TARGET_DATE_REQUIRED',m
-                  mroute=m.get('matchStateRouting') or {}
-                  assert mroute.get('classifiedAs')=='PREMATCH',mroute
-                  assert mroute.get('executedEndpoint') is None,mroute
-                  assert mroute.get('reason')=='PRE_KICKOFF_TARGET_DATE_UNRESOLVED',mroute
+            const live=await post('/api/predict-live',{home,away,status:'COUNTDOWN',live:{period:'1H',minute:1,homeGoals:0,awayGoals:0},language:'vi'});
+            if(live.status!==400 || live.body?.error!=='TARGET_DATE_REQUIRED') throw new Error('LIVE_FAIL_CLOSED: '+JSON.stringify(live));
+            if(live.body?.runtime?.predictionPath!=='LIVE_PRIOR_STRICT_FAIL_CLOSED') throw new Error('LIVE_PATH_FAIL: '+JSON.stringify(live.body?.runtime));
 
-                  l_status,l=call('POST','/api/predict-live',{
-                      'home':synthetic_home,
-                      'away':synthetic_away,
-                      'status':'COUNTDOWN',
-                      'live':{'period':'1H','minute':1,'homeGoals':0,'awayGoals':0},
-                      'language':'vi'
-                  })
-                  assert l_status==400,(l_status,l)
-                  assert l.get('error')=='TARGET_DATE_REQUIRED',l
-                  lruntime=l.get('runtime') or {}
-                  assert lruntime.get('predictionPath')=='LIVE_PRIOR_STRICT_FAIL_CLOSED',lruntime
-
-                  print(json.dumps({
-                      'status':'PASS',
-                      'attempt':attempt,
-                      'runtime':runtime,
-                      'countdownRouting':route,
-                      'missingDateRouting':mroute,
-                      'liveFailClosedRuntime':lruntime
-                  },ensure_ascii=False,indent=2))
-                  raise SystemExit(0)
-              except Exception as exc:
-                  last=repr(exc)
-                  print(f'Attempt {attempt}/6 failed: {last}')
-                  if attempt<6: time.sleep(5)
-
-          raise SystemExit(f'PRODUCTION_E2E_SMOKE_FAILED: {last}')
-          PY
+            console.log(JSON.stringify({status:'PASS',runtime,countdownRouting:route,missingDateRouting:missingRoute,liveRuntime:live.body?.runtime},null,2));
+          } finally {
+            await browser.close();
+          }
+          JS
