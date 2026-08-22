@@ -38,13 +38,13 @@ function historicalRows(scored=true){
   }));
 }
 
-function bigDbBody({temporalAudit,scored=true}:{temporalAudit?:any;scored?:boolean}={}){
+function bigDbBody({temporalAudit,scored=true,exactHome=22,exactAway=22}:{temporalAudit?:any;scored?:boolean;exactHome?:number;exactAway?:number}={}){
   const rows=historicalRows(scored);
   return {
     status:'OK',
     version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',
     targetDate:TARGET_DATE,
-    exactTeam:{home:{retrieved:22},away:{retrieved:22},h2h:{retrieved:0}},
+    exactTeam:{home:{retrieved:exactHome},away:{retrieved:exactAway},h2h:{retrieved:0}},
     fixtures:{home:rows.slice(0,22),away:rows.slice(22),h2h:[]},
     globalPrior:{fixtureCount:100,markets:{}},
     temporalAudit:temporalAudit??{
@@ -121,6 +121,52 @@ test('E2E live route uses production expectedGoals seam and remains strict-prior
     assert.ok(Number.isFinite(body.audit.prematchFtExpectation.total));
     assert.notEqual(body.audit.prematchFtExpectation.total,2.7,'production prematch expectation must not silently use the 1.35+1.35 fallback');
     assert.equal(calls.filter(x=>x.includes('cfi-prediction-audit')).length,0,'LIVE must never write prematch snapshots');
+  });
+});
+
+test('E2E live route rejects zero exact-team evidence before default prior construction',async()=>{
+  await withBackend(bigDbBody({exactHome:0}),async(calls)=>{
+    const response=await router.fetch(liveRequest(),env,ctx);
+    assert.equal(response.status,422);
+    const body:any=await response.json();
+    assert.equal(body.status,'INSUFFICIENT_DATA');
+    assert.equal(body.error,'ZERO_EXACT_TEAM_EVIDENCE');
+    assert.equal(body.exactTeam.verified,false);
+    assert.equal(calls.filter(x=>x.includes('cfi-bigdb-retrieval')).length,1);
+    assert.equal(calls.filter(x=>x.includes('cfi-prediction-audit')).length,0);
+  });
+});
+
+test('E2E live route rejects scoreless prior instead of using default goal expectations',async()=>{
+  await withBackend(bigDbBody({scored:false}),async(calls)=>{
+    const response=await router.fetch(liveRequest(),env,ctx);
+    assert.equal(response.status,422);
+    const body:any=await response.json();
+    assert.equal(body.status,'INSUFFICIENT_DATA');
+    assert.equal(body.error,'LIVE_PRIOR_SCORE_EVIDENCE_REQUIRED');
+    assert.equal(body.evidence.htCoverage,0);
+    assert.equal(body.evidence.ftCoverage,0);
+    assert.equal(calls.filter(x=>x.includes('cfi-prediction-audit')).length,0);
+  });
+});
+
+test('E2E live temporal gate requires explicit counters and target-date provenance',async()=>{
+  const missingCounters=bigDbBody({temporalAudit:{targetDate:TARGET_DATE,verified:true,observable:true,maxEvidenceDate:'2026-07-28'}});
+  await withBackend(missingCounters,async()=>{
+    const response=await router.fetch(liveRequest(),env,ctx);
+    assert.equal(response.status,500);
+    const body:any=await response.json();
+    assert.equal(body.status,'STRICT_PRIOR_GATE_ERROR');
+    assert.equal(body.error,'TEMPORAL_COUNTS_REQUIRED');
+    assert.equal(body.strictPrior.verified,false);
+  });
+  const wrongTarget=bigDbBody({temporalAudit:{targetDate:'2026-08-21',verified:true,observable:true,maxEvidenceDate:'2026-07-28',futureEvidenceCount:0,sameDateEvidenceCount:0}});
+  await withBackend(wrongTarget,async()=>{
+    const response=await router.fetch(liveRequest(),env,ctx);
+    assert.equal(response.status,500);
+    const body:any=await response.json();
+    assert.equal(body.error,'TEMPORAL_TARGET_DATE_MISMATCH');
+    assert.equal(body.strictPrior.verified,false);
   });
 });
 
