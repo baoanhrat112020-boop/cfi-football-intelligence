@@ -8,7 +8,8 @@ import { buildTailConditional, auditTailGrid } from '../research/fusion/tail-con
 import { buildFusionPrediction } from '../research/fusion/fusion-engine.mjs';
 
 const probs={'3+ HT':.15,'7+ FT':.03,'Other HT':.01,'Other FT':.04};
-const expert=(name,p=probs)=>({expert:name,probabilities:{...p},confidence:{coverage:.8,localSample:100},top3HT:['1-0','1-1','0-1'],top3FT:['2-1','1-1','2-0']});
+const provenance=name=>({maxEvidenceTimestamp:'2026-08-21T23:59:59.000Z',futureEvidenceCount:0,sameDateEvidenceCount:0,identityHash:'fixture:A:B:2026-08-22',provenanceHash:`test:${name}`});
+const expert=(name,p=probs)=>({expert:name,probabilities:{...p},confidence:{coverage:.8,localSample:100},top3HT:['1-0','1-1','0-1'],top3FT:['2-1','1-1','2-0'],provenance:provenance(name)});
 const grid=(max,scale=.7)=>{const rows=[];let z=0;for(let h=0;h<=max;h++)for(let a=0;a<=max;a++){const p=Math.exp(-(h+a)*scale);rows.push({score:`${h}-${a}`,total:h+a,probability:p});z+=p;}return rows.map(x=>({...x,probability:x.probability/z}));};
 
 test('Fusion contract is research-only and R0 immutable',()=>{
