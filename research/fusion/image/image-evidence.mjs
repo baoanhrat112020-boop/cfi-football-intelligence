@@ -3,7 +3,7 @@ import { IMAGE_STATES, clamp01 } from '../contracts.mjs';
 const CONTENT_RULES = [
   ['H2H',/(h2h|head\s*to\s*head|đối đầu)/i],
   ['STANDINGS',/(standings|league\s+table|xếp hạng)/i],
-  ['ODDS',/(odds|1x2|handicap|over\/under|tài xỉu|other\s+ht|other\s+ft)/i],
+  ['ODDS',/(odds|1x2|handicap|over\/under|tài xỉu|other\s+ht|other\s+ft|3\+\s*ht|7\+\s*ft)/i],
   ['TEAM_HISTORY',/(recent matches|recent form|lịch sử|last\s*\d+\s+matches?)/i],
 ];
 
@@ -13,11 +13,16 @@ function normalizedText(meta={}){
 
 function explicitMatchState(text){
   if(/(countdown|kick\s*off\s*in|starts?\s*in|bắt đầu sau|đếm ngược)/i.test(text)) return 'PREMATCH_COUNTDOWN';
-  if(/(half\s*time|halftime|nghỉ giữa hiệp)/i.test(text) || /^(ht)$/i.test(text)) return 'HALFTIME';
-  if(/(finished|full\s*time|kết thúc)/i.test(text) || /^(ft)$/i.test(text)) return 'FINISHED';
+  if(/(half\s*time|halftime|nghỉ giữa hiệp)/i.test(text) || /^(ht)$/i.test(text) || /(?:^|\s)ht\s*[:=-]?\s*\d+\s*[-:]\s*\d+(?:\s|$)/i.test(text)) return 'HALFTIME';
+  if(/(finished|full\s*time|kết thúc)/i.test(text) || /^(ft)$/i.test(text) || /(?:^|\s)ft\s*[:=-]?\s*\d+\s*[-:]\s*\d+(?:\s|$)/i.test(text)) return 'FINISHED';
   if(/(2nd\s*half|second\s*half|hiệp\s*2)/i.test(text) || /\b(?:4[6-9]|[5-8]\d|90)(?:\+\d+)?\s*(?:['’]|min(?:ute)?s?|phút)\b/i.test(text)) return 'LIVE_2H';
   if(/(1st\s*half|first\s*half|hiệp\s*1)/i.test(text) || /\b(?:[1-9]|[1-3]\d|4[0-5])(?:\+\d+)?\s*(?:['’]|min(?:ute)?s?|phút)\b/i.test(text)) return 'LIVE_1H';
   return null;
+}
+
+function fixtureIdentityKey(fixture){
+  if(!fixture?.home||!fixture?.away) return null;
+  return `${String(fixture.home).trim().toLowerCase()}|${String(fixture.away).trim().toLowerCase()}`;
 }
 
 export function classifyImageState(meta={}){
@@ -59,6 +64,7 @@ export function aggregateImageEvidence(images=[]){
   const normalized=images.map(normalizeImageEvidence);
   const prematchRows=normalized.filter(x=>x.strictPriorEligible&&x.prematchEvidenceAllowed);
   const fixture=(prematchRows.map(x=>x.fixture).find(Boolean)??normalized.map(x=>x.fixture).find(Boolean))??null;
+  const fixtureKeys=[...new Set(normalized.map(x=>fixtureIdentityKey(x.fixture)).filter(Boolean))];
   const merged={};
   const provenance={};
   for(let i=0;i<normalized.length;i++){
@@ -77,6 +83,7 @@ export function aggregateImageEvidence(images=[]){
   const hardFailures=[];
   if(normalized.some(x=>x.suspectedFailure)) hardFailures.push('IMAGE_EXTRACTION_SUSPECTED_FAILURE');
   if(!fixture?.home||!fixture?.away) hardFailures.push('FIXTURE_IDENTITY_MISSING');
+  if(fixtureKeys.length>1) hardFailures.push('FIXTURE_IDENTITY_CONFLICT');
   return {
     fixture: fixture?{...fixture,state:countdown?'PREMATCH_COUNTDOWN':prematchRows[0]?.imageState??normalized[0]?.imageState??'UNKNOWN'}:null,
     extracted:merged,
@@ -93,7 +100,7 @@ const WEIGHTS={fixtureIdentity:20,homeHistory:20,awayHistory:20,h2h:10,standings
 export function evidenceCompleteness(bundle={}){
   const e=bundle.extracted??{};
   const flags={
-    fixtureIdentity:Boolean(bundle.fixture?.home&&bundle.fixture?.away),
+    fixtureIdentity:Boolean(bundle.fixture?.home&&bundle.fixture?.away)&&!bundle.hardFailures?.includes('FIXTURE_IDENTITY_CONFLICT'),
     homeHistory:Boolean(e.homeHistory||e.formHome),
     awayHistory:Boolean(e.awayHistory||e.formAway),
     h2h:Boolean(e.h2h),
@@ -102,6 +109,7 @@ export function evidenceCompleteness(bundle={}){
     odds:Boolean(e.odds),
   };
   const score=Object.entries(flags).reduce((s,[k,v])=>s+(v?WEIGHTS[k]:0),0);
-  const action=score>=80?'FULL':score>=60?'WARN':score>=40?'CONSERVATIVE':'INSUFFICIENT_IMAGE_EVIDENCE';
+  const hardFailure=Array.isArray(bundle.hardFailures)&&bundle.hardFailures.length>0;
+  const action=hardFailure?'FAIL_CLOSED':score>=80?'FULL':score>=60?'WARN':score>=40?'CONSERVATIVE':'INSUFFICIENT_IMAGE_EVIDENCE';
   return {flags,score,action};
 }
