@@ -5,12 +5,14 @@ const DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 export function normalizeMatchState(v:any){return String(v??'').trim().toUpperCase().replace(/[\s-]+/g,'_');}
 
 export function classifyMatchState(input:any){
+  const explicit=normalizeMatchState(input?.matchStatus??input?.fixtureStatus??input?.match_state??input?.fixture_state??input?.status);
+  // Terminal fixture state is authoritative. Providers can leave stale live period/minute
+  // fields attached after FT; those fields must never reopen a finished match for LIVE prediction.
+  if(TERMINAL_STATES.has(explicit))return 'TERMINAL';
   const period=normalizeMatchState(input?.live?.period);
   if(['1H','HT','2H'].includes(period))return 'LIVE';
-  const explicit=normalizeMatchState(input?.matchStatus??input?.fixtureStatus??input?.match_state??input?.fixture_state??input?.status);
-  if(PREMATCH_STATES.has(explicit))return 'PREMATCH';
-  if(TERMINAL_STATES.has(explicit))return 'TERMINAL';
   if(input?.live&&Number.isFinite(Number(input.live.minute)))return 'LIVE';
+  if(PREMATCH_STATES.has(explicit))return 'PREMATCH';
   return 'UNKNOWN';
 }
 

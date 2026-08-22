@@ -11,6 +11,20 @@ async function sha256Hex(value: unknown) {
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function verifiedStrictPrior(prediction: any, targetDate: string) {
+  const audit = prediction?.strictPriorAudit ?? prediction?.strictPrior;
+  const evidence = audit?.evidence ?? prediction?.temporalEvidenceAudit ?? {};
+  const auditTarget = String(audit?.targetDate ?? evidence?.targetDate ?? "").slice(0, 10);
+  const future = Number(evidence?.futureEvidenceCount);
+  const same = Number(evidence?.sameDateEvidenceCount);
+  const maxEvidenceDate = evidence?.maxEvidenceDate ? String(evidence.maxEvidenceDate).slice(0, 10) : null;
+  return audit?.verified === true &&
+    auditTarget === targetDate &&
+    Number.isFinite(future) && future === 0 &&
+    Number.isFinite(same) && same === 0 &&
+    typeof maxEvidenceDate === "string" && maxEvidenceDate < targetDate;
+}
+
 Deno.serve(async (request) => {
   const expectedKey = Deno.env.get("CFI_ACTION_KEY");
   if (!expectedKey || request.headers.get("x-cfi-key") !== expectedKey) {
@@ -24,7 +38,6 @@ Deno.serve(async (request) => {
   const client = createClient(supabaseUrl, serviceRole, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const url = new URL(request.url);
 
   if (request.method === "GET") {
     const { data, error } = await client.from("cfi_prediction_audit_summary").select("*").single();
@@ -47,8 +60,11 @@ Deno.serve(async (request) => {
   const targetDate = String(body?.target_date ?? target?.date ?? target?.targetDate ?? "").slice(0, 10);
   const home = String(body?.home ?? target?.home ?? "").trim();
   const away = String(body?.away ?? target?.away ?? "").trim();
-  if (!prediction || !targetDate || !home || !away) {
+  if (!prediction || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate) || !home || !away) {
     return json({ error: "INVALID_SNAPSHOT", message: "prediction,target_date,home,away required" }, 400);
+  }
+  if (!verifiedStrictPrior(prediction, targetDate)) {
+    return json({ error: "STRICT_PRIOR_NOT_VERIFIED", message: "Snapshot rejected before persistence because temporal provenance is not verified strict-prior." }, 422);
   }
 
   const predictionHash = await sha256Hex(prediction);
@@ -58,7 +74,7 @@ Deno.serve(async (request) => {
     p_away_team: away,
     p_engine_version: String(prediction?.engine ?? body?.engine ?? "UNKNOWN"),
     p_language: String(prediction?.language ?? body?.language ?? "vi"),
-    p_strict_prior: prediction?.evidence?.strictPrior !== false,
+    p_strict_prior: true,
     p_prediction: prediction,
     p_prediction_hash: predictionHash,
     p_source: String(body?.source ?? "GPT_ACTION"),
