@@ -3,7 +3,6 @@ export const CFI_BETTING_BOARD_VERSION='CFI_BETTING_BOARD_V1';
 type Card={market:string;probability:number|null;fairOdds:number|null;confidence:string|null;status:'BET'|'WATCH'|'PASS'|'SHADOW';marketOdds:number|null;edge:number|null;source:'CHAMPION'|'SHADOW'};
 type BoardRow=Card&{tier:'A_BEST_VALUE'|'B_GOOD_WATCH'|'C_HIGH_RISK_EXTREME'|'D_PASS'|'SHADOW';risk:'LOW'|'MEDIUM'|'HIGH'|'EXTREME';stakeUnits:number;kellyFraction:number|null;reason:string};
 
-const finite=(v:any)=>Number.isFinite(Number(v))?Number(v):null;
 const clamp=(x:number,min:number,max:number)=>Math.max(min,Math.min(max,x));
 const round=(x:number,d=3)=>{const p=10**d;return Math.round(x*p)/p;};
 const extremeMarket=(market:string)=>['3+ HT','7+ FT','Other HT','Other FT'].includes(market);
