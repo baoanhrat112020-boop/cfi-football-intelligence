@@ -27,6 +27,12 @@ export function assertSnapshotSource(input = {}) {
   if (!['DATA_READY','SUCCESS'].includes(String(input.sourceSnapshotStatus ?? ''))) {
     throw new Error('SOURCE_SNAPSHOT_NOT_READY');
   }
+  if (String(input.sourceSnapshotTargetDate ?? '') !== String(input.targetDate ?? '')) {
+    throw new Error('SOURCE_SNAPSHOT_TARGET_DATE_MISMATCH');
+  }
+  if (norm(input.sourceSnapshotHomeTeam) !== norm(input.homeTeam) || norm(input.sourceSnapshotAwayTeam) !== norm(input.awayTeam)) {
+    throw new Error('SOURCE_SNAPSHOT_IDENTITY_MISMATCH');
+  }
   const created = Date.parse(String(input.sourceSnapshotCreatedAt ?? ''));
   const kickoff = Date.parse(String(input.kickoffAt ?? ''));
   if (!Number.isFinite(created)) throw new Error('SOURCE_SNAPSHOT_CREATED_AT_REQUIRED');
