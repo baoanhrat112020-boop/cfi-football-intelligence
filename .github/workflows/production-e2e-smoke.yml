@@ -38,46 +38,42 @@ jobs:
           set -euo pipefail
           test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing CLOUDFLARE_API_TOKEN' >&2; exit 1; }
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }
-      - name: Verify deployed production through Cloudflare edge subrequest
+      - name: Verify deployed production through Cloudflare service binding
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PROD_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev
         run: |
           set -euo pipefail
           cat > /tmp/cfi-e2e-smoke-proxy.mjs <<'EOF'
           export default {
-            async fetch(request) {
-              const incoming = new URL(request.url);
-              const target = new URL(globalThis.PROD_URL || 'https://cfi-football-intelligence.baoanhrat112020.workers.dev');
-              target.pathname = incoming.pathname;
-              target.search = incoming.search;
-              const headers = new Headers(request.headers);
-              headers.set('x-cfi-e2e-smoke','cloudflare-edge-subrequest');
-              return fetch(new Request(target.toString(), {
-                method: request.method,
-                headers,
-                body: ['GET','HEAD'].includes(request.method) ? undefined : request.body,
-                redirect: 'manual'
-              }));
+            async fetch(request, env) {
+              return env.PROD.fetch(request);
             }
           };
           EOF
+          cat > /tmp/cfi-e2e-smoke-wrangler.jsonc <<'EOF'
+          {
+            "$schema": "./node_modules/wrangler/config-schema.json",
+            "name": "cfi-e2e-smoke-proxy",
+            "main": "/tmp/cfi-e2e-smoke-proxy.mjs",
+            "compatibility_date": "2026-08-15",
+            "services": [
+              { "binding": "PROD", "service": "cfi-football-intelligence" }
+            ]
+          }
+          EOF
 
-          npx wrangler dev /tmp/cfi-e2e-smoke-proxy.mjs \
-            --remote \
-            --port 8788 \
-            --name cfi-e2e-smoke-proxy \
-            --compatibility-date 2026-08-15 \
-            > /tmp/cfi-proxy.log 2>&1 &
+          npx wrangler dev --remote --port 8788 --config /tmp/cfi-e2e-smoke-wrangler.jsonc > /tmp/cfi-proxy.log 2>&1 &
           PROXY_PID=$!
           trap 'kill "$PROXY_PID" 2>/dev/null || true; wait "$PROXY_PID" 2>/dev/null || true; cat /tmp/cfi-proxy.log || true' EXIT
 
+          READY=0
           for i in $(seq 1 30); do
-            if curl -fsS --max-time 3 http://127.0.0.1:8788/api/status >/tmp/proxy-status.json 2>/dev/null; then break; fi
+            CODE=$(curl -sS --max-time 3 -o /tmp/proxy-status.json -w '%{http_code}' http://127.0.0.1:8788/api/status 2>/dev/null || true)
+            if [ "$CODE" != "000" ]; then READY=1; break; fi
             sleep 2
           done
-          test -s /tmp/proxy-status.json || { echo 'Remote proxy did not become ready'; exit 1; }
+          test "$READY" = 1 || { echo 'Remote service-binding proxy did not become ready'; exit 1; }
 
           python3 - <<'PY'
           import json, subprocess, tempfile, datetime
@@ -126,5 +122,5 @@ jobs:
           lruntime=l.get('runtime') or {}
           assert lruntime.get('predictionPath')=='LIVE_PRIOR_STRICT_FAIL_CLOSED',lruntime
 
-          print(json.dumps({'status':'PASS','verificationPath':'CLOUDFLARE_EDGE_SUBREQUEST','runtime':runtime,'countdownRouting':route,'missingDateRouting':mroute,'liveRuntime':lruntime},ensure_ascii=False,indent=2))
+          print(json.dumps({'status':'PASS','verificationPath':'CLOUDFLARE_SERVICE_BINDING','runtime':runtime,'countdownRouting':route,'missingDateRouting':mroute,'liveRuntime':lruntime},ensure_ascii=False,indent=2))
           PY
