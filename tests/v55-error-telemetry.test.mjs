@@ -8,10 +8,12 @@ test('V5.2.5 normalizes release telemetry before returning fail-closed predictio
   assert.match(src,/const ENGINE_VERSION='CFI_FINAL_V5\.2\.5'/);
   assert.match(src,/const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1\.4'/);
   assert.match(src,/const BIGDB_VERSION='CFI_BIG_DB_RETRIEVAL_V2\.1\.2'/);
-  assert.match(src,/const PRODUCTION_ENTRYPOINT='index-v55\.ts'/);
+  assert.match(src,/const PRODUCTION_ENTRYPOINT='index-live-router\.ts'/);
+  assert.match(src,/const PREMATCH_HANDLER='index-v55\.ts'/);
   assert.match(src,/normalizeReleaseTelemetry\(body\);/);
   assert.doesNotMatch(src,/if\(!response\.ok\)return response/);
   assert.match(src,/body\.engine=ENGINE_VERSION/);
   assert.match(src,/productionEntrypoint:PRODUCTION_ENTRYPOINT/);
+  assert.match(src,/prematchHandler:PREMATCH_HANDLER/);
   assert.match(src,/predictionPath:'STRICT_PRIOR_FAIL_CLOSED'/);
 });
