@@ -17,18 +17,26 @@ Required behavior:
 6. Keep unresolved matches as `PENDING` with an explicit reason.
 7. Exclude synthetic/test fixtures from performance metrics (for example `CFI E2E ...`, `NONEXISTENT ...`).
 
-Required output per match:
-- Home vs Away
+## Canonical primary output format
+All audit commands (`YYYY-MM-DD`, `TODAY`, `LAST`, `3D`, `7D`, `RANGE`) MUST render the primary match ledger first as one compact row per match with exactly these columns and this order:
+
+| Trận | HT | FT | 3+ HT | 7+ FT | Other HT | Other FT | Top3 HT | Top3 FT |
+|---|---:|---:|---|---|---|---|---|---|
+
+Rendering rules:
+- One match = exactly one table row; do not split a match across multiple rows.
+- `HT` and `FT` are verified actual scorelines for SETTLED matches.
+- Four threshold columns display `HIT` or `MISS` for SETTLED matches.
+- `Top3 HT` and `Top3 FT` display `HIT` or `MISS` using HIT@3.
+- For unresolved matches, unavailable actual/outcome cells display `PENDING`, never fabricated values.
+- Keep the primary table compact and mobile-readable. Do not put probabilities, Brier, Method A/B/FINAL values, long reasons, hashes, IDs, or engineering telemetry inside this primary table.
+- Detailed probabilities, Method A vs Method B vs FINAL, Brier/log-loss/calibration, pending reasons and engineering diagnostics belong below the primary table in secondary sections.
+
+Required secondary details when available:
 - Prediction created_at
 - Settlement status
-- Actual HT
-- Actual FT
-- 3+ HT FINAL probability + actual outcome
-- 7+ FT FINAL probability + actual outcome
-- Other HT FINAL probability + actual outcome
-- Other FT FINAL probability + actual outcome
-- Top-3 HT + HIT@3
-- Top-3 FT + HIT@3
+- FINAL probabilities for 3+ HT, 7+ FT, Other HT, Other FT
+- Top-3 predicted scoreline lists
 - Most likely HT→FT path
 - Mean Brier when settled
 
