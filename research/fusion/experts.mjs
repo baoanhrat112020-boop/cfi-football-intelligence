@@ -14,7 +14,7 @@ function requiredProbability(probabilities, market){
   return n;
 }
 
-export function makeExpert(name,{probabilities={},top3HT=[],top3FT=[],confidence={},provenance={}}={}){
+export function makeExpert(name,{probabilities={},top3HT=[],top3FT=[],confidence={},provenance}={}){
   const p=Object.fromEntries(MARKETS.map(m=>[m,requiredProbability(probabilities,m)]));
   const coverageRaw=Number(confidence.coverage??0);
   const sampleRaw=Number(confidence.localSample??0);
