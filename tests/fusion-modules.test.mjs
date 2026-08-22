@@ -6,9 +6,10 @@ import { validateJointConsistency } from '../research/fusion/joint-consistency.m
 import { pairedSubset } from '../research/fusion/fusion-ablation.mjs';
 
 const p={'3+ HT':.1,'7+ FT':.02,'Other HT':.01,'Other FT':.03};
+const provenance=name=>({maxEvidenceTimestamp:'2026-08-21T12:00:00.000Z',futureEvidenceCount:0,sameDateEvidenceCount:0,identityHash:'fixture:A:B:2026-08-22',provenanceHash:`test:${name}`});
 
 test('expert council canonicalizes all four markets',()=>{
-  const x=buildExpertCouncil({futureSix:{probabilities:p},historical:{probabilities:p},dna:{probabilities:p,confidence:{coverage:.8,localSample:80}},regime:{probabilities:p}});
+  const x=buildExpertCouncil({futureSix:{probabilities:p,provenance:provenance('FUTURE_SIX')},historical:{probabilities:p,provenance:provenance('HISTORICAL')},dna:{probabilities:p,confidence:{coverage:.8,localSample:80},provenance:provenance('MATCH_DNA')},regime:{probabilities:p,provenance:provenance('REGIME')}});
   assert.deepEqual(Object.keys(x.FUTURE_SIX.probabilities),['3+ HT','7+ FT','Other HT','Other FT']);
   assert.equal(x.MATCH_DNA.confidence.localSample,80);
 });

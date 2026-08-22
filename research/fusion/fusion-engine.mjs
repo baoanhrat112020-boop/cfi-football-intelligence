@@ -10,7 +10,7 @@ export async function buildFusionPrediction(args={}){
   }=args;
   const policy={...DEFAULT_FUSION_POLICY,...modulePolicy};
   assertStrictPriorDate(maxEvidenceDate,targetDate);
-  for(const name of ['FUTURE_SIX','HISTORICAL','MATCH_DNA','REGIME']) assertExpertOutput(experts?.[name]);
+  for(const name of ['FUTURE_SIX','HISTORICAL','MATCH_DNA','REGIME']) assertExpertOutput(experts?.[name],{targetDate});
   const coverage=assessCoverage(context);
   const probabilities={},routerAudit={};
   for(const market of MARKETS){
@@ -34,6 +34,7 @@ export async function buildFusionPrediction(args={}){
   const tailAudit=auditTailGrid({probabilities,htGrid,ftGrid});
   const hardFailures=[];
   if(policy.enableTailConditional&&!tailAudit.pass) hardFailures.push('TAIL_PROBABILITY_GRID_MISMATCH');
+  const expertProvenance=Object.fromEntries(Object.entries(experts).map(([name,x])=>[name,x.provenance]));
   const result={
     engine:FUSION_VERSION,
     contract:FUSION_CONTRACT,
@@ -46,7 +47,7 @@ export async function buildFusionPrediction(args={}){
     routerAudit,
     tailConditional:policy.enableTailConditional?tailAudit.tail:null,
     consistency:{pass:policy.enableTailConditional?tailAudit.pass:true,warnings:policy.enableTailConditional?tailAudit.warnings:[]},
-    strictPrior:{verified:true,targetDate,maxEvidenceDate},
+    strictPrior:{verified:true,targetDate,maxEvidenceDate,experts:expertProvenance},
     hardFailures,
     productionEligible:false,
     shadowEligible:false,

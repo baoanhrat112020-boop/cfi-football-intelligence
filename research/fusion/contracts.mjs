@@ -1,4 +1,4 @@
-export const FUSION_VERSION = 'CFI_FUSION_RESEARCH_V1.1';
+export const FUSION_VERSION = 'CFI_FUSION_RESEARCH_V1.2';
 export const MARKETS = Object.freeze(['3+ HT','7+ FT','Other HT','Other FT']);
 export const SCORELINE_TARGETS = Object.freeze(['Top-3 HT','Top-3 FT']);
 export const EXPERTS = Object.freeze(['FUTURE_SIX','HISTORICAL','MATCH_DNA','REGIME']);
@@ -19,6 +19,7 @@ export const FUSION_CONTRACT = Object.freeze({
   version: FUSION_VERSION,
   researchOnly: true,
   strictPriorRequired: true,
+  expertProvenanceRequired: true,
   productionMutationAllowed: false,
   canonicalDbMutationAllowed: false,
   baseline: 'R0_IMMUTABLE',
@@ -46,11 +47,29 @@ export function assertStrictPriorDate(maxEvidenceDate,targetDate){
   return true;
 }
 
-export function assertExpertOutput(x){
+export function assertExpertProvenance(x,targetDate){
+  const p=x?.provenance;
+  if(!p||typeof p!=='object') throw new Error('EXPERT_PROVENANCE_REQUIRED');
+  if(typeof p.identityHash!=='string'||!p.identityHash.trim()) throw new Error('EXPERT_IDENTITY_HASH_REQUIRED');
+  if(typeof p.provenanceHash!=='string'||!p.provenanceHash.trim()) throw new Error('EXPERT_PROVENANCE_HASH_REQUIRED');
+  if(!Number.isInteger(p.futureEvidenceCount)||p.futureEvidenceCount!==0) throw new Error('EXPERT_FUTURE_EVIDENCE_PRESENT');
+  if(!Number.isInteger(p.sameDateEvidenceCount)||p.sameDateEvidenceCount!==0) throw new Error('EXPERT_SAME_DATE_EVIDENCE_PRESENT');
+  const ts=Date.parse(String(p.maxEvidenceTimestamp??''));
+  if(!Number.isFinite(ts)) throw new Error('EXPERT_MAX_EVIDENCE_TIMESTAMP_REQUIRED');
+  if(targetDate!==undefined){
+    const td=assertTargetDate(targetDate);
+    const boundary=Date.parse(`${td}T00:00:00.000Z`);
+    if(ts>=boundary) throw new Error('EXPERT_STRICT_PRIOR_FAILURE');
+  }
+  return true;
+}
+
+export function assertExpertOutput(x,{targetDate}={}){
   if(!x||typeof x!=='object') throw new Error('EXPERT_OUTPUT_REQUIRED');
   for(const market of MARKETS){
     const p=x.probabilities?.[market];
     if(!Number.isFinite(p)||p<0||p>1) throw new Error(`INVALID_PROBABILITY:${market}`);
   }
+  assertExpertProvenance(x,targetDate);
   return true;
 }

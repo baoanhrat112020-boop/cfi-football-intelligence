@@ -4,6 +4,7 @@ import { classifyImageState, normalizeImageEvidence, aggregateImageEvidence, evi
 import { makeExpert } from '../research/fusion/experts.mjs';
 
 const validProbabilities={'3+ HT':.2,'7+ FT':.04,'Other HT':.01,'Other FT':.05};
+const validProvenance={maxEvidenceTimestamp:'2026-08-21T12:00:00.000Z',futureEvidenceCount:0,sameDateEvidenceCount:0,identityHash:'fixture:A:B:2026-08-22',provenanceHash:'test:expert'};
 
 test('market labels HT/FT are not treated as match-state evidence',()=>{
   assert.notEqual(classifyImageState({visibleText:'Other HT 12.50'}),'HALFTIME');
@@ -60,9 +61,10 @@ test('suspected extraction failure forces completeness fail-closed',()=>{
 });
 
 test('expert adapter rejects missing or invalid market probabilities instead of coercing to zero',()=>{
-  assert.throws(()=>makeExpert('BAD',{probabilities:{'3+ HT':.2,'7+ FT':.04,'Other HT':.01}}),/INVALID_PROBABILITY:Other FT/);
-  assert.throws(()=>makeExpert('BAD',{probabilities:{...validProbabilities,'7+ FT':null}}),/INVALID_PROBABILITY:7\+ FT/);
-  assert.throws(()=>makeExpert('BAD',{probabilities:{...validProbabilities,'Other FT':1.2}}),/INVALID_PROBABILITY:Other FT/);
-  const ok=makeExpert('OK',{probabilities:validProbabilities});
+  assert.throws(()=>makeExpert('BAD',{probabilities:{'3+ HT':.2,'7+ FT':.04,'Other HT':.01},provenance:validProvenance}),/INVALID_PROBABILITY:Other FT/);
+  assert.throws(()=>makeExpert('BAD',{probabilities:{...validProbabilities,'7+ FT':null},provenance:validProvenance}),/INVALID_PROBABILITY:7\+ FT/);
+  assert.throws(()=>makeExpert('BAD',{probabilities:{...validProbabilities,'Other FT':1.2},provenance:validProvenance}),/INVALID_PROBABILITY:Other FT/);
+  assert.throws(()=>makeExpert('BAD',{probabilities:validProbabilities}),/EXPERT_PROVENANCE_REQUIRED/);
+  const ok=makeExpert('OK',{probabilities:validProbabilities,provenance:validProvenance});
   assert.equal(ok.probabilities['Other FT'],.05);
 });
