@@ -5,7 +5,8 @@ const ENGINE_VERSION='CFI_FINAL_V5.2.5';
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.4';
 const BIGDB_VERSION='CFI_BIG_DB_RETRIEVAL_V2.1.2';
 const DIVERSITY_GUARD_VERSION='CFI_MATCH_DIVERSITY_GUARD_V1';
-const PRODUCTION_ENTRYPOINT='index-v55.ts';
+const PRODUCTION_ENTRYPOINT='index-live-router.ts';
+const PREMATCH_HANDLER='index-v55.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
@@ -36,9 +37,9 @@ function rebuildMatrix(body:any){
 }
 function normalizeReleaseTelemetry(body:any){
   body.engine=ENGINE_VERSION;
-  body.runtime={...(body.runtime??{}),version:RUNTIME_VERSION,engine:ENGINE_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT};
+  body.runtime={...(body.runtime??{}),version:RUNTIME_VERSION,engine:ENGINE_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER};
   body.bigDbRetrieval={...(body.bigDbRetrieval??{}),version:BIGDB_VERSION};
-  body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT};
+  body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER};
   body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
 }
 const nonNegativeCount=(v:any)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
