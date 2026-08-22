@@ -4,6 +4,8 @@ import { buildMultiMarketV1 } from './multi-market-v1.ts';
 export const HALF_OU_HT=[0.5,1.5,2.5,3.5,4.5] as const;
 export const HALF_OU_FT=[1.5,2.5,3.5,4.5,5.5,6.5,7.5] as const;
 export const HALF_AH=[-1.5,-0.5,0.5,1.5] as const;
+export const DEFAULT_HISTORY_CAP=10;
+export const DEFAULT_MIN_TEAM_PRIOR=1;
 
 type Outcome1x2='home'|'draw'|'away';
 export type MultiMarketReplayPoint={
@@ -29,16 +31,18 @@ function dedupeAndSort(fixtures:CanonicalFixture[]){
   return [...new Map(fixtures.map(r=>[`${r.matchDate}|${teamKey(r.homeTeam)}|${teamKey(r.awayTeam)}`,r])).values()]
     .sort((a,b)=>a.matchDate.localeCompare(b.matchDate)||a.id.localeCompare(b.id));
 }
+function tail<T>(rows:T[],cap:number){return rows.length<=cap?rows:rows.slice(rows.length-cap);}
 
-export function buildMultiMarketReplayPoints(fixtures:CanonicalFixture[],minTeamPrior=8):MultiMarketReplayPoint[]{
+export function buildMultiMarketReplayPoints(fixtures:CanonicalFixture[],minTeamPrior=DEFAULT_MIN_TEAM_PRIOR,historyCap=DEFAULT_HISTORY_CAP):MultiMarketReplayPoint[]{
   const sorted=dedupeAndSort(fixtures),points:MultiMarketReplayPoint[]=[];
+  const cap=Math.max(1,Math.floor(historyCap));
   for(let i=0;i<sorted.length;i++){
     const target=sorted[i];
     const prior=sorted.slice(0,i).filter(r=>r.matchDate<target.matchDate);
-    const homePrior=prior.filter(r=>involves(r,target.homeTeam));
-    const awayPrior=prior.filter(r=>involves(r,target.awayTeam));
+    const homePrior=tail(prior.filter(r=>involves(r,target.homeTeam)),cap);
+    const awayPrior=tail(prior.filter(r=>involves(r,target.awayTeam)),cap);
     if(homePrior.length<minTeamPrior||awayPrior.length<minTeamPrior)continue;
-    const h2hPrior=prior.filter(r=>pairMatch(r,target.homeTeam,target.awayTeam));
+    const h2hPrior=tail(prior.filter(r=>pairMatch(r,target.homeTeam,target.awayTeam)),cap);
     const maxEvidenceDate=[...homePrior,...awayPrior,...h2hPrior].reduce((m,r)=>r.matchDate>m?r.matchDate:m,'');
     if(!maxEvidenceDate||maxEvidenceDate>=target.matchDate)throw new Error('STRICT_PRIOR_VIOLATION');
     const p:any=buildPrediction({home:target.homeTeam,away:target.awayTeam,targetDate:target.matchDate,language:'en',homePayload:homePrior,awayPayload:awayPrior,h2hPayload:h2hPrior});
@@ -84,8 +88,8 @@ function finalizeBinary(rows:Record<string,{n:number;brier:number;positive:numbe
   return Object.fromEntries(Object.entries(rows).map(([k,v])=>[k,{n:v.n,brier:v.n?v.brier/v.n:null,prevalence:v.n?v.positive/v.n:null}]));
 }
 
-export function walkForwardMultiMarketBacktest(fixtures:CanonicalFixture[],minTeamPrior=8){
-  const points=buildMultiMarketReplayPoints(fixtures,minTeamPrior);
+export function walkForwardMultiMarketBacktest(fixtures:CanonicalFixture[],minTeamPrior=DEFAULT_MIN_TEAM_PRIOR,historyCap=DEFAULT_HISTORY_CAP){
+  const points=buildMultiMarketReplayPoints(fixtures,minTeamPrior,historyCap);
   const one={ht:{n:0,brier:0},ft:{n:0,brier:0}};
   const ouHt=emptyBinary(HALF_OU_HT),ouFt=emptyBinary(HALF_OU_FT);
   const ahHt=emptyBinary(HALF_AH,['home','away']),ahFt=emptyBinary(HALF_AH,['home','away']);
@@ -102,9 +106,9 @@ export function walkForwardMultiMarketBacktest(fixtures:CanonicalFixture[],minTe
   const totalTargets=dedupeAndSort(fixtures).length;
   return {
     version:'CFI_MULTI_MARKET_WALK_FORWARD_V2',status:'RESEARCH_ONLY',strictPrior:true,sameDateExcluded:true,leakage:false,decisionUse:false,
-    minTeamPrior,evaluatedMatches:points.length,skippedMatches:Math.max(0,totalTargets-points.length),
+    minTeamPrior,historyCap,evaluatedMatches:points.length,skippedMatches:Math.max(0,totalTargets-points.length),
     oneXTwo:{ht:{n:one.ht.n,brier:one.ht.n?one.ht.brier/one.ht.n:null},ft:{n:one.ft.n,brier:one.ft.n?one.ft.brier/one.ft.n:null}},
     overUnder:{ht:finalizeBinary(ouHt),ft:finalizeBinary(ouFt)},asianHandicap:{ht:finalizeBinary(ahHt),ft:finalizeBinary(ahFt)},
-    scope:{overUnder:{ht:[...HALF_OU_HT],ft:[...HALF_OU_FT]},asianHandicap:[...HALF_AH],note:'Half-lines only in benchmark; quarter-line settlement remains shadow until a dedicated multi-outcome scoring contract is validated.'},
+    scope:{overUnder:{ht:[...HALF_OU_HT],ft:[...HALF_OU_FT]},asianHandicap:[...HALF_AH],historyPolicy:{cap,minTeamPrior},note:'Half-lines only in benchmark; quarter-line settlement remains shadow until a dedicated multi-outcome scoring contract is validated.'},
   };
 }
