@@ -27,6 +27,26 @@ V1 derives a normalized independent-Poisson score grid from the existing CFI exp
 
 This separation is temporary and deliberate: it lets CFI collect strict-prior out-of-sample evidence before any promotion into the Champion prediction path.
 
+## CFI Output V2
+Prematch responses expose an additive `outputV2` decision layer designed for fast human reading without mutating Champion probabilities.
+
+The output contains:
+- one headline market;
+- Champion market cards with model probability and fair decimal odds;
+- optional bookmaker odds and model edge;
+- `BET`, `WATCH`, or `PASS` status for Champion markets;
+- scoreline Top-3 HT/FT and most-likely HT→FT path;
+- expected-goal telemetry and uncertainty/consistency/strict-prior quality gates;
+- multi-market 1X2 research cards displayed as `SHADOW` until promotion.
+
+Decision policy:
+- no bookmaker odds => never label a market `BET`;
+- `BET` requires model edge >= 5 percentage points and acceptable confidence;
+- `WATCH` may be used for smaller positive edge or high probability without market odds;
+- negative edge is `PASS` regardless of payout size;
+- all research markets remain `SHADOW` while `decisionUse=false`;
+- output explicitly states that no outcome is guaranteed.
+
 ## Invariants
 - Existing six-target outputs remain unchanged.
 - Existing strict-prior rules remain mandatory.
@@ -47,6 +67,9 @@ Before `decisionUse=true`, the new market layer must demonstrate:
 5. no cross-market consistency violations;
 6. no material regression to the frozen six-target production contract;
 7. explicit Champion/Challenger promotion approval.
+
+## Real 2026 holdout benchmark
+On 4,263 eligible strict-prior fixtures, FT 1X2 components beat simple base-rate Brier baselines, while FT O2.5 and tested HT markets did not. The multi-market layer therefore remains promotion-blocked pending calibration trained only on <=2025 data and segment regression analysis.
 
 ## Future integration
 After passing the promotion gate, CFI should migrate toward one shared joint score distribution so 1X2, AH, O/U, scorelines, and extreme-tail markets are all integrals of the same probability object.
