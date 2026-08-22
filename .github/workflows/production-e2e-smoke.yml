@@ -68,12 +68,12 @@ jobs:
           trap 'kill "$PROXY_PID" 2>/dev/null || true; wait "$PROXY_PID" 2>/dev/null || true; cat /tmp/cfi-proxy.log || true' EXIT
 
           READY=0
-          for i in $(seq 1 30); do
-            CODE=$(curl -sS --max-time 3 -o /tmp/proxy-status.json -w '%{http_code}' http://127.0.0.1:8788/api/status 2>/dev/null || true)
-            if [ "$CODE" != "000" ]; then READY=1; break; fi
+          for i in $(seq 1 6); do
+            CODE=$(curl -sS --connect-timeout 5 --max-time 35 -o /tmp/proxy-status.json -w '%{http_code}' http://127.0.0.1:8788/api/status 2>/dev/null || true)
+            if [ "$CODE" = "200" ]; then READY=1; break; fi
             sleep 2
           done
-          test "$READY" = 1 || { echo 'Remote service-binding proxy did not become ready'; exit 1; }
+          test "$READY" = 1 || { echo 'Remote service-binding proxy did not return production status 200'; exit 1; }
 
           python3 - <<'PY'
           import json, subprocess, tempfile, datetime
@@ -82,7 +82,7 @@ jobs:
 
           def call(method,path,payload=None):
               with tempfile.NamedTemporaryFile() as body:
-                  cmd=['curl','-sS','--connect-timeout','5','--max-time','30','-H','Accept: application/json','-o',body.name,'-w','%{http_code}','-X',method]
+                  cmd=['curl','-sS','--connect-timeout','5','--max-time','45','-H','Accept: application/json','-o',body.name,'-w','%{http_code}','-X',method]
                   if payload is not None:
                       cmd += ['-H','Content-Type: application/json','--data-binary',json.dumps(payload)]
                   cmd += [base+path]
