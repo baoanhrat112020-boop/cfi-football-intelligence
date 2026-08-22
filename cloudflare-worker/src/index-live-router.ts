@@ -59,8 +59,13 @@ async function syncedStatus(request:Request,env:Env,ctx:ExecutionContext){
   return Response.json(body,{status:response.status});
 }
 
+function health(){
+  return Response.json({status:'OK',service:'CFI Football Intelligence',version:PREMATCH_ENGINE,engine:PREMATCH_ENGINE,runtime:{version:PREMATCH_RUNTIME,predictionPath:PREMATCH_PATH},bigDbRetrieval:{version:BIGDB_VERSION},diversityGuard:{version:DIVERSITY_GUARD,active:true},webApp:true,gptAction:true,resultActions:true});
+}
+
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   const url=new URL(request.url);
+  if(url.pathname==='/health'&&request.method==='GET')return health();
   if(url.pathname==='/api/status'&&request.method==='GET')return syncedStatus(request,env,ctx);
   if(url.pathname!=='/api/predict-live'||request.method!=='POST')return prematch.fetch(request,env,ctx);
   let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400})}
