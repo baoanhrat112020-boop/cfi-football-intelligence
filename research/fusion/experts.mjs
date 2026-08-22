@@ -5,9 +5,31 @@ function normalizeTop3(rows){
   return rows.slice(0,3).map(x=>typeof x==='string'?x:String(x?.score??'')).filter(Boolean);
 }
 
+function requiredProbability(probabilities, market){
+  const raw=probabilities?.[market];
+  const n=Number(raw);
+  if(raw===null||raw===undefined||raw===''||!Number.isFinite(n)||n<0||n>1){
+    throw new Error(`INVALID_PROBABILITY:${market}`);
+  }
+  return n;
+}
+
 export function makeExpert(name,{probabilities={},top3HT=[],top3FT=[],confidence={},provenance={}}={}){
-  const p=Object.fromEntries(MARKETS.map(m=>[m,clamp01(Number(probabilities[m]))]));
-  const out={expert:name,probabilities:p,top3HT:normalizeTop3(top3HT),top3FT:normalizeTop3(top3FT),confidence:{coverage:clamp01(Number(confidence.coverage??0)),localSample:Math.max(0,Number(confidence.localSample??0)),ood:Boolean(confidence.ood)},provenance};
+  const p=Object.fromEntries(MARKETS.map(m=>[m,requiredProbability(probabilities,m)]));
+  const coverageRaw=Number(confidence.coverage??0);
+  const sampleRaw=Number(confidence.localSample??0);
+  const out={
+    expert:name,
+    probabilities:p,
+    top3HT:normalizeTop3(top3HT),
+    top3FT:normalizeTop3(top3FT),
+    confidence:{
+      coverage:clamp01(Number.isFinite(coverageRaw)?coverageRaw:0),
+      localSample:Number.isFinite(sampleRaw)&&sampleRaw>=0?sampleRaw:0,
+      ood:Boolean(confidence.ood),
+    },
+    provenance,
+  };
   assertExpertOutput(out);
   return out;
 }
