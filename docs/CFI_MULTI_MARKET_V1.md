@@ -47,6 +47,9 @@ Decision policy:
 - all research markets remain `SHADOW` while `decisionUse=false`;
 - output explicitly states that no outcome is guaranteed.
 
+Verification:
+- CFI Tests run #280: PASS (`npm test` + Cloudflare Worker bundle), including no-odds/BET gate, positive-edge BET, negative-edge PASS and shadow-not-BET invariants.
+
 ## Invariants
 - Existing six-target outputs remain unchanged.
 - Existing strict-prior rules remain mandatory.
