@@ -1,0 +1,119 @@
+name: Production E2E Smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-e2e-smoke.yml'
+      - 'cloudflare-worker/**'
+      - 'src/prediction/**'
+      - 'src/runtime/**'
+      - 'wrangler.jsonc'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-e2e-smoke.yml'
+      - 'cloudflare-worker/**'
+      - 'src/prediction/**'
+      - 'src/runtime/**'
+      - 'wrangler.jsonc'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify production countdown and LIVE routing
+        env:
+          BASE_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, time, urllib.request, urllib.error, datetime
+
+          base=os.environ['BASE_URL'].rstrip('/')
+          today=datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+
+          def call(method,path,payload=None):
+              data=None if payload is None else json.dumps(payload).encode()
+              req=urllib.request.Request(base+path,data=data,method=method,headers={'content-type':'application/json','accept':'application/json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      raw=r.read().decode()
+                      return r.status,json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode()
+                  try: body=json.loads(raw) if raw else {}
+                  except Exception: body={'raw':raw}
+                  return e.code,body
+
+          last=None
+          for attempt in range(1,25):
+              try:
+                  s_status,s=call('GET','/api/status')
+                  assert s_status==200,(s_status,s)
+                  runtime=s.get('runtime') or {}
+                  assert runtime.get('productionEntrypoint')=='index-live-router.ts',runtime
+                  assert runtime.get('prematchEntrypoint')=='index-v55.ts',runtime
+
+                  synthetic_home='CFI E2E NONEXISTENT HOME 9F3A7C'
+                  synthetic_away='CFI E2E NONEXISTENT AWAY 4D2B8E'
+
+                  c_status,c=call('POST','/api/predict-live',{
+                      'home':synthetic_home,
+                      'away':synthetic_away,
+                      'status':'COUNTDOWN',
+                      'clientLocalDate':today,
+                      'language':'vi'
+                  })
+                  assert c_status==422,(c_status,c)
+                  assert c.get('status')=='INSUFFICIENT_DATA',c
+                  route=c.get('matchStateRouting') or {}
+                  assert route.get('classifiedAs')=='PREMATCH',route
+                  assert route.get('requestedEndpoint')=='/api/predict-live',route
+                  assert route.get('executedEndpoint')=='/api/predict',route
+                  assert route.get('targetDate')==today,route
+                  assert route.get('targetDateSource')=='clientLocalDate',route
+
+                  m_status,m=call('POST','/api/predict-live',{
+                      'home':synthetic_home,
+                      'away':synthetic_away,
+                      'status':'COUNTDOWN',
+                      'language':'vi'
+                  })
+                  assert m_status==400,(m_status,m)
+                  assert m.get('error')=='TARGET_DATE_REQUIRED',m
+                  mroute=m.get('matchStateRouting') or {}
+                  assert mroute.get('classifiedAs')=='PREMATCH',mroute
+                  assert mroute.get('executedEndpoint') is None,mroute
+                  assert mroute.get('reason')=='PRE_KICKOFF_TARGET_DATE_UNRESOLVED',mroute
+
+                  l_status,l=call('POST','/api/predict-live',{
+                      'home':synthetic_home,
+                      'away':synthetic_away,
+                      'status':'COUNTDOWN',
+                      'live':{'period':'1H','minute':1,'homeGoals':0,'awayGoals':0},
+                      'language':'vi'
+                  })
+                  assert l_status==400,(l_status,l)
+                  assert l.get('error')=='TARGET_DATE_REQUIRED',l
+                  lruntime=l.get('runtime') or {}
+                  assert lruntime.get('predictionPath')=='LIVE_PRIOR_STRICT_FAIL_CLOSED',lruntime
+
+                  print(json.dumps({
+                      'status':'PASS',
+                      'attempt':attempt,
+                      'runtime':runtime,
+                      'countdownRouting':route,
+                      'missingDateRouting':mroute,
+                      'liveFailClosedRuntime':lruntime
+                  },ensure_ascii=False,indent=2))
+                  raise SystemExit(0)
+              except Exception as exc:
+                  last=repr(exc)
+                  print(f'Attempt {attempt}/24 not ready: {last}')
+                  if attempt<24: time.sleep(10)
+
+          raise SystemExit(f'PRODUCTION_E2E_SMOKE_FAILED: {last}')
+          PY
