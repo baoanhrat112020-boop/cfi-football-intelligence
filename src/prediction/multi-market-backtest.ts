@@ -104,11 +104,12 @@ export function walkForwardMultiMarketBacktest(fixtures:CanonicalFixture[],minTe
     }
   }
   const totalTargets=dedupeAndSort(fixtures).length;
+  const effectiveHistoryCap=Math.max(1,Math.floor(historyCap));
   return {
     version:'CFI_MULTI_MARKET_WALK_FORWARD_V2',status:'RESEARCH_ONLY',strictPrior:true,sameDateExcluded:true,leakage:false,decisionUse:false,
-    minTeamPrior,historyCap,evaluatedMatches:points.length,skippedMatches:Math.max(0,totalTargets-points.length),
+    minTeamPrior,historyCap:effectiveHistoryCap,evaluatedMatches:points.length,skippedMatches:Math.max(0,totalTargets-points.length),
     oneXTwo:{ht:{n:one.ht.n,brier:one.ht.n?one.ht.brier/one.ht.n:null},ft:{n:one.ft.n,brier:one.ft.n?one.ft.brier/one.ft.n:null}},
     overUnder:{ht:finalizeBinary(ouHt),ft:finalizeBinary(ouFt)},asianHandicap:{ht:finalizeBinary(ahHt),ft:finalizeBinary(ahFt)},
-    scope:{overUnder:{ht:[...HALF_OU_HT],ft:[...HALF_OU_FT]},asianHandicap:[...HALF_AH],historyPolicy:{cap,minTeamPrior},note:'Half-lines only in benchmark; quarter-line settlement remains shadow until a dedicated multi-outcome scoring contract is validated.'},
+    scope:{overUnder:{ht:[...HALF_OU_HT],ft:[...HALF_OU_FT]},asianHandicap:[...HALF_AH],historyPolicy:{cap:effectiveHistoryCap,minTeamPrior},note:'Half-lines only in benchmark; quarter-line settlement remains shadow until a dedicated multi-outcome scoring contract is validated.'},
   };
 }
