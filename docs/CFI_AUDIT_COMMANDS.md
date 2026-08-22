@@ -15,6 +15,7 @@ Required behavior:
 4. Call `cfiGetResults` after collection/settlement.
 5. Never reconstruct, revise, or backfill prediction values after actual results are known.
 6. Keep unresolved matches as `PENDING` with an explicit reason.
+7. Exclude synthetic/test fixtures from performance metrics (for example `CFI E2E ...`, `NONEXISTENT ...`).
 
 Required output per match:
 - Home vs Away
@@ -32,7 +33,7 @@ Required output per match:
 - Mean Brier when settled
 
 Required summary:
-- Total selected predictions
+- Total selected real predictions
 - SETTLED / PENDING
 - Actual occurrence rate for each threshold market
 - Top-3 HT accuracy
@@ -42,21 +43,31 @@ Required summary:
 - Best/worst performing target based on available settled evidence
 
 ### `CFI AUDIT 3D`
-Audit the latest three target dates that contain immutable prediction snapshots.
+Canonical implementation endpoint: `GET /api/audit-3d` (`cfiAudit3D`).
 
-Important: `3D` means the three most recent prediction dates, not blindly today/yesterday/day-before-yesterday.
+Hard semantics:
+- `3D` means the **latest three DISTINCT `target_date` values containing real immutable selected prediction snapshots**.
+- It NEVER means latest 3 rows/snapshots.
+- It NEVER means blindly today/yesterday/day-before-yesterday.
+- Return ALL real selected snapshots on those three dates.
+- Exclude synthetic/test fixtures before choosing dates and before calculating metrics.
+- Auto-collect unresolved snapshots in scope, then return post-collection evaluation rows.
 
-For each resolved date, execute the same workflow as `CFI AUDIT YYYY-MM-DD`, then return:
-- detailed match ledger
-- daily summary
-- combined 3-date summary
-- remaining PENDING list and reasons
+The response must expose:
+- `scopeSemantics = LATEST_3_DISTINCT_PREDICTION_DATES`
+- resolved `dates[]`
+- complete row count in scope
+- SETTLED / PENDING
+- `syntheticExcluded = true`
+- per-day summaries
+- full detailed ledger
+- anti-leakage flag
 
 ### `CFI AUDIT 7D`
-Same contract as `CFI AUDIT 3D`, but use the latest seven target dates containing prediction snapshots.
+Same conceptual contract as `CFI AUDIT 3D`, but use the latest seven distinct target dates containing real snapshots.
 
 ### `CFI AUDIT RANGE YYYY-MM-DD YYYY-MM-DD`
-Audit all immutable prediction snapshots with target dates inside the inclusive range.
+Audit all real immutable selected prediction snapshots with target dates inside the inclusive range.
 
 ## Hard anti-leakage rules
 - Prediction source = immutable pre-match snapshot only.
@@ -65,19 +76,20 @@ Audit all immutable prediction snapshots with target dates inside the inclusive 
 - No snapshot replay as a substitute for missing historical snapshots.
 - No fabricated result or fabricated prediction.
 - If actual HT/FT cannot be confidently verified, status remains `PENDING`.
+- Synthetic fixtures may be retained for engineering tests but are excluded from production performance audit.
 
 ## Interpretation rules
 A market outcome (`HIT`/`MISS` in settlement) describes whether the event occurred in reality. It is not by itself a claim that the system made a profitable bet. Performance evaluation must primarily use probability metrics (Brier/log-loss/calibration where available) and Top-3 accuracy.
 
 ## Short aliases
 - `CFI AUDIT TODAY` = target date corresponding to the user's local current date, only if snapshots exist; otherwise report no snapshots rather than substituting another date.
-- `CFI AUDIT LAST` = most recent target date containing immutable prediction snapshots.
-- `CFI AUDIT 3D` = latest 3 target dates containing snapshots.
-- `CFI AUDIT 7D` = latest 7 target dates containing snapshots.
+- `CFI AUDIT LAST` = most recent target date containing real immutable prediction snapshots.
+- `CFI AUDIT 3D` = latest 3 distinct target dates containing real snapshots.
+- `CFI AUDIT 7D` = latest 7 distinct target dates containing real snapshots.
 
 ## Final-status contract
 Every audit response must end with exactly one overall state:
-- `AUDIT_COMPLETE` — all selected snapshots in scope settled.
-- `AUDIT_PARTIAL` — at least one selected snapshot remains pending.
-- `AUDIT_EMPTY` — no immutable prediction snapshots exist for the requested scope.
+- `AUDIT_COMPLETE` — all selected real snapshots in scope settled.
+- `AUDIT_PARTIAL` — at least one selected real snapshot remains pending.
+- `AUDIT_EMPTY` — no real immutable prediction snapshots exist for the requested scope.
 - `AUDIT_ERROR` — the audit pipeline itself failed.
