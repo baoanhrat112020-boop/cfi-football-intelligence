@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { walkForwardMultiMarketBacktest } from '../src/prediction/multi-market-backtest.ts';
+import { buildMultiMarketReplayPoints, walkForwardMultiMarketBacktest } from '../src/prediction/multi-market-backtest.ts';
 import type { CanonicalFixture } from '../src/prediction/final-engine.ts';
 
 function fixtures():CanonicalFixture[]{
@@ -16,11 +16,13 @@ function fixtures():CanonicalFixture[]{
 
 test('strict-prior multi-market benchmark produces bounded out-of-sample metrics',()=>{
   const result:any=walkForwardMultiMarketBacktest(fixtures(),8);
-  assert.equal(result.version,'CFI_MULTI_MARKET_WALK_FORWARD_V1');
+  assert.equal(result.version,'CFI_MULTI_MARKET_WALK_FORWARD_V2');
   assert.equal(result.status,'RESEARCH_ONLY');
   assert.equal(result.strictPrior,true);
+  assert.equal(result.sameDateExcluded,true);
   assert.equal(result.leakage,false);
   assert.equal(result.decisionUse,false);
+  assert.equal(result.minTeamPrior,8);
   assert.ok(result.evaluatedMatches>0);
   for(const part of ['ht','ft']){
     assert.ok(result.oneXTwo[part].n>0);
@@ -37,4 +39,22 @@ test('benchmark is deterministic and does not depend on input ordering',()=>{
   const a=walkForwardMultiMarketBacktest(fixtures(),8);
   const b=walkForwardMultiMarketBacktest([...fixtures()].reverse(),8);
   assert.deepEqual(a,b);
+});
+
+test('replay requires independent home and away minimum prior and excludes same-date evidence',()=>{
+  const rows:CanonicalFixture[]=[
+    ...Array.from({length:12},(_,i)=>({id:`a-${i}`,matchDate:`2025-01-${String(i+1).padStart(2,'0')}`,homeTeam:'Alpha',awayTeam:'Gamma',ht:{home:1,away:0},ft:{home:2,away:0}})),
+    ...Array.from({length:7},(_,i)=>({id:`b-${i}`,matchDate:`2025-02-${String(i+1).padStart(2,'0')}`,homeTeam:'Beta',awayTeam:'Gamma',ht:{home:1,away:0},ft:{home:2,away:1}})),
+    {id:'target-too-early',matchDate:'2025-03-01',homeTeam:'Alpha',awayTeam:'Beta',ht:{home:1,away:1},ft:{home:2,away:1}},
+    {id:'b-extra-1',matchDate:'2025-03-02',homeTeam:'Beta',awayTeam:'Gamma',ht:{home:0,away:0},ft:{home:1,away:0}},
+    {id:'target-ok',matchDate:'2025-03-03',homeTeam:'Alpha',awayTeam:'Beta',ht:{home:1,away:0},ft:{home:2,away:0}},
+    {id:'same-day',matchDate:'2025-03-03',homeTeam:'Beta',awayTeam:'Gamma',ht:{home:4,away:0},ft:{home:6,away:0}},
+  ];
+  const points=buildMultiMarketReplayPoints(rows,8);
+  assert.equal(points.some(r=>r.fixtureId==='target-too-early'),false);
+  const target=points.find(r=>r.fixtureId==='target-ok');
+  assert.ok(target);
+  assert.ok(target!.homePriorCount>=8);
+  assert.ok(target!.awayPriorCount>=8);
+  assert.ok(target!.maxEvidenceDate<'2025-03-03');
 });
