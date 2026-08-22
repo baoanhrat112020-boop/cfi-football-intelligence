@@ -1,4 +1,4 @@
-import base from './index-v47';
+import base from './index-v47.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 
