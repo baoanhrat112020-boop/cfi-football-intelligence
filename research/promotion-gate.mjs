@@ -16,8 +16,13 @@ export const PROMOTION_BANDS = Object.freeze([
   { min: 0, status: 'REJECT' },
 ]);
 
+export const DEFAULT_MIN_PROMOTION_SAMPLES = 30;
+
 const clamp01 = (x) => Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
 const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN;
+const validProbability = (x) => Number.isFinite(x) && x >= 0 && x <= 1;
+const validActual = (x) => x === 0 || x === 1;
+const validTop3 = (row, key) => Array.isArray(row?.[key]) && row[key].length === 3 && row[key].every(x => typeof x === 'string' && x.length > 0) && typeof row?.actualScore?.[key === 'top3HT' ? 'ht' : 'ft'] === 'string';
 
 export function assertStrictPrior(row) {
   const target = Date.parse(row.targetTimestamp);
@@ -32,12 +37,12 @@ export function assertStrictPrior(row) {
 }
 
 export function brierScore(rows, market) {
-  const xs = rows.filter(r => Number.isFinite(r?.probabilities?.[market]) && [0,1].includes(r?.actual?.[market]));
+  const xs = rows.filter(r => validProbability(r?.probabilities?.[market]) && validActual(r?.actual?.[market]));
   return mean(xs.map(r => (r.probabilities[market] - r.actual[market]) ** 2));
 }
 
 export function expectedCalibrationError(rows, market, bins = 10) {
-  const xs = rows.filter(r => Number.isFinite(r?.probabilities?.[market]) && [0,1].includes(r?.actual?.[market]));
+  const xs = rows.filter(r => validProbability(r?.probabilities?.[market]) && validActual(r?.actual?.[market]));
   if (!xs.length) return NaN;
   let ece = 0;
   for (let b = 0; b < bins; b++) {
@@ -57,7 +62,7 @@ export function expectedCalibrationError(rows, market, bins = 10) {
 // of O(n_pos * n_neg), which makes full historical runs tractable.
 function rankAuc(rows, market) {
   const xs = rows
-    .filter(r => Number.isFinite(r?.probabilities?.[market]) && [0,1].includes(r?.actual?.[market]))
+    .filter(r => validProbability(r?.probabilities?.[market]) && validActual(r?.actual?.[market]))
     .map(r => ({ p: r.probabilities[market], y: r.actual[market] }))
     .sort((a, b) => a.p - b.p);
   const nPos = xs.filter(x => x.y === 1).length;
@@ -77,7 +82,7 @@ function rankAuc(rows, market) {
 }
 
 function top3Accuracy(rows, key) {
-  const xs = rows.filter(r => Array.isArray(r?.[key]) && typeof r?.actualScore?.[key === 'top3HT' ? 'ht' : 'ft'] === 'string');
+  const xs = rows.filter(r => validTop3(r, key));
   if (!xs.length) return NaN;
   return mean(xs.map(r => r[key].includes(r.actualScore[key === 'top3HT' ? 'ht' : 'ft']) ? 1 : 0));
 }
@@ -117,7 +122,7 @@ export function detectCollapse(rows, markets, tolerance = 0.015) {
   const perMarket = {};
   let collapsedCount = 0;
   for (const m of markets) {
-    const xs = rows.map(r => r?.probabilities?.[m]).filter(Number.isFinite);
+    const xs = rows.map(r => r?.probabilities?.[m]).filter(validProbability);
     if (xs.length < 3) continue;
     const spread = Math.max(...xs) - Math.min(...xs);
     perMarket[m] = spread;
@@ -128,9 +133,19 @@ export function detectCollapse(rows, markets, tolerance = 0.015) {
 
 export function evaluateRun(rows, options = {}) {
   const markets = options.markets ?? ['threePlusHT','sevenPlusFT','otherHT','otherFT'];
+  const requestedMin = Number.isSafeInteger(options.minSamples) && options.minSamples > 0 ? options.minSamples : DEFAULT_MIN_PROMOTION_SAMPLES;
+  const minSamples = Math.max(DEFAULT_MIN_PROMOTION_SAMPLES, requestedMin);
   const strictPriorFailures = rows.map((r, i) => ({ i, ...assertStrictPrior(r) })).filter(x => !x.pass);
   const collapse = detectCollapse(rows, markets, options.collapseTolerance ?? 0.015);
+  const marketSupport = Object.fromEntries(markets.map(m => [m, rows.filter(r => validProbability(r?.probabilities?.[m]) && validActual(r?.actual?.[m])).length]));
+  const invalidMarketRows = rows.map((r,i) => ({i,markets:markets.filter(m => !validProbability(r?.probabilities?.[m]) || !validActual(r?.actual?.[m]))})).filter(x => x.markets.length);
+  const top3Support = { ht: rows.filter(r => validTop3(r,'top3HT')).length, ft: rows.filter(r => validTop3(r,'top3FT')).length };
+
   const hardFailures = [];
+  if (rows.length < minSamples) hardFailures.push('INSUFFICIENT_SAMPLE');
+  if (Object.values(marketSupport).some(n => n < minSamples)) hardFailures.push('INSUFFICIENT_MARKET_SUPPORT');
+  if (invalidMarketRows.length) hardFailures.push('INVALID_MARKET_PROBABILITY_OR_ACTUAL');
+  if (options.requireTop3 !== false && (top3Support.ht < minSamples || top3Support.ft < minSamples)) hardFailures.push('INSUFFICIENT_TOP3_SUPPORT');
   if (strictPriorFailures.length) hardFailures.push('STRICT_PRIOR_FAILURE');
   if (collapse.collapsed) hardFailures.push('CROSS_MATCH_COLLAPSE');
   if (rows.some(r => r.nondeterministic === true)) hardFailures.push('NONDETERMINISM');
@@ -162,9 +177,10 @@ export function evaluateRun(rows, options = {}) {
     productionEligible: false,
     shadowEligible: !hardFailures.length && score >= 80,
     components,
-    metrics: { meanBrier, meanEce, auc, top3, collapse },
+    metrics: { meanBrier, meanEce, auc, top3, collapse, sampleCount: rows.length, minSamples, marketSupport, top3Support },
     hardFailures,
     strictPriorFailures,
+    invalidMarketRows,
   };
 }
 
