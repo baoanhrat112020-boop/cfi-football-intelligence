@@ -4,7 +4,8 @@ import { DEFAULT_FUSION_POLICY } from '../research/fusion/contracts.mjs';
 import { buildFusionPrediction } from '../research/fusion/fusion-engine.mjs';
 
 const base={'3+ HT':.12,'7+ FT':.02,'Other HT':.01,'Other FT':.03};
-const expert=(name,p=base)=>({expert:name,probabilities:{...p},confidence:{coverage:.9,localSample:100},top3HT:['1-0','1-1','0-1'],top3FT:['2-1','1-1','2-0']});
+const provenance=name=>({maxEvidenceTimestamp:'2026-08-21T23:59:59.000Z',futureEvidenceCount:0,sameDateEvidenceCount:0,identityHash:'fixture:A:B:2026-08-22',provenanceHash:`test:${name}`});
+const expert=(name,p=base)=>({expert:name,probabilities:{...p},confidence:{coverage:.9,localSample:100},top3HT:['1-0','1-1','0-1'],top3FT:['2-1','1-1','2-0'],provenance:provenance(name)});
 
 test('default policy prunes historically harmful F4/F5 behavior',()=>{
   assert.equal(DEFAULT_FUSION_POLICY.useSelectiveGate,false);
