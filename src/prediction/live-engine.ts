@@ -115,7 +115,9 @@ function projectedRemainingGoals(prematch:any,s:LiveState):HazardProjection{
   const goalPaceRate=minute>8?observed/(minute/horizons.ft):ftExp.total;
   const hasXg=Number.isFinite(Number(s.xgHome))&&Number.isFinite(Number(s.xgAway));
   const qualityRate=hasXg&&minute>8?(finite(s.xgHome)+finite(s.xgAway))/(minute/horizons.ft):null;
-  const baselineRate=qualityRate==null?.72*ftExp.total+.28*goalPaceRate:.68*ftExp.total+.22*qualityRate+.10*goalPaceRate;
+  const baselineRate=qualityRate==null
+    ?.72*ftExp.total+.28*goalPaceRate
+    :.68*ftExp.total+.22*qualityRate+.10*goalPaceRate;
   const prematchShare=ftExp.total>0?clamp(ftExp.home/ftExp.total,.2,.8):.5;
   const context=contextualMultipliers(s),m=momentum(s);
   const momentumTilt=Math.exp(.22*m);
