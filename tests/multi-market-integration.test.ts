@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { attachMultiMarketShadow } from '../src/prediction/multi-market-integration.ts';
+import { buildMultiMarketV1 } from '../src/prediction/multi-market-v1.ts';
 
 function championBody(){
   return {
@@ -22,8 +23,19 @@ function championBody(){
   };
 }
 
-test('additive shadow integration preserves frozen Champion fields',()=>{
+function alignedChampionBody(){
   const body=championBody();
+  const e=body.scoreline.expectedGoals;
+  const mm=buildMultiMarketV1(e);
+  body.markets['3+ HT'].final=mm.overUnder.ht['2.5'].over.fullWin;
+  body.markets['3+ HT'].scorelineMass=body.markets['3+ HT'].final;
+  body.markets['7+ FT'].final=mm.overUnder.ft['6.5'].over.fullWin;
+  body.markets['7+ FT'].scorelineMass=body.markets['7+ FT'].final;
+  return body;
+}
+
+test('additive shadow integration preserves frozen Champion fields when equivalent events reconcile',()=>{
+  const body=alignedChampionBody();
   const frozen={
     markets:structuredClone(body.markets),
     scoreline:structuredClone(body.scoreline),
@@ -42,7 +54,20 @@ test('additive shadow integration preserves frozen Champion fields',()=>{
   assert.equal(body.multiMarket.decisionUse,false);
   assert.equal(body.multiMarket.consistencyGuard.status,'PASS');
   assert.equal(body.multiMarketIntegration.status,'SHADOW_READY');
+  assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'PASS');
   assert.equal(body.multiMarketIntegration.championMutation,false);
+});
+
+test('equivalent-event divergence blocks shadow promotion without mutating Champion',()=>{
+  const body=championBody();
+  const frozenMarkets=structuredClone(body.markets);
+  attachMultiMarketShadow(body);
+  assert.equal(body.multiMarket.consistencyGuard.status,'PASS');
+  assert.equal(body.multiMarketIntegration.status,'SHADOW_BLOCKED');
+  assert.equal(body.multiMarketIntegration.reason,'CROSS_CORE_EQUIVALENCE_FAIL');
+  assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'FAIL');
+  assert.ok(body.multiMarketIntegration.crossCoreConsistency.checks.some((x:any)=>x.event==='7+ FT ≡ FT O6.5'&&x.status==='FAIL'));
+  assert.deepEqual(body.markets,frozenMarkets);
 });
 
 test('missing expected-goal telemetry leaves Champion usable and marks shadow unavailable',()=>{
