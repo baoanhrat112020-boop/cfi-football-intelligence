@@ -11,6 +11,7 @@ test('multi-market V1 is deterministic and internally consistent',()=>{
   assert.equal(a.version,'CFI_MULTI_MARKET_V1');
   assert.equal(a.status,'SHADOW_RESEARCH');
   assert.equal(a.decisionUse,false);
+  assert.equal(a.consistencyGuard.version,'CFI_CROSS_MARKET_COHERENCE_GATE_V1');
   assert.equal(a.consistencyGuard.status,'PASS');
 });
 

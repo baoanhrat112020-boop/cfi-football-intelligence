@@ -1,5 +1,6 @@
 export const MULTI_MARKET_VERSION = 'CFI_MULTI_MARKET_V1';
 export const MULTI_MARKET_STATUS = 'SHADOW_RESEARCH';
+export const CROSS_MARKET_COHERENCE_VERSION = 'CFI_CROSS_MARKET_COHERENCE_GATE_V1';
 
 type ScoreCell = { home:number; away:number; total:number; probability:number };
 type Settlement = { fullWin:number; halfWin:number; push:number; halfLoss:number; fullLoss:number; fairDecimal:number|null };
@@ -82,7 +83,7 @@ function consistency(one:any,htTotals:any,ftTotals:any,htAh:any,ftAh:any){
   if(Math.abs(ftAh['-0.5']?.home?.fullWin-one.ft.home)>1e-9)violations.push('FT_HOME_MINUS_HALF_NE_1X2_HOME');
   if(Math.abs(htAh['-0.5']?.home?.fullWin-one.ht.home)>1e-9)violations.push('HT_HOME_MINUS_HALF_NE_1X2_HOME');
   for(const [group,obj] of [['HT_OU',htTotals],['FT_OU',ftTotals],['HT_AH',htAh],['FT_AH',ftAh]] as const){for(const [line,sides] of Object.entries(obj) as any)for(const [side,s] of Object.entries(sides) as any)if(Math.abs(sumSettlement(s)-1)>1e-9)violations.push(`${group}_${line}_${side}_SETTLEMENT_SUM`);}
-  return {status:violations.length?'FAIL':'PASS',violations};
+  return {version:CROSS_MARKET_COHERENCE_VERSION,status:violations.length?'FAIL':'PASS',violations};
 }
 
 export function buildMultiMarketV1(input:{htHome:number;htAway:number;ftHome:number;ftAway:number}){
