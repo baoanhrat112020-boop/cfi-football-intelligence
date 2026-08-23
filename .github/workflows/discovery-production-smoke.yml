@@ -3,10 +3,16 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
 
 permissions:
   contents: read
   issues: write
+
+concurrency:
+  group: cfi-discovery-production-smoke
+  cancel-in-progress: true
 
 jobs:
   smoke:
@@ -21,6 +27,7 @@ jobs:
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
           ok=0
+          DISC='{}'
           for i in $(seq 1 8); do
             echo "Smoke attempt $i for $TARGET_DATE"
             STATUS=$(curl -fsS --max-time 30 "$BASE/api/status" || true)
