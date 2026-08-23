@@ -47,7 +47,9 @@ test('production bundle exposes multi-market shadow without mutating six-target 
     assert.equal(body.multiMarket.version,'CFI_MULTI_MARKET_V1');
     assert.equal(body.multiMarket.status,'SHADOW_RESEARCH');
     assert.equal(body.multiMarket.decisionUse,false);
-    assert.equal(body.multiMarketIntegration.status,'SHADOW_READY');
+    assert.equal(body.multiMarketIntegration.status,'SHADOW_BLOCKED');
+    assert.equal(body.multiMarketIntegration.reason,'CROSS_CORE_EQUIVALENCE_FAIL');
+    assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'FAIL');
     assert.equal(body.multiMarketIntegration.championMutation,false);
     assert.equal(body.multiMarket.consistencyGuard.status,'PASS');
     const ft=body.multiMarket.oneXTwo.ft;
