@@ -21,16 +21,36 @@ function card(market:string,probability:any,confidence:any,marketOdds:any,source
   const p=finite(probability),o=finite(marketOdds),edge=p!==null&&o!==null?p-(1/o):null;
   return {market,probability:p,fairOdds:fairOdds(p),confidence:conf(confidence),status:decision(p,o,conf(confidence),shadow),marketOdds:o,edge:edge===null?null:Math.round(edge*10000)/10000,source};
 }
+function add1x2(shadow:Card[],mm:any,odds:any,part:'HT'|'FT'){
+  const x=mm?.oneXTwo?.[part.toLowerCase()];if(!x)return;
+  shadow.push(card(`${part} 1`,x.home,null,odds?.[`${part} 1`],'SHADOW',true));
+  shadow.push(card(`${part} X`,x.draw,null,odds?.[`${part} X`],'SHADOW',true));
+  shadow.push(card(`${part} 2`,x.away,null,odds?.[`${part} 2`],'SHADOW',true));
+}
+function addOu(shadow:Card[],mm:any,odds:any,part:'HT'|'FT'){
+  const ladder=mm?.overUnder?.[part.toLowerCase()]??{};
+  for(const line of Object.keys(ladder).sort((a,b)=>Number(a)-Number(b))){
+    const over=ladder[line]?.over?.fullWin,under=ladder[line]?.under?.fullWin;
+    if(Number.isFinite(Number(over)))shadow.push(card(`${part} O${line}`,over,null,odds?.[`${part} O${line}`],'SHADOW',true));
+    if(Number.isFinite(Number(under)))shadow.push(card(`${part} U${line}`,under,null,odds?.[`${part} U${line}`],'SHADOW',true));
+  }
+}
+function addAh(shadow:Card[],mm:any,odds:any,part:'HT'|'FT'){
+  const ladder=mm?.asianHandicap?.[part.toLowerCase()]??{};
+  for(const line of Object.keys(ladder).sort((a,b)=>Number(a)-Number(b))){
+    const home=ladder[line]?.home?.fullWin,away=ladder[line]?.away?.fullWin;
+    if(Number.isFinite(Number(home)))shadow.push(card(`${part} AH HOME ${line}`,home,null,odds?.[`${part} AH HOME ${line}`],'SHADOW',true));
+    if(Number.isFinite(Number(away)))shadow.push(card(`${part} AH AWAY ${line}`,away,null,odds?.[`${part} AH AWAY ${line}`],'SHADOW',true));
+  }
+}
 
 export function buildCfiOutputV2(body:any,odds:any={}){
   const champion=(body?.ranking??[]).map((r:any)=>card(r.target,r.probability,r.confidence,odds?.[r.target],'CHAMPION'));
   const mm=body?.multiMarket;
   const shadow:Card[]=[];
-  if(mm?.oneXTwo?.ft){
-    shadow.push(card('FT 1',mm.oneXTwo.ft.home,null,odds?.['FT 1'],'SHADOW',true));
-    shadow.push(card('FT X',mm.oneXTwo.ft.draw,null,odds?.['FT X'],'SHADOW',true));
-    shadow.push(card('FT 2',mm.oneXTwo.ft.away,null,odds?.['FT 2'],'SHADOW',true));
-  }
+  add1x2(shadow,mm,odds,'HT');add1x2(shadow,mm,odds,'FT');
+  addOu(shadow,mm,odds,'HT');addOu(shadow,mm,odds,'FT');
+  addAh(shadow,mm,odds,'HT');addAh(shadow,mm,odds,'FT');
   const all=[...champion,...shadow];
   const actionable=all.filter(x=>x.status==='BET').sort((a,b)=>(b.edge??-9)-(a.edge??-9));
   const watch=all.filter(x=>x.status==='WATCH').sort((a,b)=>(b.probability??0)-(a.probability??0));
