@@ -57,13 +57,13 @@ Deno.serve(async(req)=>{
  }
  try{
   if(action==="HISTORY"){const rows=await history();return json({status:"OK",action,count:rows.length,limit,rows});}
-  if(action==="RESULTS"){const rows=await evaluation();return json({status:"OK",action,count:rows.length,limit,rows,evaluationSource:"cfi_prediction_evaluation",antiLeakage:true});}
+  if(action==="RESULTS"){const rows=await evaluation();return json({status:"OK",action,count:rows.length,limit,rows,evaluationSource:"cfi_prediction_evaluation"});}
   if(action==="AUDIT_3D")return json(await audit3d());
   if(action==="COLLECT"||action==="SETTLE"){
-   const before=await history();if(!before.length)return json({status:"NO_PREDICTION_SNAPSHOT",action:"COLLECT",count:0,rows:[],antiLeakage:true},404);
+   const before=await history();if(!before.length)return json({status:"NO_PREDICTION_SNAPSHOT",action:"COLLECT",count:0,rows:[]},404);
    const explicit=String(body?.snapshot_id||"").trim();const targets=explicit?[explicit]:before.filter((r:any)=>String(r.settlement_status||'PENDING').toUpperCase()!=="SETTLED").map((r:any)=>String(r.snapshot_id)).filter(Boolean);
    const collector:any[]=[];for(const id of [...new Set(targets)])collector.push(await collectOne(id));const rows=await evaluation();const attempted=collector.length,success=collector.filter(x=>x.ok).length;
-   return json({status:"OK",action:"COLLECT",mode:"ON_DEMAND_TARGETED",requested:{targetDate,home,away,selectedOnly,limit},snapshotsFound:before.length,collector:{attempted,success,skippedAlreadySettled:before.length-targets.length,runs:collector},count:rows.length,rows,evaluationSource:"cfi_prediction_evaluation",antiLeakage:true,userResultImageRequired:false,imageFallbackOnlyAfterAutomatedSourcesFail:true});
+   return json({status:"OK",action:"COLLECT",mode:"ON_DEMAND_TARGETED",requested:{targetDate,home,away,selectedOnly,limit},snapshotsFound:before.length,collector:{attempted,success,skippedAlreadySettled:before.length-targets.length,runs:collector},count:rows.length,rows,evaluationSource:"cfi_prediction_evaluation",userResultImageRequired:false,imageFallbackOnlyAfterAutomatedSourcesFail:true});
   }
   return json({error:"INVALID_ACTION",allowed:["HISTORY","RESULTS","COLLECT","SETTLE","AUDIT_3D"]},400);
  }catch(error){return json({error:"INTERNAL_ERROR",message:error instanceof Error?error.message:String(error)},500);}
