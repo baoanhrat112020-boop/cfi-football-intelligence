@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {evaluateMultiMarketKnowledge,HUNT_WEIGHTS} from '../research/multimarket-knowledge-policy.mjs';
+const base={knowledge_key:'CFI-L999',fingerprint:'abc123',title:'OU calibration',source:'paper',source_type:'PAPER',provenance_status:'VERIFIED',summary_vi:'x',applicability_score:90,multi_market_relevance_score:95,target_market:'P1_OVER_UNDER',cfi_application:'ladder calibration',required_artifacts:['historical_ou'],expected_failure_modes:['TAIL_BIAS'],baseline_lock:'R0_IMMUTABLE'};
+test('knowledge hunt uses 60 percent multi-market and 40 percent foundational weighting',()=>{assert.equal(HUNT_WEIGHTS.multiMarket,.6);assert.equal(HUNT_WEIGHTS.foundational,.4);const r=evaluateMultiMarketKnowledge(base);assert.equal(r.queueEligible,true);assert.equal(r.huntScore,93);});
+test('high foundational score cannot bypass multi-market relevance floor',()=>{const r=evaluateMultiMarketKnowledge({...base,applicability_score:99,multi_market_relevance_score:69});assert.equal(r.queueEligible,false);assert.ok(r.hardFailures.includes('MULTI_MARKET_RELEVANCE_BELOW_70'));});
+test('unverified community claim cannot enter research queue',()=>{const r=evaluateMultiMarketKnowledge({...base,provenance_status:'COMMUNITY_CLAIM'});assert.equal(r.queueEligible,false);assert.ok(r.hardFailures.includes('PROVENANCE_NOT_QUEUE_ELIGIBLE'));});
+test('rejected concept stays rejected without stronger version provenance or evidence',()=>{const a=evaluateMultiMarketKnowledge(base,{previousStatus:'REJECTED'});assert.equal(a.queueEligible,false);const b=evaluateMultiMarketKnowledge(base,{previousStatus:'REJECTED',newEvidence:true});assert.equal(b.queueEligible,true);});
