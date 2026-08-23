@@ -26,7 +26,7 @@ jobs:
             STATUS=$(curl -fsS --max-time 30 "$BASE/api/status" || true)
             if node -e 'const x=JSON.parse(process.argv[1]); if(x?.discovery?.supported!==true||x?.multiMarket?.decisionUse!==false)process.exit(1)' "$STATUS" 2>/dev/null; then
               DISC=$(curl -fsS --max-time 90 -H 'content-type: application/json' -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":2,\"scan_limit\":12}" "$BASE/api/discover" || true)
-              if node -e 'const x=JSON.parse(process.argv[1]); if(x?.status!=="OK"||x?.action!=="CFI_DISCOVERY"||x?.version!=="CFI_AUTO_DISCOVERY_V1"||x?.rules?.strictPriorRequired!==true||x?.rules?.shadowDecisionUse!==false||!Array.isArray(x?.board))process.exit(1)' "$DISC" 2>/dev/null; then
+              if node -e 'const x=JSON.parse(process.argv[1]); if(x?.status!=="OK"||x?.action!=="CFI_DISCOVERY"||x?.version!=="CFI_AUTO_DISCOVERY_V1.1"||x?.provider==="NONE"||!(x?.counts?.fixturesDiscovered>0)||x?.rules?.strictPriorRequired!==true||x?.rules?.shadowDecisionUse!==false||!Array.isArray(x?.board))process.exit(1)' "$DISC" 2>/dev/null; then
                 echo "$DISC" > /tmp/discovery.json
                 ok=1
                 break
@@ -35,21 +35,17 @@ jobs:
             sleep 20
           done
           if [ "$ok" != 1 ]; then
-            echo '::error title=Production discovery smoke failed::Worker did not expose a valid /api/discover response after retries.'
+            echo "$DISC" > /tmp/discovery-failure.json 2>/dev/null || true
+            echo '::error title=Production discovery smoke failed::No verified real fixture discovery after retries.'
             exit 1
           fi
           node - <<'NODE'
           const fs=require('fs');
           const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'));
-          const summary={status:x.status,targetDate:x.targetDate,provider:x.provider,counts:x.counts,final:x.final,topPicks:x.topPicks?.map(r=>({match:r.match,bestMarket:r.bestMarket,selectionScore:r.selectionScore,status:r.status}))};
+          const summary={status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:x.counts,final:x.final,topPicks:x.topPicks?.map(r=>({match:r.match,bestMarket:r.bestMarket,selectionScore:r.selectionScore,status:r.status}))};
           fs.writeFileSync('/tmp/discovery-summary.json',JSON.stringify(summary,null,2));
           console.log(JSON.stringify(summary,null,2));
-          if(x.counts?.fullPredictionsExecuted>0){
-            for(const r of x.board){
-              if(r.strictPrior!==true)throw new Error('STRICT_PRIOR_FAIL');
-              if(r.multiMarketDecisionUse!==false)throw new Error('SHADOW_DECISION_USE_FAIL');
-            }
-          }
+          if(x.counts?.fullPredictionsExecuted>0){for(const r of x.board){if(r.strictPrior!==true)throw new Error('STRICT_PRIOR_FAIL');if(r.multiMarketDecisionUse!==false)throw new Error('SHADOW_DECISION_USE_FAIL');}}
           NODE
       - name: Publish smoke evidence
         env:
@@ -61,8 +57,4 @@ jobs:
           BODY=$(cat /tmp/discovery-summary.json)
           ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' | head -n1)
           REPORT=$(printf 'Run: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
-          if [ -n "${ISSUE:-}" ]; then
-            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT"
-          else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT"
-          fi
+          if [ -n "${ISSUE:-}" ]; then gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT"; else gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT"; fi
