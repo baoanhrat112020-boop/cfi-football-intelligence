@@ -1,6 +1,7 @@
 export const CFI_OUTPUT_V2='CFI_OUTPUT_V2';
 
-type Card={market:string;probability:number|null;fairOdds:number|null;confidence:string|null;status:'BET'|'WATCH'|'PASS'|'SHADOW';marketOdds:number|null;edge:number|null;source:'CHAMPION'|'SHADOW'};
+type SettlementView={fullWin:number|null;halfWin:number|null;push:number|null;halfLoss:number|null;fullLoss:number|null;fairDecimal:number|null};
+type Card={market:string;probability:number|null;fairOdds:number|null;confidence:string|null;status:'BET'|'WATCH'|'PASS'|'SHADOW';marketOdds:number|null;edge:number|null;source:'CHAMPION'|'SHADOW';settlement?:SettlementView|null};
 const finite=(v:any)=>Number.isFinite(Number(v))?Number(v):null;
 const fairOdds=(p:number|null)=>p&&p>0?Math.round((1/p)*1000)/1000:null;
 const pct=(p:number|null)=>p===null?'—':`${(p*100).toFixed(1)}%`;
@@ -17,9 +18,13 @@ function decision(probability:number|null,marketOdds:number|null,confidence:stri
   if(edge>=.015)return 'WATCH';
   return 'PASS';
 }
-function card(market:string,probability:any,confidence:any,marketOdds:any,source:Card['source'],shadow=false):Card{
-  const p=finite(probability),o=finite(marketOdds),edge=p!==null&&o!==null?p-(1/o):null;
-  return {market,probability:p,fairOdds:fairOdds(p),confidence:conf(confidence),status:decision(p,o,conf(confidence),shadow),marketOdds:o,edge:edge===null?null:Math.round(edge*10000)/10000,source};
+function card(market:string,probability:any,confidence:any,marketOdds:any,source:Card['source'],shadow=false,fairOverride:any=null,settlement:SettlementView|null=null):Card{
+  const p=finite(probability),o=finite(marketOdds),edge=p!==null&&o!==null?p-(1/o):null,fo=finite(fairOverride);
+  return {market,probability:p,fairOdds:fo??fairOdds(p),confidence:conf(confidence),status:decision(p,o,conf(confidence),shadow),marketOdds:o,edge:edge===null?null:Math.round(edge*10000)/10000,source,...(settlement?{settlement}: {})};
+}
+function settlementView(s:any):SettlementView|null{
+  if(!s||typeof s!=='object')return null;
+  return {fullWin:finite(s.fullWin),halfWin:finite(s.halfWin),push:finite(s.push),halfLoss:finite(s.halfLoss),fullLoss:finite(s.fullLoss),fairDecimal:finite(s.fairDecimal)};
 }
 function add1x2(shadow:Card[],mm:any,odds:any,part:'HT'|'FT'){
   const x=mm?.oneXTwo?.[part.toLowerCase()];if(!x)return;
@@ -30,17 +35,21 @@ function add1x2(shadow:Card[],mm:any,odds:any,part:'HT'|'FT'){
 function addOu(shadow:Card[],mm:any,odds:any,part:'HT'|'FT'){
   const ladder=mm?.overUnder?.[part.toLowerCase()]??{};
   for(const line of Object.keys(ladder).sort((a,b)=>Number(a)-Number(b))){
-    const over=ladder[line]?.over?.fullWin,under=ladder[line]?.under?.fullWin;
-    if(Number.isFinite(Number(over)))shadow.push(card(`${part} O${line}`,over,null,odds?.[`${part} O${line}`],'SHADOW',true));
-    if(Number.isFinite(Number(under)))shadow.push(card(`${part} U${line}`,under,null,odds?.[`${part} U${line}`],'SHADOW',true));
+    for(const side of ['over','under'] as const){
+      const s=settlementView(ladder[line]?.[side]);if(!s)continue;
+      const label=`${part} ${side==='over'?'O':'U'}${line}`;
+      shadow.push(card(label,s.fullWin,null,odds?.[label],'SHADOW',true,s.fairDecimal,s));
+    }
   }
 }
 function addAh(shadow:Card[],mm:any,odds:any,part:'HT'|'FT'){
   const ladder=mm?.asianHandicap?.[part.toLowerCase()]??{};
   for(const line of Object.keys(ladder).sort((a,b)=>Number(a)-Number(b))){
-    const home=ladder[line]?.home?.fullWin,away=ladder[line]?.away?.fullWin;
-    if(Number.isFinite(Number(home)))shadow.push(card(`${part} AH HOME ${line}`,home,null,odds?.[`${part} AH HOME ${line}`],'SHADOW',true));
-    if(Number.isFinite(Number(away)))shadow.push(card(`${part} AH AWAY ${line}`,away,null,odds?.[`${part} AH AWAY ${line}`],'SHADOW',true));
+    for(const side of ['home','away'] as const){
+      const s=settlementView(ladder[line]?.[side]);if(!s)continue;
+      const label=`${part} AH ${side.toUpperCase()} ${line}`;
+      shadow.push(card(label,s.fullWin,null,odds?.[label],'SHADOW',true,s.fairDecimal,s));
+    }
   }
 }
 
@@ -64,10 +73,15 @@ export function buildCfiOutputV2(body:any,odds:any={}){
     quickDecision:{bet:actionable,watch,pass:all.filter(x=>x.status==='PASS'),shadow:all.filter(x=>x.status==='SHADOW')},
     championMarkets:champion,
     shadowMarkets:shadow,
+    marketGroups:{
+      oneXTwo:{ht:shadow.filter(x=>/^HT [1X2]$/.test(x.market)),ft:shadow.filter(x=>/^FT [1X2]$/.test(x.market))},
+      overUnder:{ht:shadow.filter(x=>/^HT [OU]/.test(x.market)),ft:shadow.filter(x=>/^FT [OU]/.test(x.market))},
+      asianHandicap:{ht:shadow.filter(x=>/^HT AH /.test(x.market)),ft:shadow.filter(x=>/^FT AH /.test(x.market))},
+    },
     scoreline:{top3HT:top3ht,top3FT:top3ft,path:body?.scoreline?.mostLikelyPath??null},
     expectedGoals:body?.scoreline?.expectedGoals??null,
-    quality:{strictPrior:body?.strictPrior?.verified??body?.strictPriorAudit?.evidence?.verified??null,consistency:body?.consistencyGuard?.status??null,uncertainty:body?.scoreline?.uncertainty??null,multiMarketStatus:body?.multiMarketIntegration?.status??null},
-    rules:{betRequiresOdds:true,minModelEdge:0.05,watchEdge:0.015,noGuaranteedWin:true,shadowDecisionUse:false},
+    quality:{strictPrior:body?.strictPrior?.verified??body?.strictPriorAudit?.evidence?.verified??null,consistency:body?.consistencyGuard?.status??null,multiMarketConsistency:mm?.consistencyGuard?.status??null,uncertainty:body?.scoreline?.uncertainty??null,multiMarketStatus:body?.multiMarketIntegration?.status??null},
+    rules:{betRequiresOdds:true,minModelEdge:0.05,watchEdge:0.015,noGuaranteedWin:true,shadowDecisionUse:false,quarterAndIntegerLinesExposeSettlementStates:true},
   };
 }
 
