@@ -66,6 +66,10 @@ async function syncedStatus(request:Request,env:Env,ctx:ExecutionContext){
   return Response.json(body,{status:response.status});
 }
 
+function health(){
+  return Response.json({status:'OK',service:'CFI Football Intelligence',version:PREMATCH_ENGINE,engine:PREMATCH_ENGINE,runtime:{version:PREMATCH_RUNTIME,predictionPath:PREMATCH_PATH},bigDbRetrieval:{version:BIGDB_VERSION},diversityGuard:{version:DIVERSITY_GUARD,active:true},multiMarket:{mode:'SHADOW_RESEARCH',decisionUse:false},discovery:{version:CFI_DISCOVERY_VERSION},webApp:true,gptAction:true,resultActions:true});
+}
+
 async function rawDiscoveryPrediction(f:DiscoveredFixture,env:Env){
   try{
     const big=await fetchBigDb(env,{home:f.home,away:f.away,target_date:f.targetDate}),exact=exactTeamEvidenceAudit(big);if(!exact.verified)return{fixture:f,status:'INSUFFICIENT_DATA',reason:'ZERO_EXACT_TEAM_EVIDENCE',exact};
@@ -99,6 +103,7 @@ async function discovery(request:Request,env:Env,ctx:ExecutionContext){
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   const url=new URL(request.url);
+  if(url.pathname==='/health'&&request.method==='GET')return health();
   if(url.pathname==='/api/status'&&request.method==='GET')return syncedStatus(request,env,ctx);
   if(url.pathname==='/api/discover'&&request.method==='POST')return discovery(request,env,ctx);
   if(url.pathname==='/api/predict'&&request.method==='POST'){const response=await prematch.fetch(request,env,ctx);return enrichPredictionResponse(request,response);}
