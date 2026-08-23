@@ -1,3 +1,5 @@
+import { evaluateMultiMarketKnowledge, HUNT_WEIGHTS, TRACKS } from './multimarket-knowledge-policy.mjs';
+
 export const CFI_KNOWLEDGE_SYNC_COMMAND = 'CFI KNOWLEDGE SYNC AUTO — HUNT → LAB → EVIDENCE — CONTINUOUS';
 
 export const KNOWLEDGE_LIFECYCLE = Object.freeze([
@@ -11,25 +13,30 @@ export const KNOWLEDGE_SYNC_CONTRACT = Object.freeze({
   r0Immutable: true,
   productionMutationAllowed: false,
   canonicalDbMutationAllowed: false,
+  multiMarketFocus: true,
   candidateApplicabilityThreshold: 70,
+  candidateMultiMarketRelevanceThreshold: 70,
+  huntWeights: HUNT_WEIGHTS,
+  priorityTracks: Object.keys(TRACKS),
   historicalPromotionThreshold: 80,
   directPaperToProduction: false,
   lifecycle: KNOWLEDGE_LIFECYCLE,
   loop: ['HUNT','PROVENANCE','DEDUP','REGISTRY','CANDIDATE_QUEUE','LAB','EVIDENCE','REGISTRY_FEEDBACK','SHADOW','RELEASE_GATE'],
 });
 
-const VERIFIED_PROVENANCE = new Set(['SOURCE_VERIFIED','CROSS_CHECKED','VERIFIED']);
-
-export function candidateDecision(item = {}) {
-  const applicability = Math.max(0, Math.min(100, Number(item.applicability_score ?? 0)));
-  const provenance = String(item.provenance_status ?? 'UNVERIFIED');
-  const candidate = applicability >= KNOWLEDGE_SYNC_CONTRACT.candidateApplicabilityThreshold && VERIFIED_PROVENANCE.has(provenance);
+export function candidateDecision(item = {}, context = {}) {
+  const audit = evaluateMultiMarketKnowledge(item, context);
   return {
-    candidate,
-    registryStatus: candidate ? 'CANDIDATE' : 'DISCOVERED',
-    queueStatus: candidate ? 'QUEUED' : null,
+    candidate: audit.queueEligible,
+    registryStatus: audit.queueEligible ? 'CANDIDATE' : 'DISCOVERED',
+    queueStatus: audit.queueEligible ? 'QUEUED' : null,
     baselineLock: 'R0_IMMUTABLE',
     productionMutationAllowed: false,
+    multiMarketFocus: true,
+    huntScore: audit.huntScore,
+    targetTrack: audit.track,
+    hardFailures: audit.hardFailures,
+    identity: audit.identity,
   };
 }
 
