@@ -2,7 +2,7 @@ export const CFI_OUTPUT_V2='CFI_OUTPUT_V2';
 
 type SettlementView={fullWin:number|null;halfWin:number|null;push:number|null;halfLoss:number|null;fullLoss:number|null;fairDecimal:number|null};
 type Card={market:string;probability:number|null;fairOdds:number|null;confidence:string|null;status:'BET'|'WATCH'|'PASS'|'SHADOW';marketOdds:number|null;edge:number|null;source:'CHAMPION'|'SHADOW';settlement?:SettlementView|null};
-const finite=(v:any)=>Number.isFinite(Number(v))?Number(v):null;
+const finite=(v:any)=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const fairOdds=(p:number|null)=>p&&p>0?Math.round((1/p)*1000)/1000:null;
 const pct=(p:number|null)=>p===null?'—':`${(p*100).toFixed(1)}%`;
 const conf=(v:any)=>typeof v==='string'?v:null;
