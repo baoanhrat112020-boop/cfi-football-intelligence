@@ -4,6 +4,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -37,7 +41,9 @@ jobs:
           node - <<'NODE'
           const fs=require('fs');
           const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'));
-          console.log(JSON.stringify({status:x.status,targetDate:x.targetDate,provider:x.provider,counts:x.counts,final:x.final,topPicks:x.topPicks?.map(r=>({match:r.match,bestMarket:r.bestMarket,selectionScore:r.selectionScore,status:r.status}))},null,2));
+          const summary={status:x.status,targetDate:x.targetDate,provider:x.provider,counts:x.counts,final:x.final,topPicks:x.topPicks?.map(r=>({match:r.match,bestMarket:r.bestMarket,selectionScore:r.selectionScore,status:r.status}))};
+          fs.writeFileSync('/tmp/discovery-summary.json',JSON.stringify(summary,null,2));
+          console.log(JSON.stringify(summary,null,2));
           if(x.counts?.fullPredictionsExecuted>0){
             for(const r of x.board){
               if(r.strictPrior!==true)throw new Error('STRICT_PRIOR_FAIL');
@@ -45,3 +51,18 @@ jobs:
             }
           }
           NODE
+      - name: Publish smoke evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TITLE='[AUTO] CFI Discovery Production Smoke'
+          BODY=$(cat /tmp/discovery-summary.json)
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' | head -n1)
+          REPORT=$(printf 'Run: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
+          if [ -n "${ISSUE:-}" ]; then
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT"
+          fi
