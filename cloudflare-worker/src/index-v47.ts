@@ -30,11 +30,12 @@ export default{
   const u=new URL(request.url);
   if(u.pathname==='/api/prediction-history'&&request.method==='GET')return callControl(env,'HISTORY',queryPayload(u));
   if(u.pathname==='/api/results'&&request.method==='GET')return callControl(env,'RESULTS',queryPayload(u));
+  if(u.pathname==='/api/audit-3d'&&request.method==='GET')return callControl(env,'AUDIT_3D',{});
   if(u.pathname==='/api/collect-results'&&request.method==='POST'){
     let body:any={};try{body=await request.json()}catch{}
     return callControl(env,'COLLECT',body&&typeof body==='object'?body:{});
   }
-  if(u.pathname==='/health')return Response.json({status:'OK',service:'CFI Football Intelligence',version:'CFI_FINAL_V5.0.1',webApp:true,gptAction:true,resultActions:true});
+  if(u.pathname==='/health')return Response.json({status:'OK',service:'CFI Football Intelligence',version:'CFI_FINAL_V5.0.1',webApp:true,gptAction:true,resultActions:true,audit3d:true});
   return base.fetch(request,env,ctx);
  }
 } satisfies ExportedHandler<Env>;
