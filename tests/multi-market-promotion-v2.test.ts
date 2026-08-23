@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { evaluateMultiMarketPromotionV2 } from '../src/prediction/multi-market-promotion-v2.ts';
 
 const base={market:'FT_1X2',strictPrior:true,temporalLeakage:false,coherenceStatus:'PASS' as const,deterministic:true,swapPass:true,collapsePass:true,segmentWorstBrierDelta:0.005};
-const metric=(c=.20,b=.24,r=.22,n=300)=>({raw:{n,brier:r},calibrated:{n,brier:c},baseline:{n,brier:b}});
+const metric=(c=.16,b=.24,r=.22,n=300)=>({raw:{n,brier:r},calibrated:{n,brier:c},baseline:{n,brier:b}});
 
 test('eligible research result can only become shadow eligible',()=>{
  const r=evaluateMultiMarketPromotionV2({...base,metric:metric()});
+ assert.ok(r.score>=80);
  assert.equal(r.shadowEligible,true);
  assert.equal(r.productionEligible,false);
  assert.equal(r.decisionUse,false);
