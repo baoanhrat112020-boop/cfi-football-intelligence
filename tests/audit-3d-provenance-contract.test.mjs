@@ -11,4 +11,5 @@ test('AUDIT_3D is source controlled and anti-leakage is fail-closed from immutab
   assert.match(source,/strictAudit\?\.verified===true/);
   assert.match(source,/temporal\?\.verified===true/);
   assert.match(source,/if\(!dates\.length\)return \{status:"AUDIT_EMPTY"[\s\S]*?antiLeakage:false/);
+  assert.doesNotMatch(source,/antiLeakage:true/,'antiLeakage must never be a hard-coded success assertion');
 });
