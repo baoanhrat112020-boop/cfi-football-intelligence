@@ -14,7 +14,11 @@ function body(){return {
   consistencyGuard:{status:'PASS'},
   strictPrior:{verified:true},
   multiMarketIntegration:{status:'SHADOW_READY'},
-  multiMarket:{oneXTwo:{ft:{home:.56,draw:.24,away:.20}}},
+  multiMarket:{
+    oneXTwo:{ht:{home:.43,draw:.35,away:.22},ft:{home:.56,draw:.24,away:.20}},
+    overUnder:{ht:{'1.5':{over:{fullWin:.48},under:{fullWin:.52}}},ft:{'2.5':{over:{fullWin:.57},under:{fullWin:.43}}}},
+    asianHandicap:{ht:{'-0.5':{home:{fullWin:.43},away:{fullWin:.57}}},ft:{'-0.5':{home:{fullWin:.56},away:{fullWin:.44}}}},
+  },
 };}
 
 test('without bookmaker odds output never labels champion market BET',()=>{
@@ -38,9 +42,12 @@ test('negative edge is PASS even when payout looks attractive',()=>{
   assert.equal(row.status,'PASS');
 });
 
-test('multi-market research outputs remain SHADOW and never become BET',()=>{
-  const out=buildCfiOutputV2(body(),{'FT 1':2.5});
-  assert.equal(out.shadowMarkets.find((x:any)=>x.market==='FT 1')?.status,'SHADOW');
+test('all multi-market research families remain SHADOW and never become BET',()=>{
+  const out=buildCfiOutputV2(body(),{'FT 1':2.5,'HT O1.5':2.1,'FT AH HOME -0.5':2.2});
+  for(const market of ['HT 1','FT 1','HT O1.5','FT O2.5','HT AH HOME -0.5','FT AH HOME -0.5']){
+    assert.equal(out.shadowMarkets.find((x:any)=>x.market===market)?.status,'SHADOW',market);
+  }
   assert.equal(out.quickDecision.bet.some((x:any)=>x.source==='SHADOW'),false);
+  assert.ok(out.shadowMarkets.every((x:any)=>x.status==='SHADOW'));
   assert.equal(out.rules.shadowDecisionUse,false);
 });
