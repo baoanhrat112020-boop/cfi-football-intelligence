@@ -12,4 +12,7 @@ export const FROZEN_FT_AH:Record<string,{home:BinaryCalibrator;away:BinaryCalibr
  '0.5':{home:platt(1.0228027625,.3284210767),away:platt(1.0228027625,-.3284210767)},
  '1.5':{home:platt(1.0102554187,.3621547678),away:platt(1.0102554187,-.3621547678)},
 };
-export const PROMOTION_CANDIDATES=['FT_1X2','HT_1X2','FT_AH_HALF_LINES'] as const;
+// Historical/2026-holdout evidence is sufficient to admit these markets to a
+// prospective locked live shadow trial, but NOT to the hard promotion state.
+// PROMOTION_CANDIDATE requires the additional locked OOS gate to pass.
+export const LOCKED_LIVE_TRIAL_CANDIDATES=['FT_1X2','HT_1X2','FT_AH_HALF_LINES'] as const;
