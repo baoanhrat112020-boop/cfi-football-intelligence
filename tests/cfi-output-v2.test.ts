@@ -15,9 +15,16 @@ function body(){return {
   strictPrior:{verified:true},
   multiMarketIntegration:{status:'SHADOW_READY'},
   multiMarket:{
+    consistencyGuard:{status:'PASS'},
     oneXTwo:{ht:{home:.43,draw:.35,away:.22},ft:{home:.56,draw:.24,away:.20}},
-    overUnder:{ht:{'1.5':{over:{fullWin:.48},under:{fullWin:.52}}},ft:{'2.5':{over:{fullWin:.57},under:{fullWin:.43}}}},
-    asianHandicap:{ht:{'-0.5':{home:{fullWin:.43},away:{fullWin:.57}}},ft:{'-0.5':{home:{fullWin:.56},away:{fullWin:.44}}}},
+    overUnder:{
+      ht:{'1.5':{over:{fullWin:.48,halfWin:0,push:0,halfLoss:0,fullLoss:.52,fairDecimal:2.083333333},under:{fullWin:.52,halfWin:0,push:0,halfLoss:0,fullLoss:.48,fairDecimal:1.923076923}}},
+      ft:{'2.5':{over:{fullWin:.57,halfWin:0,push:0,halfLoss:0,fullLoss:.43,fairDecimal:1.754385965},under:{fullWin:.43,halfWin:0,push:0,halfLoss:0,fullLoss:.57,fairDecimal:2.325581395}}}
+    },
+    asianHandicap:{
+      ht:{'-0.5':{home:{fullWin:.43,halfWin:0,push:0,halfLoss:0,fullLoss:.57,fairDecimal:2.325581395},away:{fullWin:.57,halfWin:0,push:0,halfLoss:0,fullLoss:.43,fairDecimal:1.754385965}}},
+      ft:{'-0.5':{home:{fullWin:.56,halfWin:0,push:0,halfLoss:0,fullLoss:.44,fairDecimal:1.785714286},away:{fullWin:.44,halfWin:0,push:0,halfLoss:0,fullLoss:.56,fairDecimal:2.272727273}},'-0.25':{home:{fullWin:.40,halfWin:.16,push:0,halfLoss:.24,fullLoss:.20,fairDecimal:1.636363636},away:{fullWin:.20,halfWin:.24,push:0,halfLoss:.16,fullLoss:.40,fairDecimal:2.571428571}}}
+    },
   },
 };}
 
@@ -50,4 +57,16 @@ test('all multi-market research families remain SHADOW and never become BET',()=
   assert.equal(out.quickDecision.bet.some((x:any)=>x.source==='SHADOW'),false);
   assert.ok(out.shadowMarkets.every((x:any)=>x.status==='SHADOW'));
   assert.equal(out.rules.shadowDecisionUse,false);
+});
+
+test('full market output preserves settlement states and engine fair decimal for quarter lines',()=>{
+  const out=buildCfiOutputV2(body());
+  const row=out.shadowMarkets.find((x:any)=>x.market==='FT AH HOME -0.25');
+  assert.ok(row);
+  assert.equal(row.status,'SHADOW');
+  assert.deepEqual(row.settlement,{fullWin:.40,halfWin:.16,push:0,halfLoss:.24,fullLoss:.20,fairDecimal:1.636363636});
+  assert.equal(row.fairOdds,1.636363636);
+  assert.equal(out.marketGroups.asianHandicap.ft.some((x:any)=>x.market==='FT AH HOME -0.25'),true);
+  assert.equal(out.quality.multiMarketConsistency,'PASS');
+  assert.equal(out.rules.quarterAndIntegerLinesExposeSettlementStates,true);
 });
