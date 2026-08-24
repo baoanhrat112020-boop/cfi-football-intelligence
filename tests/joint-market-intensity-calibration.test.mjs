@@ -20,5 +20,5 @@ test('K034 fails closed on missing O/U, fixture mismatch, synthetic or post-kick
  assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12}),/VALID_FT_OU_SNAPSHOT_REQUIRED/);
  assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12,overUnderSnapshot:{...ou,fixture_id:'other'}}),/FIXTURE_MISMATCH/);
  assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12,overUnderSnapshot:ou,synthetic:true}),/REAL_MARKET_SNAPSHOTS_REQUIRED/);
- assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:{...x12,captured_at:x12.kickoff_at},overUnderSnapshot:ou}),/MARKET_SNAPSHOT_INVALID|STRICT_PRIOR_MARKET_FAILURE/);
+ assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:{...x12,captured_at:x12.kickoff_at},overUnderSnapshot:ou}),/VALID_FT_1X2_SNAPSHOT_REQUIRED|MARKET_SNAPSHOT_INVALID|STRICT_PRIOR_MARKET_FAILURE/);
 });
