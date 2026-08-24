@@ -18,11 +18,11 @@ function model(lambdaHome,lambdaAway,line){
 const sq=x=>x*x;
 export function fitJointMarketIntensity({oneXTwoSnapshot,overUnderSnapshot,synthetic=false,reconstructed=false}={}){
   if(synthetic||reconstructed)throw new Error('REAL_MARKET_SNAPSHOTS_REQUIRED');
-  const a=validateMarketSnapshot(oneXTwoSnapshot??{}),b=validateMarketSnapshot(overUnderSnapshot??{});
-  if(!a.valid)throw new Error('MARKET_SNAPSHOT_INVALID');
-  if(oneXTwoSnapshot?.market_family!=='1X2'||oneXTwoSnapshot?.period!=='FT')throw new Error('VALID_FT_1X2_SNAPSHOT_REQUIRED');
-  if(!b.valid)throw new Error('MARKET_SNAPSHOT_INVALID');
-  if(overUnderSnapshot?.market_family!=='OVER_UNDER'||overUnderSnapshot?.period!=='FT')throw new Error('VALID_FT_OU_SNAPSHOT_REQUIRED');
+  if(!oneXTwoSnapshot||oneXTwoSnapshot.market_family!=='1X2'||oneXTwoSnapshot.period!=='FT')throw new Error('VALID_FT_1X2_SNAPSHOT_REQUIRED');
+  if(!overUnderSnapshot||overUnderSnapshot.market_family!=='OVER_UNDER'||overUnderSnapshot.period!=='FT')throw new Error('VALID_FT_OU_SNAPSHOT_REQUIRED');
+  const a=validateMarketSnapshot(oneXTwoSnapshot),b=validateMarketSnapshot(overUnderSnapshot);
+  if(a.errors?.includes('CAPTURE_MUST_PRECEDE_KICKOFF')||b.errors?.includes('CAPTURE_MUST_PRECEDE_KICKOFF'))throw new Error('STRICT_PRIOR_MARKET_FAILURE');
+  if(!a.valid||!b.valid)throw new Error('MARKET_SNAPSHOT_INVALID');
   if(String(oneXTwoSnapshot.fixture_id??oneXTwoSnapshot.verified_fixture_id)!==String(overUnderSnapshot.fixture_id??overUnderSnapshot.verified_fixture_id))throw new Error('FIXTURE_MISMATCH');
   if(Date.parse(oneXTwoSnapshot.captured_at)>=Date.parse(oneXTwoSnapshot.kickoff_at)||Date.parse(overUnderSnapshot.captured_at)>=Date.parse(overUnderSnapshot.kickoff_at))throw new Error('STRICT_PRIOR_MARKET_FAILURE');
   const p1=fairThreeWayProbabilities(oneXTwoSnapshot.odds_home,oneXTwoSnapshot.odds_draw,oneXTwoSnapshot.odds_away);
