@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLivePrediction, validateLiveState, CFI_LIVE_VERSION, CFI_LIVE_MODEL_REVISION } from '../src/prediction/live-engine.ts';
+import { buildLivePrediction, validateLiveState, CFI_LIVE_VERSION, CFI_LIVE_MODEL_REVISION, CFI_LIVE_CONTRACT } from '../src/prediction/live-engine.ts';
 
 const prematch={engine:'CFI_FINAL_V5.2.5',scoreline:{expectedGoals:{ftHome:1.7,ftAway:1.4}}};
 
@@ -10,6 +10,7 @@ test('live engine is deterministic for identical state',()=>{
   assert.deepEqual(a,b);
   assert.equal(a.engine,CFI_LIVE_VERSION);
   assert.equal(a.modelRevision,CFI_LIVE_MODEL_REVISION);
+  assert.equal(a.contract,CFI_LIVE_CONTRACT);
   assert.equal(a.status,'SUCCESS');
   assert.equal(a.prematchSnapshotPolicy,'READ_ONLY_PRIOR_NO_WRITEBACK');
   assert.deepEqual(a.scoreline.ht.final,[{score:'0-1',probability:1}]);
@@ -17,6 +18,10 @@ test('live engine is deterministic for identical state',()=>{
   assert.equal(a.audit.prematchFtExpectation.away,1.4);
   assert.ok(Math.abs(a.audit.prematchFtExpectation.total-3.1)<1e-12);
   assert.equal(a.audit.mutatesPrematch,false);
+  assert.equal(a.audit.methodIntegrity,'A_B_FINAL_PRESENT');
+  assert.equal(a.sixTargetMatrix.verification.methodA,true);
+  assert.equal(a.sixTargetMatrix.verification.methodB,true);
+  for(const row of Object.values(a.markets) as any[]){assert.ok(Number.isFinite(row.methodA));assert.ok(Number.isFinite(row.methodB));assert.ok(Number.isFinite(row.final));assert.ok(Math.abs(row.final-(row.methodA+row.methodB)/2)<1e-12);}
 });
 
 test('production final-engine expectedGoals shape drives live remaining-goal projection',()=>{
@@ -33,11 +38,13 @@ test('production final-engine expectedGoals shape drives live remaining-goal pro
   assert.ok(high.markets['7+ FT'].final>low.markets['7+ FT'].final);
 });
 
-test('xG shot-quality evidence changes hazard without mutating prematch prior',()=>{
+test('xG shot-quality evidence changes contextual Method B while Method A remains xG-free',()=>{
   const base={minute:30,period:'1H',homeGoals:0,awayGoals:0,shotsOnTargetHome:2,shotsOnTargetAway:2};
   const low=buildLivePrediction(prematch,{...base,xgHome:.2,xgAway:.15});
   const high=buildLivePrediction(prematch,{...base,xgHome:1.4,xgAway:1.1});
   assert.ok(Number(low.audit.hazard.qualityRate)<Number(high.audit.hazard.qualityRate));
+  assert.equal(low.audit.remainingGoalExpectationMethods.methodA,high.audit.remainingGoalExpectationMethods.methodA);
+  assert.ok(high.audit.remainingGoalExpectationMethods.methodB>low.audit.remainingGoalExpectationMethods.methodB);
   assert.ok(high.audit.remainingGoalExpectation>low.audit.remainingGoalExpectation);
   assert.equal(high.audit.mutatesPrematch,false);
 });
@@ -50,7 +57,7 @@ test('estimated stoppage time expands the effective late-game horizon',()=>{
   assert.ok(long.audit.remainingGoalExpectation>normal.audit.remainingGoalExpectation);
 });
 
-test('score state raises trailing-team directional hazard',()=>{
+test('score state raises trailing-team contextual directional hazard',()=>{
   const tied=buildLivePrediction(prematch,{minute:65,period:'2H',homeGoals:1,awayGoals:1,htHomeGoals:0,htAwayGoals:0});
   const trailing=buildLivePrediction(prematch,{minute:65,period:'2H',homeGoals:0,awayGoals:1,htHomeGoals:0,htAwayGoals:0});
   assert.ok(trailing.audit.hazard.homeContextMultiplier>tied.audit.hazard.homeContextMultiplier);
@@ -75,16 +82,27 @@ test('league tempo input is bounded and substitutions remain telemetry-only',()=
   assert.throws(()=>validateLiveState({...state,leagueTempoFactor:1.7}),/INVALID_LIVE_FIELD_LEAGUETEMPOFACTOR/);
 });
 
-test('already-hit threshold becomes probability 1',()=>{
+test('already-hit threshold becomes probability 1 for A B FINAL',()=>{
   const r=buildLivePrediction(prematch,{minute:35,period:'1H',homeGoals:2,awayGoals:1});
-  assert.equal(r.markets['3+ HT'].final,1);
+  assert.equal(r.markets['3+ HT'].methodA,1);assert.equal(r.markets['3+ HT'].methodB,1);assert.equal(r.markets['3+ HT'].final,1);
 });
 
 test('halftime state freezes HT outcome and continues FT projection',()=>{
   const r=buildLivePrediction(prematch,{minute:45,period:'HT',homeGoals:1,awayGoals:0});
   assert.equal(r.markets['3+ HT'].final,0);
+  assert.equal(r.markets['3+ HT'].methodA,0);assert.equal(r.markets['3+ HT'].methodB,0);
   assert.deepEqual(r.scoreline.ht.final,[{score:'1-0',probability:1}]);
+  assert.deepEqual(r.scoreline.ht.methodA,r.scoreline.ht.final);assert.deepEqual(r.scoreline.ht.methodB,r.scoreline.ht.final);
   assert.ok(r.scoreline.ft.final.length===3);
+});
+
+test('HOME/AWAY asymmetric prematch expectations produce different directional output',()=>{
+  const state={minute:20,period:'1H',homeGoals:0,awayGoals:0};
+  const homeStrong=buildLivePrediction({scoreline:{expectedGoals:{ftHome:2.8,ftAway:.7}}},state);
+  const awayStrong=buildLivePrediction({scoreline:{expectedGoals:{ftHome:.7,ftAway:2.8}}},state);
+  assert.notDeepEqual(homeStrong.scoreline.ft.final,awayStrong.scoreline.ft.final);
+  assert.ok(homeStrong.audit.hazard.directionalShareHome>.5);
+  assert.ok(awayStrong.audit.hazard.directionalShareHome<.5);
 });
 
 test('2H prediction fails closed without actual halftime score',()=>{
