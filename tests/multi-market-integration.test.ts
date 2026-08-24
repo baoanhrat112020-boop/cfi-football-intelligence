@@ -43,72 +43,35 @@ function strictPriorAlignedBody(){
 
 test('additive shadow integration preserves frozen Champion fields when equivalent events reconcile',()=>{
   const body=alignedChampionBody();
-  const frozen={
-    markets:structuredClone(body.markets),
-    scoreline:structuredClone(body.scoreline),
-    sixTargetMatrix:structuredClone(body.sixTargetMatrix),
-    ranking:structuredClone(body.ranking),
-    verdict:body.verdict,
-  };
+  const frozen={markets:structuredClone(body.markets),scoreline:structuredClone(body.scoreline),sixTargetMatrix:structuredClone(body.sixTargetMatrix),ranking:structuredClone(body.ranking),verdict:body.verdict};
   attachMultiMarketShadow(body);
-  assert.deepEqual(body.markets,frozen.markets);
-  assert.deepEqual(body.scoreline,frozen.scoreline);
-  assert.deepEqual(body.sixTargetMatrix,frozen.sixTargetMatrix);
-  assert.deepEqual(body.ranking,frozen.ranking);
-  assert.equal(body.verdict,frozen.verdict);
-  assert.equal(body.multiMarket.version,'CFI_MULTI_MARKET_V1');
-  assert.equal(body.multiMarket.status,'SHADOW_RESEARCH');
-  assert.equal(body.multiMarket.decisionUse,false);
-  assert.equal(body.multiMarket.consistencyGuard.status,'PASS');
-  assert.equal(body.multiMarketIntegration.status,'SHADOW_READY');
-  assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'PASS');
-  assert.equal(body.multiMarketIntegration.championMutation,false);
-  assert.equal(body.k048TrajectoryShadow.status,'UNAVAILABLE');
+  assert.deepEqual(body.markets,frozen.markets);assert.deepEqual(body.scoreline,frozen.scoreline);assert.deepEqual(body.sixTargetMatrix,frozen.sixTargetMatrix);assert.deepEqual(body.ranking,frozen.ranking);assert.equal(body.verdict,frozen.verdict);
+  assert.equal(body.multiMarket.version,'CFI_MULTI_MARKET_V1');assert.equal(body.multiMarket.status,'SHADOW_RESEARCH');assert.equal(body.multiMarket.decisionUse,false);assert.equal(body.multiMarket.consistencyGuard.status,'PASS');assert.equal(body.multiMarketIntegration.status,'SHADOW_READY');assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'PASS');assert.equal(body.multiMarketIntegration.championMutation,false);assert.equal(body.k048TrajectoryShadow.status,'UNAVAILABLE');
 });
 
 test('K048 promoted research candidate runs as active shadow without mutating Champion',()=>{
   const body=strictPriorAlignedBody();
   const frozen={markets:structuredClone(body.markets),scoreline:structuredClone(body.scoreline),sixTargetMatrix:structuredClone(body.sixTargetMatrix),ranking:structuredClone(body.ranking),verdict:body.verdict};
   attachMultiMarketShadow(body);
-  assert.equal(body.k048TrajectoryShadow.version,'CFI_K048_TRAJECTORY_JOINT_V1');
-  assert.equal(body.k048TrajectoryShadow.status,'SHADOW_ELIGIBLE_ACTIVE');
-  assert.equal(body.k048TrajectoryShadow.researchOnly,true);
-  assert.equal(body.k048TrajectoryShadow.decisionUse,false);
-  assert.equal(body.k048TrajectoryShadow.productionEligible,false);
-  assert.equal(body.k048TrajectoryShadow.baselineLock,'R0_IMMUTABLE');
-  assert.equal(body.k048TrajectoryShadow.promotionEvidence.score,100);
-  assert.equal(body.k048TrajectoryShadow.marginalAudit.status,'PASS');
-  assert.ok(body.k048TrajectoryShadow.trajectoryCount>0);
-  assert.equal(body.k048TrajectoryShadow.topTrajectories.length,12);
-  const transition=body.k048TrajectoryShadow.htToFtOutcomeTransition;
-  const total=Object.values(transition).flatMap((x:any)=>Object.values(x)).reduce((a:any,b:any)=>Number(a)+Number(b),0);
-  assert.ok(Math.abs(Number(total)-1)<1e-9);
-  assert.equal(body.multiMarketIntegration.k048Status,'SHADOW_ELIGIBLE_ACTIVE');
+  assert.equal(body.k048TrajectoryShadow.version,'CFI_K048_TRAJECTORY_JOINT_V1');assert.equal(body.k048TrajectoryShadow.status,'SHADOW_ELIGIBLE_ACTIVE');assert.equal(body.k048TrajectoryShadow.researchOnly,true);assert.equal(body.k048TrajectoryShadow.decisionUse,false);assert.equal(body.k048TrajectoryShadow.productionEligible,false);assert.equal(body.k048TrajectoryShadow.baselineLock,'R0_IMMUTABLE');assert.equal(body.k048TrajectoryShadow.promotionEvidence.score,100);assert.equal(body.k048TrajectoryShadow.marginalAudit.status,'PASS');assert.ok(body.k048TrajectoryShadow.trajectoryCount>0);assert.equal(body.k048TrajectoryShadow.topTrajectories.length,12);
+  const transition=body.k048TrajectoryShadow.htToFtOutcomeTransition;const total=Object.values(transition).flatMap((x:any)=>Object.values(x)).reduce((a:any,b:any)=>Number(a)+Number(b),0);assert.ok(Math.abs(Number(total)-1)<1e-9);assert.equal(body.multiMarketIntegration.k048Status,'SHADOW_ELIGIBLE_ACTIVE');
   assert.deepEqual(body.markets,frozen.markets);assert.deepEqual(body.scoreline,frozen.scoreline);assert.deepEqual(body.sixTargetMatrix,frozen.sixTargetMatrix);assert.deepEqual(body.ranking,frozen.ranking);assert.equal(body.verdict,frozen.verdict);
 });
 
+test('K048 shadow filters zero-mass score support and remains fail-safe for degenerate lambdas',()=>{
+  const body:any=strictPriorAlignedBody();
+  body.scoreline.expectedGoals={htHome:0,htAway:0,ftHome:1.4,ftAway:0};
+  const mm=buildMultiMarketV1(body.scoreline.expectedGoals);
+  body.markets['3+ HT'].final=mm.overUnder.ht['2.5'].over.fullWin;body.markets['3+ HT'].scorelineMass=body.markets['3+ HT'].final;
+  body.markets['7+ FT'].final=mm.overUnder.ft['6.5'].over.fullWin;body.markets['7+ FT'].scorelineMass=body.markets['7+ FT'].final;
+  assert.doesNotThrow(()=>attachMultiMarketShadow(body));
+  assert.equal(body.k048TrajectoryShadow.status,'SHADOW_ELIGIBLE_ACTIVE');assert.equal(body.k048TrajectoryShadow.marginalAudit.status,'PASS');assert.ok(body.k048TrajectoryShadow.trajectoryCount>0);assert.equal(body.k048TrajectoryShadow.decisionUse,false);assert.equal(body.k048TrajectoryShadow.championMutation,false);
+});
+
 test('equivalent-event divergence blocks shadow promotion without mutating Champion',()=>{
-  const body=championBody();
-  const frozenMarkets=structuredClone(body.markets);
-  attachMultiMarketShadow(body);
-  assert.equal(body.multiMarket.consistencyGuard.status,'PASS');
-  assert.equal(body.multiMarketIntegration.status,'SHADOW_BLOCKED');
-  assert.equal(body.multiMarketIntegration.reason,'CROSS_CORE_EQUIVALENCE_FAIL');
-  assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'FAIL');
-  assert.ok(body.multiMarketIntegration.crossCoreConsistency.checks.some((x:any)=>x.event==='7+ FT ≡ FT O6.5'&&x.status==='FAIL'));
-  assert.deepEqual(body.markets,frozenMarkets);
+  const body=championBody();const frozenMarkets=structuredClone(body.markets);attachMultiMarketShadow(body);assert.equal(body.multiMarket.consistencyGuard.status,'PASS');assert.equal(body.multiMarketIntegration.status,'SHADOW_BLOCKED');assert.equal(body.multiMarketIntegration.reason,'CROSS_CORE_EQUIVALENCE_FAIL');assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'FAIL');assert.ok(body.multiMarketIntegration.crossCoreConsistency.checks.some((x:any)=>x.event==='7+ FT ≡ FT O6.5'&&x.status==='FAIL'));assert.deepEqual(body.markets,frozenMarkets);
 });
 
 test('missing expected-goal telemetry leaves Champion usable and marks shadow unavailable',()=>{
-  const body=championBody();
-  delete (body.scoreline as any).expectedGoals.ftAway;
-  const frozen=structuredClone(body);
-  attachMultiMarketShadow(body);
-  assert.equal(body.multiMarket,undefined);
-  assert.equal(body.multiMarketIntegration.status,'UNAVAILABLE');
-  assert.equal(body.multiMarketIntegration.decisionUse,false);
-  assert.equal(body.multiMarketIntegration.reason,'EXPECTED_GOALS_TELEMETRY_REQUIRED');
-  assert.equal(body.k048TrajectoryShadow.status,'UNAVAILABLE');
-  assert.deepEqual(body.markets,frozen.markets);
-  assert.deepEqual(body.scoreline,frozen.scoreline);
+  const body=championBody();delete (body.scoreline as any).expectedGoals.ftAway;const frozen=structuredClone(body);attachMultiMarketShadow(body);assert.equal(body.multiMarket,undefined);assert.equal(body.multiMarketIntegration.status,'UNAVAILABLE');assert.equal(body.multiMarketIntegration.decisionUse,false);assert.equal(body.multiMarketIntegration.reason,'EXPECTED_GOALS_TELEMETRY_REQUIRED');assert.equal(body.k048TrajectoryShadow.status,'UNAVAILABLE');assert.deepEqual(body.markets,frozen.markets);assert.deepEqual(body.scoreline,frozen.scoreline);
 });
