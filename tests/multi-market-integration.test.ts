@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attachMultiMarketShadow } from '../src/prediction/multi-market-integration.ts';
+import { attachMultiMarketShadow, isExpectedK048ShadowFailure } from '../src/prediction/multi-market-integration.ts';
 import { buildMultiMarketV1 } from '../src/prediction/multi-market-v1.ts';
 
 function championBody(){
@@ -66,6 +66,14 @@ test('K048 shadow filters zero-mass score support and remains fail-safe for dege
   body.markets['7+ FT'].final=mm.overUnder.ft['6.5'].over.fullWin;body.markets['7+ FT'].scorelineMass=body.markets['7+ FT'].final;
   assert.doesNotThrow(()=>attachMultiMarketShadow(body));
   assert.equal(body.k048TrajectoryShadow.status,'SHADOW_ELIGIBLE_ACTIVE');assert.equal(body.k048TrajectoryShadow.marginalAudit.status,'PASS');assert.ok(body.k048TrajectoryShadow.trajectoryCount>0);assert.equal(body.k048TrajectoryShadow.decisionUse,false);assert.equal(body.k048TrajectoryShadow.championMutation,false);
+});
+
+test('known K048 numerical/feasibility failures are optional-shadow failures only',()=>{
+  for(const code of ['K048_INFEASIBLE_HT_SUPPORT','K048_INFEASIBLE_FT_SUPPORT','K048_IPF_ROW_ZERO','K048_IPF_COL_ZERO','K048_MARGINAL_PRESERVATION_FAIL']){
+    assert.equal(isExpectedK048ShadowFailure(new Error(code)),true,code);
+  }
+  assert.equal(isExpectedK048ShadowFailure(new Error('K048_INVALID_SCORE')),false);
+  assert.equal(isExpectedK048ShadowFailure(new Error('STRICT_PRIOR_FAILURE')),false);
 });
 
 test('equivalent-event divergence blocks shadow promotion without mutating Champion',()=>{
