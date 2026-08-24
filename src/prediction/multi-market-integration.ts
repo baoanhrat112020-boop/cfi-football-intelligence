@@ -5,6 +5,17 @@ const finiteNonNegative=(v:unknown)=>Number.isFinite(Number(v))&&Number(v)>=0?Nu
 const CROSS_CORE_EQUIVALENCE_GATE='CFI_CROSS_CORE_EQUIVALENCE_GATE_V1';
 const EQUIVALENCE_TOLERANCE=0.01;
 const K048_SHADOW_CONTRACT='CFI_K048_SHADOW_INTEGRATION_V1';
+const K048_EXPECTED_SHADOW_FAILURES=new Set([
+  'K048_INFEASIBLE_HT_SUPPORT',
+  'K048_INFEASIBLE_FT_SUPPORT',
+  'K048_IPF_ROW_ZERO',
+  'K048_IPF_COL_ZERO',
+  'K048_MARGINAL_PRESERVATION_FAIL',
+]);
+
+export function isExpectedK048ShadowFailure(error:unknown){
+  return error instanceof Error&&K048_EXPECTED_SHADOW_FAILURES.has(error.message);
+}
 
 function crossCoreEquivalence(body:any,multiMarket:any){
   const checks=[
@@ -30,17 +41,38 @@ function outcome(score:string){
   return h>a?'HOME':h<a?'AWAY':'DRAW';
 }
 
+function unavailableK048(body:any,reason:string){
+  body.k048TrajectoryShadow={
+    version:K048_VERSION,
+    integrationVersion:K048_SHADOW_CONTRACT,
+    status:'UNAVAILABLE',
+    reason,
+    researchOnly:true,
+    decisionUse:false,
+    productionEligible:false,
+    baselineLock:'R0_IMMUTABLE',
+    championMutation:false,
+  };
+}
+
 function attachK048Shadow(body:any,input:{htHome:number;htAway:number;ftHome:number;ftAway:number}){
   const temporal=body?.bigDbRetrieval?.temporalAudit??body?.temporalEvidenceAudit??body?.strictPriorAudit?.evidence;
   const targetDate=String(body?.target?.date??temporal?.targetDate??'').slice(0,10);
   const maxEvidenceDate=String(temporal?.maxEvidenceDate??temporal?.exactTeamMaxEvidenceDate??'').slice(0,10);
   if(temporal?.verified!==true||Number(temporal?.futureEvidenceCount)!==0||Number(temporal?.sameDateEvidenceCount)!==0||!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)||!/^\d{4}-\d{2}-\d{2}$/.test(maxEvidenceDate)||maxEvidenceDate>=targetDate){
-    body.k048TrajectoryShadow={version:K048_VERSION,integrationVersion:K048_SHADOW_CONTRACT,status:'UNAVAILABLE',reason:'STRICT_PRIOR_PROVENANCE_REQUIRED',researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE'};
+    unavailableK048(body,'STRICT_PRIOR_PROVENANCE_REQUIRED');
     return;
   }
   const htMarginal=buildIndependentScoreGrid(input.htHome,input.htAway,10).filter(r=>r.probability>0).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
   const ftMarginal=buildIndependentScoreGrid(input.ftHome,input.ftAway,14).filter(r=>r.probability>0).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
-  const ensemble=buildK048TrajectoryEnsemble({targetDate,maxEvidenceDate,htMarginal,ftMarginal});
+  let ensemble:any;
+  try{
+    ensemble=buildK048TrajectoryEnsemble({targetDate,maxEvidenceDate,htMarginal,ftMarginal});
+  }catch(error){
+    if(!isExpectedK048ShadowFailure(error))throw error;
+    unavailableK048(body,(error as Error).message);
+    return;
+  }
   const transition:any={HOME:{HOME:0,DRAW:0,AWAY:0},DRAW:{HOME:0,DRAW:0,AWAY:0},AWAY:{HOME:0,DRAW:0,AWAY:0}};
   for(const t of ensemble.trajectories){transition[outcome(t.ht)][outcome(t.ft)]+=Number(t.probability);}
   for(const from of Object.keys(transition))for(const to of Object.keys(transition[from]))transition[from][to]=Math.round(transition[from][to]*1e12)/1e12;
@@ -68,7 +100,7 @@ export function attachMultiMarketShadow(body:any){
   const observable=[htHome,htAway,ftHome,ftAway].every(v=>v!==null);
   if(!observable){
     body.multiMarketIntegration={version:MULTI_MARKET_VERSION,status:'UNAVAILABLE',decisionUse:false,reason:'EXPECTED_GOALS_TELEMETRY_REQUIRED'};
-    body.k048TrajectoryShadow={version:K048_VERSION,integrationVersion:K048_SHADOW_CONTRACT,status:'UNAVAILABLE',reason:'EXPECTED_GOALS_TELEMETRY_REQUIRED',researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE'};
+    unavailableK048(body,'EXPECTED_GOALS_TELEMETRY_REQUIRED');
     return body;
   }
   const input={htHome:htHome!,htAway:htAway!,ftHome:ftHome!,ftAway:ftAway!};
