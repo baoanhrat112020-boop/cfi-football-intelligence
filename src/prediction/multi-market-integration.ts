@@ -1,8 +1,10 @@
-import { buildMultiMarketV1, MULTI_MARKET_VERSION } from './multi-market-v1.ts';
+import { buildIndependentScoreGrid, buildMultiMarketV1, MULTI_MARKET_VERSION } from './multi-market-v1.ts';
+import { buildK048TrajectoryEnsemble, K048_VERSION } from '../../research/trajectory-joint-forecast.mjs';
 
 const finiteNonNegative=(v:unknown)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
-const CROSS_CORE_EQUIVALENCE_GATE='CFI_CROSS_CORE_EQUIVALENCE_GATE_V1';
+const CROSS_CORE_EQUIVALENCE_GATE='CFI_CROSS_MARKET_COHERENCE_GATE_V1';
 const EQUIVALENCE_TOLERANCE=0.01;
+const K048_SHADOW_CONTRACT='CFI_K048_SHADOW_INTEGRATION_V1';
 
 function crossCoreEquivalence(body:any,multiMarket:any){
   const checks=[
@@ -23,17 +25,57 @@ function crossCoreEquivalence(body:any,multiMarket:any){
   };
 }
 
+function outcome(score:string){
+  const [h,a]=score.split('-').map(Number);
+  return h>a?'HOME':h<a?'AWAY':'DRAW';
+}
+
+function attachK048Shadow(body:any,input:{htHome:number;htAway:number;ftHome:number;ftAway:number}){
+  const temporal=body?.bigDbRetrieval?.temporalAudit??body?.temporalEvidenceAudit??body?.strictPriorAudit?.evidence;
+  const targetDate=String(body?.target?.date??temporal?.targetDate??'').slice(0,10);
+  const maxEvidenceDate=String(temporal?.maxEvidenceDate??temporal?.exactTeamMaxEvidenceDate??'').slice(0,10);
+  if(temporal?.verified!==true||Number(temporal?.futureEvidenceCount)!==0||Number(temporal?.sameDateEvidenceCount)!==0||!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)||!/^\d{4}-\d{2}-\d{2}$/.test(maxEvidenceDate)||maxEvidenceDate>=targetDate){
+    body.k048TrajectoryShadow={version:K048_VERSION,integrationVersion:K048_SHADOW_CONTRACT,status:'UNAVAILABLE',reason:'STRICT_PRIOR_PROVENANCE_REQUIRED',researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE'};
+    return;
+  }
+  const htMarginal=buildIndependentScoreGrid(input.htHome,input.htAway,10).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
+  const ftMarginal=buildIndependentScoreGrid(input.ftHome,input.ftAway,14).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
+  const ensemble=buildK048TrajectoryEnsemble({targetDate,maxEvidenceDate,htMarginal,ftMarginal});
+  const transition:any={HOME:{HOME:0,DRAW:0,AWAY:0},DRAW:{HOME:0,DRAW:0,AWAY:0},AWAY:{HOME:0,DRAW:0,AWAY:0}};
+  for(const t of ensemble.trajectories){transition[outcome(t.ht)][outcome(t.ft)]+=Number(t.probability);}
+  for(const from of Object.keys(transition))for(const to of Object.keys(transition[from]))transition[from][to]=Math.round(transition[from][to]*1e12)/1e12;
+  body.k048TrajectoryShadow={
+    version:K048_VERSION,
+    integrationVersion:K048_SHADOW_CONTRACT,
+    status:'SHADOW_ELIGIBLE_ACTIVE',
+    researchOnly:true,
+    decisionUse:false,
+    productionEligible:false,
+    baselineLock:'R0_IMMUTABLE',
+    promotionEvidence:{score:100,threshold:80,runRef:'K048-HISTORICAL-OOS-2026-V1'},
+    strictPrior:ensemble.strictPrior,
+    marginalAudit:ensemble.marginalAudit,
+    trajectoryCount:ensemble.trajectoryCount,
+    topTrajectories:ensemble.trajectories.slice(0,12),
+    htToFtOutcomeTransition:transition,
+    championMutation:false,
+  };
+}
+
 export function attachMultiMarketShadow(body:any){
   const e=body?.scoreline?.expectedGoals;
   const htHome=finiteNonNegative(e?.htHome),htAway=finiteNonNegative(e?.htAway),ftHome=finiteNonNegative(e?.ftHome),ftAway=finiteNonNegative(e?.ftAway);
   const observable=[htHome,htAway,ftHome,ftAway].every(v=>v!==null);
   if(!observable){
     body.multiMarketIntegration={version:MULTI_MARKET_VERSION,status:'UNAVAILABLE',decisionUse:false,reason:'EXPECTED_GOALS_TELEMETRY_REQUIRED'};
+    body.k048TrajectoryShadow={version:K048_VERSION,integrationVersion:K048_SHADOW_CONTRACT,status:'UNAVAILABLE',reason:'EXPECTED_GOALS_TELEMETRY_REQUIRED',researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE'};
     return body;
   }
-  const multiMarket=buildMultiMarketV1({htHome:htHome!,htAway:htAway!,ftHome:ftHome!,ftAway:ftAway!});
+  const input={htHome:htHome!,htAway:htAway!,ftHome:ftHome!,ftAway:ftAway!};
+  const multiMarket=buildMultiMarketV1(input);
   const crossCoreConsistency=crossCoreEquivalence(body,multiMarket);
   body.multiMarket=multiMarket;
+  attachK048Shadow(body,input);
   const internalPass=multiMarket.consistencyGuard.status==='PASS';
   const crossCorePass=crossCoreConsistency.status==='PASS';
   body.multiMarketIntegration={
@@ -44,6 +86,7 @@ export function attachMultiMarketShadow(body:any){
     championMutation:false,
     consistencyGuard:multiMarket.consistencyGuard,
     crossCoreConsistency,
+    k048Status:body?.k048TrajectoryShadow?.status??'UNAVAILABLE',
     ...(!crossCorePass?{reason:'CROSS_CORE_EQUIVALENCE_FAIL'}:{}),
   };
   return body;
