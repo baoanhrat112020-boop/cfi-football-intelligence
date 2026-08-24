@@ -16,9 +16,11 @@ test('K034 fits one deterministic latent intensity to paired real market snapsho
  assert.equal(a.status,'READY');assert.deepEqual(a.fit,b.fit);assert.equal(a.audit.strictPrior,true);assert.ok(a.fit.lambdaHome>0);assert.ok(a.fit.lambdaAway>0);assert.ok(a.fit.squaredError>=0);assert.equal(a.productionEligible,false);
 });
 
-test('K034 fails closed on missing O/U, fixture mismatch, synthetic or post-kickoff capture',()=>{
- assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12}),/VALID_FT_OU_SNAPSHOT_REQUIRED|MARKET_SNAPSHOT_INVALID/);
- assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12,overUnderSnapshot:{...ou,fixture_id:'other'}}),/FIXTURE_MISMATCH/);
- assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12,overUnderSnapshot:ou,synthetic:true}),/REAL_MARKET_SNAPSHOTS_REQUIRED/);
- assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:{...x12,captured_at:x12.kickoff_at},overUnderSnapshot:ou}),/VALID_FT_1X2_SNAPSHOT_REQUIRED|MARKET_SNAPSHOT_INVALID|STRICT_PRIOR_MARKET_FAILURE/);
+test('K034 fails closed with exact contract reasons',()=>{
+ assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12}),{message:'VALID_FT_OU_SNAPSHOT_REQUIRED'});
+ assert.throws(()=>fitJointMarketIntensity({overUnderSnapshot:ou}),{message:'VALID_FT_1X2_SNAPSHOT_REQUIRED'});
+ assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12,overUnderSnapshot:{...ou,market_family:'ASIAN_HANDICAP'}}),{message:'VALID_FT_OU_SNAPSHOT_REQUIRED'});
+ assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12,overUnderSnapshot:{...ou,fixture_id:'other'}}),{message:'FIXTURE_MISMATCH'});
+ assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:x12,overUnderSnapshot:ou,synthetic:true}),{message:'REAL_MARKET_SNAPSHOTS_REQUIRED'});
+ assert.throws(()=>fitJointMarketIntensity({oneXTwoSnapshot:{...x12,captured_at:x12.kickoff_at},overUnderSnapshot:ou}),{message:'STRICT_PRIOR_MARKET_FAILURE'});
 });
