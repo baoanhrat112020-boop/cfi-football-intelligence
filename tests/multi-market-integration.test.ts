@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { attachMultiMarketShadow, isExpectedK048ShadowFailure } from '../src/prediction/multi-market-integration.ts';
 import { buildMultiMarketV1 } from '../src/prediction/multi-market-v1.ts';
+import { K048_VERSION } from '../research/trajectory-joint-forecast.mjs';
 
 function championBody(){
   return {
@@ -53,7 +54,7 @@ test('K048 promoted research candidate runs as active shadow without mutating Ch
   const body=strictPriorAlignedBody();
   const frozen={markets:structuredClone(body.markets),scoreline:structuredClone(body.scoreline),sixTargetMatrix:structuredClone(body.sixTargetMatrix),ranking:structuredClone(body.ranking),verdict:body.verdict};
   attachMultiMarketShadow(body);
-  assert.equal(body.k048TrajectoryShadow.version,'CFI_K048_TRAJECTORY_JOINT_V1');assert.equal(body.k048TrajectoryShadow.status,'SHADOW_ELIGIBLE_ACTIVE');assert.equal(body.k048TrajectoryShadow.researchOnly,true);assert.equal(body.k048TrajectoryShadow.decisionUse,false);assert.equal(body.k048TrajectoryShadow.productionEligible,false);assert.equal(body.k048TrajectoryShadow.baselineLock,'R0_IMMUTABLE');assert.equal(body.k048TrajectoryShadow.promotionEvidence.score,100);assert.equal(body.k048TrajectoryShadow.marginalAudit.status,'PASS');assert.ok(body.k048TrajectoryShadow.trajectoryCount>0);assert.equal(body.k048TrajectoryShadow.topTrajectories.length,12);
+  assert.equal(body.k048TrajectoryShadow.version,K048_VERSION);assert.equal(body.k048TrajectoryShadow.status,'SHADOW_ELIGIBLE_ACTIVE');assert.equal(body.k048TrajectoryShadow.researchOnly,true);assert.equal(body.k048TrajectoryShadow.decisionUse,false);assert.equal(body.k048TrajectoryShadow.productionEligible,false);assert.equal(body.k048TrajectoryShadow.baselineLock,'R0_IMMUTABLE');assert.equal(body.k048TrajectoryShadow.promotionEvidence.score,100);assert.equal(body.k048TrajectoryShadow.marginalAudit.status,'PASS');assert.ok(body.k048TrajectoryShadow.trajectoryCount>0);assert.equal(body.k048TrajectoryShadow.topTrajectories.length,12);
   const transition=body.k048TrajectoryShadow.htToFtOutcomeTransition;const total=Object.values(transition).flatMap((x:any)=>Object.values(x)).reduce((a:any,b:any)=>Number(a)+Number(b),0);assert.ok(Math.abs(Number(total)-1)<1e-9);assert.equal(body.multiMarketIntegration.k048Status,'SHADOW_ELIGIBLE_ACTIVE');
   assert.deepEqual(body.markets,frozen.markets);assert.deepEqual(body.scoreline,frozen.scoreline);assert.deepEqual(body.sixTargetMatrix,frozen.sixTargetMatrix);assert.deepEqual(body.ranking,frozen.ranking);assert.equal(body.verdict,frozen.verdict);
 });
