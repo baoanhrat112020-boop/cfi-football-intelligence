@@ -38,8 +38,8 @@ function attachK048Shadow(body:any,input:{htHome:number;htAway:number;ftHome:num
     body.k048TrajectoryShadow={version:K048_VERSION,integrationVersion:K048_SHADOW_CONTRACT,status:'UNAVAILABLE',reason:'STRICT_PRIOR_PROVENANCE_REQUIRED',researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE'};
     return;
   }
-  const htMarginal=buildIndependentScoreGrid(input.htHome,input.htAway,10).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
-  const ftMarginal=buildIndependentScoreGrid(input.ftHome,input.ftAway,14).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
+  const htMarginal=buildIndependentScoreGrid(input.htHome,input.htAway,10).filter(r=>r.probability>0).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
+  const ftMarginal=buildIndependentScoreGrid(input.ftHome,input.ftAway,14).filter(r=>r.probability>0).map(r=>({score:`${r.home}-${r.away}`,probability:r.probability}));
   const ensemble=buildK048TrajectoryEnsemble({targetDate,maxEvidenceDate,htMarginal,ftMarginal});
   const transition:any={HOME:{HOME:0,DRAW:0,AWAY:0},DRAW:{HOME:0,DRAW:0,AWAY:0},AWAY:{HOME:0,DRAW:0,AWAY:0}};
   for(const t of ensemble.trajectories){transition[outcome(t.ht)][outcome(t.ft)]+=Number(t.probability);}
