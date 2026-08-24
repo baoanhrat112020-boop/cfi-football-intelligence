@@ -2,7 +2,7 @@ import { buildIndependentScoreGrid, buildMultiMarketV1, MULTI_MARKET_VERSION } f
 import { buildK048TrajectoryEnsemble, K048_VERSION } from '../../research/trajectory-joint-forecast.mjs';
 
 const finiteNonNegative=(v:unknown)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
-const CROSS_CORE_EQUIVALENCE_GATE='CFI_CROSS_MARKET_COHERENCE_GATE_V1';
+const CROSS_CORE_EQUIVALENCE_GATE='CFI_CROSS_CORE_EQUIVALENCE_GATE_V1';
 const EQUIVALENCE_TOLERANCE=0.01;
 const K048_SHADOW_CONTRACT='CFI_K048_SHADOW_INTEGRATION_V1';
 
