@@ -10,3 +10,13 @@ test('status endpoint advertises current prematch production runtime while prese
   assert.match(router,/\.\.\.\(body\.runtime\?\?\{\}\)/);
   assert.match(router,/\.\.\.\(body\.bigDbRetrieval\?\?\{\}\)/);
 });
+
+test('health endpoint is sourced from current release constants rather than legacy hard-coded engine versions',()=>{
+  assert.match(router,/url\.pathname==='\/health'/);
+  assert.match(router,/version:PREMATCH_ENGINE/);
+  assert.match(router,/engine:PREMATCH_ENGINE/);
+  assert.match(router,/version:PREMATCH_RUNTIME/);
+  assert.match(router,/predictionPath:PREMATCH_PATH/);
+  assert.match(router,/version:BIGDB_VERSION/);
+  assert.doesNotMatch(router,/CFI_FINAL_V5\.0\.1/);
+});

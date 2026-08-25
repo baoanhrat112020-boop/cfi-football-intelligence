@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {auditResidualExchangeability,fitSegmentConditionalConformal,evaluateLockedWalkForwardCoverage,K052_CONTRACT} from '../research/scale-nonexchange-conformal.mjs';
+
+test('K052 contract is research-only and R0 locked',()=>{assert.equal(K052_CONTRACT.researchOnly,true);assert.equal(K052_CONTRACT.decisionUse,false);assert.equal(K052_CONTRACT.productionEligible,false);assert.equal(K052_CONTRACT.baselineLock,'R0_IMMUTABLE');});
+
+test('K052 residual audit surfaces segment/time nonexchangeability',()=>{const rows=Array.from({length:20},(_,i)=>({segment:i<10?'A':'B',residual:i<10?0.01:0.2}));const a=auditResidualExchangeability(rows);assert.equal(a.type,'RESIDUAL_EXCHANGEABILITY_AUDIT');assert.equal(a.exchangeabilityRisk,'HIGH');assert.equal(a.sampleCount,20);});
+
+test('K052 segment conditional conformal fits strict-prior thresholds',()=>{const rows=[...Array.from({length:12},(_,i)=>({segment:'A',residual:(i+1)/100})),...Array.from({length:12},(_,i)=>({segment:'B',residual:(i+1)/50}))];const m=fitSegmentConditionalConformal({rows,targetDate:'2026-08-24',maxEvidenceDate:'2026-08-23',alpha:.1,minSegmentRows:10});assert.equal(m.strictPrior.verified,true);assert.ok(m.segmentThresholds.B>m.segmentThresholds.A);assert.throws(()=>fitSegmentConditionalConformal({rows,targetDate:'2026-08-24',maxEvidenceDate:'2026-08-24'}),/K052_STRICT_PRIOR_FAILURE/);});
+
+test('K052 locked walk-forward rejects synthetic/reconstruction and reports coverage',()=>{const train=Array.from({length:20},(_,i)=>({segment:'A',residual:(i+1)/100}));const model=fitSegmentConditionalConformal({rows:train,targetDate:'2026-08-24',maxEvidenceDate:'2026-08-23',alpha:.1,minSegmentRows:10});const rows=Array.from({length:20},(_,i)=>({segment:'A',prediction:.5,actual:.5+(i<18?.05:.3),targetDate:'2026-08-25',maxEvidenceDate:'2026-08-24',synthetic:false,reconstructed:false,replayedPredictionHistory:false}));const e=evaluateLockedWalkForwardCoverage({model,rows});assert.equal(e.n,20);assert.equal(e.coverage,.9);assert.equal(e.status,'PASS');assert.throws(()=>evaluateLockedWalkForwardCoverage({model,rows:[{...rows[0],synthetic:true}]}),/K052_REAL_OOS_REQUIRED/);});

@@ -1,5 +1,8 @@
 import v54 from './index-v54.ts';
 import { MARKET_CODES } from '../../src/prediction/final-engine.ts';
+import { attachMultiMarketShadow } from '../../src/prediction/multi-market-integration.ts';
+import { attachCfiOutputV2 } from '../../src/presentation/cfi-output-v2.ts';
+import { attachCfiBettingBoard } from '../../src/presentation/cfi-betting-board.ts';
 
 const ENGINE_VERSION='CFI_FINAL_V5.2.5';
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.4';
@@ -12,6 +15,19 @@ type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
 const list=(rows:any)=>Array.isArray(rows)?rows.map((r:any,i:number)=>`${i+1}) ${r.score} ${pct(r.probability)}`).join(' · '):'—';
 
+async function callControl(env:Env,action:string,payload:Record<string,unknown>={}){
+  if(!env.CFI_DB_BASE_URL)return Response.json({status:'CONFIG_REQUIRED',message:'CFI_DB_BASE_URL missing'},{status:503});
+  const url=env.CFI_DB_BASE_URL.replace(/\/cfi-db\/?$/,'/cfi-gpt-control');
+  const headers:Record<string,string>={'content-type':'application/json',accept:'application/json'};
+  if(env.CFI_DB_KEY)headers['x-cfi-key']=env.CFI_DB_KEY;
+  const res=await fetch(url,{method:'POST',headers,body:JSON.stringify({action,...payload})});
+  const text=await res.text();let body:any=text;try{body=JSON.parse(text)}catch{}
+  return Response.json(body,{status:res.status});
+}
+function queryPayload(url:URL){
+  const rawLimit=url.searchParams.get('limit'),parsedLimit=rawLimit===null?undefined:Number(rawLimit);
+  return{limit:Number.isFinite(parsedLimit)?Math.max(1,Math.min(100,Math.trunc(parsedLimit!))):undefined,target_date:url.searchParams.get('target_date')||undefined,home:url.searchParams.get('home')||undefined,away:url.searchParams.get('away')||undefined,settlement_status:url.searchParams.get('settlement_status')||undefined,selected_only:url.searchParams.get('selected_only')!=='false'};
+}
 function preserveNativeScorelines(body:any){
   if(!body?.scoreline)return;
   body.scorelinePriorPolicy={version:DIVERSITY_GUARD_VERSION,mode:'NATIVE_MATCH_SPECIFIC_DISTRIBUTION_ONLY',reason:'Global scoreline statistics are context/provenance only and must not mutate Top-3 or threshold outputs.'};
@@ -56,7 +72,10 @@ function zeroEvidenceGuard(body:any){
 }
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
-  const response=await v54.fetch(request,env,ctx);const url=new URL(request.url);
+  const url=new URL(request.url);
+  if(url.pathname==='/api/audit-3d'&&request.method==='GET')return callControl(env,'AUDIT_3D',queryPayload(url));
+  let input:any={};try{input=await request.clone().json()}catch{}
+  const response=await v54.fetch(request,env,ctx);
   if(url.pathname!=='/api/predict'||request.method!=='POST')return response;
   const ct=String(response.headers.get('content-type')??'');if(!ct.includes('application/json'))return response;
   let body:any;try{body=await response.clone().json()}catch{return response}
@@ -80,6 +99,9 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     }
     body.consistencyGuard={status:'PASS',violations:[]};
     rebuildMatrix(body);
+    attachMultiMarketShadow(body);
+    attachCfiOutputV2(body,input?.odds??{});
+    attachCfiBettingBoard(body);
     body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION};
     if(body?.status==='DATA_READY'){
       body.upstreamStatus='DATA_READY';
