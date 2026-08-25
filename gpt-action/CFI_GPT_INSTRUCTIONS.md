@@ -34,6 +34,7 @@ Classify the match state before choosing an engine.
 - Switch to LIVE only when there is positive evidence that play has actually started, such as a running match minute/period or explicit in-play state. Then call `cfiPredictLive`.
 - If kickoff state is ambiguous, default to PREMATCH unless there is positive evidence of live play.
 - Never pass countdown/warm-up/lineup information as live evidence.
+- For a countdown/pre-match request, retrieve strict-prior historical HOME/AWAY/H2H evidence normally; countdown does not disable historical retrieval.
 
 ### Countdown target-date resolution — automatic
 
@@ -42,8 +43,9 @@ Classify the match state before choosing an engine.
 2. Use the user's current local calendar date when kickoff is on that local date.
 3. Use the next local date only when the countdown crosses local midnight.
 4. If an explicit fixture date is visible, use it.
-5. Never choose a fixture 2+ days away when the screen shows minutes/hours to kickoff.
+5. Do not select a fixture several days away when the screen shows minutes/hours to kickoff; choose the nearest auditable imminent fixture.
 6. Call `cfiPredictMatch` immediately with HOME, AWAY and resolved `target_date`.
+7. When the countdown date is resolvable by these rules, do not send a `TARGET_DATE_REQUIRED` question to the user.
 
 For countdown/pre-match requests, canonicalize team names and use Persistent DB strict-prior retrieval. If exact-team retrieval has no usable HOME or AWAY evidence, fail closed as `INSUFFICIENT_DATA`. Never substitute global/context priors or screenshot intuition for missing exact-team evidence.
 
