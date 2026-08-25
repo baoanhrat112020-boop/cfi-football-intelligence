@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const source=readFileSync(new URL('../cloudflare-worker/src/index-v55.ts',import.meta.url),'utf8');
 
@@ -18,11 +18,20 @@ test('V5.2.5 declares both global-prior direct shrinkage paths disabled',()=>{
   assert.match(source,/mode:'NATIVE_MATCH_SPECIFIC_DISTRIBUTION_ONLY'/);
 });
 
-test('production entrypoint may route live but must delegate prematch to V5.2.5',()=>{
+test('production entrypoint may add P0 discovery but must delegate prematch through live router to V5.2.5',()=>{
   const wrangler=readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8');
-  const router=readFileSync(new URL('../cloudflare-worker/src/index-live-router.ts',import.meta.url),'utf8');
-  assert.match(wrangler,/"main"\s*:\s*"cloudflare-worker\/src\/index-live-router\.ts"/);
-  assert.match(router,/import prematch from '\.\/index-v55\.ts'/);
-  assert.match(router,/if\(url\.pathname!=='\/api\/predict-live'/);
-  assert.match(router,/return prematch\.fetch\(request,env,ctx\)/);
+  const liveRouter=readFileSync(new URL('../cloudflare-worker/src/index-live-router.ts',import.meta.url),'utf8');
+  const p0Url=new URL('../cloudflare-worker/src/index-p0-router.ts',import.meta.url);
+  const usesP0=/"main"\s*:\s*"cloudflare-worker\/src\/index-p0-router\.ts"/.test(wrangler);
+  const usesLive=/"main"\s*:\s*"cloudflare-worker\/src\/index-live-router\.ts"/.test(wrangler);
+  assert.equal(usesP0||usesLive,true,'production entrypoint must be canonical P0 or live router');
+  if(usesP0){
+    assert.equal(existsSync(p0Url),true,'configured P0 router must exist');
+    const p0=readFileSync(p0Url,'utf8');
+    assert.match(p0,/import base from '\.\/index-live-router\.ts'/);
+    assert.match(p0,/return base\.fetch\(request,env,ctx\)/);
+  }
+  assert.match(liveRouter,/import prematch from '\.\/index-v55\.ts'/);
+  assert.match(liveRouter,/if\(url\.pathname!=='\/api\/predict-live'/);
+  assert.match(liveRouter,/return prematch\.fetch\(request,env,ctx\)/);
 });
