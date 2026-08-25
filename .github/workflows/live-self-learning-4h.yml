@@ -1,8 +1,6 @@
 name: CFI LIVE Self-Learning 4H
 
 on:
-  schedule:
-    - cron: '17 */4 * * *'
   workflow_dispatch:
 
 permissions:
@@ -33,7 +31,7 @@ jobs:
           path: artifacts/live-self-learning-result.json
           retention-days: 30
 
-# Safety contract:
+# P0 production-first freeze:
+# - Scheduled P2 research is intentionally disabled until P0 production acceptance passes.
+# - Manual workflow_dispatch is retained for explicit engineering use only.
 # - This workflow never deploys or mutates production.
-# - Research agents may update research/live-candidate.json through reviewed evidence.
-# - Only SHADOW_ELIGIBLE challengers may proceed to a separate canary/promotion workflow.
