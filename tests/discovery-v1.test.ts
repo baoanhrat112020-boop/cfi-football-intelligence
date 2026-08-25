@@ -22,7 +22,7 @@ test('TheSportsDB parser accepts future scheduled events and rejects finished ev
   assert.equal(rows.length,1);assert.equal(rows[0].provider,'THESPORTSDB');assert.equal(rows[0].home,'Gamma');assert.equal(rows[0].kickoffLocal,'16:30');
 });
 
-test('discovery aggregates all usable providers instead of stopping at first non-empty source',async()=>{
+test('discovery aggregates all usable providers across the timezone-spanning query dates',async()=>{
   const targetDate='2026-08-23',nowMs=Date.parse('2026-08-23T05:00:00Z');
   const fetchFn:any=async(url:string)=>{
     if(url.includes('sofascore.com'))return new Response(JSON.stringify({events:[]}),{status:200,headers:{'content-type':'application/json'}});
@@ -34,7 +34,10 @@ test('discovery aggregates all usable providers instead of stopping at first non
   assert.deepEqual(out.providers.sort(),['ESPN','THESPORTSDB']);
   assert.equal(out.rows.length,2);
   assert.deepEqual(out.rows.map(r=>r.home).sort(),['Epsilon','Gamma']);
-  assert.equal(out.attempts.length,4);
+  assert.equal(out.attempts.length,12);
+  assert.equal(out.attempts.filter((a:any)=>a.provider==='SOFASCORE').length,6);
+  assert.equal(out.attempts.filter((a:any)=>a.provider==='THESPORTSDB').length,3);
+  assert.equal(out.attempts.filter((a:any)=>a.provider==='ESPN').length,3);
 });
 
 test('selection score fails closed without strict-prior verification',()=>{const r=scorePrediction({status:'SUCCESS',ranking:[{target:'3+ HT',probability:.8,confidence:'HIGH'}]});assert.equal(r.eligible,false);assert.equal(r.reason,'STRICT_PRIOR_NOT_VERIFIED');});
