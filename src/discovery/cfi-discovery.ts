@@ -30,12 +30,15 @@ export function parseEspnScoreboard(payload:any,window:DiscoveryWindow):Discover
 
 export async function discoverFixtures(window:DiscoveryWindow,fetchFn:typeof fetch=fetch){
  const attempts:any[]=[];
- const tryProvider=async(provider:string,url:string,parse:(p:any,w:DiscoveryWindow)=>DiscoveredFixture[])=>{try{const r=await fetchFn(url,{headers:{accept:'application/json','user-agent':'CFI-Football-Intelligence/1.1'}});const status=r.status;if(!r.ok){attempts.push({provider,url,httpStatus:status,ok:false,rows:0});return null;}const rows=parse(await r.json(),window);attempts.push({provider,url,httpStatus:status,ok:true,rows:rows.length});return rows.length?{provider,rows,sourceUrl:url,attempts}:null;}catch(e:any){attempts.push({provider,url,httpStatus:null,ok:false,rows:0,error:String(e?.message||e)});return null;}};
+ const sources:Array<{provider:string;rows:DiscoveredFixture[];sourceUrl:string}>=[];
+ const tryProvider=async(provider:string,url:string,parse:(p:any,w:DiscoveryWindow)=>DiscoveredFixture[])=>{try{const r=await fetchFn(url,{headers:{accept:'application/json','user-agent':'CFI-Football-Intelligence/1.1'}});const status=r.status;if(!r.ok){attempts.push({provider,url,httpStatus:status,ok:false,rows:0});return;}const rows=parse(await r.json(),window);attempts.push({provider,url,httpStatus:status,ok:true,rows:rows.length});if(rows.length)sources.push({provider,rows,sourceUrl:url});}catch(e:any){attempts.push({provider,url,httpStatus:null,ok:false,rows:0,error:String(e?.message||e)});}};
  const sofaUrls=[`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${window.targetDate}`,`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${window.targetDate}`];
- for(const url of sofaUrls){const x=await tryProvider('SOFASCORE',url,parseSofascoreScheduled);if(x)return x;}
- const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${window.targetDate}&s=Soccer`;const tsdb=await tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents);if(tsdb)return tsdb;
- const espnDate=window.targetDate.replaceAll('-',''),espnUrl=`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=1000`;const espn=await tryProvider('ESPN',espnUrl,parseEspnScoreboard);if(espn)return espn;
- return{provider:'NONE',rows:[] as DiscoveredFixture[],sourceUrl:null,attempts};
+ for(const url of sofaUrls)await tryProvider('SOFASCORE',url,parseSofascoreScheduled);
+ const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${window.targetDate}&s=Soccer`;await tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents);
+ const espnDate=window.targetDate.replaceAll('-',''),espnUrl=`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=1000`;await tryProvider('ESPN',espnUrl,parseEspnScoreboard);
+ const rows=dedupeFixtures(sources.flatMap(s=>s.rows)).sort((a,b)=>a.kickoff-b.kickoff);
+ const providers=[...new Set(sources.map(s=>s.provider))];
+ return{provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',providers,rows,sourceUrl:sources.map(s=>s.sourceUrl).join(',' )||null,attempts};
 }
 
 const confidencePoints=(v:any)=>{const x=clean(v).toUpperCase();return x==='HIGH'?15:x==='MEDIUM'||x==='MED_HIGH'?10:x==='LOW'?3:6;};
