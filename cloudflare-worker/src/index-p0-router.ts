@@ -24,7 +24,7 @@ function canonicalIdentity(row:FeedRow){
 
 function diagnose(row:FeedRow,p:{res:Response;body:any}|null,score:any){
   const identity=canonicalIdentity(row);
-  if(!identity.verified)return{match:`${row.home} vs ${row.away}`,predictionHttpStatus:null,predictionStatus:'NOT_ATTEMPTED',strictPrior:false,failureLayer:'CANONICAL_IDENTITY',reasonCode:'CANONICAL_IDENTITY_FAIL',canonicalIdentity:identity};
+  if(!identity.verified)return{match:`${row.home} vs ${row.away}`,predictionHttpStatus:null,predictionStatus:'NOT_ATTEMPTED',predictionError:null,strictPrior:false,failureLayer:'CANONICAL_IDENTITY',reasonCode:'CANONICAL_IDENTITY_FAIL',canonicalIdentity:identity,exactTeam:null,evidence:null,temporalEvidenceAudit:null};
   const predictionStatus=String(p?.body?.status??'UNKNOWN');
   const strictPrior=p?.body?.strictPrior?.verified===true||p?.body?.strictPriorAudit?.evidence?.verified===true;
   let failureLayer:string|null=null,reasonCode:string|null=null;
@@ -37,7 +37,19 @@ function diagnose(row:FeedRow,p:{res:Response;body:any}|null,score:any){
   }else if(!strictPrior){failureLayer='STRICT_PRIOR';reasonCode='STRICT_PRIOR_NOT_VERIFIED';}
   else if(p?.body?.consistencyGuard?.status&&p.body.consistencyGuard.status!=='PASS'){failureLayer='CONSISTENCY';reasonCode='CONSISTENCY_FAIL';}
   else if(!score?.eligible){failureLayer='RANKING';reasonCode=score?.reason??'NO_RANKING';}
-  return{match:`${row.home} vs ${row.away}`,predictionHttpStatus:p?.res?.status??null,predictionStatus,strictPrior,failureLayer,reasonCode,canonicalIdentity:identity};
+  return{
+    match:`${row.home} vs ${row.away}`,
+    predictionHttpStatus:p?.res?.status??null,
+    predictionStatus,
+    predictionError:p?.body?.error??null,
+    strictPrior,
+    failureLayer,
+    reasonCode,
+    canonicalIdentity:identity,
+    exactTeam:p?.body?.exactTeam??p?.body?.bigDbRetrieval?.exactTeam??null,
+    evidence:p?.body?.evidence??null,
+    temporalEvidenceAudit:p?.body?.temporalEvidenceAudit??p?.body?.strictPriorAudit?.evidence??null
+  };
 }
 
 async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
