@@ -1,0 +1,27 @@
+name: P0 Provider Diagnostic
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe fixture providers
+        shell: bash
+        run: |
+          set +e
+          D=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          E=${D//-/}
+          for U in \
+            "https://www.sofascore.com/api/v1/sport/football/scheduled-events/$D" \
+            "https://api.sofascore.com/api/v1/sport/football/scheduled-events/$D" \
+            "https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=$D&s=Soccer" \
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=$E&limit=1000"; do
+            echo "=== $U ==="
+            F=$(mktemp)
+            CODE=$(curl -L -sS --max-time 30 -A 'CFI-Football-Intelligence/1.1' -H 'accept: application/json' -o "$F" -w '%{http_code}' "$U")
+            echo "HTTP=$CODE BYTES=$(wc -c < "$F")"
+            head -c 800 "$F"; echo
+          done
