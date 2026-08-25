@@ -1,0 +1,20 @@
+name: P0 Discovery Diagnostic
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe production
+        shell: bash
+        run: |
+          set +e
+          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
+          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          echo '--- STATUS ---'
+          curl -sS --max-time 30 -w '\nHTTP=%{http_code}\n' "$BASE/api/status"
+          echo '--- DISCOVERY ---'
+          curl -sS --max-time 120 -H 'content-type: application/json' -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":2,\"scan_limit\":12}" -w '\nHTTP=%{http_code}\n' "$BASE/api/discover"
