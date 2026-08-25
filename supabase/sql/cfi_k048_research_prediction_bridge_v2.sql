@@ -15,6 +15,10 @@ alter table public.cfi_k048_shadow_snapshots
   add constraint cfi_k048_exactly_one_prediction_ref
   check (num_nonnulls(prediction_snapshot_id,research_prediction_snapshot_id)=1);
 
+create unique index if not exists cfi_k048_shadow_research_prediction_market_uidx
+  on public.cfi_k048_shadow_snapshots(research_prediction_snapshot_id,market_snapshot_id)
+  where research_prediction_snapshot_id is not null;
+
 create index if not exists cfi_k048_shadow_research_prediction_idx
   on public.cfi_k048_shadow_snapshots(research_prediction_snapshot_id,captured_at)
   where research_prediction_snapshot_id is not null;
