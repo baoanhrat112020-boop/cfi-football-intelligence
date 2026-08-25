@@ -13,21 +13,30 @@ jobs:
         run: |
           set +e
           D=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          E=${D//-/}
           NOW=$(date -u +%FT%TZ)
           echo "TARGET_DATE=$D NOW_UTC=$NOW"
           for U in \
-            "https://www.sofascore.com/api/v1/sport/football/scheduled-events/$D" \
             "https://api.sofascore.com/api/v1/sport/football/scheduled-events/$D" \
-            "https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=$D&s=Soccer" \
-            "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=$E&limit=1000"; do
+            "https://api.sofascore.com/api/v1/sport/football/scheduled-events/$D/inverse" \
+            "https://www.sofascore.com/api/v1/sport/football/scheduled-events/$D" \
+            "https://www.sofascore.com/api/v1/sport/football/scheduled-events/$D/inverse" \
+            "https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=$D&s=Soccer"; do
             echo "=== $U ==="
             F=$(mktemp)
-            CODE=$(curl -L -sS --max-time 30 -A 'CFI-Football-Intelligence/1.1' -H 'accept: application/json' -o "$F" -w '%{http_code}' "$U")
+            CODE=$(curl -L -sS --compressed --max-time 30 \
+              -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' \
+              -H 'accept: application/json, text/plain, */*' \
+              -H 'accept-language: en-US,en;q=0.9' \
+              -H 'referer: https://www.sofascore.com/' \
+              -H 'origin: https://www.sofascore.com' \
+              -H 'sec-fetch-site: same-site' \
+              -H 'sec-fetch-mode: cors' \
+              -H 'sec-fetch-dest: empty' \
+              -o "$F" -w '%{http_code}' "$U")
             echo "HTTP=$CODE BYTES=$(wc -c < "$F")"
-            if [[ "$U" == *"thesportsdb.com"* ]] && [ "$CODE" = 200 ]; then
-              jq -r '.events // [] | "EVENT_COUNT=\(length)", (.[] | [.strTimestamp,.dateEvent,.dateEventLocal,.strTime,.strStatus,.strHomeTeam,.strAwayTeam] | @tsv)' "$F"
+            if [ "$CODE" = 200 ]; then
+              jq -r 'if (.events|type)=="array" then "EVENT_COUNT=\(.events|length)", (.events[0:5][] | [(.startTimestamp // .strTimestamp),(.status.type // .strStatus),(.homeTeam.name // .strHomeTeam),(.awayTeam.name // .strAwayTeam)] | @tsv) else . end' "$F" 2>/dev/null || head -c 500 "$F"
             else
-              head -c 800 "$F"; echo
+              head -c 500 "$F"; echo
             fi
           done
