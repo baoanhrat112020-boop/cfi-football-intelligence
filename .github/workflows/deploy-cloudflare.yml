@@ -6,6 +6,8 @@ on:
       - 'cloudflare-worker/**'
       - 'src/prediction/**'
       - 'src/runtime/**'
+      - 'src/discovery/**'
+      - 'src/presentation/**'
       - 'wrangler.jsonc'
       - 'package.json'
       - 'package-lock.json'
