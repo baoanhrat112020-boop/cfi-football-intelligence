@@ -28,11 +28,14 @@ jobs:
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
           ok=0
           DISC='{}'
+          STATUS='{}'
           for i in $(seq 1 8); do
             echo "Smoke attempt $i for $TARGET_DATE"
             STATUS=$(curl -fsS --max-time 30 "$BASE/api/status" || true)
+            echo "STATUS=$STATUS"
             if node -e 'const x=JSON.parse(process.argv[1]); if(x?.discovery?.supported!==true||x?.multiMarket?.decisionUse!==false)process.exit(1)' "$STATUS" 2>/dev/null; then
               DISC=$(curl -fsS --max-time 90 -H 'content-type: application/json' -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":2,\"scan_limit\":12}" "$BASE/api/discover" || true)
+              echo "DISC=$DISC"
               if node -e 'const x=JSON.parse(process.argv[1]); if(x?.status!=="OK"||x?.action!=="CFI_DISCOVERY"||x?.version!=="CFI_AUTO_DISCOVERY_V1.1"||x?.provider==="NONE"||!(x?.counts?.fixturesDiscovered>0)||x?.rules?.strictPriorRequired!==true||x?.rules?.shadowDecisionUse!==false||!Array.isArray(x?.board))process.exit(1)' "$DISC" 2>/dev/null; then
                 echo "$DISC" > /tmp/discovery.json
                 ok=1
@@ -42,7 +45,8 @@ jobs:
             sleep 20
           done
           if [ "$ok" != 1 ]; then
-            echo "$DISC" > /tmp/discovery-failure.json 2>/dev/null || true
+            printf '%s\n' "$STATUS" > /tmp/status-failure.json 2>/dev/null || true
+            printf '%s\n' "$DISC" > /tmp/discovery-failure.json 2>/dev/null || true
             echo '::error title=Production discovery smoke failed::No verified real fixture discovery after retries.'
             exit 1
           fi
