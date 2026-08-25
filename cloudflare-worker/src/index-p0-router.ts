@@ -37,12 +37,16 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
   const maxMatches=Math.max(1,Math.min(10,Number(input?.max_matches??5)||5));
   const evaluated:any[]=[],diagnostics:any[]=[];
   let predictionAttempts=0,predictionSuccess=0;
-  for(const row of f.rows as FeedRow[]){
-    predictionAttempts++;
-    const p=await predict(row,env,ctx),score=scorePrediction(p.body),diag=diagnose(row,p,score);
-    if(p.res.ok&&(p.body?.status==='SUCCESS'||p.body?.status==='DATA_READY'))predictionSuccess++;
-    diagnostics.push(diag);
-    if(p.res.ok&&p.body?.status==='SUCCESS'&&score.eligible)evaluated.push({row,body:p.body,score});
+  for(let i=0;i<f.rows.length;i+=6){
+    const chunk=(f.rows as FeedRow[]).slice(i,i+6);
+    predictionAttempts+=chunk.length;
+    const results=await Promise.all(chunk.map(async row=>{const p=await predict(row,env,ctx);const score=scorePrediction(p.body);return{row,p,score};}));
+    for(const {row,p,score} of results){
+      const diag=diagnose(row,p,score),status=String(p.body?.status??'');
+      if(p.res.ok&&(status==='SUCCESS'||status==='DATA_READY'))predictionSuccess++;
+      diagnostics.push(diag);
+      if(p.res.ok&&(status==='SUCCESS'||status==='DATA_READY')&&score.eligible)evaluated.push({row,body:p.body,score});
+    }
   }
   evaluated.sort((a,b)=>Number(b.score.score)-Number(a.score.score));
   const selected=evaluated.slice(0,maxMatches),board=selected.map(({row,body,score})=>({
