@@ -8,6 +8,9 @@ test('K048 V2 bridge accepts exactly one immutable strict-prior research lineage
   assert.match(sql,/research_prediction_snapshot_id uuid null\s+references public\.cfi_research_prematch_snapshots/i);
   assert.match(sql,/alter column prediction_snapshot_id drop not null/i);
   assert.match(sql,/num_nonnulls\(prediction_snapshot_id,research_prediction_snapshot_id\)=1/i);
+  assert.match(sql,/create unique index if not exists cfi_k048_shadow_research_prediction_market_uidx/i);
+  assert.match(sql,/research_prediction_snapshot_id,market_snapshot_id/i);
+  assert.match(sql,/where research_prediction_snapshot_id is not null/i);
   assert.match(sql,/CFI_K048_TRAJECTORY_JOINT_V2_FULL_SUPPORT/);
   assert.match(sql,/K048_RESEARCH_PREDICTION_NOT_READY/);
   assert.match(sql,/K048_RESEARCH_PREDICTION_TEMPORAL_INVALID/);
