@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parse } from "yaml";
 
 const schemaText=readFileSync(new URL("../gpt-action/openapi.yaml",import.meta.url),"utf8");
@@ -51,19 +51,28 @@ test("GPT instructions route discovery intent without HOME/AWAY and preserve Cha
   assert.match(instructions,/Never search File Library/i);
 });
 
-test("production config exposes discovery through active live router and preserves V55 Champion",()=>{
+test("production config exposes discovery through canonical router chain and preserves V55 Champion",()=>{
   const worker=readFileSync(new URL("../cloudflare-worker/src/index-v55.ts",import.meta.url),"utf8");
-  const router=readFileSync(new URL("../cloudflare-worker/src/index-live-router.ts",import.meta.url),"utf8");
+  const liveRouter=readFileSync(new URL("../cloudflare-worker/src/index-live-router.ts",import.meta.url),"utf8");
   const config=readFileSync(new URL("../wrangler.jsonc",import.meta.url),"utf8");
-  assert.match(config,/index-live-router\.ts/);
-  assert.match(router,/import prematch from '\.\/index-v55\.ts'/);
-  assert.match(router,/\/api\/discover/);
-  assert.match(router,/discoverFixtures/);
-  assert.match(router,/futureEvidenceCount/);
-  assert.match(router,/sameDateEvidenceCount/);
-  assert.match(router,/attachMultiMarketShadow/);
-  assert.match(router,/attachCfiBettingBoard/);
-  assert.match(router,/multiMarketDecisionUse:false/);
+  const p0Url=new URL("../cloudflare-worker/src/index-p0-router.ts",import.meta.url);
+  const usesP0=/index-p0-router\.ts/.test(config);
+  assert.match(config,/index-(?:p0|live)-router\.ts/);
+  if(usesP0){
+    assert.equal(existsSync(p0Url),true,"configured P0 router must exist");
+    const p0=readFileSync(p0Url,"utf8");
+    assert.match(p0,/import base from '\.\/index-live-router\.ts'/);
+    assert.match(p0,/\/api\/discover/);
+    assert.match(p0,/return base\.fetch\(request,env,ctx\)/);
+  }
+  assert.match(liveRouter,/import prematch from '\.\/index-v55\.ts'/);
+  assert.match(liveRouter,/\/api\/discover/);
+  assert.match(liveRouter,/discoverFixtures/);
+  assert.match(liveRouter,/futureEvidenceCount/);
+  assert.match(liveRouter,/sameDateEvidenceCount/);
+  assert.match(liveRouter,/attachMultiMarketShadow/);
+  assert.match(liveRouter,/attachCfiBettingBoard/);
+  assert.match(liveRouter,/multiMarketDecisionUse:false/);
   assert.match(worker,/CFI_FINAL_V5\.2\.5/);
   assert.match(worker,/CFI_SIX_TARGET_RUNTIME_V1\.4/);
   assert.match(worker,/CFI_MATCH_DIVERSITY_GUARD_V1/);
