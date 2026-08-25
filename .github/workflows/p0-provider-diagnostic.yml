@@ -14,6 +14,8 @@ jobs:
           set +e
           D=$(TZ=Asia/Ho_Chi_Minh date +%F)
           E=${D//-/}
+          NOW=$(date -u +%FT%TZ)
+          echo "TARGET_DATE=$D NOW_UTC=$NOW"
           for U in \
             "https://www.sofascore.com/api/v1/sport/football/scheduled-events/$D" \
             "https://api.sofascore.com/api/v1/sport/football/scheduled-events/$D" \
@@ -23,5 +25,9 @@ jobs:
             F=$(mktemp)
             CODE=$(curl -L -sS --max-time 30 -A 'CFI-Football-Intelligence/1.1' -H 'accept: application/json' -o "$F" -w '%{http_code}' "$U")
             echo "HTTP=$CODE BYTES=$(wc -c < "$F")"
-            head -c 800 "$F"; echo
+            if [[ "$U" == *"thesportsdb.com"* ]] && [ "$CODE" = 200 ]; then
+              jq -r '.events // [] | "EVENT_COUNT=\(length)", (.[] | [.strTimestamp,.dateEvent,.dateEventLocal,.strTime,.strStatus,.strHomeTeam,.strAwayTeam] | @tsv)' "$F"
+            else
+              head -c 800 "$F"; echo
+            fi
           done
