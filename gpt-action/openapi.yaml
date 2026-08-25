@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: CFI Football Intelligence Production API
-  version: 5.2.5
-  description: Strict-prior Persistent DB prediction, live prediction, history, result collection and settlement API for CFI Football Intelligence.
+  version: 5.2.5-p0-discovery
+  description: Strict-prior CFI production API with Discovery-first opportunity scanning, single-match prediction, live prediction, immutable history and settlement.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
 paths:
@@ -12,24 +12,51 @@ paths:
       summary: Get CFI runtime and Persistent DB health
       responses:
         "200":
-          description: Runtime and database status without secrets
+          description: Runtime and database status
           content:
             application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status: { type: string }
-                  httpStatus: { type: integer }
-                  ok: { type: boolean }
-                  body: { type: object, additionalProperties: true }
-                  runtime: { type: object, additionalProperties: true }
-                additionalProperties: true
+              schema: { type: object, additionalProperties: true }
+  /api/discover:
+    post:
+      operationId: cfiDiscoverOpportunities
+      summary: Discover and rank real pre-match CFI opportunities without requiring HOME/AWAY
+      description: Use for requests such as "tìm trận tốt nhất hôm nay", "tìm 5 trận tốt nhất ngày ...", or a date/time-window scan. The action discovers real upcoming fixtures, applies canonicalization and strict-prior BigDB retrieval, runs the existing CFI predictor, returns the Daily Opportunity Board, Champion output and Multi-Market SHADOW output. Never ask for HOME/AWAY when the user intent is discovery.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                target_date: { type: string, format: date, description: Local target date. If omitted, production resolves the current local date for timezone. }
+                start_time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+                end_time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+                timezone: { type: string, default: Asia/Ho_Chi_Minh }
+                max_matches: { type: integer, minimum: 1, maximum: 10, default: 5 }
+                market_filter: { type: string }
+                competition_filter: { type: string }
+      responses:
+        "200":
+          description: CFI Daily Opportunity Board with real fixtures and strict-prior prediction evidence
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400":
+          description: Invalid discovery input
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "500":
+          description: Discovery fail-closed runtime failure
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
   /api/predict:
     post:
       operationId: cfiPredictMatch
-      summary: Run a complete CFI pre-match prediction with Method A, Method B and FINAL for all six primary targets
-      description: target_date is mandatory. For countdown/warm-up screenshots, resolve the nearest imminent kickoff date before calling; normally this is the user's current local date. Never ask the user for a date when the countdown itself proves kickoff is imminent. Always present renderedReport as the canonical 2-methods-by-6-targets result only when status=SUCCESS.
+      summary: Run complete CFI pre-match prediction for a specified HOME/AWAY fixture
+      description: Use when the user names a specific match. target_date is mandatory. Countdown/warm-up is PREMATCH and must not be treated as LIVE. Successful responses may include Champion 6-target, practical output and Multi-Market SHADOW fields; SHADOW decisionUse must remain false.
       requestBody:
         required: true
         content:
@@ -43,27 +70,28 @@ paths:
                 away: { type: string, minLength: 1 }
                 target_date: { type: string, format: date }
                 language: { type: string, enum: [vi, en, zh, th, id], default: vi }
+                odds: { type: object, additionalProperties: true }
       responses:
         "200":
-          description: Complete CFI 2 methods × 6 targets prediction
+          description: Complete CFI prediction
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Prediction" }
+              schema: { type: object, additionalProperties: true }
         "422":
-          description: Exact-team evidence is insufficient; normal prediction output is deliberately suppressed
+          description: Exact-team evidence insufficient
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
         "500":
-          description: Runtime contract failure; never manufacture missing target outputs
+          description: Runtime fail-closed error
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
   /api/predict-live:
     post:
       operationId: cfiPredictLive
-      summary: Run CFI LIVE V1 using read-only PREMATCH V5.2.5 prior plus current live match state
-      description: Use only after positive evidence that play has started. Never use countdown/warm-up as live state. Live evidence is separated and never written back into the immutable prematch prediction.
+      summary: Run CFI LIVE using the immutable strict-prior prematch prior plus current live state
+      description: Use only after positive evidence that play has started. Countdown is not LIVE.
       requestBody:
         required: true
         content:
@@ -79,42 +107,23 @@ paths:
                 language: { type: string, enum: [vi, en, zh, th, id], default: vi }
                 live:
                   type: object
-                  additionalProperties: false
+                  additionalProperties: true
                   required: [minute, period, homeGoals, awayGoals]
                   properties:
                     minute: { type: number, minimum: 0, maximum: 130 }
                     period: { type: string, enum: [1H, HT, 2H] }
                     homeGoals: { type: integer, minimum: 0 }
                     awayGoals: { type: integer, minimum: 0 }
-                    htHomeGoals: { type: integer, minimum: 0 }
-                    htAwayGoals: { type: integer, minimum: 0 }
-                    shotsOnTargetHome: { type: number, minimum: 0 }
-                    shotsOnTargetAway: { type: number, minimum: 0 }
-                    dangerousAttacksHome: { type: number, minimum: 0 }
-                    dangerousAttacksAway: { type: number, minimum: 0 }
-                    redCardsHome: { type: number, minimum: 0 }
-                    redCardsAway: { type: number, minimum: 0 }
       responses:
         "200":
-          description: CFI LIVE V1 prediction
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
-        "400":
-          description: Invalid live state or missing required strict-prior target date
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
-        "500":
-          description: LIVE fail-closed runtime error
+          description: CFI LIVE response
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
   /api/prediction-history:
     get:
       operationId: cfiGetPredictionHistory
-      summary: Get immutable user prediction history from Persistent DB
-      description: Returns selected strict-prior prediction snapshots newest first. Use limit=5 for the five most recent predictions.
+      summary: Get immutable prediction history
       parameters:
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: target_date, in: query, required: false, schema: { type: string, format: date } }
@@ -124,14 +133,14 @@ paths:
         - { name: selected_only, in: query, required: false, schema: { type: boolean, default: true } }
       responses:
         "200":
-          description: Prediction history
+          description: Prediction history rows
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/HistoryResponse" }
+              schema: { type: object, additionalProperties: true }
   /api/results:
     get:
       operationId: cfiGetResults
-      summary: Get prediction versus actual settlement results
+      summary: Get prediction-versus-actual settlement results
       parameters:
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: target_date, in: query, required: false, schema: { type: string, format: date } }
@@ -141,14 +150,14 @@ paths:
         - { name: selected_only, in: query, required: false, schema: { type: boolean, default: true } }
       responses:
         "200":
-          description: Prediction versus actual results
+          description: Settled/pending result rows
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/HistoryResponse" }
+              schema: { type: object, additionalProperties: true }
   /api/collect-results:
     post:
       operationId: cfiCollectResults
-      summary: Immediately collect actual results for unsettled user predictions and settle them
+      summary: Collect verified results and settle immutable stored predictions
       requestBody:
         required: false
         content:
@@ -166,154 +175,7 @@ paths:
                 limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         "200":
-          description: Collector runtime summary plus current history rows
+          description: Collector summary and current history rows
           content:
             application/json:
-              schema:
-                type: object
-                additionalProperties: true
-components:
-  schemas:
-    HistoryRow:
-      type: object
-      properties:
-        snapshot_id: { type: string, format: uuid }
-        target_date: { type: string, format: date }
-        home_team: { type: string }
-        away_team: { type: string }
-        created_at: { type: string, format: date-time }
-        engine_version: { type: string }
-        prediction_status: { type: string }
-        selected_for_match_audit: { type: boolean }
-        verdict: { type: string }
-        settlement_status: { type: string, enum: [PENDING, SETTLED] }
-        settled_at: { type: [string, "null"], format: date-time }
-        actual_ht_home: { type: [integer, "null"] }
-        actual_ht_away: { type: [integer, "null"] }
-        actual_ft_home: { type: [integer, "null"] }
-        actual_ft_away: { type: [integer, "null"] }
-        actual_markets: { type: [object, "null"], additionalProperties: true }
-        market_brier: { type: [object, "null"], additionalProperties: true }
-        top1_ht_hit: { type: [boolean, "null"] }
-        top1_ft_hit: { type: [boolean, "null"] }
-        top3_ht: { type: [array, "null"], items: { type: object, additionalProperties: true } }
-        top3_ft: { type: [array, "null"], items: { type: object, additionalProperties: true } }
-        most_likely_path: { type: [string, "null"] }
-      additionalProperties: true
-    HistoryResponse:
-      type: object
-      required: [status, action, count, rows]
-      properties:
-        status: { type: string }
-        action: { type: string }
-        count: { type: integer, minimum: 0 }
-        limit: { type: integer, minimum: 1, maximum: 100 }
-        rows: { type: array, items: { $ref: "#/components/schemas/HistoryRow" } }
-      additionalProperties: true
-    ScorelineCandidate:
-      type: object
-      required: [score, probability]
-      properties:
-        score: { type: string }
-        probability: { type: number, minimum: 0, maximum: 1 }
-      additionalProperties: false
-    Top3MethodSet:
-      type: object
-      required: [methodA, methodB, final]
-      properties:
-        methodA:
-          type: array
-          minItems: 3
-          maxItems: 3
-          items: { $ref: "#/components/schemas/ScorelineCandidate" }
-        methodB:
-          type: array
-          minItems: 3
-          maxItems: 3
-          items: { $ref: "#/components/schemas/ScorelineCandidate" }
-        final:
-          type: array
-          minItems: 3
-          maxItems: 3
-          items: { $ref: "#/components/schemas/ScorelineCandidate" }
-      additionalProperties: false
-    ThresholdTarget:
-      type: object
-      required: [methodA, methodB, final]
-      properties:
-        methodA: { type: number, minimum: 0, maximum: 1 }
-        methodB: { type: number, minimum: 0, maximum: 1 }
-        final: { type: number, minimum: 0, maximum: 1 }
-        confidence: { type: [string, "null"] }
-        hits: { type: [integer, "null"] }
-        eligible: { type: [integer, "null"] }
-      additionalProperties: false
-    SixTargetMatrix:
-      type: object
-      required: [contract, primaryTargets, methods, threshold, scoreline, verification]
-      properties:
-        contract: { type: string, const: CFI_2_METHODS_X_6_TARGETS_V1 }
-        primaryTargets:
-          type: array
-          minItems: 6
-          maxItems: 6
-          items: { type: string }
-        methods:
-          type: array
-          minItems: 3
-          maxItems: 3
-          items: { type: string }
-        threshold:
-          type: object
-          required: ["3+ HT", "7+ FT", "Other HT", "Other FT"]
-          properties:
-            "3+ HT": { $ref: "#/components/schemas/ThresholdTarget" }
-            "7+ FT": { $ref: "#/components/schemas/ThresholdTarget" }
-            "Other HT": { $ref: "#/components/schemas/ThresholdTarget" }
-            "Other FT": { $ref: "#/components/schemas/ThresholdTarget" }
-          additionalProperties: false
-        scoreline:
-          type: object
-          required: ["Top-3 HT", "Top-3 FT"]
-          properties:
-            "Top-3 HT": { $ref: "#/components/schemas/Top3MethodSet" }
-            "Top-3 FT": { $ref: "#/components/schemas/Top3MethodSet" }
-          additionalProperties: false
-        verification:
-          type: object
-          required: [thresholdComplete, scorelineComplete, complete]
-          properties:
-            thresholdComplete: { type: boolean }
-            scorelineComplete: { type: boolean }
-            complete: { type: boolean, const: true }
-          additionalProperties: false
-      additionalProperties: false
-    PresentationContract:
-      type: object
-      required: [mode, source, contract]
-      properties:
-        mode: { type: string, const: RENDER_RENDERED_REPORT_VERBATIM }
-        source: { type: string, const: renderedReport }
-        contract: { type: string, const: CFI_2_METHODS_X_6_TARGETS_V1 }
-      additionalProperties: false
-    Prediction:
-      type: object
-      required: [sixTargetMatrix, renderedReport, presentationContract]
-      properties:
-        status: { type: string }
-        engine: { type: string }
-        verdict: { type: string }
-        target: { type: object, additionalProperties: true }
-        evidence: { type: object, additionalProperties: true }
-        teamTrendingDNA: { type: object, additionalProperties: true }
-        markets: { type: object, additionalProperties: true }
-        scoreline: { type: object, additionalProperties: true }
-        ranking: { type: array, items: { type: object, additionalProperties: true } }
-        sixTargetMatrix: { $ref: "#/components/schemas/SixTargetMatrix" }
-        renderedReport:
-          type: string
-          description: Canonical preformatted 2-methods-by-6-targets report. The Custom GPT should present this report without collapsing or omitting A/B/FINAL Top-3 lists.
-        presentationContract: { $ref: "#/components/schemas/PresentationContract" }
-        runtime: { type: object, additionalProperties: true }
-        audit: { type: object, additionalProperties: true }
-      additionalProperties: true
+              schema: { type: object, additionalProperties: true }
