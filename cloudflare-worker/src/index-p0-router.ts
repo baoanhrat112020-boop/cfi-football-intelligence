@@ -17,15 +17,32 @@ async function predict(row:FeedRow,env:Env,ctx:ExecutionContext){
   const res=await base.fetch(req,env,ctx),body:any=await readJson(res);return{res,body};
 }
 
+function diagnose(row:FeedRow,p:{res:Response;body:any},score:any){
+  const predictionStatus=String(p.body?.status??'UNKNOWN');
+  const strictPrior=p.body?.strictPrior?.verified===true||p.body?.strictPriorAudit?.evidence?.verified===true;
+  let failureLayer:string|null=null,reasonCode:string|null=null;
+  if(!p.res.ok){failureLayer='PREDICT_HTTP';reasonCode='PREDICT_HTTP_FAIL';}
+  else if(predictionStatus!=='SUCCESS'&&predictionStatus!=='DATA_READY'){
+    failureLayer='PREDICTION';reasonCode=predictionStatus==='INSUFFICIENT_DATA'?'INSUFFICIENT_DATA':'PREDICTION_NOT_SUCCESS';
+  }else if(!strictPrior){failureLayer='STRICT_PRIOR';reasonCode='STRICT_PRIOR_NOT_VERIFIED';}
+  else if(p.body?.consistencyGuard?.status&&p.body.consistencyGuard.status!=='PASS'){failureLayer='CONSISTENCY';reasonCode='CONSISTENCY_FAIL';}
+  else if(!score?.eligible){failureLayer='RANKING';reasonCode=score?.reason??'NO_RANKING';}
+  return{match:`${row.home} vs ${row.away}`,predictionHttpStatus:p.res.status,predictionStatus,strictPrior,failureLayer,reasonCode};
+}
+
 async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
   let input:any={};try{input=await request.clone().json()}catch{return null;}
   const timeZone=String(input?.timezone??'Asia/Ho_Chi_Minh'),targetDate=String(input?.target_date??'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return null;
   const f=await feed({...input,target_date:targetDate,timezone:timeZone},env);if(!f||!f.rows.length)return null;
   const maxMatches=Math.max(1,Math.min(10,Number(input?.max_matches??5)||5));
-  const evaluated:any[]=[];
+  const evaluated:any[]=[],diagnostics:any[]=[];
+  let predictionAttempts=0,predictionSuccess=0;
   for(const row of f.rows as FeedRow[]){
-    const p=await predict(row,env,ctx),score=scorePrediction(p.body);
-    if(p.res.ok&&p.body?.status==='SUCCESS'&&score.eligible){evaluated.push({row,body:p.body,score});}
+    predictionAttempts++;
+    const p=await predict(row,env,ctx),score=scorePrediction(p.body),diag=diagnose(row,p,score);
+    if(p.res.ok&&(p.body?.status==='SUCCESS'||p.body?.status==='DATA_READY'))predictionSuccess++;
+    diagnostics.push(diag);
+    if(p.res.ok&&p.body?.status==='SUCCESS'&&score.eligible)evaluated.push({row,body:p.body,score});
   }
   evaluated.sort((a,b)=>Number(b.score.score)-Number(a.score.score));
   const selected=evaluated.slice(0,maxMatches),board=selected.map(({row,body,score})=>({
@@ -35,7 +52,9 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
     strictPrior:body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true,consistency:body?.consistencyGuard?.status??null,multiMarketStatus:body?.multiMarketIntegration?.status??body?.multiMarket?.mode??null,multiMarketDecisionUse:false,prediction:body
   }));
   const actionable=board.filter(r=>r.status==='ACTIONABLE_MODEL_SIGNAL');
-  return Response.json({status:'OK',action:'CFI_DISCOVERY',version:CFI_DISCOVERY_VERSION,targetDate,timeZone,provider:'CFI_FORWARD_CAPTURE',sourceUrl:null,counts:{fixturesDiscovered:f.rows.length,scanned:f.rows.length,eligible:evaluated.length,insufficient:f.rows.length-evaluated.length,blocked:0,fullPredictionsExecuted:board.length,actionable:actionable.length,shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length},rules:{strictPriorRequired:true,noForcedBet:true,bookmakerOddsRequiredForValueClaim:true,shadowDecisionUse:false},board,topPicks:actionable.slice(0,3),final:actionable.length?'MODEL_SHORTLIST_READY':board.length?'WATCHLIST_READY':'NO_BET',provenance:{fixtureSource:'EXISTING_FORWARD_MARKET_CAPTURES',fallbackOnly:true,noDuplicatePredictionEngine:true}});
+  const insufficient=diagnostics.filter(d=>d.reasonCode==='INSUFFICIENT_DATA').length;
+  const blocked=diagnostics.filter(d=>d.reasonCode&&d.reasonCode!=='INSUFFICIENT_DATA').length;
+  return Response.json({status:'OK',action:'CFI_DISCOVERY',version:CFI_DISCOVERY_VERSION,targetDate,timeZone,provider:'CFI_FORWARD_CAPTURE',sourceUrl:null,counts:{fixturesDiscovered:f.rows.length,canonicalized:f.rows.length,scanned:f.rows.length,predictionAttempts,predictionSuccess,fullPredictionsExecuted:predictionAttempts,eligible:evaluated.length,insufficient,blocked,recommended:actionable.length,actionable:actionable.length,shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length},diagnostics,rules:{strictPriorRequired:true,noForcedBet:true,bookmakerOddsRequiredForValueClaim:true,shadowDecisionUse:false},board,topPicks:actionable.slice(0,3),final:actionable.length?'MODEL_SHORTLIST_READY':board.length?'WATCHLIST_READY':'NO_BET',provenance:{fixtureSource:'EXISTING_FORWARD_MARKET_CAPTURES',fallbackOnly:true,noDuplicatePredictionEngine:true}});
 }
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
