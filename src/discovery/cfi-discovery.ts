@@ -8,6 +8,7 @@ const clean=(v:any)=>String(v??'').trim();
 function parts(ms:number,timeZone:string){const p=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(ms));const get=(t:string)=>p.find(x=>x.type===t)?.value??'';return{date:`${get('year')}-${get('month')}-${get('day')}`,time:`${get('hour')}:${get('minute')}`};}
 function inWindow(time:string,start?:string|null,end?:string|null){if(start&&time<start)return false;if(end&&time>end)return false;return true;}
 export function localDateNow(timeZone:string,nowMs=Date.now()){return parts(nowMs,timeZone).date;}
+export function providerQueryDates(targetDate:string){const base=Date.parse(`${targetDate}T00:00:00Z`);if(!Number.isFinite(base))return[targetDate];return[-1,0,1].map(delta=>new Date(base+delta*86400000).toISOString().slice(0,10));}
 export function dedupeFixtures(rows:DiscoveredFixture[]){const seen=new Set<string>();return rows.filter(r=>{const key=`${r.home.toLowerCase()}|${r.away.toLowerCase()}|${Math.floor(r.kickoff/60000)}`;if(seen.has(key))return false;seen.add(key);return true;});}
 
 export function parseSofascoreScheduled(payload:any,window:DiscoveryWindow):DiscoveredFixture[]{
@@ -32,10 +33,13 @@ export async function discoverFixtures(window:DiscoveryWindow,fetchFn:typeof fet
  const attempts:any[]=[];
  const sources:Array<{provider:string;rows:DiscoveredFixture[];sourceUrl:string}>=[];
  const tryProvider=async(provider:string,url:string,parse:(p:any,w:DiscoveryWindow)=>DiscoveredFixture[])=>{try{const r=await fetchFn(url,{headers:{accept:'application/json','user-agent':'CFI-Football-Intelligence/1.1'}});const status=r.status;if(!r.ok){attempts.push({provider,url,httpStatus:status,ok:false,rows:0});return;}const rows=parse(await r.json(),window);attempts.push({provider,url,httpStatus:status,ok:true,rows:rows.length});if(rows.length)sources.push({provider,rows,sourceUrl:url});}catch(e:any){attempts.push({provider,url,httpStatus:null,ok:false,rows:0,error:String(e?.message||e)});}};
- const sofaUrls=[`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${window.targetDate}`,`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${window.targetDate}`];
- for(const url of sofaUrls)await tryProvider('SOFASCORE',url,parseSofascoreScheduled);
- const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${window.targetDate}&s=Soccer`;await tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents);
- const espnDate=window.targetDate.replaceAll('-',''),espnUrl=`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=1000`;await tryProvider('ESPN',espnUrl,parseEspnScoreboard);
+ const queryDates=providerQueryDates(window.targetDate);
+ for(const date of queryDates){
+  const sofaUrls=[`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${date}`];
+  for(const url of sofaUrls)await tryProvider('SOFASCORE',url,parseSofascoreScheduled);
+  const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`;await tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents);
+  const espnDate=date.replaceAll('-',''),espnUrl=`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=1000`;await tryProvider('ESPN',espnUrl,parseEspnScoreboard);
+ }
  const rows=dedupeFixtures(sources.flatMap(s=>s.rows)).sort((a,b)=>a.kickoff-b.kickoff);
  const providers=[...new Set(sources.map(s=>s.provider))];
  return{provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',providers,rows,sourceUrl:sources.map(s=>s.sourceUrl).join(',' )||null,attempts};
