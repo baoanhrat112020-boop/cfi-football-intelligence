@@ -18,25 +18,22 @@ jobs:
         run: |
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
-          DISCOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          node - "$DISCOVERED_AT" <<'NODE' > /tmp/request.json
-          const [discoveredAt]=process.argv.slice(2);
-          const candidates=[
-            {provider:'GPT_WEB_SEARCH',providerId:'gpt-bradford-burnley-20260826',home:'Bradford City',away:'Burnley',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://www.burnleyfootballclub.com/media-article/date-confirmed-for-carabao-cup-trip-to-bradford-city'],discoveredAt},
-            {provider:'GPT_WEB_SEARCH',providerId:'gpt-newcastle-westbrom-20260826',home:'Newcastle United',away:'West Bromwich Albion',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://www.beinsports.com/en-mena/football/league-cup/newcastle-united-vs-west-bromwich-albion-2026-08-25'],discoveredAt},
-            {provider:'GPT_WEB_SEARCH',providerId:'gpt-tottenham-charlton-20260826',home:'Tottenham Hotspur',away:'Charlton Athletic',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://www.tottenhamhotspur.com/news/1084493/spurs-vs-charlton-carabao-cup-date-and-ko-time-confirmed'],discoveredAt},
-            {provider:'GPT_WEB_SEARCH',providerId:'gpt-preston-everton-20260826',home:'Preston North End',away:'Everton',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T19:00:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://royalbluemersey.sbnation.com/everton-2026-27-season-premier-league/82387/preston-vs-everton-carabao-cup-second-round-preview'],discoveredAt},
-            {provider:'GPT_WEB_SEARCH',providerId:'gpt-real-madrid-sociedad-20260826',home:'Real Madrid',away:'Real Sociedad',competition:'La Liga',country:'Spain',kickoffIso:'2026-08-26T19:00:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://as.com/futbol/primera/real-madrid-real-sociedad-tv-horario-y-como-ver-laliga-ea-sports-online-f202608-n/'],discoveredAt}
-          ];
-          process.stdout.write(JSON.stringify({target_date:'2026-08-26',timezone:'Asia/Ho_Chi_Minh',max_matches:5,scan_limit:80,fixture_candidates:candidates}));
-          NODE
+          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          cat > /tmp/request.json <<JSON
+          {"target_date":"$TARGET_DATE","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":100,"internal_provider_diagnostics":true}
+          JSON
+          curl -fsS --max-time 300 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
           node - <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/request.json','utf8'));const now=Date.now();x.fixture_candidates=x.fixture_candidates.filter(r=>Date.parse(r.kickoffIso)>now);if(!x.fixture_candidates.length)throw new Error('No verified fixture remains pre-kickoff');x.max_matches=Math.min(5,x.fixture_candidates.length);fs.writeFileSync('/tmp/request.json',JSON.stringify(x));console.log('verified_pre_kickoff_candidates='+x.fixture_candidates.length);
-          NODE
-          curl -fsS --max-time 240 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
-          node - <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};
-          const concise={status:x.status,action:x.action,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,search:x.search,diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),board:(x.board||[]).map(r=>({match:r.match,kickoff:r.kickoff,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,snapshotId:r.prediction?.audit?.body?.snapshotId||null})),final:x.final};
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));
+          const c=x?.counts||{};
+          const concise={
+            status:x.status,action:x.action,version:x.version,targetDate:x.targetDate,provider:x.provider,
+            counts:c,search:x.search,providerAttempts:x.providerAttempts,
+            diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,failureLayer:d.failureLayer,reasonCode:d.reasonCode,exactTeam:d.exactTeam,canonicalIdentity:d.canonicalIdentity,temporalEvidenceAudit:d.temporalEvidenceAudit})),
+            board:(x.board||[]).map(r=>({match:r.match,kickoff:r.kickoff,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,snapshotId:r.prediction?.audit?.body?.snapshotId||null})),
+            final:x.final
+          };
           console.log(JSON.stringify(concise,null,2));
           const fail=m=>{throw new Error(m)};
           if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
@@ -44,6 +41,10 @@ jobs:
           if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
           if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
           if(!Array.isArray(x.board)||x.board.length<1)fail('Daily Board missing');
-          for(const r of x.board){if(r.strictPrior!==true)fail('strict-prior not verified');if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 incomplete');if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market promoted');}
+          for(const r of x.board){
+            if(r.strictPrior!==true)fail('strict-prior not verified');
+            if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 incomplete');
+            if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market promoted');
+          }
           console.log('CFI_GPT_CURRENT_DAY_PRODUCTION_ACCEPTANCE=PASS');
           NODE
