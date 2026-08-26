@@ -1,0 +1,140 @@
+name: CFI Final Production E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cfi-final-production-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  final-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Wait for Worker deploy convergence
+        run: sleep 45
+
+      - name: Run final production discovery with public odds provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
+          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          CAPTURED_AT=$(date -u +%FT%TZ)
+          export TARGET_DATE CAPTURED_AT
+          VI_ODDS_URL='https://www.sportytrader.com/en/odds/vietnam-thailand-8756504/'
+          AU_ODDS_URL='https://www.forebet.com/en/football/matches/preston-lions-south-melbourne-2518818'
+
+          # These pages were checked from the public web at capture time. The prices
+          # are passed as an explicit, timestamped input; CFI never treats a search
+          # result as an unproven bookmaker feed and never places a bet.
+          curl -fsSL --max-time 30 "$VI_ODDS_URL" -o /tmp/vietnam-odds.html
+          curl -fsSL --max-time 30 "$AU_ODDS_URL" -o /tmp/preston-odds.html
+          grep -qi 'Vietnam' /tmp/vietnam-odds.html
+          grep -qi 'Preston' /tmp/preston-odds.html
+
+          node - <<'NODE'
+          const fs=require('fs');
+          const target=process.env.TARGET_DATE;
+          const capturedAt=process.env.CAPTURED_AT;
+          const payload={
+            target_date:target,
+            timezone:'Asia/Ho_Chi_Minh',
+            max_matches:5,
+            scan_limit:40,
+            odds_by_fixture:{
+              'Vietnam vs Thailand':{
+                values:{'FT 1':1.78,'FT X':3.90,'FT 2':4.68,'FT O2.5':1.79,'FT U2.5':1.78},
+                metadata:{
+                  bookmaker:'SportyTrader public market snapshot',
+                  capturedAt,
+                  verified:true,
+                  source:'https://www.sportytrader.com/en/odds/vietnam-thailand-8756504/',
+                  sourceType:'PUBLIC_WEB_CAPTURE'
+                }
+              },
+              'Preston Lions vs South Melbourne':{
+                values:{'FT 1':2.05,'FT X':3.60,'FT 2':3.30,'FT O2.5':2.12,'FT U2.5':1.58},
+                metadata:{
+                  bookmaker:'Forebet public market snapshot',
+                  capturedAt,
+                  verified:true,
+                  source:'https://www.forebet.com/en/football/matches/preston-lions-south-melbourne-2518818',
+                  sourceType:'PUBLIC_WEB_CAPTURE'
+                }
+              }
+            }
+          };
+          fs.writeFileSync('/tmp/final-request.json',JSON.stringify(payload));
+          NODE
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/final-request.json','utf8')); if(x.target_date!==process.env.TARGET_DATE) process.exit(1)"
+          curl -fsS --max-time 120 -H 'content-type: application/json' \
+            --data-binary @/tmp/final-request.json "$BASE/api/discover" \
+            -o /tmp/final-production.json
+
+      - name: Verify final production contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/final-production.json','utf8'));
+          const c=x?.counts||{};
+          const fail=(m)=>{throw new Error(m)};
+          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!=='CFI_AUTO_DISCOVERY_V1.2')fail('discovery contract failed');
+          if(!c.fixturesDiscovered||!c.predictionAttempts||!c.fullPredictionsExecuted)fail('no production predictions');
+          if(!Array.isArray(x.board)||x.board.length!==c.fullPredictionsExecuted)fail('board does not match official executions');
+          if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false)fail('strict-prior or shadow gate changed');
+          for(const row of x.board){
+            const p=row.prediction, v=p?.outputV3, s=p?.sixTargetMatrix;
+            if(row.strictPrior!==true)fail(`${row.match}: strict-prior missing`);
+            if(!row.snapshotId && !p?.audit?.body?.snapshotId)fail(`${row.match}: immutable snapshot missing`);
+            if(s?.verification?.complete!==true||s?.primaryTargets?.length!==6)fail(`${row.match}: Champion 6 incomplete`);
+            if(!v?.marketSummary?.oneXTwo||!v?.marketSummary?.overUnder||!v?.marketSummary?.asianHandicap)fail(`${row.match}: market summary incomplete`);
+            if(!v?.explosionScenario||!v?.evidenceSufficiency||!v?.betLedger)fail(`${row.match}: practical output blocks missing`);
+            if(v.betLedger.autoPlaced===true||v.betLedger.explicitConfirmationRequired!==true)fail(`${row.match}: ledger safety contract failed`);
+          }
+          const withOdds=x.board.filter(r=>{
+            const cards=[...(r.prediction?.outputV3?.marketSummary?.oneXTwo?.ft?Object.values(r.prediction.outputV3.marketSummary.oneXTwo.ft):[]),...(r.prediction?.outputV3?.marketSummary?.overUnder?.ft?Object.values(r.prediction.outputV3.marketSummary.overUnder.ft):[])];
+            return cards.some(card=>Number.isFinite(Number(card?.marketOdds)));
+          });
+          if(!withOdds.length)fail('public odds did not reach production output');
+          fs.writeFileSync('/tmp/final-summary.json',JSON.stringify({
+            status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,final:x.final,
+            board:x.board.map(r=>({match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,snapshotId:r.prediction?.audit?.body?.snapshotId??null,champion:r.prediction?.sixTargetMatrix,marketSummary:r.prediction?.outputV3?.marketSummary,explosionScenario:r.prediction?.outputV3?.explosionScenario,evidenceSufficiency:r.prediction?.outputV3?.evidenceSufficiency,betLedger:r.prediction?.outputV3?.betLedger}))
+          },null,2));
+          console.log(fs.readFileSync('/tmp/final-summary.json','utf8'));
+          NODE
+
+      - name: Publish final production evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          if [ ! -f /tmp/final-summary.json ]; then
+            echo '::warning::Final production summary was not produced.'
+            exit 0
+          fi
+          {
+            echo '## CFI Final Production E2E'
+            echo
+            echo '```json'
+            cat /tmp/final-summary.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          TITLE='[AUTO] CFI Final Production E2E'
+          BODY=$(cat /tmp/final-summary.json)
+          REPORT=$(printf 'Run: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '.[] | select(.title=="[AUTO] CFI Final Production E2E") | .number' 2>/dev/null | head -n1 || true)
+          if [ -n "${ISSUE:-}" ]; then
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo "::warning::Could not publish final evidence to issue #$ISSUE"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT" || echo '::warning::Could not create final evidence issue'
+          fi
