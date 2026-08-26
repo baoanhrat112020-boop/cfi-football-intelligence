@@ -3,6 +3,75 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const json=(x:unknown,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{"content-type":"application/json","access-control-allow-origin":"*","access-control-allow-headers":"authorization, x-client-info, apikey, content-type, x-cfi-key"}});
 const isScreenshot=(s:string)=>/screenshot|image|session/i.test(s||"");
 
+const CLUB_DESIGNATORS=new Set(['fc','cf','afc','ac','sc','fk','sk','if','bk','bsc','pfc','ec','cd','ca','rcd','rc','ssc','sv','vfb','vfl','tsg','fsv','kv','rsc','krc','gnk','nk','club','clube','calcio','futebol','football','soccer']);
+const foldName=(value:string)=>String(value||'').normalize('NFKD').replace(/\p{M}+/gu,'').toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
+const clubIdentityKey=(value:string)=>foldName(value).split(' ').filter(token=>token&&!CLUB_DESIGNATORS.has(token)).join(' ');
+
+type IdentityCandidate={team_id:string;canonical_name:string};
+type IdentityCatalog={expiresAt:number;folded:Map<string,Map<string,IdentityCandidate>>;club:Map<string,Map<string,IdentityCandidate>>};
+let identityCatalog:IdentityCatalog|null=null;
+
+const addCandidate=(map:Map<string,Map<string,IdentityCandidate>>,key:string,candidate:IdentityCandidate)=>{
+  if(!key||key.length<2)return;
+  const bucket=map.get(key)||new Map<string,IdentityCandidate>();
+  bucket.set(candidate.team_id,candidate);
+  map.set(key,bucket);
+};
+
+async function fetchAll(db:any,table:string,columns:string){
+  const out:any[]=[]; const pageSize=1000;
+  for(let offset=0;offset<20000;offset+=pageSize){
+    const {data,error}=await db.from(table).select(columns).range(offset,offset+pageSize-1);
+    if(error)throw new Error(`${table.toUpperCase()}_CATALOG_FAILED:${error.code||''}:${error.message}`);
+    const rows=Array.isArray(data)?data:[]; out.push(...rows);
+    if(rows.length<pageSize)break;
+  }
+  return out;
+}
+
+async function loadIdentityCatalog(db:any){
+  const now=Date.now();
+  if(identityCatalog&&identityCatalog.expiresAt>now)return identityCatalog;
+  const [teams,aliases]=await Promise.all([
+    fetchAll(db,'teams','team_id,canonical_name'),
+    fetchAll(db,'team_aliases','team_id,alias_display')
+  ]);
+  const teamById=new Map<string,string>();
+  for(const row of teams){
+    const id=String(row?.team_id||''),canonical=String(row?.canonical_name||'').trim();
+    if(id&&canonical)teamById.set(id,canonical);
+  }
+  const folded=new Map<string,Map<string,IdentityCandidate>>(),club=new Map<string,Map<string,IdentityCandidate>>();
+  const index=(label:string,teamId:string)=>{
+    const canonical=teamById.get(teamId); if(!canonical)return;
+    const candidate={team_id:teamId,canonical_name:canonical};
+    addCandidate(folded,foldName(label),candidate);
+    const clubKey=clubIdentityKey(label); if(clubKey.length>=3)addCandidate(club,clubKey,candidate);
+  };
+  for(const [teamId,canonical] of teamById)index(canonical,teamId);
+  for(const row of aliases){const teamId=String(row?.team_id||''),label=String(row?.alias_display||'').trim();if(teamId&&label)index(label,teamId);}
+  identityCatalog={expiresAt:now+5*60*1000,folded,club};
+  return identityCatalog;
+}
+
+const uniqueCandidate=(bucket:Map<string,IdentityCandidate>|undefined)=>{
+  const values=bucket?[...bucket.values()]:[];
+  return values.length===1?values[0]:null;
+};
+
+async function deterministicFallback(db:any,name:string){
+  const catalog=await loadIdentityCatalog(db);
+  const foldedKey=foldName(name),foldedBucket=catalog.folded.get(foldedKey);
+  const folded=uniqueCandidate(foldedBucket);
+  if(folded)return{status:'RESOLVED',team_id:folded.team_id,canonical_name:folded.canonical_name,resolution:'CANONICAL_FOLDED_EXACT',confidence:1};
+  if(foldedBucket&&foldedBucket.size>1)return{status:'UNRESOLVED',resolution:'AMBIGUOUS_EXACT_IDENTITY_KEY',input:name};
+  const clubKey=clubIdentityKey(name),clubBucket=clubKey.length>=3?catalog.club.get(clubKey):undefined;
+  const club=uniqueCandidate(clubBucket);
+  if(club)return{status:'RESOLVED',team_id:club.team_id,canonical_name:club.canonical_name,resolution:'CANONICAL_CLUB_KEY_EXACT',confidence:1};
+  if(clubBucket&&clubBucket.size>1)return{status:'UNRESOLVED',resolution:'AMBIGUOUS_EXACT_IDENTITY_KEY',input:name};
+  return{status:'UNRESOLVED',resolution:'NO_EXACT_IDENTITY_KEY',input:name};
+}
+
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return json({ok:true});
   if(req.method!=='POST')return json({error:'POST_REQUIRED'},405);
@@ -23,8 +92,11 @@ Deno.serve(async(req)=>{
 
   const resolve=async(name:string)=>{
     const {data,error}=await db.rpc('cfi_resolve_team_name',{p_name:name});
-    if(error)throw new Error(`TEAM_RESOLUTION_FAILED:${error.code}:${error.message}`);
-    return data;
+    if(!error&&data?.status==='RESOLVED')return data;
+    const fallback=await deterministicFallback(db,name);
+    if(fallback?.status==='RESOLVED')return fallback;
+    if(error)return{...fallback,rpcError:`${error.code||''}:${error.message}`};
+    return{...fallback,rpcResolution:data?.resolution??data?.status??null};
   };
   let homeResolution:any,awayResolution:any;
   try{[homeResolution,awayResolution]=await Promise.all([resolve(home),resolve(away)]);}
@@ -40,8 +112,6 @@ Deno.serve(async(req)=>{
     .order('match_date',{ascending:false});
   if(fe)return json({error:'FIXTURE_LOOKUP_FAILED',message:fe.message},500);
 
-  // Hydrate canonical team names for every fixture. The prediction engine requires names,
-  // not only UUIDs; missing names previously made 500+ retrieved fixtures normalize to zero.
   const allTeamIds=[...new Set((rows||[]).flatMap((r:any)=>[r.home_team_id,r.away_team_id]).filter(Boolean))];
   const teamNameById=new Map<string,string>();
   for(let i=0;i<allTeamIds.length;i+=100){
@@ -50,17 +120,12 @@ Deno.serve(async(req)=>{
     if(tne)return json({error:'TEAM_NAME_HYDRATION_FAILED',message:tne.message,batchStart:i,batchSize:batch.length,totalTeamIds:allTeamIds.length},500);
     for(const t of tn||[])teamNameById.set((t as any).team_id,(t as any).canonical_name);
   }
-  const namedRows=(rows||[]).map((r:any)=>({
-    ...r,
-    home_name:teamNameById.get(r.home_team_id)||String(r.home_team_id||''),
-    away_name:teamNameById.get(r.away_team_id)||String(r.away_team_id||'')
-  }));
+  const namedRows=(rows||[]).map((r:any)=>({...r,home_name:teamNameById.get(r.home_team_id)||String(r.home_team_id||''),away_name:teamNameById.get(r.away_team_id)||String(r.away_team_id||'')}));
 
   const fixtureIds=[...new Set(namedRows.map((r:any)=>r.fixture_id).filter(Boolean))];
   const provBy=new Map<string,any[]>();
   for(let i=0;i<fixtureIds.length;i+=100){
-    const batch=fixtureIds.slice(i,i+100);
-    if(!batch.length)continue;
+    const batch=fixtureIds.slice(i,i+100);if(!batch.length)continue;
     const {data:p,error:pe}=await db.from('provenance').select('fixture_id,source_type,source_label,image_hash,observed_at').in('fixture_id',batch);
     if(pe)return json({error:'PROVENANCE_LOOKUP_FAILED',message:pe.message,batchStart:i,batchSize:batch.length,totalFixtureIds:fixtureIds.length},500);
     for(const x of p||[]){const a=provBy.get((x as any).fixture_id)||[];a.push(x);provBy.set((x as any).fixture_id,a)}
@@ -100,10 +165,8 @@ Deno.serve(async(req)=>{
   const temporalAudit={targetDate,maxEvidenceDate,exactTeamMaxEvidenceDate:maxExact,globalPriorMaxEvidenceDate:maxGlobalDate,futureEvidenceCount:futureExact,sameDateEvidenceCount:sameExact,observable:maxEvidenceDate!==null,verified:maxEvidenceDate!==null&&maxEvidenceDate<targetDate&&futureExact===0&&sameExact===0,rule:'fixtureDate < targetDate'};
 
   return json({
-    status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.2.0_ALIAS_EXACT',targetDate,
-    identity:{homeFound:!!hr,awayFound:!!ar,homeTeamId:hr?.team_id??null,awayTeamId:ar?.team_id??null,
-      homeInput:home,awayInput:away,homeCanonical:hr?.canonical_name??null,awayCanonical:ar?.canonical_name??null,
-      homeResolution:homeResolution?.resolution??null,awayResolution:awayResolution?.resolution??null},
+    status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.3.0_IDENTITY_KEY_EXACT',targetDate,
+    identity:{homeFound:!!hr,awayFound:!!ar,homeTeamId:hr?.team_id??null,awayTeamId:ar?.team_id??null,homeInput:home,awayInput:away,homeCanonical:hr?.canonical_name??null,awayCanonical:ar?.canonical_name??null,homeResolution:homeResolution?.resolution??null,awayResolution:awayResolution?.resolution??null},
     hydration:{teamNames:true,hydratedTeamCount:teamNameById.size},
     currentSessionProvenance:'NOT_OBSERVABLE_WITHOUT_SESSION_ID_OR_IMAGE_HASHES',
     exactTeam:{home:stats(h),away:stats(a),h2h:stats(h2h)},
@@ -113,4 +176,3 @@ Deno.serve(async(req)=>{
     fixtures:{home:h,away:a,h2h}
   });
 });
-
