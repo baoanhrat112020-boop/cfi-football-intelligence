@@ -64,6 +64,6 @@ jobs:
         run: |
           set -euo pipefail
           TITLE='[AUTO] CFI Discovery Production Smoke'; BODY=$(cat /tmp/discovery-summary.json)
-          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' | head -n1)
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' | head -n1)
           REPORT=$(printf 'Run: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
           if [ -n "${ISSUE:-}" ]; then gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT"; else gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT"; fi
