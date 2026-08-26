@@ -28,6 +28,7 @@ jobs:
           const fs=require('fs');
           const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));
           const c=x?.counts||{};
+          const first=(x.board||[])[0]||null;
           console.log(JSON.stringify({
             provider:x.provider,
             counts:c,
@@ -35,6 +36,18 @@ jobs:
             providerAttempts:x.providerAttempts,
             diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,failureLayer:d.failureLayer,reasonCode:d.reasonCode,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),
             board:(x.board||[]).map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete})),
+            firstPredictionProof:first?{
+              match:first.match,
+              strictPrior:first.prediction?.strictPrior??null,
+              strictPriorAudit:first.prediction?.strictPriorAudit??null,
+              temporalEvidenceAudit:first.prediction?.temporalEvidenceAudit??null,
+              futureEvidenceCount:first.prediction?.futureEvidenceCount??first.prediction?.strictPriorAudit?.evidence?.futureEvidenceCount??null,
+              sameDateEvidenceCount:first.prediction?.sameDateEvidenceCount??first.prediction?.strictPriorAudit?.evidence?.sameDateEvidenceCount??null,
+              maxEvidenceDate:first.prediction?.maxEvidenceDate??first.prediction?.strictPriorAudit?.evidence?.maxEvidenceDate??null,
+              sixTargetMatrix:first.prediction?.sixTargetMatrix??null,
+              consistencyGuard:first.prediction?.consistencyGuard??null,
+              multiMarketIntegration:first.prediction?.multiMarketIntegration??first.prediction?.multiMarket??null
+            }:null,
             final:x.final
           },null,2));
           const fail=m=>{console.error('ACCEPTANCE_FAIL='+m);process.exit(1)};
