@@ -94,11 +94,13 @@ function ouSummary(body:any,cards:Card[],period:'HT'|'FT'){
   const lineRows=rows.map(row=>{const m=row.market.match(/[OU](-?\d+(?:\.\d+)?)$/);return{row,line:m?Number(m[1]):NaN};}).filter(x=>Number.isFinite(x.line));
   const halfLines=[...new Set(lineRows.filter(x=>Math.abs(x.line%1)===.5).map(x=>x.line))];
   const available=halfLines.length?halfLines:[...new Set(lineRows.map(x=>x.line))];
-  const mainLine=available.sort((a,b)=>Math.abs(a-(projected.total??a))-Math.abs(b-(projected.total??b)))[0]??null;
+  const priced=available.filter(line=>rows.some(x=>(x.market===`${period} O${line}`||x.market===`${period} U${line}`)&&x.marketOdds!==null));
+  const candidates=priced.length?priced:available;
+  const mainLine=candidates.sort((a,b)=>Math.abs(a-(projected.total??a))-Math.abs(b-(projected.total??b)))[0]??null;
   const over=mainLine===null?null:rows.find(x=>x.market===`${period} O${mainLine}`)??null;
   const under=mainLine===null?null:rows.find(x=>x.market===`${period} U${mainLine}`)??null;
   const lean=[over,under].filter(Boolean).sort((a,b)=>(b!.probability??-1)-(a!.probability??-1))[0]??null;
-  return{projectedGoals:projected,mainLine,over,under,modelLean:lean?.market??null,modelProbability:lean?.probability??null,decisionUse:rows.some(x=>x.decisionUse)};
+  return{projectedGoals:projected,mainLine,lineSource:priced.length?'MARKET_ODDS':'MODEL_CENTER',over,under,modelLean:lean?.market??null,modelProbability:lean?.probability??null,decisionUse:rows.some(x=>x.decisionUse)};
 }
 function ahSummary(body:any,cards:Card[],period:'HT'|'FT'){
   const projected=expectedTotals(body,period),rows=cards.filter(x=>x.family==='ASIAN_HANDICAP'&&x.period===period);

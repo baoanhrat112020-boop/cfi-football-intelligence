@@ -77,3 +77,13 @@ test('practical summary always exposes 1X2, total-goal O/U and AH center lines',
   assert.match(out.renderedPracticalReport,/FT TOTAL:/);
   assert.match(out.renderedPracticalReport,/FT AH:/);
 });
+
+test('verified bookmaker O/U line takes precedence over the model-centered display line',()=>{
+  const body=prediction();
+  body.scoreline.expectedGoals.ftHome=2.2;body.scoreline.expectedGoals.ftAway=1;
+  body.multiMarket.overUnder.ft['3.5']={over:{fullWin:.42,halfWin:0,push:0,halfLoss:0,fullLoss:.58,fairDecimal:2.381},under:{fullWin:.58,halfWin:0,push:0,halfLoss:0,fullLoss:.42,fairDecimal:1.724}};
+  const out=buildCfiOutputV3(body,{now_ms:NOW,odds:verifiedOdds({'FT O2.5':1.65,'FT U2.5':2.15})});
+  assert.equal(out.marketSummary.overUnder.ft.mainLine,2.5);
+  assert.equal(out.marketSummary.overUnder.ft.lineSource,'MARKET_ODDS');
+  assert.equal(out.marketSummary.overUnder.ft.over.marketOdds,1.65);
+});
