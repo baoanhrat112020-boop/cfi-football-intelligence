@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Wait for Worker deploy convergence
         run: sleep 45
-      - name: Verify production status and discovery
+      - name: Verify native production discovery
         shell: bash
         run: |
           set -euo pipefail
@@ -30,64 +30,30 @@ jobs:
           const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/status.json','utf8'));
           if(x?.discovery?.supported!==true||x?.multiMarket?.decisionUse!==false)process.exit(1);
           NODE
-            curl -fsS --max-time 120 -H 'content-type: application/json' \
-              -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"scan_limit\":40}" \
-              "$BASE/api/discover" -o /tmp/discovery.json || printf '{}\n' > /tmp/discovery.json
+            printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/request.json
+            curl -fsS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/discovery.json || printf '{}\n' > /tmp/discovery.json
             if node - <<'NODE'
           const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8')); const c=x?.counts||{};
-          // V1.4 keeps the scheduled smoke lightweight: no provider crawler is called
-          // unless diagnostic mode is explicitly requested.
-          const attempts=Number(c.predictionAttempts??0), success=Number(c.predictionSuccess??0), official=Number(c.fullPredictionsExecuted??0);
-          const pass=x?.status==='OK'&&x?.action==='CFI_DISCOVERY'&&x?.version==='CFI_AUTO_DISCOVERY_V1.4'&&x?.search?.mode==='GPT_SEARCH_FIRST'&&x?.search?.internalProviderDiagnostics===false&&(x?.providerAttempts||[]).length===0&&Array.isArray(x?.board)&&x?.rules?.strictPriorRequired===true&&x?.rules?.shadowDecisionUse===false&&x?.rules?.gptSearchFirstRequired===true&&x?.rules?.internalProviderCrawlerDefault===false;
+          const pass=x?.status==='OK'&&x?.action==='CFI_DISCOVERY'&&x?.version==='CFI_AUTO_DISCOVERY_V1.4'&&x?.search?.mode==='GPT_SEARCH_FIRST'&&x?.search?.internalProviderDiagnostics===true&&Array.isArray(x?.providerAttempts)&&x.providerAttempts.length>0&&Array.isArray(x?.board)&&x?.rules?.strictPriorRequired===true&&x?.rules?.shadowDecisionUse===false&&x?.rules?.gptSearchFirstRequired===true&&Number(c.fixturesDiscovered)>0&&Number(c.canonicalized)>0&&Number(c.predictionAttempts)>0&&Number(c.predictionSuccess)>0&&Number(c.fullPredictionsExecuted)>0;
           if(!pass)process.exit(1);
-          for(const r of x.board){if(r.strictPrior!==true||r.multiMarketDecisionUse!==false||!r.prediction?.sixTargetMatrix?.verification?.complete)process.exit(1);}
+          if(x.board.length<1)process.exit(1);
+          for(const r of x.board){if(r.strictPrior!==true||r.multiMarketDecisionUse!==false||r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)process.exit(1);}
           NODE
             then ok=1; break; fi
             node - <<'NODE' || true
-          const fs=require('fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'))}catch{};const c=x?.counts||{};console.log(JSON.stringify({provider:x.provider,counts:c,predictionAttempts:c.predictionAttempts??0,predictionSuccess:c.predictionSuccess??0,officialPredictionExecutions:c.fullPredictionsExecuted??0,board:(x.board||[]).map(r=>({match:r.match,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,status:r.status})),final:x.final}));
+          const fs=require('fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'))}catch{};const c=x?.counts||{};console.log(JSON.stringify({provider:x.provider,counts:c,search:x.search,providerAttempts:x.providerAttempts,board:(x.board||[]).map(r=>({match:r.match,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,status:r.status})),final:x.final}));
           NODE
             sleep 20
           done
-          if [ "$ok" != 1 ]; then
-            echo '::error title=Production discovery smoke failed::V1.4 lightweight GPT-search-first contract was not observed after retries.'
-            exit 1
-          fi
           node - <<'NODE'
-          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8')); const c=x?.counts||{};
-          const summary={
-            status:x.status,
-            version:x.version,
-            targetDate:x.targetDate,
-            provider:x.provider,
-            counts:{...c,predictionAttempts:c.predictionAttempts??0,predictionSuccess:c.predictionSuccess??0,officialPredictionExecutions:c.fullPredictionsExecuted??0},
-            final:x.final,
-            board:x.board?.map(r=>({
-              match:r.match,
-              home:r.home,
-              away:r.away,
-              competition:r.competition,
-              kickoff:r.kickoff,
-              kickoffLocal:r.kickoffLocal,
-              bestMarket:r.bestMarket,
-              modelProbability:r.modelProbability,
-              fairOdds:r.fairOdds,
-              selectionScore:r.selectionScore,
-              status:r.status,
-              strictPrior:r.strictPrior,
-              consistency:r.consistency,
-              multiMarketStatus:r.multiMarketStatus,
-              multiMarketDecisionUse:r.multiMarketDecisionUse,
-              snapshotId:r.prediction?.audit?.body?.snapshotId||null,
-              champion:r.prediction?.sixTargetMatrix||null,
-              scoreline:r.prediction?.scoreline||null,
-              marketSummary:r.prediction?.outputV3?.marketSummary||r.marketSummary||null,
-              explosionScenario:r.prediction?.outputV3?.explosionScenario||null,
-              evidenceSufficiency:r.prediction?.outputV3?.evidenceSufficiency||null,
-              betLedger:r.prediction?.outputV3?.betLedger||null
-            }))
-          };
+          const fs=require('fs'); let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'))}catch{}; const c=x?.counts||{};
+          const summary={status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,search:x.search,providerAttempts:x.providerAttempts,final:x.final,board:(x.board||[]).map(r=>({match:r.match,home:r.home,away:r.away,competition:r.competition,kickoff:r.kickoff,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete}))};
           fs.writeFileSync('/tmp/discovery-summary.json',JSON.stringify(summary,null,2)); console.log(JSON.stringify(summary,null,2));
           NODE
+          if [ "$ok" != 1 ]; then
+            echo '::error title=Production discovery smoke failed::Native discovery did not produce a strict-prior full prediction after retries.'
+            exit 1
+          fi
       - name: Publish smoke evidence
         if: always()
         env:
@@ -99,7 +65,6 @@ jobs:
             echo '::warning::discovery-summary.json missing; production verification step owns pass/fail.'
             exit 0
           fi
-
           {
             echo '## CFI Discovery Production Smoke'
             echo
@@ -107,20 +72,12 @@ jobs:
             cat /tmp/discovery-summary.json
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
           TITLE='[AUTO] CFI Discovery Production Smoke'
           BODY=$(cat /tmp/discovery-summary.json)
           REPORT=$(printf 'Run: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
-
-          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
-            --json number,title \
-            --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' \
-            2>/dev/null | head -n1 || true)
-
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' 2>/dev/null | head -n1 || true)
           if [ -n "${ISSUE:-}" ]; then
-            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT" \
-              || echo "::warning::Could not publish smoke evidence to issue #$ISSUE"
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo "::warning::Could not publish smoke evidence to issue #$ISSUE"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT" \
-              || echo '::warning::Could not create smoke evidence issue'
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT" || echo '::warning::Could not create smoke evidence issue'
           fi
