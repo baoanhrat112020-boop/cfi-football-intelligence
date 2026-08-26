@@ -13,6 +13,13 @@ const ESPN_LEAGUES=[
  'kor.1','eng.w.1','usa.nwsl','uefa.wchampions',
 ] as const;
 const ESPN_BATCH_SIZE=6;
+// TheSportsDB's unfiltered free eventsday endpoint is capped at three rows. Use
+// legitimate league-level "next event" fallbacks for high-value competitions so
+// late-day discovery does not silently miss a real fixture simply because it was
+// outside that global three-row sample. These are provider league IDs, never
+// fixture/team IDs, and every returned event still passes the normal date/time
+// and prematch filters below.
+const THESPORTSDB_NEXT_LEAGUES=['4480','4481','5071','4328'] as const;
 
 const TERMINAL=new Set(['finished','inprogress','canceled','cancelled','postponed','abandoned','match finished','ft','in']);
 const clean=(v:any)=>String(v??'').trim();
@@ -100,10 +107,18 @@ export async function discoverFixtures(window:DiscoveryWindow,fetchFn:typeof fet
  for(const date of queryDates){
   const sofaUrls=[`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${date}`];
   for(const url of sofaUrls)jobs.push(tryProvider('SOFASCORE',url,parseSofascoreScheduled));
-  const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`;jobs.push(tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents));
+  const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${date}&s=Soccer`;jobs.push(tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents));
  }
  await Promise.all(jobs);
  const minimumRows=Math.max(1,Math.min(100,Math.floor(Number(window.minimumRows??5))||5));
+ // The free day endpoint is intentionally capped by TheSportsDB. Supplement it
+ // with one next-event request per configured league, stopping as soon as the
+ // requested pool is satisfied. This stays inside the same legitimate provider
+ // and preserves all strict target-date/prematch filters in the parser.
+ for(const leagueId of THESPORTSDB_NEXT_LEAGUES){
+  if(dedupeFixtures(sources.flatMap(source=>source.rows)).length>=minimumRows)break;
+  await tryProvider('THESPORTSDB',`https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=${leagueId}`,parseTheSportsDbEvents);
+ }
  const espnDate=window.targetDate.replaceAll('-','');
  for(let offset=0;offset<ESPN_LEAGUES.length;offset+=ESPN_BATCH_SIZE){
   if(dedupeFixtures(sources.flatMap(source=>source.rows)).length>=minimumRows)break;
