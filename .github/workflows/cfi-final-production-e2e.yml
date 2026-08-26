@@ -33,8 +33,8 @@ jobs:
           # These pages were checked from the public web at capture time. The prices
           # are passed as an explicit, timestamped input; CFI never treats a search
           # result as an unproven bookmaker feed and never places a bet.
-          curl -fsSL --max-time 30 "$VI_ODDS_URL" -o /tmp/vietnam-odds.html
-          curl -fsSL --max-time 30 "$AU_ODDS_URL" -o /tmp/preston-odds.html
+          curl -fLsS --compressed --max-time 30 -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36' "$VI_ODDS_URL" -o /tmp/vietnam-odds.html
+          curl -fLsS --compressed --max-time 30 -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36' "$AU_ODDS_URL" -o /tmp/preston-odds.html
           grep -qi 'Vietnam' /tmp/vietnam-odds.html
           grep -qi 'Preston' /tmp/preston-odds.html
 
