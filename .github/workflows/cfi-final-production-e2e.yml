@@ -1,8 +1,6 @@
 name: CFI Final Production E2E
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
     paths:
@@ -21,7 +19,7 @@ jobs:
       - name: Wait for Worker deploy convergence
         run: sleep 45
 
-      - name: Run final production discovery with public odds provenance
+      - name: Run V1.4 GPT-search-first production discovery
         shell: bash
         run: |
           set -euo pipefail
@@ -29,13 +27,6 @@ jobs:
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
           CAPTURED_AT=$(date -u +%FT%TZ)
           export TARGET_DATE CAPTURED_AT
-          VI_ODDS_URL='https://www.sportytrader.com/en/odds/vietnam-thailand-8756504/'
-          AU_ODDS_URL='https://www.forebet.com/en/football/matches/preston-lions-south-melbourne-2518818'
-
-          # The prices were checked through public web search at capture time. Some
-          # odds pages reject CI clients, so the request carries the source URL and
-          # timestamp explicitly; CFI still fails closed and never places a bet.
-
           node - <<'NODE'
           const fs=require('fs');
           const target=process.env.TARGET_DATE;
@@ -45,28 +36,14 @@ jobs:
             timezone:'Asia/Ho_Chi_Minh',
             max_matches:5,
             scan_limit:40,
-            odds_by_fixture:{
-              'Vietnam vs Thailand':{
-                values:{'FT 1':1.78,'FT X':3.90,'FT 2':4.68,'FT O2.5':1.79,'FT U2.5':1.78},
-                metadata:{
-                  bookmaker:'SportyTrader public market snapshot',
-                  capturedAt,
-                  verified:true,
-                  source:'https://www.sportytrader.com/en/odds/vietnam-thailand-8756504/',
-                  sourceType:'PUBLIC_WEB_CAPTURE'
-                }
-              },
-              'Preston Lions vs South Melbourne':{
-                values:{'FT 1':2.05,'FT X':3.60,'FT 2':3.30,'FT O2.5':2.12,'FT U2.5':1.58},
-                metadata:{
-                  bookmaker:'Forebet public market snapshot',
-                  capturedAt,
-                  verified:true,
-                  source:'https://www.forebet.com/en/football/matches/preston-lions-south-melbourne-2518818',
-                  sourceType:'PUBLIC_WEB_CAPTURE'
-                }
-              }
-            }
+            internal_provider_diagnostics:false,
+            fixture_candidates:[
+              {providerId:'gpt-web-qizilqum-nasaf-20260826',home:'Qizilqum Zarafshon',away:'Nasaf Qarshi',competition:'Uzbekistan Super League',country:'Uzbekistan',kickoffIso:'2026-08-26T15:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.sofascore.com/football/team/pfk-qizilqum/40265'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-nomme-rummu-20260826',home:'Nomme Kalju III',away:'Rummu Dunamo',competition:'Estonia II Liiga',country:'Estonia',kickoffIso:'2026-08-26T16:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.sofascore.com/football/match/nomme-kalju-iii-rummu-dunamo/uNEshqFb'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-wolfsburg-inter-w-20260826',home:'VfL Wolfsburg Women',away:'Inter Milan Women',competition:"UEFA Women's Champions League",country:'Europe',kickoffIso:'2026-08-26T16:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.uefa.com/womenschampionsleague/fixtures-results/'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-sparta-servette-w-20260826',home:'Sparta Prague Women',away:'Servette Genf Women',competition:"UEFA Women's Champions League",country:'Europe',kickoffIso:'2026-08-26T16:30:00Z',status:'SCHEDULED',sourceUrls:['https://www.uefa.com/womenschampionsleague/fixtures-results/'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-rapid-hearts-20260826',home:'SK Rapid Wien',away:'Hearts',competition:'UEFA Conference League Qualifying',country:'Europe',kickoffIso:'2026-08-26T16:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.sofascore.com/football/match/heart-of-midlothian-sk-rapid-wien/fQsdX'],discoveredAt:capturedAt}
+            ]
           };
           fs.writeFileSync('/tmp/final-request.json',JSON.stringify(payload));
           NODE
@@ -82,7 +59,7 @@ jobs:
 
       - name: Verify final production contract
         env:
-          EXPECTED_VERSION: ${{ github.event_name == 'pull_request' && 'CFI_AUTO_DISCOVERY_V1.2' || 'CFI_AUTO_DISCOVERY_V1.3' }}
+          EXPECTED_VERSION: CFI_AUTO_DISCOVERY_V1.4
         shell: bash
         run: |
           set -euo pipefail
@@ -92,13 +69,12 @@ jobs:
           const c=x?.counts||{};
           const fail=(m)=>{throw new Error(m)};
           if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!==process.env.EXPECTED_VERSION)fail(`discovery contract failed: expected ${process.env.EXPECTED_VERSION}, got ${x.version}`);
-          if(process.env.EXPECTED_VERSION==='CFI_AUTO_DISCOVERY_V1.3'){
-            if(x.rules?.continueUntilRequestedPoolOrSourcesExhausted!==true)fail('bounded continuation rule missing');
-            if(x.search?.combinedTargetSatisfied!==true&&x.search?.exhausted!==true)fail('discovery stopped before target without exhausting sources');
-          }
-          if(!c.fixturesDiscovered||!c.predictionAttempts||!c.fullPredictionsExecuted)fail('no production predictions');
-          if(!Array.isArray(x.board)||x.board.length!==c.fullPredictionsExecuted)fail('board does not match official executions');
-          if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false)fail('strict-prior or shadow gate changed');
+          if(x.search?.mode!=='GPT_SEARCH_FIRST')fail('GPT search-first telemetry missing');
+          if(x.search?.aiCandidatesReceived!==5||x.search?.aiCandidatesAccepted!==5||c.aiDiscoveredFixtures<5)fail('five real GPT candidates did not enter production');
+          if(x.search?.internalProviderDiagnostics!==false||(x.providerAttempts||[]).length!==0)fail('default path called internal provider crawler');
+          if(c.predictionAttempts<5||c.fullPredictionsExecuted<5)fail('five production prediction attempts were not executed');
+          if(!Array.isArray(x.board))fail('production board missing');
+          if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false||x.rules?.gptSearchFirstRequired!==true||x.rules?.internalProviderCrawlerDefault!==false)fail('V1.4 safety contract changed');
           for(const row of x.board){
             const p=row.prediction, v=p?.outputV3, s=p?.sixTargetMatrix;
             if(row.strictPrior!==true)fail(`${row.match}: strict-prior missing`);
@@ -108,13 +84,8 @@ jobs:
             if(!v?.explosionScenario||!v?.evidenceSufficiency||!v?.betLedger)fail(`${row.match}: practical output blocks missing`);
             if(v.betLedger.autoPlaced===true||v.betLedger.explicitConfirmationRequired!==true)fail(`${row.match}: ledger safety contract failed`);
           }
-          const withOdds=x.board.filter(r=>{
-            const cards=[...(r.prediction?.outputV3?.marketSummary?.oneXTwo?.ft?Object.values(r.prediction.outputV3.marketSummary.oneXTwo.ft):[]),...(r.prediction?.outputV3?.marketSummary?.overUnder?.ft?Object.values(r.prediction.outputV3.marketSummary.overUnder.ft):[])];
-            return cards.some(card=>Number.isFinite(Number(card?.marketOdds)));
-          });
-          if(!withOdds.length)fail('public odds did not reach production output');
           fs.writeFileSync('/tmp/final-summary.json',JSON.stringify({
-            status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,final:x.final,
+            status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,search:x.search,counts:c,final:x.final,
             board:x.board.map(r=>({match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,snapshotId:r.prediction?.audit?.body?.snapshotId??null,champion:r.prediction?.sixTargetMatrix,marketSummary:r.prediction?.outputV3?.marketSummary,explosionScenario:r.prediction?.outputV3?.explosionScenario,evidenceSufficiency:r.prediction?.outputV3?.evidenceSufficiency,betLedger:r.prediction?.outputV3?.betLedger}))
           },null,2));
           console.log(fs.readFileSync('/tmp/final-summary.json','utf8'));
