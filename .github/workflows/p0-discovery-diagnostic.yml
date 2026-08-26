@@ -20,6 +20,7 @@ jobs:
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          echo 'TRACE_TRIGGER=2026-08-26-P0-B'
           mkdir -p audit
           printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/request.json
           HTTP=$(curl -sS --max-time 180 -o /tmp/response.json -w '%{http_code}' -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" || true)
