@@ -17,8 +17,8 @@ export function dedupeCanonicalFixtureRows<T extends {home:string;away:string;ki
   const home=clean(row.canonicalHomeTeamId)||clean(row.home).toLowerCase();
   const away=clean(row.canonicalAwayTeamId)||clean(row.away).toLowerCase();
   const parsed=finiteKickoff(row.kickoff,row.kickoffIso);
-  const kickoff=parsed===null?clean(row.targetDate):String(Math.floor(parsed/60000));
-  const key=`${home}|${away}|${kickoff}`;
+  const matchDate=clean(row.targetDate)||(parsed===null?'':new Date(parsed).toISOString().slice(0,10));
+  const key=`${home}|${away}|${matchDate}`;
   if(seen.has(key))return false;
   seen.add(key);return true;
  });

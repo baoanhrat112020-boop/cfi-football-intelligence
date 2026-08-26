@@ -53,7 +53,7 @@ test('multi-market shadow remains decisionUse=false and coherent',()=>{const m=b
 test('canonical discovery rows are distinct before predictions execute',()=>{
   const rows=[
     {providerId:'a',home:'Vietnam',away:'Thailand',kickoffIso:'2026-08-26T10:00:00Z',canonicalHomeTeamId:'vn',canonicalAwayTeamId:'th'},
-    {providerId:'b',home:'Viet Nam',away:'Thai Lan',kickoffIso:'2026-08-26T10:00:20Z',canonicalHomeTeamId:'vn',canonicalAwayTeamId:'th'},
+    {providerId:'b',home:'Viet Nam',away:'Thai Lan',kickoffIso:'2026-08-26T13:00:00Z',canonicalHomeTeamId:'vn',canonicalAwayTeamId:'th'},
     {providerId:'c',home:'Preston Lions',away:'South Melbourne',kickoffIso:'2026-08-26T10:30:00Z',canonicalHomeTeamId:'preston',canonicalAwayTeamId:'south-melbourne'},
   ];
   const distinct=dedupeCanonicalFixtureRows(rows);
