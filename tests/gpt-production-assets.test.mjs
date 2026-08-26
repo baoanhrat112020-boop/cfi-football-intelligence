@@ -20,6 +20,9 @@ test("GPT Action OpenAPI parses and exposes P0 discovery plus legacy production 
   assert.ok(discovery.properties.target_date);
   assert.ok(discovery.properties.timezone);
   assert.ok(discovery.properties.max_matches);
+  assert.ok(discovery.properties.fixture_candidates);
+  assert.equal(discovery.properties.fixture_candidates.items.required.includes("sourceUrls"),true);
+  assert.equal(discovery.properties.internal_provider_diagnostics.default,false);
   assert.equal(discovery.properties.home,undefined);
   assert.equal(discovery.properties.away,undefined);
   const request=schema.paths["/api/predict"].post.requestBody.content["application/json"].schema;
@@ -31,6 +34,9 @@ test("GPT Action OpenAPI parses and exposes P0 discovery plus legacy production 
 test("GPT instructions route discovery intent without HOME/AWAY and preserve Champion safety",()=>{
   for(const token of [
     "cfiDiscoverOpportunities",
+    "GPT must search fixtures first",
+    "internal_provider_diagnostics=false",
+    "iOS, Android and Windows",
     "NEVER ask the user to provide HOME/AWAY first",
     "CFI DAILY OPPORTUNITY BOARD",
     "cfiPredictMatch",
