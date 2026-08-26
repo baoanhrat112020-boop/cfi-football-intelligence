@@ -75,7 +75,8 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
     if(p.res.ok&&(p.body?.status==='SUCCESS'||p.body?.status==='DATA_READY')&&score.eligible)evaluated.push({row,body:p.body,score});
   }
   evaluated.sort((a,b)=>Number(b.score.score)-Number(a.score.score));
-  const selected=evaluated.slice(0,maxMatches),board=selected.map(({row,body,score})=>{
+  const priority:Record<string,number>={BET:3,LEAN:2,WATCH:1};
+  const board=evaluated.map(({row,body,score})=>{
     const practical=body?.outputV3,primary=practical?.primary;
     const status=practical?.final==='BET'?'BET':practical?.final==='LEAN'?'LEAN':'WATCH';
     return {
@@ -85,7 +86,7 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
       status,valueStatus:status==='BET'||status==='LEAN'?'VERIFIED_MARKET_VALUE':practical?.gates?.verifiedOdds?'NO_QUALIFIED_VALUE':'NOT_ASSESSED_NO_VERIFIED_BOOKMAKER_ODDS',
       strictPrior:body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true,consistency:body?.consistencyGuard?.status??null,multiMarketStatus:body?.multiMarketIntegration?.status??body?.multiMarket?.mode??null,multiMarketDecisionUse:practical?.multiMarket?.policy?.decisionUse===true,practicalOutput:practical,prediction:body
     };
-  });
+  }).sort((a,b)=>(priority[b.status]??0)-(priority[a.status]??0)||Number(b.expectedValue??-9)-Number(a.expectedValue??-9)||Number(b.selectionScore)-Number(a.selectionScore)).slice(0,maxMatches);
   const actionable=board.filter(r=>r.status==='BET');
   const insufficient=diagnostics.filter(d=>d.reasonCode==='INSUFFICIENT_DATA').length;
   const blocked=diagnostics.filter(d=>d.reasonCode&&d.reasonCode!=='INSUFFICIENT_DATA').length;
