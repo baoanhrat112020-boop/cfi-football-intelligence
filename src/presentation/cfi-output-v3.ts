@@ -17,10 +17,10 @@ function normalizeOdds(input:any,nowMs=Date.now()){
   const values=wrapped?input.values:(input&&typeof input==='object'?input:{});
   const rawMeta=wrapped?(input.metadata??{}):{};
   const capturedAt=isoTime(rawMeta.capturedAt??rawMeta.captured_at);
-  const ageMs=capturedAt?Math.max(0,nowMs-Date.parse(capturedAt)):null;
+  const ageMs=capturedAt?nowMs-Date.parse(capturedAt):null;
   const maxAgeMinutes=Math.max(1,Math.min(240,finite(rawMeta.maxAgeMinutes??rawMeta.max_age_minutes)??30));
   const verified=rawMeta.verified===true&&Boolean(text(rawMeta.bookmaker))&&Boolean(capturedAt);
-  const fresh=verified&&ageMs!==null&&ageMs<=maxAgeMinutes*60_000;
+  const fresh=verified&&ageMs!==null&&ageMs>=-120_000&&ageMs<=maxAgeMinutes*60_000;
   const metadata:OddsMeta={bookmaker:text(rawMeta.bookmaker),capturedAt,verified,fresh,source:text(rawMeta.source)};
   return{values,metadata,ageMinutes:ageMs===null?null:round(ageMs/60_000,1),maxAgeMinutes};
 }
@@ -90,7 +90,7 @@ export function buildCfiOutputV3(body:any,input:any={}){
   const odds=normalizeOdds(input?.odds??{},finite(input?.now_ms)??Date.now());
   const strictPrior=body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true;
   const consistency=(!body?.consistencyGuard?.status||body.consistencyGuard.status==='PASS')&&(!body?.multiMarket?.consistencyGuard?.status||body.multiMarket.consistencyGuard.status==='PASS');
-  const fixtureVerified=input?.fixture_identity?.verified!==false;
+  const fixtureVerified=mode==='IMAGE_ANALYSIS'||mode==='DISCOVER_TOP_MATCHES'?input?.fixture_identity?.verified===true:input?.fixture_identity?.verified!==false;
   const qualityPass=Boolean(strictPrior&&consistency&&fixtureVerified);
   const oddsReady=odds.metadata.verified&&odds.metadata.fresh;
   const cards:Card[]=(body?.ranking??[]).map((r:any)=>makeCard({market:String(r.target),family:'CHAMPION',period:String(r.target).includes('HT')?'HT':'FT',probability:r.probability,confidence:r.confidence??r.predictiveConfidence,odds:odds.values?.[r.target],decisionUse:true,researchState:'CHAMPION',qualityPass,oddsReady}));
