@@ -24,7 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
-          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          TARGET_DATE='2026-08-27' # kickoff timestamps below are 18:45Z–19:00Z = 01:45–02:00 GMT+7 on 27/08
           CAPTURED_AT=$(date -u +%FT%TZ)
           export TARGET_DATE CAPTURED_AT
           node - <<'NODE'
@@ -38,11 +38,11 @@ jobs:
             scan_limit:40,
             internal_provider_diagnostics:false,
             fixture_candidates:[
-              {providerId:'gpt-web-bradford-burnley-20260826',home:'Bradford City',away:'Burnley',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-newcastle-west-brom-20260826',home:'Newcastle United',away:'West Bromwich Albion',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-tottenham-charlton-20260826',home:'Tottenham Hotspur',away:'Charlton Athletic',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-preston-everton-20260826',home:'Preston North End',away:'Everton',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-real-madrid-sociedad-20260826',home:'Real Madrid',away:'Real Sociedad',competition:'La Liga',country:'Spain',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt}
+              {providerId:'gpt-web-bradford-burnley-20260827',home:'Bradford City',away:'Burnley',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-newcastle-west-brom-20260827',home:'Newcastle United',away:'West Bromwich Albion',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-tottenham-charlton-20260827',home:'Tottenham Hotspur',away:'Charlton Athletic',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-preston-everton-20260827',home:'Preston North End',away:'Everton',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-real-madrid-sociedad-20260827',home:'Real Madrid',away:'Real Sociedad',competition:'La Liga',country:'Spain',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt}
             ]
           };
           fs.writeFileSync('/tmp/final-request.json',JSON.stringify(payload));
