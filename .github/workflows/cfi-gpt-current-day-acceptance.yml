@@ -19,40 +19,31 @@ jobs:
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           DISCOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          accepted=0
-          candidates=(
-            'Qizilqum Zarafshon|Nasaf Qarshi|2026-08-26T15:00:00Z|Uzbekistan Super League|Uzbekistan|gpt-qizilqum-nasaf|https://www.fotmob.com/ckb/matches/qizilqum-zarafshon-vs-nasaf-qarshi/9l54q53'
-            'Qizilqum|Nasaf Qarshi|2026-08-26T15:00:00Z|Uzbekistan Super League|Uzbekistan|gpt-qizilqum-nasaf-2|https://www.soccerpunter.com/head-to-head-stats/away/27718/6355/8994/Nasaf-vs-Qizilqum-in-Uzbekistan-Super-league-2026'
-            'Qizilqum Zarafshon|Nasaf|2026-08-26T15:00:00Z|Uzbekistan Super League|Uzbekistan|gpt-qizilqum-nasaf-3|https://m.aiscore.com/live/football-nasaf-qarshi-vs-qizilqum-zarafshon'
-            'Dinamo Samarqand|Pakhtakor Tashkent|2026-08-26T15:00:00Z|Uzbekistan Super League|Uzbekistan|gpt-dinamo-pakhtakor|https://foosports.com/fixtures/2026-08-26/'
-            'Dinamo Samarkand|Pakhtakor|2026-08-26T15:00:00Z|Uzbekistan Super League|Uzbekistan|gpt-dinamo-pakhtakor-2|https://foosports.com/fixtures/2026-08-26/'
-            'Mashal Muborak|Navbahor Namangan|2026-08-26T15:00:00Z|Uzbekistan Super League|Uzbekistan|gpt-mashal-navbahor|https://tribuna.uz/futbol/jamoasi/mashal-muborak/taqvimi/'
-            'Mashal|Navbahor Namangan|2026-08-26T15:00:00Z|Uzbekistan Super League|Uzbekistan|gpt-mashal-navbahor-2|https://tribuna.uz/futbol/jamoasi/mashal-muborak/taqvimi/'
-          )
-          for item in "${candidates[@]}"; do
-            IFS='|' read -r HOME AWAY KICKOFF COMP COUNTRY PROVIDER_ID SOURCE <<< "$item"
-            NOW=$(date -u +%s); KO=$(date -u -d "$KICKOFF" +%s)
-            if [ "$NOW" -ge "$KO" ]; then echo "Skipping post-kickoff candidate: $HOME vs $AWAY"; continue; fi
-            echo "Trying verified candidate: $HOME vs $AWAY @ $KICKOFF"
-            node - "$HOME" "$AWAY" "$KICKOFF" "$COMP" "$COUNTRY" "$PROVIDER_ID" "$SOURCE" "$DISCOVERED_AT" <<'NODE' > /tmp/request.json
-          const [home,away,kickoffIso,competition,country,providerId,source,discoveredAt]=process.argv.slice(2);
-          process.stdout.write(JSON.stringify({target_date:'2026-08-26',timezone:'Asia/Ho_Chi_Minh',max_matches:1,scan_limit:40,fixture_candidates:[{provider:'GPT_WEB_SEARCH',providerId,home,away,competition,country,kickoffIso,targetDate:'2026-08-26',status:'scheduled',sourceUrls:[source],discoveredAt}]}));
+          node - "$DISCOVERED_AT" <<'NODE' > /tmp/request.json
+          const [discoveredAt]=process.argv.slice(2);
+          const candidates=[
+            {provider:'GPT_WEB_SEARCH',providerId:'gpt-bradford-burnley-20260826',home:'Bradford City',away:'Burnley',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://www.burnleyfootballclub.com/media-article/date-confirmed-for-carabao-cup-trip-to-bradford-city'],discoveredAt},
+            {provider:'GPT_WEB_SEARCH',providerId:'gpt-newcastle-westbrom-20260826',home:'Newcastle United',away:'West Bromwich Albion',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://www.beinsports.com/en-mena/football/league-cup/newcastle-united-vs-west-bromwich-albion-2026-08-25'],discoveredAt},
+            {provider:'GPT_WEB_SEARCH',providerId:'gpt-tottenham-charlton-20260826',home:'Tottenham Hotspur',away:'Charlton Athletic',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://www.tottenhamhotspur.com/news/1084493/spurs-vs-charlton-carabao-cup-date-and-ko-time-confirmed'],discoveredAt},
+            {provider:'GPT_WEB_SEARCH',providerId:'gpt-preston-everton-20260826',home:'Preston North End',away:'Everton',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T19:00:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://royalbluemersey.sbnation.com/everton-2026-27-season-premier-league/82387/preston-vs-everton-carabao-cup-second-round-preview'],discoveredAt},
+            {provider:'GPT_WEB_SEARCH',providerId:'gpt-real-madrid-sociedad-20260826',home:'Real Madrid',away:'Real Sociedad',competition:'La Liga',country:'Spain',kickoffIso:'2026-08-26T19:00:00Z',targetDate:'2026-08-26',status:'scheduled',sourceUrls:['https://as.com/futbol/primera/real-madrid-real-sociedad-tv-horario-y-como-ver-laliga-ea-sports-online-f202608-n/'],discoveredAt}
+          ];
+          process.stdout.write(JSON.stringify({target_date:'2026-08-26',timezone:'Asia/Ho_Chi_Minh',max_matches:5,scan_limit:80,fixture_candidates:candidates}));
           NODE
-            curl -fsS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
-            set +e
-            node - <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};
-          console.log(JSON.stringify({status:x.status,action:x.action,targetDate:x.targetDate,provider:x.provider,counts:c,diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),board:(x.board||[]).map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,snapshotId:r.prediction?.audit?.body?.snapshotId||null})),final:x.final},null,2));
-          process.exit(Number(c.predictionSuccess||0)>0?0:3);
-          NODE
-            rc=$?; set -e
-            if [ "$rc" -eq 0 ]; then accepted=1; break; fi
-          done
-          if [ "$accepted" != 1 ]; then echo '::error title=Production acceptance failed::All verified future Uzbek candidate variants exhausted without predictionSuccess > 0.'; exit 1; fi
           node - <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};const fail=m=>{throw new Error(m)};
-          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0'); if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0'); if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0'); if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0'); if(!Array.isArray(x.board)||x.board.length<1)fail('Daily Board missing');
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/request.json','utf8'));const now=Date.now();x.fixture_candidates=x.fixture_candidates.filter(r=>Date.parse(r.kickoffIso)>now);if(!x.fixture_candidates.length)throw new Error('No verified fixture remains pre-kickoff');x.max_matches=Math.min(5,x.fixture_candidates.length);fs.writeFileSync('/tmp/request.json',JSON.stringify(x));console.log('verified_pre_kickoff_candidates='+x.fixture_candidates.length);
+          NODE
+          curl -fsS --max-time 240 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
+          node - <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};
+          const concise={status:x.status,action:x.action,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,search:x.search,diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),board:(x.board||[]).map(r=>({match:r.match,kickoff:r.kickoff,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,snapshotId:r.prediction?.audit?.body?.snapshotId||null})),final:x.final};
+          console.log(JSON.stringify(concise,null,2));
+          const fail=m=>{throw new Error(m)};
+          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
+          if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0');
+          if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
+          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
+          if(!Array.isArray(x.board)||x.board.length<1)fail('Daily Board missing');
           for(const r of x.board){if(r.strictPrior!==true)fail('strict-prior not verified');if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 incomplete');if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market promoted');}
-          console.log(JSON.stringify({acceptance:'PASS',counts:c,board:x.board.map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,snapshotId:r.prediction?.audit?.body?.snapshotId||null}))},null,2));
           console.log('CFI_GPT_CURRENT_DAY_PRODUCTION_ACCEPTANCE=PASS');
           NODE
