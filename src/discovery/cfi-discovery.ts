@@ -1,9 +1,10 @@
 import { evaluateEvidenceSufficiency } from '../prediction/evidence-sufficiency.ts';
 
-export const CFI_DISCOVERY_VERSION='CFI_AUTO_DISCOVERY_V1.3';
+export const CFI_DISCOVERY_VERSION='CFI_AUTO_DISCOVERY_V1.4';
 
 export type DiscoveredFixture={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoff:number;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string};
 export type DiscoveryWindow={targetDate:string;timeZone:string;startTime?:string|null;endTime?:string|null;nowMs?:number;minimumRows?:number};
+export type AiFixtureCandidate={provider?:string;providerId?:string;home?:string;away?:string;competition?:string|null;country?:string|null;kickoffIso?:string;targetDate?:string;status?:string;sourceUrls?:string[];discoveredAt?:string};
 
 const ESPN_LEAGUES=[
  'uefa.champions','uefa.europa','uefa.europa.conf','eng.1','eng.2','eng.3','eng.4','eng.5',
@@ -20,6 +21,25 @@ function inWindow(time:string,start?:string|null,end?:string|null){if(start&&tim
 export function localDateNow(timeZone:string,nowMs=Date.now()){return parts(nowMs,timeZone).date;}
 export function providerQueryDates(targetDate:string){const base=Date.parse(`${targetDate}T00:00:00Z`);if(!Number.isFinite(base))return[targetDate];return[-1,0,1].map(delta=>new Date(base+delta*86400000).toISOString().slice(0,10));}
 export function dedupeFixtures(rows:DiscoveredFixture[]){const seen=new Set<string>();return rows.filter(r=>{const key=`${r.home.toLowerCase()}|${r.away.toLowerCase()}|${Math.floor(r.kickoff/60000)}`;if(seen.has(key))return false;seen.add(key);return true;});}
+
+function isHttpsUrl(value:any){try{return new URL(clean(value)).protocol==='https:';}catch{return false;}}
+export function normalizeAiFixtureCandidates(candidates:AiFixtureCandidate[],window:DiscoveryWindow){
+ const accepted:Array<DiscoveredFixture&{sourceUrls:string[];discoveredAt:string;discoveryMode:'GPT_SEARCH_FIRST'}>=[],rejected:any[]=[];
+ for(const [index,candidate] of (Array.isArray(candidates)?candidates:[]).entries()){
+  const home=clean(candidate?.home),away=clean(candidate?.away),kickoff=Date.parse(clean(candidate?.kickoffIso));
+  const sourceUrls=[...new Set((Array.isArray(candidate?.sourceUrls)?candidate.sourceUrls:[]).map(clean).filter(isHttpsUrl))];
+  const discoveredAt=clean(candidate?.discoveredAt),discoveredMs=Date.parse(discoveredAt);
+  const providerId=clean(candidate?.providerId),status=clean(candidate?.status||'scheduled').toLowerCase();
+  const reason=!home||!away?'TEAM_REQUIRED':!providerId?'PROVIDER_ID_REQUIRED':!Number.isFinite(kickoff)?'KICKOFF_REQUIRED':!sourceUrls.length?'HTTPS_PROVENANCE_REQUIRED':!Number.isFinite(discoveredMs)?'DISCOVERED_AT_REQUIRED':discoveredMs>Number(window.nowMs??Date.now())?'FUTURE_DISCOVERY_TIMESTAMP':TERMINAL.has(status)?'NOT_PREMATCH':null;
+  if(reason){rejected.push({index,home,away,reason});continue;}
+  const local=parts(kickoff,window.timeZone);
+  if(local.date!==window.targetDate){rejected.push({index,home,away,reason:'TARGET_DATE_MISMATCH'});continue;}
+  if(!inWindow(local.time,window.startTime,window.endTime)){rejected.push({index,home,away,reason:'OUTSIDE_TIME_WINDOW'});continue;}
+  if(kickoff<=Number(window.nowMs??Date.now())&&window.targetDate===localDateNow(window.timeZone,window.nowMs)){rejected.push({index,home,away,reason:'KICKOFF_NOT_FUTURE'});continue;}
+  accepted.push({provider:'GPT_WEB_SEARCH',providerId,home,away,competition:clean(candidate?.competition)||null,country:clean(candidate?.country)||null,kickoff,kickoffIso:new Date(kickoff).toISOString(),kickoffLocal:local.time,targetDate:window.targetDate,status:status||'scheduled',sourceUrls,discoveredAt:new Date(discoveredMs).toISOString(),discoveryMode:'GPT_SEARCH_FIRST'});
+ }
+ return{rows:dedupeFixtures(accepted),rejected};
+}
 
 export function dedupeCanonicalFixtureRows<T extends {home:string;away:string;kickoff?:number;kickoffIso?:string;targetDate?:string;canonicalHomeTeamId?:string|null;canonicalAwayTeamId?:string|null}>(rows:T[]){
  const seen=new Set<string>();
