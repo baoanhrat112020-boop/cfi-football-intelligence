@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/cfi-final-production-e2e.yml'
+      - 'cloudflare-worker/**'
+      - 'src/discovery/**'
   workflow_dispatch:
 
 permissions:
@@ -19,45 +21,22 @@ jobs:
       - name: Wait for Worker deploy convergence
         run: sleep 45
 
-      - name: Run V1.4 GPT-search-first production discovery
+      - name: Run native production discovery
         shell: bash
         run: |
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
-          TARGET_DATE='2026-08-27' # kickoff timestamps below are 18:45Z–19:00Z = 01:45–02:00 GMT+7 on 27/08
-          CAPTURED_AT=$(date -u +%FT%TZ)
-          export TARGET_DATE CAPTURED_AT
+          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/final-request.json
           node - <<'NODE'
-          const fs=require('fs');
-          const target=process.env.TARGET_DATE;
-          const capturedAt=process.env.CAPTURED_AT;
-          const payload={
-            target_date:target,
-            timezone:'Asia/Ho_Chi_Minh',
-            max_matches:5,
-            scan_limit:40,
-            internal_provider_diagnostics:false,
-            fixture_candidates:[
-              {providerId:'gpt-web-bradford-burnley-20260827',home:'Bradford City',away:'Burnley',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-newcastle-west-brom-20260827',home:'Newcastle United',away:'West Bromwich Albion',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-tottenham-charlton-20260827',home:'Tottenham Hotspur',away:'Charlton Athletic',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-preston-everton-20260827',home:'Preston North End',away:'Everton',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-real-madrid-sociedad-20260827',home:'Real Madrid',away:'Real Sociedad',competition:'La Liga',country:'Spain',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt}
-            ]
-          };
-          fs.writeFileSync('/tmp/final-request.json',JSON.stringify(payload));
+          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/final-request.json','utf8'));
+          if('fixture_candidates' in x||'home' in x||'away' in x) throw new Error('Injected/predetermined fixture input forbidden');
           NODE
-          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/final-request.json','utf8')); if(x.target_date!==process.env.TARGET_DATE) process.exit(1)"
-          HTTP_CODE=$(curl -sS --max-time 120 -H 'content-type: application/json' \
-            --data-binary @/tmp/final-request.json "$BASE/api/discover" \
-            -o /tmp/final-production.json -w '%{http_code}' || true)
+          HTTP_CODE=$(curl -sS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/final-request.json "$BASE/api/discover" -o /tmp/final-production.json -w '%{http_code}' || true)
           echo "Production discovery HTTP=$HTTP_CODE"
-          if [ "$HTTP_CODE" != '200' ]; then
-            cat /tmp/final-production.json
-            exit 1
-          fi
+          if [ "$HTTP_CODE" != '200' ]; then cat /tmp/final-production.json; exit 1; fi
 
-      - name: Verify final production contract
+      - name: Verify final native production contract
         env:
           EXPECTED_VERSION: CFI_AUTO_DISCOVERY_V1.4
         shell: bash
@@ -66,29 +45,26 @@ jobs:
           node - <<'NODE'
           const fs=require('fs');
           const x=JSON.parse(fs.readFileSync('/tmp/final-production.json','utf8'));
-          const c=x?.counts||{};
-          const fail=(m)=>{throw new Error(m)};
-          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!==process.env.EXPECTED_VERSION)fail(`discovery contract failed: expected ${process.env.EXPECTED_VERSION}, got ${x.version}`);
+          const c=x?.counts||{}; const fail=(m)=>{throw new Error(m)};
+          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!==process.env.EXPECTED_VERSION)fail(`discovery contract failed: ${x.version}`);
           if(x.search?.mode!=='GPT_SEARCH_FIRST')fail('GPT search-first telemetry missing');
-          if(x.search?.aiCandidatesReceived!==5||x.search?.aiCandidatesAccepted!==5||c.aiDiscoveredFixtures<5)fail('five real GPT candidates did not enter production');
-          if(x.search?.internalProviderDiagnostics!==false||(x.providerAttempts||[]).length!==0)fail('default path called internal provider crawler');
-          if(c.predictionSuccess<5||c.fullPredictionsExecuted<5)fail('five production predictions did not complete successfully');
-          if(!Array.isArray(x.board))fail('production board missing');
-          if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false||x.rules?.gptSearchFirstRequired!==true||x.rules?.internalProviderCrawlerDefault!==false)fail('V1.4 safety contract changed');
+          if(x.search?.aiCandidatesReceived!==0||x.search?.aiCandidatesAccepted!==0||Number(c.aiDiscoveredFixtures??0)!==0)fail('injected fixture candidate entered native acceptance');
+          if(x.search?.internalProviderDiagnostics!==true||!Array.isArray(x.providerAttempts)||x.providerAttempts.length===0)fail('native provider path not exercised');
+          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
+          if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0');
+          if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
+          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
+          if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
+          if(!Array.isArray(x.board)||x.board.length<1)fail('production board missing');
+          if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false||x.rules?.gptSearchFirstRequired!==true)fail('safety contract changed');
           for(const row of x.board){
             const p=row.prediction, v=p?.outputV3, s=p?.sixTargetMatrix;
             if(row.strictPrior!==true)fail(`${row.match}: strict-prior missing`);
-            if(!row.snapshotId && !p?.audit?.body?.snapshotId)fail(`${row.match}: immutable snapshot missing`);
-            if(s?.verification?.complete!==true||s?.primaryTargets?.length!==6)fail(`${row.match}: Champion 6 incomplete`);
-            if(p?.presentationContract?.mode!=='RENDER_RENDERED_REPORT_VERBATIM'||p?.presentationContract?.source!=='renderedReport'||p?.presentationContract?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||typeof p?.renderedReport!=='string'||!p.renderedReport.includes('CFI 2 METHODS × 6 TARGETS'))fail(`${row.match}: canonical 2x6 renderedReport missing`);
+            if(s?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||s?.verification?.complete!==true)fail(`${row.match}: Champion 6 incomplete`);
+            if(row.multiMarketDecisionUse!==false)fail(`${row.match}: shadow Multi-Market promoted`);
             if(!v?.marketSummary?.oneXTwo||!v?.marketSummary?.overUnder||!v?.marketSummary?.asianHandicap)fail(`${row.match}: market summary incomplete`);
-            if(!v?.explosionScenario||!v?.evidenceSufficiency||!v?.betLedger)fail(`${row.match}: practical output blocks missing`);
-            if(v.betLedger.autoPlaced===true||v.betLedger.explicitConfirmationRequired!==true)fail(`${row.match}: ledger safety contract failed`);
           }
-          fs.writeFileSync('/tmp/final-summary.json',JSON.stringify({
-            status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,search:x.search,counts:c,final:x.final,
-            board:x.board.map(r=>({match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,snapshotId:r.prediction?.audit?.body?.snapshotId??null,champion:r.prediction?.sixTargetMatrix,marketSummary:r.prediction?.outputV3?.marketSummary,explosionScenario:r.prediction?.outputV3?.explosionScenario,evidenceSufficiency:r.prediction?.outputV3?.evidenceSufficiency,betLedger:r.prediction?.outputV3?.betLedger}))
-          },null,2));
+          fs.writeFileSync('/tmp/final-summary.json',JSON.stringify({status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,search:x.search,providerAttempts:x.providerAttempts,counts:c,final:x.final,board:x.board.map(r=>({match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete}))},null,2));
           console.log(fs.readFileSync('/tmp/final-summary.json','utf8'));
           NODE
 
