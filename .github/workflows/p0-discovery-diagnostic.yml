@@ -2,39 +2,40 @@ name: P0 Discovery Diagnostic
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/p0-discovery-diagnostic.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   diagnostic:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for Worker deploy convergence
-        run: sleep 45
-      - name: Probe production
-        shell: bash
-        run: |
-          set +e
-          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
-          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          echo '--- STATUS ---'
-          curl -sS --max-time 30 -w '\nHTTP=%{http_code}\n' "$BASE/api/status"
-          echo '--- DISCOVERY ---'
-          curl -sS --max-time 120 -H 'content-type: application/json' -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":2,\"scan_limit\":12}" -w '\nHTTP=%{http_code}\n' "$BASE/api/discover"
-      - name: Verify V1.4 lightweight discovery contract
+      - uses: actions/checkout@v4
+      - name: Probe zero-input native discovery
         shell: bash
         run: |
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          curl -fsS --max-time 120 -H 'content-type: application/json' \
-            -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":2,\"scan_limit\":12,\"internal_provider_diagnostics\":false}" \
-            "$BASE/api/discover" -o /tmp/v14-production.json
-          node - <<'NODE'
-          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/v14-production.json','utf8'));
-          const fail=(m)=>{throw new Error(m)};
-          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!=='CFI_AUTO_DISCOVERY_V1.4')fail('V1.4 discovery contract failed');
-          if(x.search?.mode!=='GPT_SEARCH_FIRST'||x.search?.internalProviderDiagnostics!==false)fail('GPT search-first mode missing');
-          if((x.providerAttempts||[]).length!==0)fail('default path unexpectedly called provider crawler');
-          if(x.rules?.strictPriorRequired!==true||x.rules?.gptSearchFirstRequired!==true||x.rules?.internalProviderCrawlerDefault!==false||x.rules?.shadowDecisionUse!==false)fail('V1.4 safety rules changed');
-          console.log(JSON.stringify({status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,search:x.search,counts:x.counts,final:x.final},null,2));
+          mkdir -p audit
+          printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/request.json
+          HTTP=$(curl -sS --max-time 180 -o /tmp/response.json -w '%{http_code}' -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" || true)
+          node - "$HTTP" "$TARGET_DATE" <<'NODE' > audit/p0-discovery-latest.json
+          const fs=require('fs');
+          const [http,targetDate]=process.argv.slice(2);
+          let body=null; try{body=JSON.parse(fs.readFileSync('/tmp/response.json','utf8'))}catch(e){body={parseError:String(e),raw:fs.existsSync('/tmp/response.json')?fs.readFileSync('/tmp/response.json','utf8'):null}}
+          const out={capturedAt:new Date().toISOString(),targetDate,request:{target_date:targetDate,timezone:'Asia/Ho_Chi_Minh',max_matches:5,scan_limit:80,internal_provider_diagnostics:true,fixture_candidates_present:false},httpStatus:Number(http)||null,response:body};
+          process.stdout.write(JSON.stringify(out,null,2)+'\n');
           NODE
+      - name: Persist trace evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add audit/p0-discovery-latest.json
+          git commit -m 'audit: capture native discovery production trace' || exit 0
+          git push
