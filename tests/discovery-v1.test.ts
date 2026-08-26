@@ -60,9 +60,10 @@ test('discovery aggregates all usable providers across the timezone-spanning que
   assert.deepEqual(out.providers.sort(),['ESPN','THESPORTSDB']);
   assert.equal(out.rows.length,2);
   assert.deepEqual(out.rows.map(r=>r.home).sort(),['Epsilon','Gamma']);
-  assert.equal(out.attempts.length,15);
+  // 6 Sofa date probes + 3 TheSportsDB day probes + 4 TheSportsDB league fallbacks + 6 ESPN league probes.
+  assert.equal(out.attempts.length,19);
   assert.equal(out.attempts.filter((a:any)=>a.provider==='SOFASCORE').length,6);
-  assert.equal(out.attempts.filter((a:any)=>a.provider==='THESPORTSDB').length,3);
+  assert.equal(out.attempts.filter((a:any)=>a.provider==='THESPORTSDB').length,7);
   assert.equal(out.attempts.filter((a:any)=>a.provider==='ESPN').length,6);
   assert.equal(out.search.targetSatisfied,true);
   assert.equal(out.search.exhausted,false);
