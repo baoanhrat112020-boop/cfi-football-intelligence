@@ -80,6 +80,7 @@ jobs:
             if(row.strictPrior!==true)fail(`${row.match}: strict-prior missing`);
             if(!row.snapshotId && !p?.audit?.body?.snapshotId)fail(`${row.match}: immutable snapshot missing`);
             if(s?.verification?.complete!==true||s?.primaryTargets?.length!==6)fail(`${row.match}: Champion 6 incomplete`);
+            if(p?.presentationContract?.mode!=='RENDER_RENDERED_REPORT_VERBATIM'||p?.presentationContract?.source!=='renderedReport'||p?.presentationContract?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||typeof p?.renderedReport!=='string'||!p.renderedReport.includes('CFI 2 METHODS × 6 TARGETS'))fail(`${row.match}: canonical 2x6 renderedReport missing`);
             if(!v?.marketSummary?.oneXTwo||!v?.marketSummary?.overUnder||!v?.marketSummary?.asianHandicap)fail(`${row.match}: market summary incomplete`);
             if(!v?.explosionScenario||!v?.evidenceSufficiency||!v?.betLedger)fail(`${row.match}: practical output blocks missing`);
             if(v.betLedger.autoPlaced===true||v.betLedger.explicitConfirmationRequired!==true)fail(`${row.match}: ledger safety contract failed`);
