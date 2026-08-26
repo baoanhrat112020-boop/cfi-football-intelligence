@@ -29,15 +29,43 @@ test('discovery aggregates all usable providers across the timezone-spanning que
     if(url.includes('thesportsdb.com'))return new Response(JSON.stringify({events:[{idEvent:'10',strHomeTeam:'Gamma',strAwayTeam:'Delta',strLeague:'League X',strCountry:'Australia',strTimestamp:'2026-08-23T09:30:00Z',strStatus:'Not Started'}]}),{status:200,headers:{'content-type':'application/json'}});
     return new Response(JSON.stringify({events:[{id:'20',date:'2026-08-23T10:00:00Z',status:{type:{state:'pre'}},competitions:[{competitors:[{homeAway:'home',team:{displayName:'Epsilon'}},{homeAway:'away',team:{displayName:'Zeta'}}]}],name:'League Y'}]}),{status:200,headers:{'content-type':'application/json'}});
   };
-  const out=await discoverFixtures({targetDate,timeZone:'Asia/Ho_Chi_Minh',nowMs},fetchFn);
+  const out=await discoverFixtures({targetDate,timeZone:'Asia/Ho_Chi_Minh',nowMs,minimumRows:2},fetchFn);
   assert.equal(out.provider,'MULTI_SOURCE');
   assert.deepEqual(out.providers.sort(),['ESPN','THESPORTSDB']);
   assert.equal(out.rows.length,2);
   assert.deepEqual(out.rows.map(r=>r.home).sort(),['Epsilon','Gamma']);
-  assert.equal(out.attempts.length,12);
+  assert.equal(out.attempts.length,15);
   assert.equal(out.attempts.filter((a:any)=>a.provider==='SOFASCORE').length,6);
   assert.equal(out.attempts.filter((a:any)=>a.provider==='THESPORTSDB').length,3);
-  assert.equal(out.attempts.filter((a:any)=>a.provider==='ESPN').length,3);
+  assert.equal(out.attempts.filter((a:any)=>a.provider==='ESPN').length,6);
+  assert.equal(out.search.targetSatisfied,true);
+  assert.equal(out.search.exhausted,false);
+  assert.equal(out.attempts.some((a:any)=>a.url.includes('/soccer/all/')),false);
+});
+
+test('discovery keeps scanning real ESPN leagues until requested rows are found',async()=>{
+  const targetDate='2026-08-23',nowMs=Date.parse('2026-08-23T05:00:00Z');
+  const fetchFn:any=async(url:string)=>{
+    if(!url.includes('site.api.espn.com'))return new Response(JSON.stringify({events:[]}),{status:200});
+    const league=url.match(/soccer\/([^/]+)\/scoreboard/)?.[1];
+    const events=league==='eng.4'?[{id:'21',date:'2026-08-23T11:00:00Z',status:{type:{state:'pre'}},competitions:[{competitors:[{homeAway:'home',team:{displayName:'Academy U21'}},{homeAway:'away',team:{displayName:'Town Reserves'}}]}],name:'League Two'}]:[];
+    return new Response(JSON.stringify({events}),{status:200});
+  };
+  const out=await discoverFixtures({targetDate,timeZone:'Asia/Ho_Chi_Minh',nowMs,minimumRows:1},fetchFn);
+  assert.equal(out.rows.length,1);
+  assert.equal(out.rows[0].home,'Academy U21');
+  assert.equal(out.search.targetSatisfied,true);
+  assert.ok(out.search.espnLeaguesAttempted>6);
+  assert.ok(out.search.espnLeaguesAttempted<out.search.espnLeagueCatalogSize);
+});
+
+test('discovery reports explicit exhaustion instead of silently accepting an undersized pool',async()=>{
+  const fetchFn:any=async()=>new Response(JSON.stringify({events:[]}),{status:200});
+  const out=await discoverFixtures({targetDate:'2026-08-23',timeZone:'Asia/Ho_Chi_Minh',nowMs:Date.parse('2026-08-23T05:00:00Z'),minimumRows:5},fetchFn);
+  assert.equal(out.rows.length,0);
+  assert.equal(out.search.targetSatisfied,false);
+  assert.equal(out.search.exhausted,true);
+  assert.equal(out.search.espnLeaguesAttempted,out.search.espnLeagueCatalogSize);
 });
 
 test('selection score fails closed without strict-prior verification',()=>{const r=scorePrediction({status:'SUCCESS',ranking:[{target:'3+ HT',probability:.8,confidence:'HIGH'}]});assert.equal(r.eligible,false);assert.equal(r.reason,'STRICT_PRIOR_NOT_VERIFIED');});
