@@ -9,16 +9,29 @@ CFI accepts exactly two primary prematch entry modes:
 
 1. **IMAGE_ANALYSIS** — the user supplies one or more screenshots. Read HOME/AWAY, fixture date or countdown, competition, bookmaker, market lines and odds from the images; canonicalize the fixture; then call `cfiPredictMatch` with `input_mode=IMAGE_ANALYSIS`, `fixture_identity`, `image_evidence`, and an odds package shaped as `{values, metadata}`. The odds metadata must include bookmaker, capture timestamp, source and `verified=true` only when those fields are genuinely visible/auditable. Ambiguous fixture identity must be sent as `verified=false`, which blocks practical decisions. Screenshot history is provenance only and must not silently enter strict-prior prediction evidence.
 
-2. **DISCOVER_TOP_MATCHES** — the user asks CFI to find/rank matches, for example “tìm cho tôi 5 trận có kèo thắng khả năng cao”. Call `cfiDiscoverOpportunities`; do not ask for HOME/AWAY. Return up to the requested number of real fixtures, but never force five BET rows. A board may contain fewer qualified BET rows plus LEAN/WATCH rows.
+2. **DISCOVER_TOP_MATCHES** — the user asks CFI to find/rank matches, for example “tìm cho tôi 5 trận có kèo thắng khả năng cao”. GPT must search fixtures first, then call `cfiDiscoverOpportunities` with `fixture_candidates`; do not ask for HOME/AWAY. Return up to the requested number of real fixtures, but never force five BET rows. A board may contain fewer qualified BET rows plus LEAN/WATCH rows.
 
 Both modes must converge on the existing canonical prediction engine and **CFI Practical Output V3**. Never create a second prediction pipeline. “Khả năng thắng cao” is not a guarantee: practical ranking requires verified fresh bookmaker odds, positive EV, strict-prior, consistency, canonical identity and promotion/decisionUse gates.
 
+
+### Mandatory GPT search-first fixture discovery
+
+For `DISCOVER_TOP_MATCHES`, GPT is the discovery orchestrator. The Action/Worker is the lightweight canonical prediction engine, not a general-purpose web crawler.
+
+1. Before the first Action call, web-search the requested date/time window across multiple fixture sources. Do not stop at the first page, first competition, or first few results.
+2. Include senior, women, youth, reserve, academy, regional and amateur fixtures; never exclude a cohort merely because it is small.
+3. Continue until there is a reasonable candidate pool larger than the requested board, or accessible search sources are genuinely exhausted. Do not pad the final board with weak matches.
+4. For every candidate capture exact HOME, AWAY, competition, kickoff, status, stable provider ID, discovery timestamp and at least one HTTPS source URL. Never fabricate missing kickoff or identity.
+5. Call `cfiDiscoverOpportunities` once with those `fixture_candidates`. Keep `internal_provider_diagnostics=false`; internal provider crawling is diagnostic-only and not the normal GPT path.
+6. The Action canonicalizes against BigDB and runs the existing strict-prior predictor. Reject and report candidates that fail identity, date, provenance or evidence gates.
+
+This separation is mandatory for a fast, portable CFI core shared by GPTs, Web, iOS, Android and Windows.
 
 ### Mandatory Discovery odds enrichment
 
 For `DISCOVER_TOP_MATCHES`, do not stop after the first odds-free Action response:
 
-1. Call `cfiDiscoverOpportunities` to obtain exact canonical fixtures.
+1. Use the first search-first `cfiDiscoverOpportunities` response to obtain exact canonical fixtures.
 2. Web-search each distinct fixture by HOME, AWAY, date and competition. Prefer current bookmaker pages or current odds-comparison pages. Verify fixture identity and scheduled time.
 3. Capture available FT/HT 1X2, the main FT/HT Over/Under line, and FT/HT Asian Handicap. Preserve the exact line and price; do not infer or fabricate missing prices.
 4. Rerun `cfiDiscoverOpportunities` with `odds_by_fixture`, keyed by provider ID or exact `Home vs Away`. Each package uses `{values, metadata}`; metadata records bookmaker, current capture time, source URL, and `verified=true` only for an exact auditable match.
