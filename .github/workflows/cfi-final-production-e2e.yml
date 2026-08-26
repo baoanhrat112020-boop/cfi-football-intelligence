@@ -81,6 +81,8 @@ jobs:
           fi
 
       - name: Verify final production contract
+        env:
+          EXPECTED_VERSION: ${{ github.event_name == 'pull_request' && 'CFI_AUTO_DISCOVERY_V1.2' || 'CFI_AUTO_DISCOVERY_V1.3' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -89,9 +91,11 @@ jobs:
           const x=JSON.parse(fs.readFileSync('/tmp/final-production.json','utf8'));
           const c=x?.counts||{};
           const fail=(m)=>{throw new Error(m)};
-          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!=='CFI_AUTO_DISCOVERY_V1.3')fail('discovery contract failed');
-          if(x.rules?.continueUntilRequestedPoolOrSourcesExhausted!==true)fail('bounded continuation rule missing');
-          if(x.search?.combinedTargetSatisfied!==true&&x.search?.exhausted!==true)fail('discovery stopped before target without exhausting sources');
+          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!==process.env.EXPECTED_VERSION)fail(`discovery contract failed: expected ${process.env.EXPECTED_VERSION}, got ${x.version}`);
+          if(process.env.EXPECTED_VERSION==='CFI_AUTO_DISCOVERY_V1.3'){
+            if(x.rules?.continueUntilRequestedPoolOrSourcesExhausted!==true)fail('bounded continuation rule missing');
+            if(x.search?.combinedTargetSatisfied!==true&&x.search?.exhausted!==true)fail('discovery stopped before target without exhausting sources');
+          }
           if(!c.fixturesDiscovered||!c.predictionAttempts||!c.fullPredictionsExecuted)fail('no production predictions');
           if(!Array.isArray(x.board)||x.board.length!==c.fullPredictionsExecuted)fail('board does not match official executions');
           if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false)fail('strict-prior or shadow gate changed');
