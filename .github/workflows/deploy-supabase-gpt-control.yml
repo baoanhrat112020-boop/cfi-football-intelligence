@@ -97,18 +97,7 @@ jobs:
           try{x=JSON.parse(fs.readFileSync('/tmp/bigdb-native-response.json','utf8'))}catch{}
           const c=x?.counts||{},board=Array.isArray(x?.board)?x.board:[];
           const successful=board.filter(row=>row?.strictPrior===true&&row?.prediction?.sixTargetMatrix?.verification?.complete===true);
-          const diagnostics=board.slice(0,25).map(row=>({
-            match:row?.match??null,
-            status:row?.status??null,
-            strictPrior:row?.strictPrior??null,
-            predictionStatus:row?.prediction?.status??null,
-            error:row?.prediction?.error??row?.prediction?.reason??null,
-            homeResolution:row?.prediction?.bigDbRetrieval?.identity?.homeResolution??row?.prediction?.identity?.homeResolution??null,
-            awayResolution:row?.prediction?.bigDbRetrieval?.identity?.awayResolution??row?.prediction?.identity?.awayResolution??null,
-            exactTeam:row?.prediction?.bigDbRetrieval?.exactTeam??row?.prediction?.exactTeamEvidence??null,
-            sixTargetComplete:row?.prediction?.sixTargetMatrix?.verification?.complete??false,
-            multiMarketDecisionUse:row?.multiMarketDecisionUse??null
-          }));
+          const diagnostics=board.slice(0,25).map(row=>({match:row?.match??null,status:row?.status??null,strictPrior:row?.strictPrior??null,predictionStatus:row?.prediction?.status??null,error:row?.prediction?.error??row?.prediction?.reason??null,homeResolution:row?.prediction?.bigDbRetrieval?.identity?.homeResolution??row?.prediction?.identity?.homeResolution??null,awayResolution:row?.prediction?.bigDbRetrieval?.identity?.awayResolution??row?.prediction?.identity?.awayResolution??null,exactTeam:row?.prediction?.bigDbRetrieval?.exactTeam??row?.prediction?.exactTeamEvidence??null,sixTargetComplete:row?.prediction?.sixTargetMatrix?.verification?.complete??false,multiMarketDecisionUse:row?.multiMarketDecisionUse??null}));
           const summary={gate:'CFI_BIGDB_NATIVE_PRODUCTION_GATE_V1',httpCode:http,targetDate:process.env.TARGET_DATE,status:x?.status??null,version:x?.version??null,provider:x?.provider??null,counts:c,successfulCompleteRows:successful.length,final:x?.final??null,diagnostics};
           fs.writeFileSync('/tmp/bigdb-native-e2e.json',JSON.stringify(summary,null,2));
           console.log(JSON.stringify(summary,null,2));
@@ -119,22 +108,57 @@ jobs:
           if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
           if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
           if(successful.length<1)fail('no complete strict-prior six-target prediction');
-          for(const row of successful){
-            const s=row?.prediction?.sixTargetMatrix;
-            if(s?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1')fail(`${row?.match}: six-target contract mismatch`);
-            if(row?.multiMarketDecisionUse!==false)fail(`${row?.match}: shadow Multi-Market promoted`);
-          }
+          for(const row of successful){const s=row?.prediction?.sixTargetMatrix;if(s?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1')fail(`${row?.match}: six-target contract mismatch`);if(row?.multiMarketDecisionUse!==false)fail(`${row?.match}: shadow Multi-Market promoted`);}
           NODE
-      - name: Persist production evidence
+      - name: Persist native production evidence
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -u
-          if [ ! -f /tmp/bigdb-native-e2e.json ]; then
-            printf '{"gate":"CFI_BIGDB_NATIVE_PRODUCTION_GATE_V1","status":"NO_SUMMARY","runId":"%s","commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > /tmp/bigdb-native-e2e.json
-          fi
+          if [ ! -f /tmp/bigdb-native-e2e.json ]; then printf '{"gate":"CFI_BIGDB_NATIVE_PRODUCTION_GATE_V1","status":"NO_SUMMARY","runId":"%s","commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > /tmp/bigdb-native-e2e.json; fi
           BODY=$(cat /tmp/bigdb-native-e2e.json)
-          REPORT=$(printf 'BigDB identity bridge production retest\nRun: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
-          gh issue comment 107 --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo '::warning::Could not persist evidence to issue #107'
+          REPORT=$(printf 'BigDB native production retest\nRun: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
+          gh issue comment 107 --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo '::warning::Could not persist native evidence to issue #107'
+
+  search-first-product-gate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe today's real GPT search-first path
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > /tmp/search-first-request.json <<JSON
+          {"target_date":"2026-08-27","timezone":"Asia/Ho_Chi_Minh","max_matches":1,"scan_limit":10,"fixture_candidates":[{"provider":"UEFA","providerId":"uefa-uecl-hibernian-gent-20260827","home":"Hibernian","away":"Gent","competition":"UEFA Conference League","kickoffIso":"2026-08-27T18:00:00Z","status":"scheduled","sourceUrls":["https://www.uefa.com/uefaconferenceleague/clubs/52821--hibernian/matches/","https://www.uefa.com/uefaconferenceleague/clubs/4608--gent/matches/"],"discoveredAt":"$NOW"}]}
+          JSON
+          HTTP_CODE=$(curl -sS --max-time 240 -H 'content-type: application/json' --data-binary @/tmp/search-first-request.json "$BASE/api/discover" -o /tmp/search-first-response.json -w '%{http_code}' || true)
+          export HTTP_CODE
+          node - <<'NODE'
+          const fs=require('fs');
+          let x={};try{x=JSON.parse(fs.readFileSync('/tmp/search-first-response.json','utf8'))}catch{}
+          const c=x?.counts||{},row=Array.isArray(x?.board)?x.board[0]:null,p=row?.prediction||{};
+          const summary={gate:'CFI_SEARCH_FIRST_PRODUCT_GATE_20260827',httpCode:process.env.HTTP_CODE,status:x?.status??null,version:x?.version??null,provider:x?.provider??null,search:x?.search??null,counts:c,final:x?.final??null,row:row?{match:row.match,status:row.status,strictPrior:row.strictPrior,multiMarketDecisionUse:row.multiMarketDecisionUse,predictionStatus:p.status??null,error:p.error??p.reason??null,bigDbVersion:p.bigDbRetrieval?.version??null,identity:p.bigDbRetrieval?.identity??null,exactTeam:p.bigDbRetrieval?.exactTeam??null,temporalAudit:p.bigDbRetrieval?.temporalAudit??null,sixTargetContract:p.sixTargetMatrix?.contract??null,sixTargetComplete:p.sixTargetMatrix?.verification?.complete??false}:null};
+          fs.writeFileSync('/tmp/search-first-summary.json',JSON.stringify(summary,null,2));console.log(JSON.stringify(summary,null,2));
+          const fail=m=>{throw new Error(m)};
+          if(process.env.HTTP_CODE!=='200')fail(`HTTP ${process.env.HTTP_CODE}`);
+          if(!(Number(c.predictionSuccess)>0&&Number(c.fullPredictionsExecuted)>0))fail('prediction did not execute');
+          if(row?.strictPrior!==true)fail('strict-prior missing');
+          if(p?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||p?.sixTargetMatrix?.verification?.complete!==true)fail('six-target incomplete');
+          if(row?.multiMarketDecisionUse!==false)fail('shadow market promoted');
+          NODE
+      - name: Persist search-first production evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          if [ ! -f /tmp/search-first-summary.json ]; then printf '{"gate":"CFI_SEARCH_FIRST_PRODUCT_GATE_20260827","status":"NO_SUMMARY","runId":"%s","commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > /tmp/search-first-summary.json; fi
+          BODY=$(cat /tmp/search-first-summary.json)
+          REPORT=$(printf 'Search-first real fixture production probe\nRun: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
+          gh issue comment 107 --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo '::warning::Could not persist search-first evidence to issue #107'
