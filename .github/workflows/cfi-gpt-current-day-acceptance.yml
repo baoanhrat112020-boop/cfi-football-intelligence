@@ -6,6 +6,8 @@ on:
       - '.github/workflows/cfi-gpt-current-day-acceptance.yml'
       - 'cloudflare-worker/**'
       - 'src/discovery/**'
+      - 'src/presentation/**'
+      - 'src/prediction/multi-market-*.ts'
   workflow_dispatch:
 
 permissions:
@@ -29,13 +31,30 @@ jobs:
           const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));
           const c=x?.counts||{};
           const first=(x.board||[])[0]||null;
+          const compactMarkets=r=>{
+            const o=r?.prediction?.outputV2||{};
+            const g=o?.marketGroups||{};
+            return {
+              visibility:o?.visibility??null,
+              counts:{
+                oneXTwoHT:g?.oneXTwo?.ht?.length??0,
+                oneXTwoFT:g?.oneXTwo?.ft?.length??0,
+                overUnderHT:g?.overUnder?.ht?.length??0,
+                overUnderFT:g?.overUnder?.ft?.length??0,
+                asianHandicapHT:g?.asianHandicap?.ht?.length??0,
+                asianHandicapFT:g?.asianHandicap?.ft?.length??0,
+              },
+              fullMarketReportPresent:typeof r?.prediction?.fullMarketReport==='string'&&r.prediction.fullMarketReport.includes('CFI MULTI-MARKET FULL BOARD'),
+              renderedReportContainsFullMarkets:typeof r?.prediction?.renderedReport==='string'&&r.prediction.renderedReport.includes('CFI MULTI-MARKET FULL BOARD'),
+            };
+          };
           console.log(JSON.stringify({
             provider:x.provider,
             counts:c,
             search:x.search,
             providerAttempts:x.providerAttempts,
             diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,failureLayer:d.failureLayer,reasonCode:d.reasonCode,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),
-            board:(x.board||[]).map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete})),
+            board:(x.board||[]).map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,fullMarkets:compactMarkets(r)})),
             firstPredictionProof:first?{
               match:first.match,
               strictPrior:first.prediction?.strictPrior??null,
@@ -46,7 +65,8 @@ jobs:
               maxEvidenceDate:first.prediction?.maxEvidenceDate??first.prediction?.strictPriorAudit?.evidence?.maxEvidenceDate??null,
               sixTargetMatrix:first.prediction?.sixTargetMatrix??null,
               consistencyGuard:first.prediction?.consistencyGuard??null,
-              multiMarketIntegration:first.prediction?.multiMarketIntegration??first.prediction?.multiMarket??null
+              multiMarketIntegration:first.prediction?.multiMarketIntegration??first.prediction?.multiMarket??null,
+              fullMarkets:compactMarkets(first)
             }:null,
             final:x.final
           },null,2));
@@ -61,6 +81,16 @@ jobs:
             if(r.strictPrior!==true)fail('strict-prior not verified');
             if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 incomplete');
             if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market promoted');
+            const o=r.prediction?.outputV2,g=o?.marketGroups||{},v=o?.visibility||{};
+            if(v.fullMultiMarketVisible!==true||v.allTargetsExposed!==true||v.decisionUse!==false)fail('full multi-market visibility contract missing');
+            if((g?.oneXTwo?.ht?.length??0)!==3||(g?.oneXTwo?.ft?.length??0)!==3)fail('1X2 HT/FT incomplete');
+            if((g?.overUnder?.ht?.length??0)!==18||(g?.overUnder?.ft?.length??0)!==26)fail('O/U HT/FT ladders incomplete');
+            if((g?.asianHandicap?.ht?.length??0)!==34||(g?.asianHandicap?.ft?.length??0)!==34)fail('AH HT/FT quarter-line ladders incomplete');
+            const shadow=o?.shadowMarkets??[];
+            if(!shadow.length||shadow.some(m=>m.status!=='SHADOW'))fail('new markets not uniformly shadow locked');
+            if(typeof r.prediction?.fullMarketReport!=='string'||!r.prediction.fullMarketReport.includes('CFI MULTI-MARKET FULL BOARD'))fail('fullMarketReport missing');
+            if(typeof r.prediction?.renderedReport!=='string'||!r.prediction.renderedReport.includes('CFI MULTI-MARKET FULL BOARD'))fail('renderedReport does not expose full markets');
+            for(const heading of ['1X2 — FULL','OVER/UNDER HT — FULL LADDER','OVER/UNDER FT — FULL LADDER','ASIAN HANDICAP HT — FULL LADDER','ASIAN HANDICAP FT — FULL LADDER'])if(!r.prediction.fullMarketReport.includes(heading))fail(`missing full market section: ${heading}`);
           }
-          console.log('CFI_GPT_NATIVE_DISCOVERY_PRODUCTION_ACCEPTANCE=PASS');
+          console.log('CFI_GPT_NATIVE_DISCOVERY_FULL_MARKETS_PRODUCTION_ACCEPTANCE=PASS');
           NODE
