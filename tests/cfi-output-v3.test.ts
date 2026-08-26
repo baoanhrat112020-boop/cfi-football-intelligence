@@ -47,5 +47,7 @@ test('quarter-line expected value uses full and half settlement states',()=>{
   const out=buildCfiOutputV3(prediction(true),{now_ms:NOW,odds:verifiedOdds({'FT AH HOME -0.25':2})});
   const row=out.multiMarket.asianHandicap.find((x:any)=>x.market==='FT AH HOME -0.25');
   assert.equal(row.expectedValue,.225);
+  assert.equal(row.edge,.2);
+  assert.equal(row.edgeType,'FAIR_PRICE_RELATIVE');
   assert.deepEqual(row.settlement,{fullWin:.45,halfWin:.15,push:0,halfLoss:.2,fullLoss:.2,fairDecimal:1.6667});
 });
