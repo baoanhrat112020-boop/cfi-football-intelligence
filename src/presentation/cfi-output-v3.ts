@@ -1,4 +1,5 @@
 export const CFI_OUTPUT_V3='CFI_PRACTICAL_OUTPUT_V3';
+import { evaluateEvidenceSufficiency } from '../prediction/evidence-sufficiency.ts';
 
 export type InputMode='IMAGE_ANALYSIS'|'DISCOVER_TOP_MATCHES'|'SINGLE_MATCH';
 type Decision='BET'|'LEAN'|'WATCH'|'NO_BET'|'SHADOW'|'BLOCKED';
@@ -114,12 +115,44 @@ function ahSummary(body:any,cards:Card[],period:'HT'|'FT'){
 }
 function marketSummary(body:any,cards:Card[]){return{oneXTwo:{ht:oneXTwoSummary(cards,'HT'),ft:oneXTwoSummary(cards,'FT')},overUnder:{ht:ouSummary(body,cards,'HT'),ft:ouSummary(body,cards,'FT')},asianHandicap:{ht:ahSummary(body,cards,'HT'),ft:ahSummary(body,cards,'FT')}};}
 
-function renderedReport(mode:InputMode,match:any,cards:Card[],odds:ReturnType<typeof normalizeOdds>,summary:ReturnType<typeof marketSummary>){
+function thresholdProbability(body:any,period:'ht'|'ft',goals:number){
+  const line=String(goals-.5),row=body?.multiMarket?.overUnder?.[period]?.[line]?.over;
+  return finite(row?.fullWin);
+}
+
+function scoreTotal(score:unknown){
+  const match=String(score??'').match(/^(\d+)-(\d+)$/);
+  return match?Number(match[1])+Number(match[2]):null;
+}
+
+function explosionScenario(body:any,evidence:ReturnType<typeof evaluateEvidenceSufficiency>){
+  const ht=Object.fromEntries([2,3,4,5].map(goals=>[`${goals}Plus`,thresholdProbability(body,'ht',goals)]));
+  const ft=Object.fromEntries([3,4,5,6,7,8].map(goals=>[`${goals}Plus`,thresholdProbability(body,'ft',goals)]));
+  const trajectories=Array.isArray(body?.k048TrajectoryShadow?.topTrajectories)?body.k048TrajectoryShadow.topTrajectories:[];
+  const highScoringPaths=trajectories.filter((row:any)=>scoreTotal(row?.ft)>=5).slice(0,5).map((row:any)=>({ht:row.ht??null,ft:row.ft??null,probability:finite(row.probability)}));
+  const p4=finite((ft as any)['4Plus']),p5=finite((ft as any)['5Plus']),p6=finite((ft as any)['6Plus']),ht3=finite((ht as any)['3Plus']);
+  const otherFt=finite(body?.markets?.['Other FT']?.final),uncertainty=String(body?.scoreline?.uncertainty??'UNKNOWN').toUpperCase();
+  const level=p6!==null&&p6>=.25?'EXTREME':p5!==null&&p5>=.3?'HIGH':p4!==null&&p4>=.45?'ELEVATED':'BASELINE';
+  const triggers:string[]=[],contraSignals:string[]=[];
+  if(ht3!==null&&ht3>=.35)triggers.push('HIGH_HT_TEMPO');
+  if(p5!==null&&p5>=.3)triggers.push('FT_TAIL_5_PLUS');
+  if(otherFt!==null&&otherFt>=.15)triggers.push('ONE_SIDED_COLLAPSE_RISK');
+  if(highScoringPaths.length)triggers.push('K048_HIGH_SCORE_PATH_PRESENT');
+  if(!evidence.decisionEligible)contraSignals.push('THIN_EXACT_TEAM_EVIDENCE');
+  if(uncertainty==='HIGH')contraSignals.push('HIGH_SCORELINE_UNCERTAINTY');
+  if(p5!==null&&p5<.2)contraSignals.push('LOW_FT_5_PLUS_MASS');
+  return{version:'CFI_EXPLOSION_SCENARIO_V1',level,decisionUse:evidence.decisionEligible,expectedGoals:{ht:expectedTotals(body,'HT'),ft:expectedTotals(body,'FT')},thresholds:{ht,ft},baselinePath:body?.scoreline?.mostLikelyPath??null,highScoringPaths,triggers,contraSignals,interpretation:'Scenario probabilities are model distribution mass, not a guaranteed match script.'};
+}
+
+function renderedReport(mode:InputMode,match:any,cards:Card[],odds:ReturnType<typeof normalizeOdds>,summary:ReturnType<typeof marketSummary>,evidence:ReturnType<typeof evaluateEvidenceSufficiency>,explosion:ReturnType<typeof explosionScenario>,ledger:any){
   const ranked=cards.filter(x=>x.decision==='BET'||x.decision==='LEAN'||x.decision==='WATCH').sort((a,b)=>(b.expectedValue??-9)-(a.expectedValue??-9));
   const lines=[`CFI PRACTICAL OUTPUT V3 — ${mode}`,`${match.home??'—'} vs ${match.away??'—'} | ${match.date??'—'}`,`ODDS: ${odds.metadata.verified&&odds.metadata.fresh?`VERIFIED · ${odds.metadata.bookmaker} · ${odds.metadata.capturedAt}`:'NOT VERIFIED/FRESH'}`,'','TOP DECISIONS'];
   if(!ranked.length)lines.push('NO_BET — không có target vượt đủ gate.');
   else ranked.slice(0,5).forEach((x,i)=>lines.push(`${i+1}. ${x.decision} ${x.market} | P ${x.probability===null?'—':`${(x.probability*100).toFixed(1)}%`} | Odds ${x.marketOdds??'—'} | EV ${x.expectedValue===null?'—':`${(x.expectedValue*100).toFixed(1)}%`}`));
+  lines.push('',`EVIDENCE: ${evidence.status} | HOME ${evidence.homeFixtures} | AWAY ${evidence.awayFixtures} | required ${evidence.requiredPerTeam}/team`);
+  lines.push('',`BET LEDGER: ${ledger.status} | explicit confirmation required | auto-placed: NO`);
   for(const period of ['HT','FT'] as const){const x=summary.oneXTwo[period.toLowerCase() as 'ht'|'ft'],ou=summary.overUnder[period.toLowerCase() as 'ht'|'ft'],ah=summary.asianHandicap[period.toLowerCase() as 'ht'|'ft'];lines.push('',`${period} 1X2: ${x.modelPick??'—'} ${x.modelProbability===null?'—':`${(x.modelProbability*100).toFixed(1)}%`}`,`${period} TOTAL: ${ou.projectedGoals.total??'—'} | O/U line ${ou.mainLine??'—'} | lean ${ou.modelLean??'—'} ${ou.modelProbability===null?'—':`${(ou.modelProbability*100).toFixed(1)}%`}`,`${period} AH: goal diff ${ah.projectedGoalDifference??'—'} | model line ${ah.homeModelLine??'—'} | lean ${ah.modelLean??'—'}`);}
+  lines.push('',`EXPLOSION: ${explosion.level} | FT 4+ ${finite((explosion.thresholds.ft as any)['4Plus'])===null?'—':`${(Number((explosion.thresholds.ft as any)['4Plus'])*100).toFixed(1)}%`} | FT 5+ ${finite((explosion.thresholds.ft as any)['5Plus'])===null?'—':`${(Number((explosion.thresholds.ft as any)['5Plus'])*100).toFixed(1)}%`} | FT 6+ ${finite((explosion.thresholds.ft as any)['6Plus'])===null?'—':`${(Number((explosion.thresholds.ft as any)['6Plus'])*100).toFixed(1)}%`}`);
   return lines.join('\n');
 }
 
@@ -129,7 +162,8 @@ export function buildCfiOutputV3(body:any,input:any={}){
   const strictPrior=body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true;
   const consistency=(!body?.consistencyGuard?.status||body.consistencyGuard.status==='PASS')&&(!body?.multiMarket?.consistencyGuard?.status||body.multiMarket.consistencyGuard.status==='PASS');
   const fixtureVerified=mode==='IMAGE_ANALYSIS'||mode==='DISCOVER_TOP_MATCHES'?input?.fixture_identity?.verified===true:input?.fixture_identity?.verified!==false;
-  const qualityPass=Boolean(strictPrior&&consistency&&fixtureVerified);
+  const evidenceSufficiency=evaluateEvidenceSufficiency(body);
+  const qualityPass=Boolean(strictPrior&&consistency&&fixtureVerified&&evidenceSufficiency.decisionEligible);
   const oddsReady=odds.metadata.verified&&odds.metadata.fresh;
   const cards:Card[]=(body?.ranking??[]).map((r:any)=>makeCard({market:String(r.target),family:'CHAMPION',period:String(r.target).includes('HT')?'HT':'FT',probability:r.probability,confidence:r.confidence??r.predictiveConfidence,odds:odds.values?.[r.target],decisionUse:true,researchState:'CHAMPION',qualityPass,oddsReady}));
   const policy=multiMarketPolicy(body);
@@ -141,7 +175,10 @@ export function buildCfiOutputV3(body:any,input:any={}){
   const match={home:body?.target?.home??null,away:body?.target?.away??null,date:body?.target?.date??null};
   const final:Decision=!qualityPass?'BLOCKED':bet.length?'BET':lean.length?'LEAN':watch.length?'WATCH':'NO_BET';
   const summary=marketSummary(body,cards);
-  return{version:CFI_OUTPUT_V3,input:{mode,imageEvidence:mode==='IMAGE_ANALYSIS'?{imageCount:Math.max(0,finite(input?.image_evidence?.image_count)??0),fixtureIdentityVerified:fixtureVerified,extractedFields:Array.isArray(input?.image_evidence?.extracted_fields)?input.image_evidence.extracted_fields:[]}:null},match,final,primary:bet[0]??lean[0]??watch[0]??null,topDecisions:[...bet,...lean,...watch].slice(0,5),decisions:{bet,lean,watch,noBet:cards.filter(x=>x.decision==='NO_BET'),shadow:cards.filter(x=>x.decision==='SHADOW'),blocked:cards.filter(x=>x.decision==='BLOCKED')},champion:{thresholds:cards.filter(x=>x.family==='CHAMPION'),top3HT:body?.scoreline?.ht?.final??[],top3FT:body?.scoreline?.ft?.final??[],path:body?.scoreline?.mostLikelyPath??null},marketSummary:summary,multiMarket:{policy,oneXTwo:cards.filter(x=>x.family==='1X2'),overUnder:cards.filter(x=>x.family==='OVER_UNDER'),asianHandicap:cards.filter(x=>x.family==='ASIAN_HANDICAP')},odds:{...odds.metadata,ageMinutes:odds.ageMinutes,maxAgeMinutes:odds.maxAgeMinutes},gates:{strictPrior,consistency,fixtureIdentityVerified:fixtureVerified,verifiedOdds:odds.metadata.verified,freshOdds:odds.metadata.fresh,betRequiresAllGates:true,noForcedFive:true},rules:{betMinEdge:0.04,betMinExpectedValue:0.05,leanMinEdge:0.015,unverifiedOrStaleOddsCannotBet:true,shadowDecisionUse:false,noGuaranteedWin:true},renderedPracticalReport:renderedReport(mode,match,cards,odds,summary)};
+  const explosion=explosionScenario(body,evidenceSufficiency);
+  const primary=bet[0]??lean[0]??watch[0]??null;
+  const betLedger={version:'CFI_USER_BET_LEDGER_V1',status:'NOT_RECORDED',endpoint:'/api/bets',explicitConfirmationRequired:true,autoPlaced:false,candidate:primary?{market:primary.market,probability:primary.probability,odds:primary.marketOdds,decision:primary.decision}:null,requiredFields:['market_family','period','selection','line','odds','stake','bookmaker','confirmed_by_user=true'],note:'CFI chỉ ghi nhận sau khi người dùng xác nhận; CFI không tự đặt cược.'};
+  return{version:CFI_OUTPUT_V3,input:{mode,imageEvidence:mode==='IMAGE_ANALYSIS'?{imageCount:Math.max(0,finite(input?.image_evidence?.image_count)??0),fixtureIdentityVerified:fixtureVerified,extractedFields:Array.isArray(input?.image_evidence?.extracted_fields)?input.image_evidence.extracted_fields:[]}:null},match,final,primary,topDecisions:[...bet,...lean,...watch].slice(0,5),decisions:{bet,lean,watch,noBet:cards.filter(x=>x.decision==='NO_BET'),shadow:cards.filter(x=>x.decision==='SHADOW'),blocked:cards.filter(x=>x.decision==='BLOCKED')},champion:{thresholds:cards.filter(x=>x.family==='CHAMPION'),top3HT:body?.scoreline?.ht?.final??[],top3FT:body?.scoreline?.ft?.final??[],path:body?.scoreline?.mostLikelyPath??null},marketSummary:summary,explosionScenario:explosion,evidenceSufficiency,betLedger,multiMarket:{policy,oneXTwo:cards.filter(x=>x.family==='1X2'),overUnder:cards.filter(x=>x.family==='OVER_UNDER'),asianHandicap:cards.filter(x=>x.family==='ASIAN_HANDICAP')},odds:{...odds.metadata,ageMinutes:odds.ageMinutes,maxAgeMinutes:odds.maxAgeMinutes},gates:{strictPrior,consistency,fixtureIdentityVerified:fixtureVerified,evidenceSufficient:evidenceSufficiency.decisionEligible,verifiedOdds:odds.metadata.verified,freshOdds:odds.metadata.fresh,betRequiresAllGates:true,noForcedFive:true},rules:{betMinEdge:0.04,betMinExpectedValue:0.05,leanMinEdge:0.015,minEvidenceFixturesPerTeam:evidenceSufficiency.requiredPerTeam,unverifiedOrStaleOddsCannotBet:true,shadowDecisionUse:false,noGuaranteedWin:true},renderedPracticalReport:renderedReport(mode,match,cards,odds,summary,evidenceSufficiency,explosion,betLedger)};
 }
 
 export function attachCfiOutputV3(body:any,input:any={}){body.outputV3=buildCfiOutputV3(body,input);return body;}

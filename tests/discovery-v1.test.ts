@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dedupeCanonicalFixtureRows, discoverFixtures, parseSofascoreScheduled, parseTheSportsDbEvents, scorePrediction } from '../src/discovery/cfi-discovery.ts';
+import { dedupeCanonicalFixtureRows, discoverFixtures, fixtureCohort, mergeDiscoveryRows, parseSofascoreScheduled, parseTheSportsDbEvents, scorePrediction } from '../src/discovery/cfi-discovery.ts';
 import { buildMultiMarketV1 } from '../src/prediction/multi-market-v1.ts';
 
 test('Sofascore discovery keeps only future prematch fixtures in requested local window',()=>{
@@ -45,6 +45,25 @@ test('selection score fails closed without strict-prior verification',()=>{const
 test('selection score is evidence aware rather than probability-only',()=>{
   const base={status:'SUCCESS',strictPrior:{verified:true},consistencyGuard:{status:'PASS'},scoreline:{uncertainty:'MEDIUM'},ranking:[{target:'3+ HT',probability:.65,confidence:'HIGH'}]};
   const weak=scorePrediction({...base,bigDbRetrieval:{exactTeam:{home:{retrieved:1},away:{retrieved:1},h2h:{retrieved:0}}}}),strong=scorePrediction({...base,bigDbRetrieval:{exactTeam:{home:{retrieved:50},away:{retrieved:50},h2h:{retrieved:8}}}});assert.equal(weak.eligible,true);assert.ok(strong.score>weak.score);
+});
+
+test('thin exact-team evidence remains visible but cannot qualify for practical decisions',()=>{
+  const base={status:'SUCCESS',strictPrior:{verified:true},consistencyGuard:{status:'PASS'},scoreline:{uncertainty:'LOW'},ranking:[{target:'3+ HT',probability:.91,confidence:'HIGH'}],bigDbRetrieval:{exactTeam:{home:{retrieved:1},away:{retrieved:1},h2h:{retrieved:0}}}};
+  const result=scorePrediction(base);
+  assert.equal(result.eligible,true);
+  assert.equal(result.evidenceSufficiency.status,'LIMITED');
+  assert.equal(result.evidenceSufficiency.decisionEligible,false);
+  assert.ok(result.score<80);
+});
+
+test('discovery never excludes women youth reserve or amateur cohorts',()=>{
+  assert.equal(fixtureCohort({home:'Alpha Women U19',away:'Beta Women U19',competition:'Regional League'}).women,true);
+  assert.equal(fixtureCohort({home:'Alpha Women U19',away:'Beta Women U19',competition:'Regional League'}).youth,true);
+  assert.equal(fixtureCohort({home:'Town Reserves',away:'City II',competition:'State League'}).reserve,true);
+  assert.equal(fixtureCohort({home:'Village',away:'County',competition:'Amateur Cup'}).amateur,true);
+  const remote=[{providerId:'remote',home:'Senior A',away:'Senior B',targetDate:'2026-08-26'}];
+  const publicRows=[{providerId:'women',home:'Alpha Women',away:'Beta Women',targetDate:'2026-08-26'},{providerId:'u19',home:'Academy U19',away:'Town U19',targetDate:'2026-08-26'}];
+  assert.deepEqual(mergeDiscoveryRows([remote,publicRows],5).map(x=>x.providerId),['remote','women','u19']);
 });
 
 test('multi-market shadow remains decisionUse=false and coherent',()=>{const m=buildMultiMarketV1({htHome:.8,htAway:.5,ftHome:1.7,ftAway:1.1});assert.equal(m.decisionUse,false);assert.equal(m.consistencyGuard.status,'PASS');assert.ok(Math.abs(m.oneXTwo.ft.home+m.oneXTwo.ft.draw+m.oneXTwo.ft.away-1)<1e-9);});
