@@ -1,0 +1,87 @@
+name: CFI GPT Current-Day Production Acceptance
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cfi-gpt-current-day-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Worker deploy convergence
+        run: sleep 30
+      - name: Execute NEW real current-day Discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
+          TARGET_DATE='2026-08-26'
+          KICKOFF='2026-08-26T16:00:00Z'
+          SOURCE1='https://www.saff.com.sa/en/team.php?id=39'
+          SOURCE2='https://www.sofascore.com/football/match/al-faisaly-al-fateh/yvxsKvx'
+          DISCOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          NOW=$(date -u +%s)
+          KO=$(date -u -d "$KICKOFF" +%s)
+          if [ "$NOW" -ge "$KO" ]; then
+            echo '::error title=Temporal blocker::Verified fixture has already kicked off; strict-prior NEW prediction is no longer permitted.'
+            exit 2
+          fi
+
+          aliases=(
+            'Al Faisaly|Al Fateh'
+            'Al-Faisaly FC|Al-Fateh'
+            'Al Faisaly Harmah|Al-Fateh'
+          )
+          accepted=0
+          for pair in "${aliases[@]}"; do
+            HOME=${pair%%|*}; AWAY=${pair#*|}
+            echo "Trying verified fixture alias: $HOME vs $AWAY"
+            node - "$HOME" "$AWAY" "$DISCOVERED_AT" "$SOURCE1" "$SOURCE2" <<'NODE' > /tmp/request.json
+          const [home,away,discoveredAt,source1,source2]=process.argv.slice(2);
+          process.stdout.write(JSON.stringify({
+            target_date:'2026-08-26', timezone:'Asia/Ho_Chi_Minh', max_matches:1, scan_limit:40,
+            fixture_candidates:[{
+              provider:'GPT_WEB_SEARCH', providerId:'gpt-web-al-faisaly-al-fateh-20260826',
+              home,away,competition:'Roshn Saudi League',country:'Saudi Arabia',
+              kickoffIso:'2026-08-26T16:00:00Z',targetDate:'2026-08-26',status:'scheduled',
+              sourceUrls:[source1,source2],discoveredAt
+            }]
+          }));
+          NODE
+            curl -fsS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
+            node - <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};
+          const concise={status:x.status,action:x.action,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,search:x.search,diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionHttpStatus:d.predictionHttpStatus,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,failureLayer:d.failureLayer,reasonCode:d.reasonCode,canonicalIdentity:d.canonicalIdentity,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),board:(x.board||[]).map(r=>({match:r.match,kickoff:r.kickoff,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,sixTargetContract:r.prediction?.sixTargetMatrix?.contract,snapshotId:r.prediction?.audit?.body?.snapshotId||null})),final:x.final};
+          console.log(JSON.stringify(concise,null,2));
+          fs.writeFileSync('/tmp/concise.json',JSON.stringify(concise,null,2));
+          process.exit(Number(c.predictionSuccess||0)>0?0:3);
+          NODE
+            rc=$?
+            if [ "$rc" -eq 0 ]; then accepted=1; break; fi
+          done
+          if [ "$accepted" != 1 ]; then
+            echo '::error title=Production acceptance failed::No verified alias produced predictionSuccess > 0.'
+            cat /tmp/concise.json || true
+            exit 1
+          fi
+
+          node - <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};
+          const fail=m=>{throw new Error(m)};
+          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
+          if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0');
+          if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
+          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
+          if(!Array.isArray(x.board)||x.board.length<1)fail('Daily Board missing');
+          for(const r of x.board){
+            if(r.strictPrior!==true)fail('strict-prior not verified');
+            if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 contract incomplete');
+            if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market decisionUse promoted');
+          }
+          console.log('CFI_GPT_CURRENT_DAY_PRODUCTION_ACCEPTANCE=PASS');
+          NODE
