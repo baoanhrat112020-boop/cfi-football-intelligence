@@ -35,11 +35,10 @@ jobs:
               "$BASE/api/discover" -o /tmp/discovery.json || printf '{}\n' > /tmp/discovery.json
             if node - <<'NODE'
           const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8')); const c=x?.counts||{};
-          // CFI_AUTO_DISCOVERY_V1.3 executes raw strict-prior predictions for every scanned
-          // fixture, then executes the official immutable-snapshot path only for eligible picks.
+          // V1.4 keeps the scheduled smoke lightweight: no provider crawler is called
+          // unless diagnostic mode is explicitly requested.
           const attempts=Number(c.scanned??0), success=Number(c.eligible??0), official=Number(c.fullPredictionsExecuted??0);
-          const searchComplete=x?.search?.combinedTargetSatisfied===true||x?.search?.exhausted===true;
-          const pass=x?.status==='OK'&&x?.action==='CFI_DISCOVERY'&&x?.version==='CFI_AUTO_DISCOVERY_V1.3'&&x?.provider!=='NONE'&&c.fixturesDiscovered>0&&attempts>0&&success>0&&official>0&&Array.isArray(x?.board)&&x.board.length===official&&x?.rules?.strictPriorRequired===true&&x?.rules?.shadowDecisionUse===false&&x?.rules?.continueUntilRequestedPoolOrSourcesExhausted===true&&searchComplete;
+          const pass=x?.status==='OK'&&x?.action==='CFI_DISCOVERY'&&x?.version==='CFI_AUTO_DISCOVERY_V1.4'&&x?.search?.mode==='GPT_SEARCH_FIRST'&&x?.search?.internalProviderDiagnostics===false&&(x?.providerAttempts||[]).length===0&&Array.isArray(x?.board)&&x?.rules?.strictPriorRequired===true&&x?.rules?.shadowDecisionUse===false&&x?.rules?.gptSearchFirstRequired===true&&x?.rules?.internalProviderCrawlerDefault===false;
           if(!pass)process.exit(1);
           for(const r of x.board){if(r.strictPrior!==true||r.multiMarketDecisionUse!==false||!r.prediction?.sixTargetMatrix?.verification?.complete)process.exit(1);}
           NODE
@@ -50,7 +49,7 @@ jobs:
             sleep 20
           done
           if [ "$ok" != 1 ]; then
-            echo '::error title=Production discovery smoke failed::No auditable real strict-prior production prediction after retries.'
+            echo '::error title=Production discovery smoke failed::V1.4 lightweight GPT-search-first contract was not observed after retries.'
             exit 1
           fi
           node - <<'NODE'

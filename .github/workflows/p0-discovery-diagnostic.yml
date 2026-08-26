@@ -8,6 +8,8 @@ jobs:
   diagnostic:
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for Worker deploy convergence
+        run: sleep 45
       - name: Probe production
         shell: bash
         run: |
@@ -18,35 +20,21 @@ jobs:
           curl -sS --max-time 30 -w '\nHTTP=%{http_code}\n' "$BASE/api/status"
           echo '--- DISCOVERY ---'
           curl -sS --max-time 120 -H 'content-type: application/json' -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":2,\"scan_limit\":12}" -w '\nHTTP=%{http_code}\n' "$BASE/api/discover"
-      - name: Final production E2E with timestamped public odds
+      - name: Verify V1.4 lightweight discovery contract
         shell: bash
         run: |
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          CAPTURED_AT=$(date -u +%FT%TZ)
-          export TARGET_DATE CAPTURED_AT
-          node - <<'NODE' > /tmp/final-request.json
-          const capturedAt=process.env.CAPTURED_AT;
-          console.log(JSON.stringify({
-            target_date:process.env.TARGET_DATE,timezone:'Asia/Ho_Chi_Minh',max_matches:5,scan_limit:40,
-            odds_by_fixture:{
-              'Vietnam vs Thailand':{values:{'FT 1':1.78,'FT X':3.90,'FT 2':4.68,'FT O2.5':1.79,'FT U2.5':1.78},metadata:{bookmaker:'SportyTrader public market snapshot',capturedAt,verified:true,source:'https://www.sportytrader.com/en/odds/vietnam-thailand-8756504/',sourceType:'PUBLIC_WEB_CAPTURE'}},
-              'Preston Lions vs South Melbourne':{values:{'FT 1':2.05,'FT X':3.60,'FT 2':3.30,'FT O2.5':2.12,'FT U2.5':1.58},metadata:{bookmaker:'Forebet public market snapshot',capturedAt,verified:true,source:'https://www.forebet.com/en/football/matches/preston-lions-south-melbourne-2518818',sourceType:'PUBLIC_WEB_CAPTURE'}}
-            }
-          }));
-          NODE
-          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/final-request.json','utf8')); if(x.target_date!==process.env.TARGET_DATE)process.exit(1)"
-          curl -fsS --max-time 120 -H 'content-type: application/json' --data-binary @/tmp/final-request.json "$BASE/api/discover" -o /tmp/final-production.json
+          curl -fsS --max-time 120 -H 'content-type: application/json' \
+            -d "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":2,\"scan_limit\":12,\"internal_provider_diagnostics\":false}" \
+            "$BASE/api/discover" -o /tmp/v14-production.json
           node - <<'NODE'
-          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/final-production.json','utf8')); const c=x?.counts||{};
+          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/v14-production.json','utf8'));
           const fail=(m)=>{throw new Error(m)};
-          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!=='CFI_AUTO_DISCOVERY_V1.3')fail('final discovery contract failed');
-          if(x.rules?.continueUntilRequestedPoolOrSourcesExhausted!==true)fail('bounded continuation rule missing');
-          if(x.search?.combinedTargetSatisfied!==true&&x.search?.exhausted!==true)fail('discovery stopped early without source exhaustion');
-          if(!c.predictionAttempts||!c.fullPredictionsExecuted||!Array.isArray(x.board)||x.board.length!==c.fullPredictionsExecuted)fail('production execution missing');
-          if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false)fail('strict-prior gate changed');
-          const board=x.board.map(r=>{const p=r.prediction,v=p?.outputV3,s=p?.sixTargetMatrix,summary=v?.marketSummary; if(r.strictPrior!==true)fail(`${r.match}: strict-prior`); if(!p?.audit?.body?.snapshotId)fail(`${r.match}: snapshot`); if(s?.verification?.complete!==true||s?.primaryTargets?.length!==6)fail(`${r.match}: Champion 6`); if(!summary?.oneXTwo||!summary?.overUnder||!summary?.asianHandicap)fail(`${r.match}: markets`); if(!v?.explosionScenario||!v?.evidenceSufficiency||!v?.betLedger)fail(`${r.match}: output blocks`); if(v.betLedger.autoPlaced===true||v.betLedger.explicitConfirmationRequired!==true)fail(`${r.match}: ledger safety`); const cards=[...Object.values(summary.oneXTwo.ft||{}),...Object.values(summary.overUnder.ft||{})]; return{match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,snapshotId:p.audit.body.snapshotId,championTargets:s.primaryTargets,marketOdds:cards.filter(a=>Number.isFinite(Number(a?.marketOdds))).map(a=>({market:a.market,odds:a.marketOdds})),explosion:v.explosionScenario,evidence:v.evidenceSufficiency,ledger:v.betLedger};});
-          if(!board.some(r=>r.marketOdds.length))fail('odds did not reach production output');
-          console.log(JSON.stringify({status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,final:x.final,board},null,2));
+          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!=='CFI_AUTO_DISCOVERY_V1.4')fail('V1.4 discovery contract failed');
+          if(x.search?.mode!=='GPT_SEARCH_FIRST'||x.search?.internalProviderDiagnostics!==false)fail('GPT search-first mode missing');
+          if((x.providerAttempts||[]).length!==0)fail('default path unexpectedly called provider crawler');
+          if(x.rules?.strictPriorRequired!==true||x.rules?.gptSearchFirstRequired!==true||x.rules?.internalProviderCrawlerDefault!==false||x.rules?.shadowDecisionUse!==false)fail('V1.4 safety rules changed');
+          console.log(JSON.stringify({status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,search:x.search,counts:x.counts,final:x.final},null,2));
           NODE

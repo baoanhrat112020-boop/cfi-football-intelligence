@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dedupeCanonicalFixtureRows, discoverFixtures, fixtureCohort, mergeDiscoveryRows, parseSofascoreScheduled, parseTheSportsDbEvents, scorePrediction } from '../src/discovery/cfi-discovery.ts';
+import { dedupeCanonicalFixtureRows, discoverFixtures, fixtureCohort, mergeDiscoveryRows, normalizeAiFixtureCandidates, parseSofascoreScheduled, parseTheSportsDbEvents, scorePrediction } from '../src/discovery/cfi-discovery.ts';
 import { buildMultiMarketV1 } from '../src/prediction/multi-market-v1.ts';
 
 test('Sofascore discovery keeps only future prematch fixtures in requested local window',()=>{
@@ -11,6 +11,32 @@ test('Sofascore discovery keeps only future prematch fixtures in requested local
   ]};
   const rows=parseSofascoreScheduled(payload,{targetDate:'2026-08-23',timeZone:'Asia/Ho_Chi_Minh',startTime:'14:00',endTime:'16:00',nowMs:Date.parse('2026-08-23T05:00:00Z')});
   assert.equal(rows.length,1);assert.equal(rows[0].home,'Alpha');assert.equal(rows[0].kickoffLocal,'15:00');
+});
+
+test('GPT search-first candidates become same-day sourced prematch fixtures without crawler calls',()=>{
+  const nowMs=Date.parse('2026-08-26T08:00:00Z');
+  const result=normalizeAiFixtureCandidates([
+    {providerId:'official-1',home:'Alpha Women U19',away:'Beta Women U19',competition:'Women U19',kickoffIso:'2026-08-26T10:00:00Z',status:'scheduled',sourceUrls:['https://example.com/official-fixture'],discoveredAt:'2026-08-26T07:59:00Z'},
+    {providerId:'wrong-day',home:'Tomorrow',away:'Match',kickoffIso:'2026-08-27T10:00:00Z',status:'scheduled',sourceUrls:['https://example.com/tomorrow'],discoveredAt:'2026-08-26T07:59:00Z'},
+    {providerId:'no-source',home:'No',away:'Source',kickoffIso:'2026-08-26T11:00:00Z',status:'scheduled',sourceUrls:[],discoveredAt:'2026-08-26T07:59:00Z'},
+  ],{targetDate:'2026-08-26',timeZone:'Asia/Ho_Chi_Minh',nowMs});
+  assert.equal(result.rows.length,1);
+  assert.equal(result.rows[0].provider,'GPT_WEB_SEARCH');
+  assert.equal(result.rows[0].kickoffLocal,'17:00');
+  assert.equal(result.rows[0].discoveryMode,'GPT_SEARCH_FIRST');
+  assert.deepEqual(result.rejected.map(row=>row.reason),['TARGET_DATE_MISMATCH','HTTPS_PROVENANCE_REQUIRED']);
+});
+
+test('GPT search-first candidates reject finished, past, malformed and unauditable inputs',()=>{
+  const base={home:'Home',away:'Away',kickoffIso:'2026-08-26T10:00:00Z',sourceUrls:['https://example.com/fixture'],discoveredAt:'2026-08-26T07:00:00Z'};
+  const result=normalizeAiFixtureCandidates([
+    {...base,providerId:'finished',status:'finished'},
+    {...base,providerId:'past',kickoffIso:'2026-08-26T06:00:00Z'},
+    {...base,providerId:'bad-url',sourceUrls:['http://example.com/fixture']},
+    {...base,providerId:'future-discovery',discoveredAt:'2026-08-26T09:00:00Z'},
+  ],{targetDate:'2026-08-26',timeZone:'Asia/Ho_Chi_Minh',nowMs:Date.parse('2026-08-26T08:00:00Z')});
+  assert.equal(result.rows.length,0);
+  assert.deepEqual(result.rejected.map(row=>row.reason),['NOT_PREMATCH','KICKOFF_NOT_FUTURE','HTTPS_PROVENANCE_REQUIRED','FUTURE_DISCOVERY_TIMESTAMP']);
 });
 
 test('TheSportsDB parser accepts future scheduled events and rejects finished events',()=>{

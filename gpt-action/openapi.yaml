@@ -20,7 +20,7 @@ paths:
     post:
       operationId: cfiDiscoverOpportunities
       summary: Discover and rank real pre-match CFI opportunities without requiring HOME/AWAY
-      description: Use for requests such as "tìm trận tốt nhất hôm nay", "tìm 5 trận tốt nhất ngày ...", or a date/time-window scan. The action discovers real upcoming fixtures, applies canonicalization and strict-prior BigDB retrieval, runs the existing CFI predictor, returns the Daily Opportunity Board, Champion output and Multi-Market SHADOW output. Never ask for HOME/AWAY when the user intent is discovery.
+      description: Use for requests such as "tìm trận tốt nhất hôm nay", "tìm 5 trận tốt nhất ngày ...", or a date/time-window scan. GPT first web-searches a broad real fixture pool and passes it as fixture_candidates with HTTPS provenance. The action canonicalizes those candidates against BigDB, runs the existing strict-prior CFI predictor, and returns the Daily Opportunity Board. Never ask the user for HOME/AWAY when the intent is discovery.
       requestBody:
         required: false
         content:
@@ -36,13 +36,38 @@ paths:
                 max_matches: { type: integer, minimum: 1, maximum: 10, default: 5 }
                 market_filter: { type: string }
                 competition_filter: { type: string }
+                fixture_candidates:
+                  type: array
+                  maxItems: 100
+                  description: Real scheduled fixtures found by GPT web search before the Action call. Search broadly across senior, women, youth, reserve and amateur competitions. Each candidate requires exact teams, kickoff, a stable provider ID, discovery timestamp and at least one HTTPS schedule source. Do not fabricate or infer missing fixtures.
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [providerId, home, away, kickoffIso, status, sourceUrls, discoveredAt]
+                    properties:
+                      providerId: { type: string, minLength: 1 }
+                      home: { type: string, minLength: 1 }
+                      away: { type: string, minLength: 1 }
+                      competition: { type: [string, "null"] }
+                      country: { type: [string, "null"] }
+                      kickoffIso: { type: string, format: date-time }
+                      status: { type: string, enum: [scheduled, notstarted, pre] }
+                      sourceUrls:
+                        type: array
+                        minItems: 1
+                        items: { type: string, format: uri, pattern: "^https://" }
+                      discoveredAt: { type: string, format: date-time }
+                internal_provider_diagnostics:
+                  type: boolean
+                  default: false
+                  description: Diagnostic-only legacy provider probe. GPT discovery must leave this false; production search belongs to the GPT orchestration layer.
                 odds_by_fixture:
                   type: object
                   additionalProperties: true
                   description: Verified odds packages gathered after the first discovery call by exact-fixture web search, keyed by provider fixture ID or "Home vs Away". Capture available 1X2, main O/U and AH prices in values plus bookmaker/capturedAt/source/verified metadata, then rerun discovery. Missing prices remain unavailable.
       responses:
         "200":
-          description: CFI Daily Opportunity Board with real fixtures, strict-prior prediction evidence, and always-visible 1X2/O-U/AH model summaries. Rerun with odds_by_fixture after web odds enrichment.
+          description: CFI Daily Opportunity Board from GPT-sourced real fixtures with strict-prior prediction evidence and always-visible 1X2/O-U/AH model summaries. Rerun with odds_by_fixture after web odds enrichment.
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
