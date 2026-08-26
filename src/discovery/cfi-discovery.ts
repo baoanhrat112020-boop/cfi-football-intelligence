@@ -11,6 +11,23 @@ export function localDateNow(timeZone:string,nowMs=Date.now()){return parts(nowM
 export function providerQueryDates(targetDate:string){const base=Date.parse(`${targetDate}T00:00:00Z`);if(!Number.isFinite(base))return[targetDate];return[-1,0,1].map(delta=>new Date(base+delta*86400000).toISOString().slice(0,10));}
 export function dedupeFixtures(rows:DiscoveredFixture[]){const seen=new Set<string>();return rows.filter(r=>{const key=`${r.home.toLowerCase()}|${r.away.toLowerCase()}|${Math.floor(r.kickoff/60000)}`;if(seen.has(key))return false;seen.add(key);return true;});}
 
+export function dedupeCanonicalFixtureRows<T extends {home:string;away:string;kickoff?:number;kickoffIso?:string;targetDate?:string;canonicalHomeTeamId?:string|null;canonicalAwayTeamId?:string|null}>(rows:T[]){
+ const seen=new Set<string>();
+ return rows.filter(row=>{
+  const home=clean(row.canonicalHomeTeamId)||clean(row.home).toLowerCase();
+  const away=clean(row.canonicalAwayTeamId)||clean(row.away).toLowerCase();
+  const parsed=finiteKickoff(row.kickoff,row.kickoffIso);
+  const kickoff=parsed===null?clean(row.targetDate):String(Math.floor(parsed/60000));
+  const key=`${home}|${away}|${kickoff}`;
+  if(seen.has(key))return false;
+  seen.add(key);return true;
+ });
+}
+function finiteKickoff(kickoff:any,kickoffIso:any){
+ const numeric=Number(kickoff);if(Number.isFinite(numeric))return numeric;
+ const parsed=Date.parse(clean(kickoffIso));return Number.isFinite(parsed)?parsed:null;
+}
+
 export function parseSofascoreScheduled(payload:any,window:DiscoveryWindow):DiscoveredFixture[]{
  const now=window.nowMs??Date.now();const events=Array.isArray(payload?.events)?payload.events:[];const out:DiscoveredFixture[]=[];
  for(const e of events){const home=clean(e?.homeTeam?.name),away=clean(e?.awayTeam?.name),ts=Number(e?.startTimestamp)*1000,status=clean(e?.status?.type||e?.status?.description).toLowerCase();if(!home||!away||!Number.isFinite(ts)||TERMINAL.has(status))continue;const lp=parts(ts,window.timeZone);if(lp.date!==window.targetDate||!inWindow(lp.time,window.startTime,window.endTime))continue;if(ts<=now&&window.targetDate===localDateNow(window.timeZone,now))continue;out.push({provider:'SOFASCORE',providerId:String(e?.id??`${home}-${away}-${ts}`),home,away,competition:clean(e?.tournament?.name)||null,country:clean(e?.tournament?.category?.country?.name||e?.tournament?.category?.name)||null,kickoff:ts,kickoffIso:new Date(ts).toISOString(),kickoffLocal:lp.time,targetDate:window.targetDate,status:status||'notstarted'});}

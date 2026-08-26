@@ -1,5 +1,5 @@
 import base from './index-live-router.ts';
-import { scorePrediction, CFI_DISCOVERY_VERSION } from '../../src/discovery/cfi-discovery.ts';
+import { dedupeCanonicalFixtureRows, scorePrediction, CFI_DISCOVERY_VERSION } from '../../src/discovery/cfi-discovery.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 type FeedRow={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string;canonicalExact?:boolean;canonicalHomeTeamId?:string|null;canonicalAwayTeamId?:string|null;odds?:Record<string,number>;oddsMetadata?:Record<string,unknown>};
@@ -63,10 +63,11 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
   let input:any={};try{input=await request.clone().json()}catch{return null;}
   const timeZone=String(input?.timezone??'Asia/Ho_Chi_Minh'),targetDate=String(input?.target_date??'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return null;
   const f=await feed({...input,target_date:targetDate,timezone:timeZone},env);if(!f||!f.rows.length)return null;
+  const rows=dedupeCanonicalFixtureRows(f.rows as FeedRow[]);
   const maxMatches=Math.max(1,Math.min(10,Number(input?.max_matches??5)||5));
   const evaluated:any[]=[],diagnostics:any[]=[];
   let predictionAttempts=0,predictionSuccess=0;
-  for(const row of f.rows as FeedRow[]){
+  for(const row of rows){
     if(!canonicalIdentity(row).verified){diagnostics.push(diagnose(row,null,null));continue;}
     predictionAttempts++;
     const p=await predict(row,input,env,ctx),score=scorePrediction(p.body),diag=diagnose(row,p,score);
@@ -90,8 +91,8 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
   const actionable=board.filter(r=>r.status==='BET');
   const insufficient=diagnostics.filter(d=>d.reasonCode==='INSUFFICIENT_DATA').length;
   const blocked=diagnostics.filter(d=>d.reasonCode&&d.reasonCode!=='INSUFFICIENT_DATA').length;
-  const canonicalized=(f.rows as FeedRow[]).filter(row=>canonicalIdentity(row).verified).length;
-  return Response.json({status:'OK',action:'CFI_DISCOVERY',version:CFI_DISCOVERY_VERSION,targetDate,timeZone,provider:String(f.source??'CFI_VERIFIED_FIXTURE_FEED'),sourceUrl:null,counts:{fixturesDiscovered:f.rows.length,canonicalized,scanned:f.rows.length,predictionAttempts,predictionSuccess,fullPredictionsExecuted:predictionAttempts,eligible:evaluated.length,insufficient,blocked,recommended:actionable.length,actionable:actionable.length,leans:board.filter(r=>r.status==='LEAN').length,watch:board.filter(r=>r.status==='WATCH').length,shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length},diagnostics,rules:{strictPriorRequired:true,noForcedBet:true,noForcedFive:true,verifiedFreshBookmakerOddsRequiredForBet:true,bookmakerOddsRequiredForValueClaim:true,shadowDecisionUse:false},board,topPicks:actionable.slice(0,3),final:actionable.length?'PRACTICAL_BETS_READY':board.length?'WATCHLIST_READY':'NO_BET',provenance:{fixtureSource:String(f.source??'VERIFIED_FIXTURES_THEN_FORWARD_CAPTURES'),noDuplicatePredictionEngine:true}});
+  const canonicalized=rows.filter(row=>canonicalIdentity(row).verified).length;
+  return Response.json({status:'OK',action:'CFI_DISCOVERY',version:CFI_DISCOVERY_VERSION,targetDate,timeZone,provider:String(f.source??'CFI_VERIFIED_FIXTURE_FEED'),sourceUrl:null,counts:{fixturesDiscovered:f.rows.length,canonicalized,distinctFixtures:rows.length,duplicatesRemoved:f.rows.length-rows.length,scanned:rows.length,predictionAttempts,predictionSuccess,fullPredictionsExecuted:predictionAttempts,eligible:evaluated.length,insufficient,blocked,recommended:actionable.length,actionable:actionable.length,leans:board.filter(r=>r.status==='LEAN').length,watch:board.filter(r=>r.status==='WATCH').length,shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length},diagnostics,rules:{strictPriorRequired:true,noForcedBet:true,noForcedFive:true,verifiedFreshBookmakerOddsRequiredForBet:true,bookmakerOddsRequiredForValueClaim:true,shadowDecisionUse:false},board,topPicks:actionable.slice(0,3),final:actionable.length?'PRACTICAL_BETS_READY':board.length?'WATCHLIST_READY':'NO_BET',provenance:{fixtureSource:String(f.source??'VERIFIED_FIXTURES_THEN_FORWARD_CAPTURES'),noDuplicatePredictionEngine:true}});
 }
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){

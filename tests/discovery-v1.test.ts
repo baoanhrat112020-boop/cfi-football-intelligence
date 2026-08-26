@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { discoverFixtures, parseSofascoreScheduled, parseTheSportsDbEvents, scorePrediction } from '../src/discovery/cfi-discovery.ts';
+import { dedupeCanonicalFixtureRows, discoverFixtures, parseSofascoreScheduled, parseTheSportsDbEvents, scorePrediction } from '../src/discovery/cfi-discovery.ts';
 import { buildMultiMarketV1 } from '../src/prediction/multi-market-v1.ts';
 
 test('Sofascore discovery keeps only future prematch fixtures in requested local window',()=>{
@@ -48,3 +48,15 @@ test('selection score is evidence aware rather than probability-only',()=>{
 });
 
 test('multi-market shadow remains decisionUse=false and coherent',()=>{const m=buildMultiMarketV1({htHome:.8,htAway:.5,ftHome:1.7,ftAway:1.1});assert.equal(m.decisionUse,false);assert.equal(m.consistencyGuard.status,'PASS');assert.ok(Math.abs(m.oneXTwo.ft.home+m.oneXTwo.ft.draw+m.oneXTwo.ft.away-1)<1e-9);});
+
+
+test('canonical discovery rows are distinct before predictions execute',()=>{
+  const rows=[
+    {providerId:'a',home:'Vietnam',away:'Thailand',kickoffIso:'2026-08-26T10:00:00Z',canonicalHomeTeamId:'vn',canonicalAwayTeamId:'th'},
+    {providerId:'b',home:'Viet Nam',away:'Thai Lan',kickoffIso:'2026-08-26T10:00:20Z',canonicalHomeTeamId:'vn',canonicalAwayTeamId:'th'},
+    {providerId:'c',home:'Preston Lions',away:'South Melbourne',kickoffIso:'2026-08-26T10:30:00Z',canonicalHomeTeamId:'preston',canonicalAwayTeamId:'south-melbourne'},
+  ];
+  const distinct=dedupeCanonicalFixtureRows(rows);
+  assert.equal(distinct.length,2);
+  assert.deepEqual(distinct.map(r=>r.providerId),['a','c']);
+});
