@@ -127,14 +127,14 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - name: Probe today's real GPT search-first path
+      - name: Probe current-day covered GPT search-first path
         shell: bash
         run: |
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat > /tmp/search-first-request.json <<JSON
-          {"target_date":"2026-08-27","timezone":"Asia/Ho_Chi_Minh","max_matches":1,"scan_limit":10,"fixture_candidates":[{"provider":"UEFA","providerId":"uefa-uecl-hibernian-gent-20260827","home":"Hibernian","away":"Gent","competition":"UEFA Conference League","kickoffIso":"2026-08-27T18:00:00Z","status":"scheduled","sourceUrls":["https://www.uefa.com/uefaconferenceleague/clubs/52821--hibernian/matches/","https://www.uefa.com/uefaconferenceleague/clubs/4608--gent/matches/"],"discoveredAt":"$NOW"}]}
+          {"target_date":"2026-08-27","timezone":"Asia/Ho_Chi_Minh","max_matches":1,"scan_limit":10,"fixture_candidates":[{"provider":"UEFA","providerId":"uefa-uecl-freiburg-motherwell-20260827","home":"Freiburg","away":"Motherwell","competition":"UEFA Conference League","kickoffIso":"2026-08-27T16:45:00Z","status":"scheduled","sourceUrls":["https://www.uefa.com/uefaconferenceleague/clubs/59880--freiburg/matches/","https://www.uefa.com/uefaconferenceleague/clubs/53035--motherwell/matches/"],"discoveredAt":"$NOW"}]}
           JSON
           HTTP_CODE=$(curl -sS --max-time 240 -H 'content-type: application/json' --data-binary @/tmp/search-first-request.json "$BASE/api/discover" -o /tmp/search-first-response.json -w '%{http_code}' || true)
           export HTTP_CODE
@@ -146,6 +146,7 @@ jobs:
           fs.writeFileSync('/tmp/search-first-summary.json',JSON.stringify(summary,null,2));console.log(JSON.stringify(summary,null,2));
           const fail=m=>{throw new Error(m)};
           if(process.env.HTTP_CODE!=='200')fail(`HTTP ${process.env.HTTP_CODE}`);
+          if(x?.search?.aiCandidatesAccepted!==1)fail(`candidate not accepted: ${JSON.stringify(x?.search?.aiCandidatesRejected||[])}`);
           if(!(Number(c.predictionSuccess)>0&&Number(c.fullPredictionsExecuted)>0))fail('prediction did not execute');
           if(row?.strictPrior!==true)fail('strict-prior missing');
           if(p?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||p?.sixTargetMatrix?.verification?.complete!==true)fail('six-target incomplete');
@@ -160,5 +161,5 @@ jobs:
           set -u
           if [ ! -f /tmp/search-first-summary.json ]; then printf '{"gate":"CFI_SEARCH_FIRST_PRODUCT_GATE_20260827","status":"NO_SUMMARY","runId":"%s","commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > /tmp/search-first-summary.json; fi
           BODY=$(cat /tmp/search-first-summary.json)
-          REPORT=$(printf 'Search-first real fixture production probe\nRun: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
+          REPORT=$(printf 'Search-first covered real fixture production probe\nRun: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
           gh issue comment 107 --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo '::warning::Could not persist search-first evidence to issue #107'
