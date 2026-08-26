@@ -1,19 +1,24 @@
-name: Deploy Supabase cfi-gpt-control
+name: Deploy Supabase CFI production functions
 
 on:
   pull_request:
     paths:
       - 'supabase/functions/cfi-gpt-control/**'
+      - 'supabase/functions/cfi-bigdb-retrieval/**'
+      - 'tests/v14-alias-resolution-contract.test.mjs'
       - '.github/workflows/deploy-supabase-gpt-control.yml'
   push:
     branches: [main]
     paths:
       - 'supabase/functions/cfi-gpt-control/**'
+      - 'supabase/functions/cfi-bigdb-retrieval/**'
+      - 'tests/v14-alias-resolution-contract.test.mjs'
       - '.github/workflows/deploy-supabase-gpt-control.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   verify:
@@ -36,6 +41,16 @@ jobs:
           }
           if (/antiLeakage\s*:\s*true/.test(s)) throw new Error('hard-coded antiLeakage:true is forbidden');
           NODE
+      - name: Guard deterministic BigDB identity bridge
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const s=readFileSync('supabase/functions/cfi-bigdb-retrieval/index.ts','utf8');
+          for (const token of ['CANONICAL_FOLDED_EXACT','CANONICAL_CLUB_KEY_EXACT','AMBIGUOUS_EXACT_IDENTITY_KEY','CFI_BIG_DB_RETRIEVAL_V2.3.0_IDENTITY_KEY_EXACT']) {
+            if (!s.includes(token)) throw new Error(`missing deterministic identity token: ${token}`);
+          }
+          if (/similarity\s*\(/i.test(s)) throw new Error('fuzzy similarity matching is forbidden');
+          NODE
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -47,7 +62,87 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Deploy source-controlled Edge Function
+
+      - name: Deploy source-controlled CFI Edge Functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy cfi-gpt-control --project-ref kovmddkkzttquupdgmel --no-verify-jwt
+        run: |
+          set -euo pipefail
+          supabase functions deploy cfi-gpt-control --project-ref kovmddkkzttquupdgmel --no-verify-jwt
+          supabase functions deploy cfi-bigdb-retrieval --project-ref kovmddkkzttquupdgmel --no-verify-jwt
+
+      - name: Run real native production prediction gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 20
+          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
+          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/bigdb-native-request.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/bigdb-native-request.json','utf8'));
+          if('fixture_candidates' in x||'home' in x||'away' in x)throw new Error('predetermined fixture input forbidden');
+          NODE
+          HTTP_CODE=$(curl -sS --max-time 240 -H 'content-type: application/json' --data-binary @/tmp/bigdb-native-request.json "$BASE/api/discover" -o /tmp/bigdb-native-response.json -w '%{http_code}' || true)
+          export HTTP_CODE TARGET_DATE
+          node - <<'NODE'
+          const fs=require('fs');
+          const http=process.env.HTTP_CODE;
+          let x={};
+          try{x=JSON.parse(fs.readFileSync('/tmp/bigdb-native-response.json','utf8'))}catch{}
+          const c=x?.counts||{},board=Array.isArray(x?.board)?x.board:[];
+          const successful=board.filter(row=>row?.strictPrior===true&&row?.prediction?.sixTargetMatrix?.verification?.complete===true);
+          const diagnostics=board.slice(0,25).map(row=>({
+            match:row?.match??null,
+            status:row?.status??null,
+            strictPrior:row?.strictPrior??null,
+            predictionStatus:row?.prediction?.status??null,
+            error:row?.prediction?.error??row?.prediction?.reason??null,
+            homeResolution:row?.prediction?.bigDbRetrieval?.identity?.homeResolution??row?.prediction?.identity?.homeResolution??null,
+            awayResolution:row?.prediction?.bigDbRetrieval?.identity?.awayResolution??row?.prediction?.identity?.awayResolution??null,
+            exactTeam:row?.prediction?.bigDbRetrieval?.exactTeam??row?.prediction?.exactTeamEvidence??null,
+            sixTargetComplete:row?.prediction?.sixTargetMatrix?.verification?.complete??false,
+            multiMarketDecisionUse:row?.multiMarketDecisionUse??null
+          }));
+          const summary={
+            gate:'CFI_BIGDB_NATIVE_PRODUCTION_GATE_V1',
+            httpCode:http,
+            targetDate:process.env.TARGET_DATE,
+            status:x?.status??null,
+            version:x?.version??null,
+            provider:x?.provider??null,
+            counts:c,
+            successfulCompleteRows:successful.length,
+            final:x?.final??null,
+            diagnostics
+          };
+          fs.writeFileSync('/tmp/bigdb-native-e2e.json',JSON.stringify(summary,null,2));
+          console.log(JSON.stringify(summary,null,2));
+          const fail=m=>{throw new Error(m)};
+          if(http!=='200')fail(`production discovery HTTP ${http}`);
+          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
+          if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
+          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
+          if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
+          if(successful.length<1)fail('no complete strict-prior six-target prediction');
+          for(const row of successful){
+            const s=row?.prediction?.sixTargetMatrix;
+            if(s?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1')fail(`${row?.match}: six-target contract mismatch`);
+            if(row?.multiMarketDecisionUse!==false)fail(`${row?.match}: shadow Multi-Market promoted`);
+          }
+          NODE
+
+      - name: Persist production evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          if [ ! -f /tmp/bigdb-native-e2e.json ]; then
+            printf '{"gate":"CFI_BIGDB_NATIVE_PRODUCTION_GATE_V1","status":"NO_SUMMARY","runId":"%s","commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > /tmp/bigdb-native-e2e.json
+          fi
+          BODY=$(cat /tmp/bigdb-native-e2e.json)
+          REPORT=$(printf 'BigDB identity bridge production retest\nRun: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
+          gh issue comment 107 --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo '::warning::Could not persist evidence to issue #107'
