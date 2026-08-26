@@ -77,11 +77,47 @@ function addAh(cards:Card[],body:any,values:any,period:'HT'|'FT',policy:ReturnTy
   for(const line of Object.keys(ladder).sort((a,b)=>Number(a)-Number(b)))for(const side of ['home','away'] as const){const s=ladder[line]?.[side],market=`${period} AH ${side.toUpperCase()} ${line}`;if(s)cards.push(makeCard({market,family:'ASIAN_HANDICAP',period,probability:s.fullWin,odds:values[market],settlement:s,fairOverride:s.fairDecimal,decisionUse:policy.decisionUse,researchState:policy.researchState,qualityPass,oddsReady}));}
 }
 
-function renderedReport(mode:InputMode,match:any,cards:Card[],odds:ReturnType<typeof normalizeOdds>){
+function oneXTwoSummary(cards:Card[],period:'HT'|'FT'){
+  const rows=cards.filter(x=>x.family==='1X2'&&x.period===period);
+  const get=(side:'1'|'X'|'2')=>rows.find(x=>x.market===`${period} ${side}`)??null;
+  const home=get('1'),draw=get('X'),away=get('2');
+  const pick=[home,draw,away].filter(Boolean).sort((a,b)=>(b!.probability??-1)-(a!.probability??-1))[0]??null;
+  return{home,draw,away,modelPick:pick?.market??null,modelProbability:pick?.probability??null,decisionUse:rows.some(x=>x.decisionUse)};
+}
+function expectedTotals(body:any,period:'HT'|'FT'){
+  const e=body?.scoreline?.expectedGoals??{},prefix=period==='HT'?'ht':'ft';
+  const home=finite(e?.[`${prefix}Home`]),away=finite(e?.[`${prefix}Away`]);
+  return{home,away,total:home===null||away===null?null:round(home+away,3)};
+}
+function ouSummary(body:any,cards:Card[],period:'HT'|'FT'){
+  const projected=expectedTotals(body,period),rows=cards.filter(x=>x.family==='OVER_UNDER'&&x.period===period);
+  const lineRows=rows.map(row=>{const m=row.market.match(/[OU](-?\d+(?:\.\d+)?)$/);return{row,line:m?Number(m[1]):NaN};}).filter(x=>Number.isFinite(x.line));
+  const halfLines=[...new Set(lineRows.filter(x=>Math.abs(x.line%1)===.5).map(x=>x.line))];
+  const available=halfLines.length?halfLines:[...new Set(lineRows.map(x=>x.line))];
+  const mainLine=available.sort((a,b)=>Math.abs(a-(projected.total??a))-Math.abs(b-(projected.total??b)))[0]??null;
+  const over=mainLine===null?null:rows.find(x=>x.market===`${period} O${mainLine}`)??null;
+  const under=mainLine===null?null:rows.find(x=>x.market===`${period} U${mainLine}`)??null;
+  const lean=[over,under].filter(Boolean).sort((a,b)=>(b!.probability??-1)-(a!.probability??-1))[0]??null;
+  return{projectedGoals:projected,mainLine,over,under,modelLean:lean?.market??null,modelProbability:lean?.probability??null,decisionUse:rows.some(x=>x.decisionUse)};
+}
+function ahSummary(body:any,cards:Card[],period:'HT'|'FT'){
+  const projected=expectedTotals(body,period),rows=cards.filter(x=>x.family==='ASIAN_HANDICAP'&&x.period===period);
+  const difference=projected.home===null||projected.away===null?null:round(projected.home-projected.away,3);
+  const homeLine=difference===null?null:Math.max(-2,Math.min(2,Math.round(-difference*4)/4));
+  const awayLine=homeLine===null?null:-homeLine;
+  const home=homeLine===null?null:rows.find(x=>x.market===`${period} AH HOME ${homeLine}`)??null;
+  const away=awayLine===null?null:rows.find(x=>x.market===`${period} AH AWAY ${awayLine}`)??null;
+  const lean=[home,away].filter(Boolean).sort((a,b)=>(a!.fairOdds??999)-(b!.fairOdds??999))[0]??null;
+  return{projectedGoalDifference:difference,homeModelLine:homeLine,awayModelLine:awayLine,home,away,modelLean:lean?.market??null,decisionUse:rows.some(x=>x.decisionUse)};
+}
+function marketSummary(body:any,cards:Card[]){return{oneXTwo:{ht:oneXTwoSummary(cards,'HT'),ft:oneXTwoSummary(cards,'FT')},overUnder:{ht:ouSummary(body,cards,'HT'),ft:ouSummary(body,cards,'FT')},asianHandicap:{ht:ahSummary(body,cards,'HT'),ft:ahSummary(body,cards,'FT')}};}
+
+function renderedReport(mode:InputMode,match:any,cards:Card[],odds:ReturnType<typeof normalizeOdds>,summary:ReturnType<typeof marketSummary>){
   const ranked=cards.filter(x=>x.decision==='BET'||x.decision==='LEAN'||x.decision==='WATCH').sort((a,b)=>(b.expectedValue??-9)-(a.expectedValue??-9));
   const lines=[`CFI PRACTICAL OUTPUT V3 — ${mode}`,`${match.home??'—'} vs ${match.away??'—'} | ${match.date??'—'}`,`ODDS: ${odds.metadata.verified&&odds.metadata.fresh?`VERIFIED · ${odds.metadata.bookmaker} · ${odds.metadata.capturedAt}`:'NOT VERIFIED/FRESH'}`,'','TOP DECISIONS'];
   if(!ranked.length)lines.push('NO_BET — không có target vượt đủ gate.');
   else ranked.slice(0,5).forEach((x,i)=>lines.push(`${i+1}. ${x.decision} ${x.market} | P ${x.probability===null?'—':`${(x.probability*100).toFixed(1)}%`} | Odds ${x.marketOdds??'—'} | EV ${x.expectedValue===null?'—':`${(x.expectedValue*100).toFixed(1)}%`}`));
+  for(const period of ['HT','FT'] as const){const x=summary.oneXTwo[period.toLowerCase() as 'ht'|'ft'],ou=summary.overUnder[period.toLowerCase() as 'ht'|'ft'],ah=summary.asianHandicap[period.toLowerCase() as 'ht'|'ft'];lines.push('',`${period} 1X2: ${x.modelPick??'—'} ${x.modelProbability===null?'—':`${(x.modelProbability*100).toFixed(1)}%`}`,`${period} TOTAL: ${ou.projectedGoals.total??'—'} | O/U line ${ou.mainLine??'—'} | lean ${ou.modelLean??'—'} ${ou.modelProbability===null?'—':`${(ou.modelProbability*100).toFixed(1)}%`}`,`${period} AH: goal diff ${ah.projectedGoalDifference??'—'} | model line ${ah.homeModelLine??'—'} | lean ${ah.modelLean??'—'}`);}
   return lines.join('\n');
 }
 
@@ -102,7 +138,8 @@ export function buildCfiOutputV3(body:any,input:any={}){
   const bet=rank(cards.filter(x=>x.decision==='BET')),lean=rank(cards.filter(x=>x.decision==='LEAN')),watch=rank(cards.filter(x=>x.decision==='WATCH'));
   const match={home:body?.target?.home??null,away:body?.target?.away??null,date:body?.target?.date??null};
   const final:Decision=!qualityPass?'BLOCKED':bet.length?'BET':lean.length?'LEAN':watch.length?'WATCH':'NO_BET';
-  return{version:CFI_OUTPUT_V3,input:{mode,imageEvidence:mode==='IMAGE_ANALYSIS'?{imageCount:Math.max(0,finite(input?.image_evidence?.image_count)??0),fixtureIdentityVerified:fixtureVerified,extractedFields:Array.isArray(input?.image_evidence?.extracted_fields)?input.image_evidence.extracted_fields:[]}:null},match,final,primary:bet[0]??lean[0]??watch[0]??null,topDecisions:[...bet,...lean,...watch].slice(0,5),decisions:{bet,lean,watch,noBet:cards.filter(x=>x.decision==='NO_BET'),shadow:cards.filter(x=>x.decision==='SHADOW'),blocked:cards.filter(x=>x.decision==='BLOCKED')},champion:{thresholds:cards.filter(x=>x.family==='CHAMPION'),top3HT:body?.scoreline?.ht?.final??[],top3FT:body?.scoreline?.ft?.final??[],path:body?.scoreline?.mostLikelyPath??null},multiMarket:{policy,oneXTwo:cards.filter(x=>x.family==='1X2'),overUnder:cards.filter(x=>x.family==='OVER_UNDER'),asianHandicap:cards.filter(x=>x.family==='ASIAN_HANDICAP')},odds:{...odds.metadata,ageMinutes:odds.ageMinutes,maxAgeMinutes:odds.maxAgeMinutes},gates:{strictPrior,consistency,fixtureIdentityVerified:fixtureVerified,verifiedOdds:odds.metadata.verified,freshOdds:odds.metadata.fresh,betRequiresAllGates:true,noForcedFive:true},rules:{betMinEdge:0.04,betMinExpectedValue:0.05,leanMinEdge:0.015,unverifiedOrStaleOddsCannotBet:true,shadowDecisionUse:false,noGuaranteedWin:true},renderedPracticalReport:renderedReport(mode,match,cards,odds)};
+  const summary=marketSummary(body,cards);
+  return{version:CFI_OUTPUT_V3,input:{mode,imageEvidence:mode==='IMAGE_ANALYSIS'?{imageCount:Math.max(0,finite(input?.image_evidence?.image_count)??0),fixtureIdentityVerified:fixtureVerified,extractedFields:Array.isArray(input?.image_evidence?.extracted_fields)?input.image_evidence.extracted_fields:[]}:null},match,final,primary:bet[0]??lean[0]??watch[0]??null,topDecisions:[...bet,...lean,...watch].slice(0,5),decisions:{bet,lean,watch,noBet:cards.filter(x=>x.decision==='NO_BET'),shadow:cards.filter(x=>x.decision==='SHADOW'),blocked:cards.filter(x=>x.decision==='BLOCKED')},champion:{thresholds:cards.filter(x=>x.family==='CHAMPION'),top3HT:body?.scoreline?.ht?.final??[],top3FT:body?.scoreline?.ft?.final??[],path:body?.scoreline?.mostLikelyPath??null},marketSummary:summary,multiMarket:{policy,oneXTwo:cards.filter(x=>x.family==='1X2'),overUnder:cards.filter(x=>x.family==='OVER_UNDER'),asianHandicap:cards.filter(x=>x.family==='ASIAN_HANDICAP')},odds:{...odds.metadata,ageMinutes:odds.ageMinutes,maxAgeMinutes:odds.maxAgeMinutes},gates:{strictPrior,consistency,fixtureIdentityVerified:fixtureVerified,verifiedOdds:odds.metadata.verified,freshOdds:odds.metadata.fresh,betRequiresAllGates:true,noForcedFive:true},rules:{betMinEdge:0.04,betMinExpectedValue:0.05,leanMinEdge:0.015,unverifiedOrStaleOddsCannotBet:true,shadowDecisionUse:false,noGuaranteedWin:true},renderedPracticalReport:renderedReport(mode,match,cards,odds,summary)};
 }
 
 export function attachCfiOutputV3(body:any,input:any={}){body.outputV3=buildCfiOutputV3(body,input);return body;}

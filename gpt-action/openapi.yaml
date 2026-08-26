@@ -39,10 +39,10 @@ paths:
                 odds_by_fixture:
                   type: object
                   additionalProperties: true
-                  description: Optional verified odds packages keyed by provider fixture ID or "Home vs Away". Each package must contain values plus bookmaker/capturedAt/verified metadata; otherwise CFI remains WATCH/NO_BET.
+                  description: Verified odds packages gathered after the first discovery call by exact-fixture web search, keyed by provider fixture ID or "Home vs Away". Capture available 1X2, main O/U and AH prices in values plus bookmaker/capturedAt/source/verified metadata, then rerun discovery. Missing prices remain unavailable.
       responses:
         "200":
-          description: CFI Daily Opportunity Board with real fixtures and strict-prior prediction evidence
+          description: CFI Daily Opportunity Board with real fixtures, strict-prior prediction evidence, and always-visible 1X2/O-U/AH model summaries. Rerun with odds_by_fixture after web odds enrichment.
           content:
             application/json:
               schema: { type: object, additionalProperties: true }

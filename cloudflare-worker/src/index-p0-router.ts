@@ -85,7 +85,7 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
       canonicalIdentity:canonicalIdentity(row),inputMode:'DISCOVER_TOP_MATCHES',
       bestMarket:primary?.market??score.best?.market??null,modelProbability:primary?.probability??score.best?.probability??null,fairOdds:primary?.fairOdds??score.best?.fairOdds??null,marketOdds:primary?.marketOdds??null,edge:primary?.edge??null,expectedValue:primary?.expectedValue??null,selectionScore:score.score,confidence:primary?.confidence??score.best?.confidence??null,
       status,valueStatus:status==='BET'||status==='LEAN'?'VERIFIED_MARKET_VALUE':practical?.gates?.verifiedOdds?'NO_QUALIFIED_VALUE':'NOT_ASSESSED_NO_VERIFIED_BOOKMAKER_ODDS',
-      strictPrior:body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true,consistency:body?.consistencyGuard?.status??null,multiMarketStatus:body?.multiMarketIntegration?.status??body?.multiMarket?.mode??null,multiMarketDecisionUse:practical?.multiMarket?.policy?.decisionUse===true,practicalOutput:practical,prediction:body
+      strictPrior:body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true,consistency:body?.consistencyGuard?.status??null,multiMarketStatus:body?.multiMarketIntegration?.status??body?.multiMarket?.mode??null,multiMarketDecisionUse:practical?.multiMarket?.policy?.decisionUse===true,marketSummary:practical?.marketSummary??null,practicalOutput:practical,prediction:body
     };
   }).sort((a,b)=>(priority[b.status]??0)-(priority[a.status]??0)||Number(b.expectedValue??-9)-Number(a.expectedValue??-9)||Number(b.selectionScore)-Number(a.selectionScore)).slice(0,maxMatches);
   const actionable=board.filter(r=>r.status==='BET');

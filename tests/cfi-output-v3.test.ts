@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildCfiOutputV3 } from '../src/presentation/cfi-output-v3.ts';
 
 const NOW=Date.parse('2026-08-26T09:00:00Z');
-function prediction(promoted=false){return{target:{home:'Alpha',away:'Beta',date:'2026-08-26'},strictPrior:{verified:true},consistencyGuard:{status:'PASS'},ranking:[{target:'3+ HT',probability:.60,confidence:'HIGH'},{target:'7+ FT',probability:.18,confidence:'MEDIUM'}],scoreline:{ht:{final:[{score:'1-1',probability:.2}]},ft:{final:[{score:'3-1',probability:.14}]},mostLikelyPath:'1-1 HT → 3-1 FT'},multiMarketIntegration:{status:promoted?'PROMOTED':'SHADOW_READY',decisionUse:promoted},multiMarket:{consistencyGuard:{status:'PASS'},oneXTwo:{ft:{home:.60,draw:.22,away:.18}},overUnder:{ft:{'2.5':{over:{fullWin:.62,halfWin:0,push:0,halfLoss:0,fullLoss:.38,fairDecimal:1.6129},under:{fullWin:.38,halfWin:0,push:0,halfLoss:0,fullLoss:.62,fairDecimal:2.6316}}}},asianHandicap:{ft:{'-0.25':{home:{fullWin:.45,halfWin:.15,push:0,halfLoss:.2,fullLoss:.2,fairDecimal:1.6667},away:{fullWin:.2,halfWin:.2,push:0,halfLoss:.15,fullLoss:.45,fairDecimal:2.5}}}}}};}
+function prediction(promoted=false){return{target:{home:'Alpha',away:'Beta',date:'2026-08-26'},strictPrior:{verified:true},consistencyGuard:{status:'PASS'},ranking:[{target:'3+ HT',probability:.60,confidence:'HIGH'},{target:'7+ FT',probability:.18,confidence:'MEDIUM'}],scoreline:{ht:{final:[{score:'1-1',probability:.2}]},ft:{final:[{score:'3-1',probability:.14}]},expectedGoals:{htHome:.8,htAway:.5,ftHome:1.8,ftAway:1.0},mostLikelyPath:'1-1 HT → 3-1 FT'},multiMarketIntegration:{status:promoted?'PROMOTED':'SHADOW_READY',decisionUse:promoted},multiMarket:{consistencyGuard:{status:'PASS'},oneXTwo:{ht:{home:.43,draw:.35,away:.22},ft:{home:.60,draw:.22,away:.18}},overUnder:{ht:{'1.5':{over:{fullWin:.48,halfWin:0,push:0,halfLoss:0,fullLoss:.52,fairDecimal:2.0833},under:{fullWin:.52,halfWin:0,push:0,halfLoss:0,fullLoss:.48,fairDecimal:1.9231}}},ft:{'2.5':{over:{fullWin:.62,halfWin:0,push:0,halfLoss:0,fullLoss:.38,fairDecimal:1.6129},under:{fullWin:.38,halfWin:0,push:0,halfLoss:0,fullLoss:.62,fairDecimal:2.6316}}}},asianHandicap:{ht:{'-0.25':{home:{fullWin:.43,halfWin:.1,push:0,halfLoss:.2,fullLoss:.27,fairDecimal:2},away:{fullWin:.27,halfWin:.2,push:0,halfLoss:.1,fullLoss:.43,fairDecimal:2.5}},'0.25':{home:{fullWin:.43,halfWin:.2,push:0,halfLoss:.1,fullLoss:.27,fairDecimal:1.7},away:{fullWin:.27,halfWin:.1,push:0,halfLoss:.2,fullLoss:.43,fairDecimal:2.8}}},ft:{'-0.75':{home:{fullWin:.45,halfWin:.15,push:0,halfLoss:.2,fullLoss:.2,fairDecimal:1.6667},away:{fullWin:.2,halfWin:.2,push:0,halfLoss:.15,fullLoss:.45,fairDecimal:2.5}},'0.75':{home:{fullWin:.7,halfWin:.1,push:0,halfLoss:.1,fullLoss:.1,fairDecimal:1.3},away:{fullWin:.1,halfWin:.1,push:0,halfLoss:.1,fullLoss:.7,fairDecimal:5}}}}}};}
 const verifiedOdds=(values:any)=>({values,metadata:{bookmaker:'Pinnacle',capturedAt:'2026-08-26T08:50:00Z',verified:true,maxAgeMinutes:30,source:'USER_SCREENSHOT'}});
 
 test('image input exposes provenance and can BET only with verified fresh odds',()=>{
@@ -57,10 +57,23 @@ test('strict-prior failure blocks every decision',()=>{
 });
 
 test('quarter-line expected value uses full and half settlement states',()=>{
-  const out=buildCfiOutputV3(prediction(true),{now_ms:NOW,odds:verifiedOdds({'FT AH HOME -0.25':2})});
-  const row=out.multiMarket.asianHandicap.find((x:any)=>x.market==='FT AH HOME -0.25');
+  const out=buildCfiOutputV3(prediction(true),{now_ms:NOW,odds:verifiedOdds({'FT AH HOME -0.75':2})});
+  const row=out.multiMarket.asianHandicap.find((x:any)=>x.market==='FT AH HOME -0.75');
   assert.equal(row.expectedValue,.225);
   assert.equal(row.edge,.2);
   assert.equal(row.edgeType,'FAIR_PRICE_RELATIVE');
   assert.deepEqual(row.settlement,{fullWin:.45,halfWin:.15,push:0,halfLoss:.2,fullLoss:.2,fairDecimal:1.6667});
+});
+
+test('practical summary always exposes 1X2, total-goal O/U and AH center lines',()=>{
+  const out=buildCfiOutputV3(prediction(),{now_ms:NOW});
+  assert.equal(out.marketSummary.oneXTwo.ft.modelPick,'FT 1');
+  assert.equal(out.marketSummary.overUnder.ft.projectedGoals.total,2.8);
+  assert.equal(out.marketSummary.overUnder.ft.mainLine,2.5);
+  assert.equal(out.marketSummary.overUnder.ft.modelLean,'FT O2.5');
+  assert.equal(out.marketSummary.asianHandicap.ft.homeModelLine,-.75);
+  assert.equal(out.marketSummary.asianHandicap.ft.modelLean,'FT AH HOME -0.75');
+  assert.match(out.renderedPracticalReport,/FT 1X2:/);
+  assert.match(out.renderedPracticalReport,/FT TOTAL:/);
+  assert.match(out.renderedPracticalReport,/FT AH:/);
 });
