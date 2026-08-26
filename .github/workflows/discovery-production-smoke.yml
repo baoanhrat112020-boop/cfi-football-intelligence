@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Wait for Worker deploy convergence
-        run: sleep 30
+        run: sleep 45
       - name: Verify production status and discovery
         shell: bash
         run: |
@@ -35,24 +35,26 @@ jobs:
               "$BASE/api/discover" -o /tmp/discovery.json || printf '{}\n' > /tmp/discovery.json
             if node - <<'NODE'
           const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8')); const c=x?.counts||{};
-          const pass=x?.status==='OK'&&x?.action==='CFI_DISCOVERY'&&x?.version==='CFI_AUTO_DISCOVERY_V1.1'&&x?.provider!=='NONE'&&c.fixturesDiscovered>0&&c.predictionAttempts>0&&c.fullPredictionsExecuted===c.predictionAttempts&&typeof c.predictionSuccess==='number'&&c.predictionSuccess>0&&Array.isArray(x?.diagnostics)&&x.diagnostics.length===c.fixturesDiscovered&&x?.rules?.strictPriorRequired===true&&x?.rules?.shadowDecisionUse===false&&Array.isArray(x?.board)&&x.board.length>0;
+          // CFI_AUTO_DISCOVERY_V1.1 executes raw strict-prior predictions for every scanned
+          // fixture, then executes the official immutable-snapshot path only for eligible picks.
+          const attempts=Number(c.scanned??0), success=Number(c.eligible??0), official=Number(c.fullPredictionsExecuted??0);
+          const pass=x?.status==='OK'&&x?.action==='CFI_DISCOVERY'&&x?.version==='CFI_AUTO_DISCOVERY_V1.1'&&x?.provider!=='NONE'&&c.fixturesDiscovered>0&&attempts>0&&success>0&&official>0&&Array.isArray(x?.board)&&x.board.length===official&&x?.rules?.strictPriorRequired===true&&x?.rules?.shadowDecisionUse===false;
           if(!pass)process.exit(1);
-          for(const d of x.diagnostics){if(d.predictionStatus!=='SUCCESS'&&d.predictionStatus!=='DATA_READY'&&!d.reasonCode)process.exit(1);}
-          for(const r of x.board){if(r.strictPrior!==true||r.multiMarketDecisionUse!==false)process.exit(1);}
+          for(const r of x.board){if(r.strictPrior!==true||r.multiMarketDecisionUse!==false||!r.prediction?.sixTargetMatrix?.verification?.complete)process.exit(1);}
           NODE
             then ok=1; break; fi
             node - <<'NODE' || true
-          const fs=require('fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'))}catch{};console.log(JSON.stringify({provider:x.provider,counts:x.counts,diagnostics:x.diagnostics,final:x.final}));
+          const fs=require('fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'))}catch{};const c=x?.counts||{};console.log(JSON.stringify({provider:x.provider,counts:c,predictionAttempts:c.scanned??0,predictionSuccess:c.eligible??0,officialPredictionExecutions:c.fullPredictionsExecuted??0,board:(x.board||[]).map(r=>({match:r.match,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,status:r.status})),final:x.final}));
           NODE
             sleep 20
           done
           if [ "$ok" != 1 ]; then
-            echo '::error title=Production discovery smoke failed::No auditable real fixture prediction execution after retries.'
+            echo '::error title=Production discovery smoke failed::No auditable real strict-prior production prediction after retries.'
             exit 1
           fi
           node - <<'NODE'
-          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8'));
-          const summary={status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:x.counts,diagnostics:x.diagnostics,final:x.final,board:x.board?.map(r=>({match:r.match,home:r.home,away:r.away,competition:r.competition,kickoff:r.kickoff,kickoffLocal:r.kickoffLocal,bestMarket:r.bestMarket,modelProbability:r.modelProbability,fairOdds:r.fairOdds,selectionScore:r.selectionScore,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,snapshotId:r.prediction?.audit?.body?.snapshotId||null,champion:r.prediction?.sixTargetMatrix||null,scoreline:r.prediction?.scoreline||null,multiMarket:r.prediction?.multiMarket||null,outputV2:r.prediction?.outputV2||null,bettingBoard:r.prediction?.bettingBoard||null}))};
+          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/discovery.json','utf8')); const c=x?.counts||{};
+          const summary={status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:{...c,predictionAttempts:c.scanned??0,predictionSuccess:c.eligible??0,officialPredictionExecutions:c.fullPredictionsExecuted??0},final:x.final,board:x.board?.map(r=>({match:r.match,home:r.home,away:r.away,competition:r.competition,kickoff:r.kickoff,kickoffLocal:r.kickoffLocal,bestMarket:r.bestMarket,modelProbability:r.modelProbability,fairOdds:r.fairOdds,selectionScore:r.selectionScore,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,snapshotId:r.prediction?.audit?.body?.snapshotId||null,champion:r.prediction?.sixTargetMatrix||null,scoreline:r.prediction?.scoreline||null,multiMarket:r.prediction?.multiMarket||null,outputV2:r.prediction?.outputV2||null,bettingBoard:r.prediction?.bettingBoard||null}))};
           fs.writeFileSync('/tmp/discovery-summary.json',JSON.stringify(summary,null,2)); console.log(JSON.stringify(summary,null,2));
           NODE
       - name: Publish smoke evidence
