@@ -10,10 +10,16 @@ async function betLedger(request:Request,env:Env){if(!env.CFI_DB_BASE_URL)return
 async function databaseFeed(input:any,env:Env){if(!env.CFI_DB_BASE_URL||!env.CFI_DB_KEY)return null;const url=env.CFI_DB_BASE_URL.replace(/\/cfi-db\/?$/,'/cfi-discovery-feed');const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json','x-cfi-key':env.CFI_DB_KEY},body:JSON.stringify({target_date:input.target_date,timezone:input.timezone,start_time:input.start_time,end_time:input.end_time,limit:input.scan_limit??40})});const b:any=await readJson(r);if(!r.ok||b?.status!=='OK'||!Array.isArray(b?.rows))return null;return b;}
 async function feed(input:any,env:Env){
   const requestedRows=Math.max(1,Math.min(100,Number(input.max_matches??5)||5));
-  const window={targetDate:String(input.target_date),timeZone:String(input.timezone??'Asia/Ho_Chi_Minh'),startTime:input.start_time??null,endTime:input.end_time??null,minimumRows:requestedRows};
+  const scanLimit=Math.max(1,Math.min(200,Number(input.scan_limit??80)||80));
+  // Raw schedule coverage is not the same as prediction-ready coverage. The old
+  // native path stopped provider discovery as soon as five schedule rows existed,
+  // even when all five later failed exact-team BigDB retrieval. Hunt a bounded
+  // deeper raw pool so downstream strict-prior prediction can skip uncovered
+  // fixtures and still find evidence-compatible matches without fixture injection.
+  const providerScanRows=Math.min(scanLimit,Math.max(20,requestedRows*4));
+  const window={targetDate:String(input.target_date),timeZone:String(input.timezone??'Asia/Ho_Chi_Minh'),startTime:input.start_time??null,endTime:input.end_time??null,minimumRows:providerScanRows};
   const ai=normalizeAiFixtureCandidates(input?.fixture_candidates??[],window);
   const database=await databaseFeed(input,env).catch(()=>null);
-  const scanLimit=Math.max(1,Math.min(200,Number(input.scan_limit??80)||80));
   const verifiedBeforeProviders=mergeDiscoveryRows<FeedRow>([ai.rows as FeedRow[],(database?.rows??[]) as FeedRow[]],scanLimit);
   const explicitProviderDiagnostics=input?.internal_provider_diagnostics===true;
   const providerFallbackTriggered=verifiedBeforeProviders.length<requestedRows;
@@ -23,7 +29,7 @@ async function feed(input:any,env:Env){
     :{provider:'DISABLED',providers:[],rows:[],sourceUrl:null,attempts:[],search:null};
   const rows=mergeDiscoveryRows<FeedRow>([verifiedBeforeProviders,(publicProviders?.rows??[]) as FeedRow[]],scanLimit);
   const providers=[...new Set(rows.map(row=>row.provider))];
-  return{status:'OK',source:providers.length>1?'AI_PLUS_BIGDB':providers[0]??String(publicProviders?.provider??'NONE'),providers,rows,sourceUrl:publicProviders?.sourceUrl??null,attempts:publicProviders?.attempts??[],search:{mode:'GPT_SEARCH_FIRST',requestedRows,aiCandidatesReceived:Array.isArray(input?.fixture_candidates)?input.fixture_candidates.length:0,aiCandidatesAccepted:ai.rows.length,aiCandidatesRejected:ai.rejected,internalProviderDiagnostics:explicitProviderDiagnostics,providerFallbackTriggered,providerFallbackReason:providerFallbackTriggered?'VERIFIED_POOL_SHORTFALL':null,verifiedRowsBeforeProviderFallback:verifiedBeforeProviders.length,internalProviderSearch:publicProviders?.search??null},databaseRows:Array.isArray(database?.rows)?database.rows.length:0,aiRows:ai.rows.length,publicRows:Array.isArray(publicProviders?.rows)?publicProviders.rows.length:0};
+  return{status:'OK',source:providers.length>1?'AI_PLUS_BIGDB':providers[0]??String(publicProviders?.provider??'NONE'),providers,rows,sourceUrl:publicProviders?.sourceUrl??null,attempts:publicProviders?.attempts??[],search:{mode:'GPT_SEARCH_FIRST',requestedRows,providerScanRows,aiCandidatesReceived:Array.isArray(input?.fixture_candidates)?input.fixture_candidates.length:0,aiCandidatesAccepted:ai.rows.length,aiCandidatesRejected:ai.rejected,internalProviderDiagnostics:explicitProviderDiagnostics,providerFallbackTriggered,providerFallbackReason:providerFallbackTriggered?'VERIFIED_POOL_SHORTFALL':null,verifiedRowsBeforeProviderFallback:verifiedBeforeProviders.length,internalProviderSearch:publicProviders?.search??null},databaseRows:Array.isArray(database?.rows)?database.rows.length:0,aiRows:ai.rows.length,publicRows:Array.isArray(publicProviders?.rows)?publicProviders.rows.length:0};
 }
 function fixtureOdds(row:FeedRow,input:any){const override=input?.odds_by_fixture?.[row.providerId]??input?.odds_by_fixture?.[`${row.home} vs ${row.away}`];if(override?.values)return override;if(row.odds&&Object.keys(row.odds).length)return{values:row.odds,metadata:row.oddsMetadata??{}};return{values:{},metadata:{verified:false,source:'NONE'}};}
 async function predict(row:FeedRow,input:any,env:Env,ctx:ExecutionContext){const req=new Request('https://cfi.local/api/predict',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({home:row.home,away:row.away,target_date:row.targetDate,language:'vi',input_mode:'DISCOVER_TOP_MATCHES',fixture_identity:{verified:true,homeTeamId:row.canonicalHomeTeamId,awayTeamId:row.canonicalAwayTeamId},odds:fixtureOdds(row,input)})});const res=await base.fetch(req,env,ctx),body:any=await readJson(res);return{res,body};}
