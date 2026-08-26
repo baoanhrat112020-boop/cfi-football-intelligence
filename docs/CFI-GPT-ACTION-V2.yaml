@@ -1,0 +1,159 @@
+openapi: 3.1.0
+info:
+  title: CFI Football Intelligence Production API
+  version: 5.2.5-gpt-v2
+  description: Strict-prior CFI production API. Discovery accepts verified GPT web-search fixture candidates and runs the existing CFI engine; LIVE keeps prematch evidence isolated.
+servers:
+  - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
+paths:
+  /api/status:
+    get:
+      operationId: cfiGetStatus
+      summary: Get CFI runtime and Persistent DB health
+      responses:
+        '200': {description: Runtime status, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+  /api/discover:
+    post:
+      operationId: cfiDiscoverMatches
+      summary: Discover, validate, predict and rank current CFI opportunities
+      description: GPT search-first production discovery. Pass same-day verified fixture candidates with HTTPS provenance. CFI canonicalizes/retrieves BigDB strict-prior evidence, executes the existing six-target engine, and returns the Daily Opportunity Board. Do not fabricate candidates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_date]
+              properties:
+                target_date: {type: string, format: date}
+                timezone: {type: string, default: Asia/Ho_Chi_Minh}
+                start_time: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'}
+                end_time: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'}
+                max_matches: {type: integer, minimum: 1, maximum: 10, default: 5}
+                scan_limit: {type: integer, minimum: 1, maximum: 200, default: 80}
+                internal_provider_diagnostics: {type: boolean, default: false}
+                fixture_candidates:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [providerId, home, away, kickoffIso, sourceUrls, discoveredAt]
+                    properties:
+                      provider: {type: string, default: GPT_WEB_SEARCH}
+                      providerId: {type: string, minLength: 1}
+                      home: {type: string, minLength: 1}
+                      away: {type: string, minLength: 1}
+                      competition: {type: [string, 'null']}
+                      country: {type: [string, 'null']}
+                      kickoffIso: {type: string, format: date-time}
+                      targetDate: {type: string, format: date}
+                      status: {type: string, default: scheduled}
+                      sourceUrls:
+                        type: array
+                        minItems: 1
+                        items: {type: string, format: uri}
+                      discoveredAt: {type: string, format: date-time}
+                    additionalProperties: false
+                odds_by_fixture:
+                  type: object
+                  additionalProperties: true
+              additionalProperties: false
+      responses:
+        '200': {description: Discovery result and board, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+        '400': {description: Invalid request, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+  /api/predict:
+    post:
+      operationId: cfiPredictMatch
+      summary: Run complete CFI strict-prior prematch prediction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [home, away]
+              properties:
+                home: {type: string, minLength: 1}
+                away: {type: string, minLength: 1}
+                target_date: {type: string, format: date}
+                language: {type: string, enum: [vi, en, zh, th, id], default: vi}
+              additionalProperties: false
+      responses:
+        '200': {description: CFI prediction, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+        '422': {description: Insufficient strict-prior evidence, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+        '500': {description: Runtime contract failure, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+  /api/predict-live:
+    post:
+      operationId: cfiPredictLive
+      summary: Run CFI LIVE prediction with frozen strict-prior prematch evidence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [home, away]
+              properties:
+                home: {type: string, minLength: 1}
+                away: {type: string, minLength: 1}
+                target_date: {type: string, format: date}
+                language: {type: string, enum: [vi, en, zh, th, id], default: vi}
+                matchStatus: {type: string}
+                fixtureStatus: {type: string}
+                status: {type: string}
+                live:
+                  type: object
+                  additionalProperties: true
+              additionalProperties: true
+      responses:
+        '200': {description: LIVE or prematch-routed prediction, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+        '400': {description: Invalid live state or strict-prior target date, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+        '409': {description: Match state not predictable, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+        '422': {description: Insufficient exact-team or score evidence, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+  /api/prediction-history:
+    get:
+      operationId: cfiGetPredictionHistory
+      summary: Get immutable prediction history
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: target_date, in: query, schema: {type: string, format: date}}
+        - {name: home, in: query, schema: {type: string}}
+        - {name: away, in: query, schema: {type: string}}
+        - {name: settlement_status, in: query, schema: {type: string, enum: [PENDING, SETTLED]}}
+        - {name: selected_only, in: query, schema: {type: boolean, default: true}}
+      responses:
+        '200': {description: Prediction history, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+  /api/results:
+    get:
+      operationId: cfiGetResults
+      summary: Get prediction versus actual settlement results
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: target_date, in: query, schema: {type: string, format: date}}
+        - {name: home, in: query, schema: {type: string}}
+        - {name: away, in: query, schema: {type: string}}
+        - {name: settlement_status, in: query, schema: {type: string, enum: [PENDING, SETTLED]}}
+        - {name: selected_only, in: query, schema: {type: boolean, default: true}}
+      responses:
+        '200': {description: Settlement results, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+  /api/collect-results:
+    post:
+      operationId: cfiCollectResults
+      summary: Collect actual results and settle immutable predictions
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                snapshot_id: {type: string, format: uuid}
+                target_date: {type: string, format: date}
+                home: {type: string}
+                away: {type: string}
+                settlement_status: {type: string, enum: [PENDING, SETTLED]}
+                selected_only: {type: boolean, default: true}
+                limit: {type: integer, minimum: 1, maximum: 100, default: 20}
+              additionalProperties: false
+      responses:
+        '200': {description: Collector summary, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
