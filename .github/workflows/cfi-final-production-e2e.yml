@@ -38,11 +38,11 @@ jobs:
             scan_limit:40,
             internal_provider_diagnostics:false,
             fixture_candidates:[
-              {providerId:'gpt-web-qizilqum-nasaf-20260826',home:'Qizilqum Zarafshon',away:'Nasaf Qarshi',competition:'Uzbekistan Super League',country:'Uzbekistan',kickoffIso:'2026-08-26T15:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.sofascore.com/football/team/pfk-qizilqum/40265'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-nomme-rummu-20260826',home:'Nomme Kalju III',away:'Rummu Dunamo',competition:'Estonia II Liiga',country:'Estonia',kickoffIso:'2026-08-26T16:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.sofascore.com/football/match/nomme-kalju-iii-rummu-dunamo/uNEshqFb'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-wolfsburg-inter-w-20260826',home:'VfL Wolfsburg Women',away:'Inter Milan Women',competition:"UEFA Women's Champions League",country:'Europe',kickoffIso:'2026-08-26T16:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.uefa.com/womenschampionsleague/fixtures-results/'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-sparta-servette-w-20260826',home:'Sparta Prague Women',away:'Servette Genf Women',competition:"UEFA Women's Champions League",country:'Europe',kickoffIso:'2026-08-26T16:30:00Z',status:'SCHEDULED',sourceUrls:['https://www.uefa.com/womenschampionsleague/fixtures-results/'],discoveredAt:capturedAt},
-              {providerId:'gpt-web-rapid-hearts-20260826',home:'SK Rapid Wien',away:'Hearts',competition:'UEFA Conference League Qualifying',country:'Europe',kickoffIso:'2026-08-26T16:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.sofascore.com/football/match/heart-of-midlothian-sk-rapid-wien/fQsdX'],discoveredAt:capturedAt}
+              {providerId:'gpt-web-bradford-burnley-20260826',home:'Bradford City',away:'Burnley',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-newcastle-west-brom-20260826',home:'Newcastle United',away:'West Bromwich Albion',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-tottenham-charlton-20260826',home:'Tottenham Hotspur',away:'Charlton Athletic',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T18:45:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-preston-everton-20260826',home:'Preston North End',away:'Everton',competition:'Carabao Cup',country:'England',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt},
+              {providerId:'gpt-web-real-madrid-sociedad-20260826',home:'Real Madrid',away:'Real Sociedad',competition:'La Liga',country:'Spain',kickoffIso:'2026-08-26T19:00:00Z',status:'SCHEDULED',sourceUrls:['https://www.theguardian.com/football/fixtures'],discoveredAt:capturedAt}
             ]
           };
           fs.writeFileSync('/tmp/final-request.json',JSON.stringify(payload));
@@ -72,7 +72,7 @@ jobs:
           if(x.search?.mode!=='GPT_SEARCH_FIRST')fail('GPT search-first telemetry missing');
           if(x.search?.aiCandidatesReceived!==5||x.search?.aiCandidatesAccepted!==5||c.aiDiscoveredFixtures<5)fail('five real GPT candidates did not enter production');
           if(x.search?.internalProviderDiagnostics!==false||(x.providerAttempts||[]).length!==0)fail('default path called internal provider crawler');
-          if(c.predictionAttempts<5||c.fullPredictionsExecuted<5)fail('five production prediction attempts were not executed');
+          if(c.predictionSuccess<5||c.fullPredictionsExecuted<5)fail('five production predictions did not complete successfully');
           if(!Array.isArray(x.board))fail('production board missing');
           if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false||x.rules?.gptSearchFirstRequired!==true||x.rules?.internalProviderCrawlerDefault!==false)fail('V1.4 safety contract changed');
           for(const row of x.board){
