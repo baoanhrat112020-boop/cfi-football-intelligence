@@ -26,7 +26,8 @@ async function databaseFeed(input:any,env:Env){
 }
 
 async function feed(input:any,env:Env){
-  const window={targetDate:String(input.target_date),timeZone:String(input.timezone??'Asia/Ho_Chi_Minh'),startTime:input.start_time??null,endTime:input.end_time??null};
+  const requestedRows=Math.max(1,Math.min(100,Number(input.max_matches??5)||5));
+  const window={targetDate:String(input.target_date),timeZone:String(input.timezone??'Asia/Ho_Chi_Minh'),startTime:input.start_time??null,endTime:input.end_time??null,minimumRows:requestedRows};
   const [database,publicProviders]=await Promise.all([
     databaseFeed(input,env).catch(()=>null),
     input?.web_discovery===false?Promise.resolve({provider:'DISABLED',providers:[],rows:[],sourceUrl:null,attempts:[]}):discoverFixtures(window).catch(error=>({provider:'ERROR',providers:[],rows:[],sourceUrl:null,attempts:[{provider:'MULTI_SOURCE',ok:false,error:String(error)}]})),
@@ -35,7 +36,7 @@ async function feed(input:any,env:Env){
   const rows=mergeDiscoveryRows<FeedRow>([(database?.rows??[]) as FeedRow[],(publicProviders?.rows??[]) as FeedRow[]],scanLimit);
   if(!rows.length)return null;
   const providers=[...new Set(rows.map(row=>row.provider))];
-  return{status:'OK',source:providers.length>1?'BIGDB_PLUS_MULTI_SOURCE':providers[0]??'NONE',providers,rows,sourceUrl:publicProviders?.sourceUrl??null,attempts:publicProviders?.attempts??[],databaseRows:Array.isArray(database?.rows)?database.rows.length:0,publicRows:Array.isArray(publicProviders?.rows)?publicProviders.rows.length:0};
+  return{status:'OK',source:providers.length>1?'BIGDB_PLUS_MULTI_SOURCE':providers[0]??'NONE',providers,rows,sourceUrl:publicProviders?.sourceUrl??null,attempts:publicProviders?.attempts??[],search:publicProviders?.search??{requestedRows,foundRows:0,targetSatisfied:false,exhausted:input?.web_discovery===false},databaseRows:Array.isArray(database?.rows)?database.rows.length:0,publicRows:Array.isArray(publicProviders?.rows)?publicProviders.rows.length:0};
 }
 
 function fixtureOdds(row:FeedRow,input:any){
@@ -120,7 +121,8 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
   const insufficient=diagnostics.filter(d=>d.reasonCode==='INSUFFICIENT_DATA').length;
   const blocked=diagnostics.filter(d=>d.reasonCode&&d.reasonCode!=='INSUFFICIENT_DATA').length;
   const canonicalized=rows.filter(row=>canonicalIdentity(row).verified).length;
-  return Response.json({status:'OK',action:'CFI_DISCOVERY',version:CFI_DISCOVERY_VERSION,targetDate,timeZone,provider:String(f.source??'CFI_VERIFIED_FIXTURE_FEED'),sourceUrl:f.sourceUrl??null,counts:{fixturesDiscovered:f.rows.length,databaseFixtures:Number(f.databaseRows??0),publicProviderFixtures:Number(f.publicRows??0),canonicalized,distinctFixtures:rows.length,duplicatesRemoved:Math.max(0,Number(f.databaseRows??0)+Number(f.publicRows??0)-rows.length),scanned:rows.length,predictionAttempts,predictionSuccess,fullPredictionsExecuted:predictionAttempts,eligible:evaluated.length,insufficient,blocked,recommended:actionable.length,actionable:actionable.length,leans:board.filter(r=>r.status==='LEAN').length,watch:board.filter(r=>r.status==='WATCH').length,shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length},diagnostics,providerAttempts:f.attempts??[],rules:{strictPriorRequired:true,noLeagueCohortExclusion:true,includeWomenYouthReserveAmateur:true,noForcedBet:true,noForcedFive:true,verifiedFreshBookmakerOddsRequiredForBet:true,bookmakerOddsRequiredForValueClaim:true,shadowDecisionUse:false},board,topPicks:actionable.slice(0,3),final:actionable.length?'PRACTICAL_BETS_READY':board.length?'WATCHLIST_READY':'NO_BET',provenance:{fixtureSource:String(f.source??'VERIFIED_FIXTURES_THEN_FORWARD_CAPTURES'),discoveryStrategy:'BIGDB_FEED_PLUS_PARALLEL_PUBLIC_PROVIDERS',noDuplicatePredictionEngine:true}});
+  const search={...f.search,combinedDistinctFixtures:rows.length,combinedTargetSatisfied:rows.length>=maxMatches};
+  return Response.json({status:'OK',action:'CFI_DISCOVERY',version:CFI_DISCOVERY_VERSION,targetDate,timeZone,provider:String(f.source??'CFI_VERIFIED_FIXTURE_FEED'),sourceUrl:f.sourceUrl??null,counts:{fixturesDiscovered:f.rows.length,databaseFixtures:Number(f.databaseRows??0),publicProviderFixtures:Number(f.publicRows??0),canonicalized,distinctFixtures:rows.length,duplicatesRemoved:Math.max(0,Number(f.databaseRows??0)+Number(f.publicRows??0)-rows.length),scanned:rows.length,predictionAttempts,predictionSuccess,fullPredictionsExecuted:predictionAttempts,eligible:evaluated.length,insufficient,blocked,recommended:actionable.length,actionable:actionable.length,leans:board.filter(r=>r.status==='LEAN').length,watch:board.filter(r=>r.status==='WATCH').length,shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length},search,diagnostics,providerAttempts:f.attempts??[],rules:{strictPriorRequired:true,sameDayDiscoveryOnly:true,continueUntilRequestedPoolOrSourcesExhausted:true,noLeagueCohortExclusion:true,includeWomenYouthReserveAmateur:true,noForcedBet:true,noForcedFive:true,verifiedFreshBookmakerOddsRequiredForBet:true,bookmakerOddsRequiredForValueClaim:true,shadowDecisionUse:false},board,topPicks:actionable.slice(0,3),final:actionable.length?'PRACTICAL_BETS_READY':board.length?'WATCHLIST_READY':'NO_BET',provenance:{fixtureSource:String(f.source??'VERIFIED_FIXTURES_THEN_FORWARD_CAPTURES'),discoveryStrategy:'BIGDB_PLUS_GLOBAL_SCHEDULE_PROVIDERS_UNTIL_TARGET_OR_EXHAUSTED',noDuplicatePredictionEngine:true}});
 }
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){

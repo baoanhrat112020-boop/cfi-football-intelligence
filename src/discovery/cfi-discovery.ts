@@ -1,9 +1,17 @@
 import { evaluateEvidenceSufficiency } from '../prediction/evidence-sufficiency.ts';
 
-export const CFI_DISCOVERY_VERSION='CFI_AUTO_DISCOVERY_V1.2';
+export const CFI_DISCOVERY_VERSION='CFI_AUTO_DISCOVERY_V1.3';
 
 export type DiscoveredFixture={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoff:number;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string};
-export type DiscoveryWindow={targetDate:string;timeZone:string;startTime?:string|null;endTime?:string|null;nowMs?:number};
+export type DiscoveryWindow={targetDate:string;timeZone:string;startTime?:string|null;endTime?:string|null;nowMs?:number;minimumRows?:number};
+
+const ESPN_LEAGUES=[
+ 'uefa.champions','uefa.europa','uefa.europa.conf','eng.1','eng.2','eng.3','eng.4','eng.5',
+ 'esp.1','esp.2','ger.1','ger.2','ita.1','ita.2','fra.1','fra.2','ned.1','por.1',
+ 'bel.1','sco.1','tur.1','usa.1','mex.1','bra.1','arg.1','col.1','aus.1','jpn.1',
+ 'kor.1','eng.w.1','usa.nwsl','uefa.wchampions',
+] as const;
+const ESPN_BATCH_SIZE=6;
 
 const TERMINAL=new Set(['finished','inprogress','canceled','cancelled','postponed','abandoned','match finished','ft','in']);
 const clean=(v:any)=>String(v??'').trim();
@@ -73,12 +81,20 @@ export async function discoverFixtures(window:DiscoveryWindow,fetchFn:typeof fet
   const sofaUrls=[`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${date}`];
   for(const url of sofaUrls)jobs.push(tryProvider('SOFASCORE',url,parseSofascoreScheduled));
   const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`;jobs.push(tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents));
-  const espnDate=date.replaceAll('-',''),espnUrl=`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=1000`;jobs.push(tryProvider('ESPN',espnUrl,parseEspnScoreboard));
  }
  await Promise.all(jobs);
+ const minimumRows=Math.max(1,Math.min(100,Math.floor(Number(window.minimumRows??5))||5));
+ const espnDate=window.targetDate.replaceAll('-','');
+ for(let offset=0;offset<ESPN_LEAGUES.length;offset+=ESPN_BATCH_SIZE){
+  if(dedupeFixtures(sources.flatMap(source=>source.rows)).length>=minimumRows)break;
+  await Promise.all(ESPN_LEAGUES.slice(offset,offset+ESPN_BATCH_SIZE).map(league=>
+   tryProvider('ESPN',`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${espnDate}&limit=1000`,parseEspnScoreboard)
+  ));
+ }
  const rows=dedupeFixtures(sources.flatMap(s=>s.rows)).sort((a,b)=>a.kickoff-b.kickoff);
  const providers=[...new Set(sources.map(s=>s.provider))];
- return{provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',providers,rows,sourceUrl:sources.map(s=>s.sourceUrl).join(',' )||null,attempts};
+ const espnAttempts=attempts.filter(attempt=>attempt.provider==='ESPN').length;
+ return{provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',providers,rows,sourceUrl:sources.map(s=>s.sourceUrl).join(',' )||null,attempts,search:{requestedRows:minimumRows,foundRows:rows.length,targetSatisfied:rows.length>=minimumRows,espnLeaguesAttempted:espnAttempts,espnLeagueCatalogSize:ESPN_LEAGUES.length,exhausted:rows.length<minimumRows&&espnAttempts>=ESPN_LEAGUES.length}};
 }
 
 const confidencePoints=(v:any)=>{const x=clean(v).toUpperCase();return x==='HIGH'?15:x==='MEDIUM'||x==='MED_HIGH'?10:x==='LOW'?3:6;};

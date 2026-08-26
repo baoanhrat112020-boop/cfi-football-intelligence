@@ -41,7 +41,9 @@ jobs:
           node - <<'NODE'
           const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/final-production.json','utf8')); const c=x?.counts||{};
           const fail=(m)=>{throw new Error(m)};
-          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!=='CFI_AUTO_DISCOVERY_V1.2')fail('final discovery contract failed');
+          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!=='CFI_AUTO_DISCOVERY_V1.3')fail('final discovery contract failed');
+          if(x.rules?.continueUntilRequestedPoolOrSourcesExhausted!==true)fail('bounded continuation rule missing');
+          if(x.search?.combinedTargetSatisfied!==true&&x.search?.exhausted!==true)fail('discovery stopped early without source exhaustion');
           if(!c.predictionAttempts||!c.fullPredictionsExecuted||!Array.isArray(x.board)||x.board.length!==c.fullPredictionsExecuted)fail('production execution missing');
           if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false)fail('strict-prior gate changed');
           const board=x.board.map(r=>{const p=r.prediction,v=p?.outputV3,s=p?.sixTargetMatrix,summary=v?.marketSummary; if(r.strictPrior!==true)fail(`${r.match}: strict-prior`); if(!p?.audit?.body?.snapshotId)fail(`${r.match}: snapshot`); if(s?.verification?.complete!==true||s?.primaryTargets?.length!==6)fail(`${r.match}: Champion 6`); if(!summary?.oneXTwo||!summary?.overUnder||!summary?.asianHandicap)fail(`${r.match}: markets`); if(!v?.explosionScenario||!v?.evidenceSufficiency||!v?.betLedger)fail(`${r.match}: output blocks`); if(v.betLedger.autoPlaced===true||v.betLedger.explicitConfirmationRequired!==true)fail(`${r.match}: ledger safety`); const cards=[...Object.values(summary.oneXTwo.ft||{}),...Object.values(summary.overUnder.ft||{})]; return{match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,snapshotId:p.audit.body.snapshotId,championTargets:s.primaryTargets,marketOdds:cards.filter(a=>Number.isFinite(Number(a?.marketOdds))).map(a=>({market:a.market,odds:a.marketOdds})),explosion:v.explosionScenario,evidence:v.evidenceSufficiency,ledger:v.betLedger};});
