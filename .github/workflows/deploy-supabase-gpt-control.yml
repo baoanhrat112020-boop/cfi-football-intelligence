@@ -62,20 +62,24 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-
       - name: Deploy source-controlled CFI Edge Functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          supabase functions deploy cfi-gpt-control --project-ref kovmddkkzttquupdgmel --no-verify-jwt
           supabase functions deploy cfi-bigdb-retrieval --project-ref kovmddkkzttquupdgmel --no-verify-jwt
+          supabase functions deploy cfi-gpt-control --project-ref kovmddkkzttquupdgmel --no-verify-jwt
 
+  native-production-gate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
       - name: Run real native production prediction gate
         shell: bash
         run: |
           set -euo pipefail
-          sleep 20
+          sleep 10
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
           printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/bigdb-native-request.json
@@ -105,18 +109,7 @@ jobs:
             sixTargetComplete:row?.prediction?.sixTargetMatrix?.verification?.complete??false,
             multiMarketDecisionUse:row?.multiMarketDecisionUse??null
           }));
-          const summary={
-            gate:'CFI_BIGDB_NATIVE_PRODUCTION_GATE_V1',
-            httpCode:http,
-            targetDate:process.env.TARGET_DATE,
-            status:x?.status??null,
-            version:x?.version??null,
-            provider:x?.provider??null,
-            counts:c,
-            successfulCompleteRows:successful.length,
-            final:x?.final??null,
-            diagnostics
-          };
+          const summary={gate:'CFI_BIGDB_NATIVE_PRODUCTION_GATE_V1',httpCode:http,targetDate:process.env.TARGET_DATE,status:x?.status??null,version:x?.version??null,provider:x?.provider??null,counts:c,successfulCompleteRows:successful.length,final:x?.final??null,diagnostics};
           fs.writeFileSync('/tmp/bigdb-native-e2e.json',JSON.stringify(summary,null,2));
           console.log(JSON.stringify(summary,null,2));
           const fail=m=>{throw new Error(m)};
@@ -132,7 +125,6 @@ jobs:
             if(row?.multiMarketDecisionUse!==false)fail(`${row?.match}: shadow Multi-Market promoted`);
           }
           NODE
-
       - name: Persist production evidence
         if: always()
         env:
