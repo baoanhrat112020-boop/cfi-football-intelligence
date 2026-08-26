@@ -58,12 +58,38 @@ jobs:
           fs.writeFileSync('/tmp/discovery-summary.json',JSON.stringify(summary,null,2)); console.log(JSON.stringify(summary,null,2));
           NODE
       - name: Publish smoke evidence
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -euo pipefail
-          TITLE='[AUTO] CFI Discovery Production Smoke'; BODY=$(cat /tmp/discovery-summary.json)
-          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' | head -n1)
+          set -u
+          if [ ! -f /tmp/discovery-summary.json ]; then
+            echo '::warning::discovery-summary.json missing; production verification step owns pass/fail.'
+            exit 0
+          fi
+
+          {
+            echo '## CFI Discovery Production Smoke'
+            echo
+            echo '```json'
+            cat /tmp/discovery-summary.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          TITLE='[AUTO] CFI Discovery Production Smoke'
+          BODY=$(cat /tmp/discovery-summary.json)
           REPORT=$(printf 'Run: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
-          if [ -n "${ISSUE:-}" ]; then gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT"; else gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT"; fi
+
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+            --json number,title \
+            --jq '.[] | select(.title=="[AUTO] CFI Discovery Production Smoke") | .number' \
+            2>/dev/null | head -n1 || true)
+
+          if [ -n "${ISSUE:-}" ]; then
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT" \
+              || echo "::warning::Could not publish smoke evidence to issue #$ISSUE"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT" \
+              || echo '::warning::Could not create smoke evidence issue'
+          fi
