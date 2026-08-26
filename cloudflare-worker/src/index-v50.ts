@@ -127,7 +127,12 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
       return Response.json({status:'STRICT_PRIOR_GATE_ERROR',error:temporal.error,strictPrior:{required:true,verified:false,targetDate,failClosed:true},temporalEvidenceAudit:temporal,audit:{status:'SKIPPED',reason:'STRICT_PRIOR_NOT_VERIFIED'}},{status:500});
     }
 
-    const prediction:any=buildPrediction({home,away,targetDate,language:String(input?.language||'vi'),homePayload:{fixtures:big?.fixtures?.home??[]},awayPayload:{fixtures:big?.fixtures?.away??[]},h2hPayload:{fixtures:big?.fixtures?.h2h??[]}});
+    // Exact alias resolution happens inside BigDB. Use the resolved canonical names
+    // for team-specific feature extraction while preserving the submitted fixture
+    // names in the public target/audit contract.
+    const predictionHome=String(big?.identity?.homeCanonical||home),predictionAway=String(big?.identity?.awayCanonical||away);
+    const prediction:any=buildPrediction({home:predictionHome,away:predictionAway,targetDate,language:String(input?.language||'vi'),homePayload:{fixtures:big?.fixtures?.home??[]},awayPayload:{fixtures:big?.fixtures?.away??[]},h2hPayload:{fixtures:big?.fixtures?.h2h??[]}});
+    prediction.target={home,away,date:targetDate};
     const evidenceCounts=prediction?.evidence?.counts??prediction?.evidence??{};
     if(prediction?.status!=='DATA_READY'||Number(evidenceCounts?.htCoverage??0)<=0||Number(evidenceCounts?.ftCoverage??0)<=0){
       return Response.json({status:'INSUFFICIENT_DATA',error:'SCORE_EVIDENCE_REQUIRED',target:prediction?.target??{home,away,date:targetDate},evidence:prediction?.evidence??null,strictPrior:{required:true,verified:true,targetDate,failClosed:true},temporalEvidenceAudit:temporal,audit:{status:'SKIPPED',reason:'PREDICTION_NOT_ELIGIBLE'}},{status:422});

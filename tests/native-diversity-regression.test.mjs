@@ -34,5 +34,6 @@ test('six-target contract still exposes native A B FINAL and Top3',()=>{
 test('diversity fix remains strict about persistent BigDB retrieval',()=>{
   assert.match(worker,/source:'PERSISTENT_DB'/);
   assert.match(worker,/BIG_DB_V2_FAILED/);
-  assert.match(worker,/buildPrediction\(\{home,away,targetDate/);
+  assert.match(worker,/buildPrediction\(\{home:predictionHome,away:predictionAway,targetDate/);
+  assert.match(worker,/prediction\.target=\{home,away,date:targetDate\}/);
 });
