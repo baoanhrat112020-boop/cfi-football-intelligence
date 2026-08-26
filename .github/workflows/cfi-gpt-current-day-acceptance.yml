@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/cfi-gpt-current-day-acceptance.yml'
+      - 'cloudflare-worker/**'
+      - 'src/discovery/**'
   workflow_dispatch:
 
 permissions:
@@ -13,40 +15,39 @@ jobs:
   acceptance:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe deterministic aliases on remaining real fixture
+      - name: Native discovery production acceptance
         shell: bash
         run: |
           set -euo pipefail
           BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
           TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          DISCOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          accepted=0
-          candidates=(
-            'Rapid Wien|Hearts|rapid-wien'
-            'Rapid Vienna|Hearts|rapid-vienna'
-            'SK Rapid Wien|Hearts|sk-rapid-wien'
-            'SK Rapid Vienna|Hearts|sk-rapid-vienna'
-            'Rapid Wien|Heart of Midlothian|rapid-wien-heart-of-midlothian'
-            'Rapid Vienna|Heart of Midlothian|rapid-vienna-heart-of-midlothian'
-          )
-          for item in "${candidates[@]}"; do
-            IFS='|' read -r HOME AWAY KEY <<< "$item"
-            KICKOFF='2026-08-26T16:45:00Z'; COMP='UEFA Conference League'; COUNTRY='Europe'; SOURCE='https://www.uefa.com/uefaconferenceleague/news/02a6-20e5e911587f-cc10425958b3-1000--conference-league-qualifying-fixtures-dates-how-it-works/'
-            NOW=$(date -u +%s); KO=$(date -u -d "$KICKOFF" +%s); if [ "$NOW" -ge "$KO" ]; then echo "Skipping post-kickoff: $HOME vs $AWAY"; continue; fi
-            node - "$TARGET_DATE" "$DISCOVERED_AT" "$HOME" "$AWAY" "$KEY" "$KICKOFF" "$COMP" "$COUNTRY" "$SOURCE" <<'NODE' > /tmp/request.json
-          const [targetDate,discoveredAt,home,away,key,kickoffIso,competition,country,source]=process.argv.slice(2);
-          process.stdout.write(JSON.stringify({target_date:targetDate,timezone:'Asia/Ho_Chi_Minh',max_matches:1,scan_limit:20,internal_provider_diagnostics:false,fixture_candidates:[{provider:'GPT_WEB_SEARCH',providerId:'gpt-alias-'+key+'-20260826',home,away,competition,country,kickoffIso,targetDate,status:'scheduled',sourceUrls:[source],discoveredAt}]}));
-          NODE
-            curl -fsS --max-time 120 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
-            set +e
-            node - <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};console.log(JSON.stringify({provider:x.provider,counts:c,diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),board:(x.board||[]).map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,snapshotId:r.prediction?.audit?.body?.snapshotId||null})),final:x.final},null,2));process.exit(Number(c.predictionSuccess||0)>0?0:3);
-          NODE
-            rc=$?; set -e
-            if [ "$rc" -eq 0 ]; then accepted=1; break; fi
-          done
-          if [ "$accepted" != 1 ]; then echo '::error title=Production acceptance failed::Verified Rapid aliases exhausted without predictionSuccess > 0.'; exit 1; fi
+          printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/request.json
+          echo 'REQUEST_CONTAINS_ZERO_FIXTURE_CANDIDATES=true'
+          curl -fsS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
           node - <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};const fail=m=>{throw new Error(m)};
-          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0');if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');if(!Array.isArray(x.board)||x.board.length<1)fail('Daily Board missing');for(const r of x.board){if(r.strictPrior!==true)fail('strict-prior not verified');if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 incomplete');if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market promoted');}console.log('CFI_GPT_CURRENT_DAY_PRODUCTION_ACCEPTANCE=PASS');
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));
+          const c=x?.counts||{};
+          console.log(JSON.stringify({
+            provider:x.provider,
+            counts:c,
+            search:x.search,
+            providerAttempts:x.providerAttempts,
+            diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,failureLayer:d.failureLayer,reasonCode:d.reasonCode,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),
+            board:(x.board||[]).map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete})),
+            final:x.final
+          },null,2));
+          const fail=m=>{console.error('ACCEPTANCE_FAIL='+m);process.exit(1)};
+          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
+          if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0');
+          if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
+          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
+          if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
+          if(!Array.isArray(x.board)||x.board.length<1)fail('Daily Board missing');
+          for(const r of x.board){
+            if(r.strictPrior!==true)fail('strict-prior not verified');
+            if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 incomplete');
+            if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market promoted');
+          }
+          console.log('CFI_GPT_NATIVE_DISCOVERY_PRODUCTION_ACCEPTANCE=PASS');
           NODE
