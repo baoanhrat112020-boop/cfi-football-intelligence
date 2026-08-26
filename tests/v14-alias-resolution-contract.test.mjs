@@ -9,8 +9,9 @@ test('V1.4 reports completed predictions truthfully',()=>{
   assert.match(router,/fullPredictionsExecuted:predictionSuccess/);
   assert.doesNotMatch(router,/fullPredictionsExecuted:predictionAttempts/);
   const acceptance=read('.github/workflows/cfi-final-production-e2e.yml');
-  assert.match(acceptance,/c\.predictionSuccess<5\|\|c\.fullPredictionsExecuted<5/);
-  assert.doesNotMatch(acceptance,/c\.predictionAttempts<5\|\|c\.fullPredictionsExecuted<5/);
+  assert.match(acceptance,/if\(!\(Number\(c\.predictionSuccess\)>0\)\)fail\('predictionSuccess <= 0'\)/);
+  assert.match(acceptance,/if\(!\(Number\(c\.fullPredictionsExecuted\)>0\)\)fail\('fullPredictionsExecuted <= 0'\)/);
+  assert.doesNotMatch(acceptance,/fullPredictionsExecuted\s*[:=]\s*predictionAttempts/);
 });
 
 test('BigDB resolution is exact canonical-or-alias and preserves public fixture names',()=>{
@@ -27,9 +28,12 @@ test('BigDB resolution is exact canonical-or-alias and preserves public fixture 
   assert.match(runtime,/prediction\.target=\{home,away,date:targetDate\}/);
 });
 
-test('production cohort exercises verified aliases with deep BigDB histories',()=>{
+test('final production E2E is native discovery with zero predetermined fixture cohort',()=>{
   const workflow=read('.github/workflows/cfi-final-production-e2e.yml');
+  assert.match(workflow,/\$BASE\/api\/discover/);
+  assert.match(workflow,/Injected\/predetermined fixture input forbidden/);
+  assert.match(workflow,/aiCandidatesReceived!==0\|\|x\.search\?\.aiCandidatesAccepted!==0/);
   for(const fixture of ['Bradford City','Newcastle United','Tottenham Hotspur','Preston North End','Real Sociedad']){
-    assert.match(workflow,new RegExp(fixture));
+    assert.doesNotMatch(workflow,new RegExp(fixture));
   }
 });
