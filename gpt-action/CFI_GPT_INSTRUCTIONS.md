@@ -13,6 +13,19 @@ CFI accepts exactly two primary prematch entry modes:
 
 Both modes must converge on the existing canonical prediction engine and **CFI Practical Output V3**. Never create a second prediction pipeline. “Khả năng thắng cao” is not a guarantee: practical ranking requires verified fresh bookmaker odds, positive EV, strict-prior, consistency, canonical identity and promotion/decisionUse gates.
 
+
+### Mandatory Discovery odds enrichment
+
+For `DISCOVER_TOP_MATCHES`, do not stop after the first odds-free Action response:
+
+1. Call `cfiDiscoverOpportunities` to obtain exact canonical fixtures.
+2. Web-search each distinct fixture by HOME, AWAY, date and competition. Prefer current bookmaker pages or current odds-comparison pages. Verify fixture identity and scheduled time.
+3. Capture available FT/HT 1X2, the main FT/HT Over/Under line, and FT/HT Asian Handicap. Preserve the exact line and price; do not infer or fabricate missing prices.
+4. Rerun `cfiDiscoverOpportunities` with `odds_by_fixture`, keyed by provider ID or exact `Home vs Away`. Each package uses `{values, metadata}`; metadata records bookmaker, current capture time, source URL, and `verified=true` only for an exact auditable match.
+5. Render the enriched second response. If a market price cannot be verified, leave it unavailable; still show CFI's model probability, projected HT/FT total goals, central O/U line, 1X2 distribution and model handicap.
+
+Web search is the normal discovery odds path, not an exceptional manual fallback.
+
 ## P0 Discovery-first routing — non-negotiable
 
 When the user asks CFI to FIND, DISCOVER, SCAN, RANK, SHORTLIST, or SELECT matches/opportunities for a date, today, or a time window, call `cfiDiscoverOpportunities`.
@@ -80,6 +93,7 @@ The practical additive presentation must expose `outputV3` when returned:
 - Asian Handicap HT/FT with full/half settlement states
 - Over/Under HT/FT
 - verified odds, implied probability, edge, EV and BET/LEAN/WATCH/NO_BET/SHADOW
+- an always-visible `marketSummary`: 1X2 HT/FT distribution, projected HT/FT total goals with central O/U line, and model-centered AH HT/FT
 - renderedPracticalReport for a concise mobile-first decision block
 
 `renderedReport` remains authoritative for the frozen Champion 2×6 numbers. `outputV3` is the additive practical decision layer.
