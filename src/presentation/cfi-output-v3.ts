@@ -4,7 +4,7 @@ export type InputMode='IMAGE_ANALYSIS'|'DISCOVER_TOP_MATCHES'|'SINGLE_MATCH';
 type Decision='BET'|'LEAN'|'WATCH'|'NO_BET'|'SHADOW'|'BLOCKED';
 type Settlement={fullWin:number|null;halfWin:number|null;push:number|null;halfLoss:number|null;fullLoss:number|null;fairDecimal:number|null};
 type OddsMeta={bookmaker:string|null;capturedAt:string|null;verified:boolean;fresh:boolean;source:string|null};
-type Card={market:string;family:'CHAMPION'|'1X2'|'OVER_UNDER'|'ASIAN_HANDICAP';period:'HT'|'FT'|null;probability:number|null;fairOdds:number|null;marketOdds:number|null;impliedProbability:number|null;edge:number|null;expectedValue:number|null;confidence:string|null;decision:Decision;decisionUse:boolean;researchState:'CHAMPION'|'PROMOTED'|'SHADOW';settlement?:Settlement};
+type Card={market:string;family:'CHAMPION'|'1X2'|'OVER_UNDER'|'ASIAN_HANDICAP';period:'HT'|'FT'|null;probability:number|null;fairOdds:number|null;marketOdds:number|null;impliedProbability:number|null;edge:number|null;edgeType:'PROBABILITY_POINTS'|'FAIR_PRICE_RELATIVE';expectedValue:number|null;confidence:string|null;decision:Decision;decisionUse:boolean;researchState:'CHAMPION'|'PROMOTED'|'SHADOW';settlement?:Settlement};
 
 const finite=(v:any)=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const round=(v:number|null,d=4)=>{if(v===null)return null;const p=10**d;return Math.round(v*p)/p;};
@@ -39,20 +39,22 @@ function expectedValue(p:number|null,o:number|null,s:Settlement|null){
   return p===null?null:round(p*o-1);
 }
 
-function decide(args:{p:number|null;o:number|null;ev:number|null;confidence:string|null;decisionUse:boolean;researchState:Card['researchState'];qualityPass:boolean;oddsReady:boolean}):Decision{
+function decide(args:{p:number|null;o:number|null;edge:number|null;ev:number|null;confidence:string|null;decisionUse:boolean;researchState:Card['researchState'];qualityPass:boolean;oddsReady:boolean}):Decision{
   if(!args.qualityPass)return 'BLOCKED';
   if(!args.decisionUse||args.researchState==='SHADOW')return 'SHADOW';
   if(args.p===null)return 'NO_BET';
   if(!args.oddsReady||args.o===null)return args.p>=.55?'WATCH':'NO_BET';
-  const implied=1/args.o,edge=args.p-implied,confidenceOk=!['LOW','VERY_LOW'].includes(String(args.confidence??'').toUpperCase());
+  const edge=args.edge??-1,confidenceOk=!['LOW','VERY_LOW'].includes(String(args.confidence??'').toUpperCase());
   if(args.ev!==null&&args.ev>=.05&&edge>=.04&&confidenceOk)return 'BET';
   if(args.ev!==null&&args.ev>0&&edge>=.015)return 'LEAN';
   return 'NO_BET';
 }
 
 function makeCard(args:{market:string;family:Card['family'];period:Card['period'];probability:any;confidence?:any;odds:any;settlement?:any;decisionUse:boolean;researchState:Card['researchState'];qualityPass:boolean;oddsReady:boolean;fairOverride?:any}):Card{
-  const probability=finite(args.probability),marketOdds=finite(args.odds),settlement=settlementView(args.settlement),confidence=text(args.confidence),ev=expectedValue(probability,marketOdds,settlement);
-  return{market:args.market,family:args.family,period:args.period,probability,fairOdds:finite(args.fairOverride)??settlement?.fairDecimal??fairOdds(probability),marketOdds,impliedProbability:marketOdds&&marketOdds>0?round(1/marketOdds):null,edge:probability!==null&&marketOdds&&marketOdds>0?round(probability-1/marketOdds):null,expectedValue:ev,confidence,decision:decide({p:probability,o:marketOdds,ev,confidence,decisionUse:args.decisionUse,researchState:args.researchState,qualityPass:args.qualityPass,oddsReady:args.oddsReady}),decisionUse:args.decisionUse,researchState:args.researchState,...(settlement?{settlement}: {})};
+  const probability=finite(args.probability),marketOdds=finite(args.odds),settlement=settlementView(args.settlement),confidence=text(args.confidence),fo=finite(args.fairOverride)??settlement?.fairDecimal??fairOdds(probability),ev=expectedValue(probability,marketOdds,settlement);
+  const edge=marketOdds&&marketOdds>0?(settlement&&fo?round(marketOdds/fo-1):probability!==null?round(probability-1/marketOdds):null):null;
+  const edgeType=settlement?'FAIR_PRICE_RELATIVE' as const:'PROBABILITY_POINTS' as const;
+  return{market:args.market,family:args.family,period:args.period,probability,fairOdds:fo,marketOdds,impliedProbability:marketOdds&&marketOdds>0?round(1/marketOdds):null,edge,edgeType,expectedValue:ev,confidence,decision:decide({p:probability,o:marketOdds,edge,ev,confidence,decisionUse:args.decisionUse,researchState:args.researchState,qualityPass:args.qualityPass,oddsReady:args.oddsReady}),decisionUse:args.decisionUse,researchState:args.researchState,...(settlement?{settlement}: {})};
 }
 
 function multiMarketPolicy(body:any){
