@@ -54,6 +54,7 @@ jobs:
           }));
           NODE
             curl -fsS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
+            set +e
             node - <<'NODE'
           const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));const c=x?.counts||{};
           const concise={status:x.status,action:x.action,version:x.version,targetDate:x.targetDate,provider:x.provider,counts:c,search:x.search,diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionHttpStatus:d.predictionHttpStatus,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,failureLayer:d.failureLayer,reasonCode:d.reasonCode,canonicalIdentity:d.canonicalIdentity,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),board:(x.board||[]).map(r=>({match:r.match,kickoff:r.kickoff,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,sixTargetContract:r.prediction?.sixTargetMatrix?.contract,snapshotId:r.prediction?.audit?.body?.snapshotId||null})),final:x.final};
@@ -62,6 +63,7 @@ jobs:
           process.exit(Number(c.predictionSuccess||0)>0?0:3);
           NODE
             rc=$?
+            set -e
             if [ "$rc" -eq 0 ]; then accepted=1; break; fi
           done
           if [ "$accepted" != 1 ]; then
