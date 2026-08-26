@@ -198,3 +198,61 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+  /api/bets:
+    get:
+      operationId: cfiGetBetHistory
+      summary: Get user-confirmed bet records and verified settlements
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [RECORDED, SETTLED] } }
+      responses:
+        "200":
+          description: Append-only user bet ledger
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    post:
+      operationId: cfiRecordOrSettleBet
+      summary: Record a user-confirmed bet or settle it after verified FT results
+      description: This endpoint never places a wager. RECORD requires confirmed_by_user=true. SETTLE requires verified result scores, a result source URL, and result provenance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              required: [action]
+              properties:
+                action: { type: string, enum: [RECORD, SETTLE] }
+                confirmed_by_user: { type: boolean, const: true }
+                target_date: { type: string, format: date }
+                home: { type: string }
+                away: { type: string }
+                market_family: { type: string, enum: [CHAMPION, 1X2, OVER_UNDER, ASIAN_HANDICAP] }
+                market: { type: string }
+                period: { type: string, enum: [HT, FT] }
+                selection: { type: string, enum: [HOME, DRAW, AWAY, OVER, UNDER, "3+ HT", "7+ FT", "OTHER HT", "OTHER FT"] }
+                line: { type: number }
+                odds: { type: number, exclusiveMinimum: 1 }
+                stake: { type: number, exclusiveMinimum: 0 }
+                bookmaker: { type: string }
+                prediction_snapshot_id: { type: string, format: uuid }
+                bet_id: { type: string, format: uuid }
+                result_verified: { type: boolean, const: true }
+                ht_home: { type: integer, minimum: 0 }
+                ht_away: { type: integer, minimum: 0 }
+                ft_home: { type: integer, minimum: 0 }
+                ft_away: { type: integer, minimum: 0 }
+                result_source_url: { type: string, format: uri }
+                result_provenance: { type: object }
+      responses:
+        "200":
+          description: Recorded or settled ledger result
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401":
+          description: Unauthorized ledger request
+        "422":
+          description: Missing explicit confirmation or verified result provenance

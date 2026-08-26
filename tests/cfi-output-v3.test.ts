@@ -3,7 +3,24 @@ import assert from 'node:assert/strict';
 import { buildCfiOutputV3 } from '../src/presentation/cfi-output-v3.ts';
 
 const NOW=Date.parse('2026-08-26T09:00:00Z');
-function prediction(promoted=false){return{target:{home:'Alpha',away:'Beta',date:'2026-08-26'},strictPrior:{verified:true},consistencyGuard:{status:'PASS'},ranking:[{target:'3+ HT',probability:.60,confidence:'HIGH'},{target:'7+ FT',probability:.18,confidence:'MEDIUM'}],scoreline:{ht:{final:[{score:'1-1',probability:.2}]},ft:{final:[{score:'3-1',probability:.14}]},expectedGoals:{htHome:.8,htAway:.5,ftHome:1.8,ftAway:1.0},mostLikelyPath:'1-1 HT → 3-1 FT'},multiMarketIntegration:{status:promoted?'PROMOTED':'SHADOW_READY',decisionUse:promoted},multiMarket:{consistencyGuard:{status:'PASS'},oneXTwo:{ht:{home:.43,draw:.35,away:.22},ft:{home:.60,draw:.22,away:.18}},overUnder:{ht:{'1.5':{over:{fullWin:.48,halfWin:0,push:0,halfLoss:0,fullLoss:.52,fairDecimal:2.0833},under:{fullWin:.52,halfWin:0,push:0,halfLoss:0,fullLoss:.48,fairDecimal:1.9231}}},ft:{'2.5':{over:{fullWin:.62,halfWin:0,push:0,halfLoss:0,fullLoss:.38,fairDecimal:1.6129},under:{fullWin:.38,halfWin:0,push:0,halfLoss:0,fullLoss:.62,fairDecimal:2.6316}}}},asianHandicap:{ht:{'-0.25':{home:{fullWin:.43,halfWin:.1,push:0,halfLoss:.2,fullLoss:.27,fairDecimal:2},away:{fullWin:.27,halfWin:.2,push:0,halfLoss:.1,fullLoss:.43,fairDecimal:2.5}},'0.25':{home:{fullWin:.43,halfWin:.2,push:0,halfLoss:.1,fullLoss:.27,fairDecimal:1.7},away:{fullWin:.27,halfWin:.1,push:0,halfLoss:.2,fullLoss:.43,fairDecimal:2.8}}},ft:{'-0.75':{home:{fullWin:.45,halfWin:.15,push:0,halfLoss:.2,fullLoss:.2,fairDecimal:1.6667},away:{fullWin:.2,halfWin:.2,push:0,halfLoss:.15,fullLoss:.45,fairDecimal:2.5}},'0.75':{home:{fullWin:.7,halfWin:.1,push:0,halfLoss:.1,fullLoss:.1,fairDecimal:1.3},away:{fullWin:.1,halfWin:.1,push:0,halfLoss:.1,fullLoss:.7,fairDecimal:5}}}}}};}
+function binary(over:number,fairOver:number,under=1-over,fairUnder=1/under){return{over:{fullWin:over,halfWin:0,push:0,halfLoss:0,fullLoss:under,fairDecimal:fairOver},under:{fullWin:under,halfWin:0,push:0,halfLoss:0,fullLoss:over,fairDecimal:fairUnder}};}
+function prediction(promoted=false){
+  return{
+    target:{home:'Alpha',away:'Beta',date:'2026-08-26'},strictPrior:{verified:true},consistencyGuard:{status:'PASS'},
+    bigDbRetrieval:{exactTeam:{home:{retrieved:12},away:{retrieved:12},h2h:{retrieved:2}}},
+    ranking:[{target:'3+ HT',probability:.60,confidence:'HIGH'},{target:'7+ FT',probability:.18,confidence:'MEDIUM'}],markets:{'Other FT':{final:.16}},
+    scoreline:{ht:{final:[{score:'1-1',probability:.2}]},ft:{final:[{score:'3-1',probability:.14}]},expectedGoals:{htHome:.8,htAway:.5,ftHome:1.8,ftAway:1.0},mostLikelyPath:'1-1 HT → 3-1 FT',uncertainty:'MEDIUM'},
+    multiMarketIntegration:{status:promoted?'PROMOTED':'SHADOW_READY',decisionUse:promoted},
+    multiMarket:{
+      consistencyGuard:{status:'PASS'},oneXTwo:{ht:{home:.43,draw:.35,away:.22},ft:{home:.60,draw:.22,away:.18}},
+      overUnder:{ht:{'1.5':binary(.48,2.0833),'2.5':binary(.31,3.226)},ft:{'2.5':binary(.62,1.6129),'3.5':binary(.46,2.174),'4.5':binary(.31,3.226),'5.5':binary(.2,5)}},
+      asianHandicap:{
+        ht:{'-0.25':{home:{fullWin:.43,halfWin:.1,push:0,halfLoss:.2,fullLoss:.27,fairDecimal:2},away:{fullWin:.27,halfWin:.2,push:0,halfLoss:.1,fullLoss:.43,fairDecimal:2.5}},'0.25':{home:{fullWin:.43,halfWin:.2,push:0,halfLoss:.1,fullLoss:.27,fairDecimal:1.7},away:{fullWin:.27,halfWin:.1,push:0,halfLoss:.2,fullLoss:.43,fairDecimal:2.8}}},
+        ft:{'-0.75':{home:{fullWin:.45,halfWin:.15,push:0,halfLoss:.2,fullLoss:.2,fairDecimal:1.6667},away:{fullWin:.2,halfWin:.2,push:0,halfLoss:.15,fullLoss:.45,fairDecimal:2.5}},'0.75':{home:{fullWin:.7,halfWin:.1,push:0,halfLoss:.1,fullLoss:.1,fairDecimal:1.3},away:{fullWin:.1,halfWin:.1,push:0,halfLoss:.1,fullLoss:.7,fairDecimal:5}}},
+      },
+    },
+  };
+}
 const verifiedOdds=(values:any)=>({values,metadata:{bookmaker:'Pinnacle',capturedAt:'2026-08-26T08:50:00Z',verified:true,maxAgeMinutes:30,source:'USER_SCREENSHOT'}});
 
 test('image input exposes provenance and can BET only with verified fresh odds',()=>{
@@ -86,4 +103,32 @@ test('verified bookmaker O/U line takes precedence over the model-centered displ
   assert.equal(out.marketSummary.overUnder.ft.mainLine,2.5);
   assert.equal(out.marketSummary.overUnder.ft.lineSource,'MARKET_ODDS');
   assert.equal(out.marketSummary.overUnder.ft.over.marketOdds,1.65);
+});
+
+test('thin BigDB history blocks practical decisions instead of displaying false confidence',()=>{
+  const body=prediction(true);body.bigDbRetrieval.exactTeam.home.retrieved=1;body.bigDbRetrieval.exactTeam.away.retrieved=1;
+  const out=buildCfiOutputV3(body,{now_ms:NOW,odds:verifiedOdds({'FT 1':2})});
+  assert.equal(out.final,'BLOCKED');
+  assert.equal(out.evidenceSufficiency.status,'LIMITED');
+  assert.equal(out.gates.evidenceSufficient,false);
+  assert.equal(out.decisions.bet.length,0);
+});
+
+test('output always exposes quantified explosion scenario and model paths',()=>{
+  const out=buildCfiOutputV3(prediction(),{now_ms:NOW});
+  assert.equal(out.explosionScenario.thresholds.ht['3Plus'],.31);
+  assert.equal(out.explosionScenario.thresholds.ft['4Plus'],.46);
+  assert.equal(out.explosionScenario.thresholds.ft['5Plus'],.31);
+  assert.equal(out.explosionScenario.thresholds.ft['6Plus'],.2);
+  assert.equal(out.explosionScenario.level,'HIGH');
+  assert.match(out.renderedPracticalReport,/EXPLOSION: HIGH/);
+});
+
+test('output exposes a non-placing bet-ledger handoff',()=>{
+  const out=buildCfiOutputV3(prediction(),{now_ms:NOW});
+  assert.equal(out.betLedger.status,'NOT_RECORDED');
+  assert.equal(out.betLedger.endpoint,'/api/bets');
+  assert.equal(out.betLedger.explicitConfirmationRequired,true);
+  assert.equal(out.betLedger.autoPlaced,false);
+  assert.match(out.renderedPracticalReport,/BET LEDGER: NOT_RECORDED/);
 });

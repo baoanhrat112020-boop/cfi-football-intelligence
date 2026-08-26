@@ -1,4 +1,6 @@
-export const CFI_DISCOVERY_VERSION='CFI_AUTO_DISCOVERY_V1.1';
+import { evaluateEvidenceSufficiency } from '../prediction/evidence-sufficiency.ts';
+
+export const CFI_DISCOVERY_VERSION='CFI_AUTO_DISCOVERY_V1.2';
 
 export type DiscoveredFixture={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoff:number;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string};
 export type DiscoveryWindow={targetDate:string;timeZone:string;startTime?:string|null;endTime?:string|null;nowMs?:number};
@@ -22,6 +24,21 @@ export function dedupeCanonicalFixtureRows<T extends {home:string;away:string;ki
   if(seen.has(key))return false;
   seen.add(key);return true;
  });
+}
+
+export function fixtureCohort(row:{home?:string;away?:string;competition?:string|null}){
+ const value=`${clean(row.home)} ${clean(row.away)} ${clean(row.competition)}`.toLowerCase();
+ return{
+  women:/\b(w|women|women's|womens|female|femenin[oa]|femminile|dames)\b/.test(value),
+  youth:/\b(u[- ]?(?:15|16|17|18|19|20|21|22|23)|under[- ]?(?:15|16|17|18|19|20|21|22|23)|youth|academy|junior)\b/.test(value),
+  reserve:/\b(reserve|reserves|res\.|b team|ii)\b/.test(value),
+  amateur:/\b(amateur|regional|county|state league|non[- ]league)\b/.test(value),
+ };
+}
+
+export function mergeDiscoveryRows<T extends {home:string;away:string;kickoff?:number;kickoffIso?:string;targetDate?:string;canonicalHomeTeamId?:string|null;canonicalAwayTeamId?:string|null}>(groups:T[][],limit=200){
+ const merged=dedupeCanonicalFixtureRows(groups.flat());
+ return merged.slice(0,Math.max(1,Math.min(1000,Math.floor(limit)||200)));
 }
 function finiteKickoff(kickoff:any,kickoffIso:any){
  const numeric=Number(kickoff);if(Number.isFinite(numeric))return numeric;
@@ -51,12 +68,14 @@ export async function discoverFixtures(window:DiscoveryWindow,fetchFn:typeof fet
  const sources:Array<{provider:string;rows:DiscoveredFixture[];sourceUrl:string}>=[];
  const tryProvider=async(provider:string,url:string,parse:(p:any,w:DiscoveryWindow)=>DiscoveredFixture[])=>{try{const r=await fetchFn(url,{headers:{accept:'application/json','user-agent':'CFI-Football-Intelligence/1.1'}});const status=r.status;if(!r.ok){attempts.push({provider,url,httpStatus:status,ok:false,rows:0});return;}const rows=parse(await r.json(),window);attempts.push({provider,url,httpStatus:status,ok:true,rows:rows.length});if(rows.length)sources.push({provider,rows,sourceUrl:url});}catch(e:any){attempts.push({provider,url,httpStatus:null,ok:false,rows:0,error:String(e?.message||e)});}};
  const queryDates=providerQueryDates(window.targetDate);
+ const jobs:Promise<void>[]=[];
  for(const date of queryDates){
   const sofaUrls=[`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${date}`];
-  for(const url of sofaUrls)await tryProvider('SOFASCORE',url,parseSofascoreScheduled);
-  const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`;await tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents);
-  const espnDate=date.replaceAll('-',''),espnUrl=`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=1000`;await tryProvider('ESPN',espnUrl,parseEspnScoreboard);
+  for(const url of sofaUrls)jobs.push(tryProvider('SOFASCORE',url,parseSofascoreScheduled));
+  const tsdbUrl=`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`;jobs.push(tryProvider('THESPORTSDB',tsdbUrl,parseTheSportsDbEvents));
+  const espnDate=date.replaceAll('-',''),espnUrl=`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=1000`;jobs.push(tryProvider('ESPN',espnUrl,parseEspnScoreboard));
  }
+ await Promise.all(jobs);
  const rows=dedupeFixtures(sources.flatMap(s=>s.rows)).sort((a,b)=>a.kickoff-b.kickoff);
  const providers=[...new Set(sources.map(s=>s.provider))];
  return{provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',providers,rows,sourceUrl:sources.map(s=>s.sourceUrl).join(',' )||null,attempts};
@@ -69,6 +88,6 @@ export function scorePrediction(body:any){
  if(body?.strictPrior?.verified!==true&&body?.strictPriorAudit?.evidence?.verified!==true)return{score:0,best:null,eligible:false,reason:'STRICT_PRIOR_NOT_VERIFIED'};
  if(body?.consistencyGuard?.status&&body.consistencyGuard.status!=='PASS')return{score:0,best:null,eligible:false,reason:'CONSISTENCY_FAIL'};
  const ranking=Array.isArray(body?.ranking)?body.ranking.filter((r:any)=>Number.isFinite(Number(r?.probability))):[];const best=ranking.sort((a:any,b:any)=>Number(b.probability)-Number(a.probability))[0]??null;if(!best)return{score:0,best:null,eligible:false,reason:'NO_RANKING'};
- const p=Number(best.probability),exact=body?.bigDbRetrieval?.exactTeam??{},h=Number(exact?.home?.retrieved??body?.evidence?.counts?.homeFixtures??0),a=Number(exact?.away?.retrieved??body?.evidence?.counts?.awayFixtures??0),hh=Number(exact?.h2h?.retrieved??body?.evidence?.counts?.h2hFixtures??0);const evidence=Math.min(20,Math.log2(1+Math.max(0,h)+Math.max(0,a)+2*Math.max(0,hh))*3.5),conf=confidencePoints(best?.confidence??best?.predictiveConfidence),strict=5,consistency=5,penalty=uncertaintyPenalty(body?.scoreline?.uncertainty),score=Math.max(0,Math.min(100,p*55+evidence+conf+strict+consistency-penalty));
- return{score:Math.round(score*10)/10,best:{market:String(best.target),probability:p,fairOdds:p>0?Math.round((1/p)*1000)/1000:null,confidence:best?.confidence??best?.predictiveConfidence??null},eligible:true,reason:null,evidence:{home:h,away:a,h2h:hh}};
+ const p=Number(best.probability),sufficiency=evaluateEvidenceSufficiency(body),h=sufficiency.homeFixtures,a=sufficiency.awayFixtures,hh=sufficiency.h2hFixtures;const evidence=Math.min(20,Math.log2(1+Math.max(0,h)+Math.max(0,a)+2*Math.max(0,hh))*3.5),conf=confidencePoints(best?.confidence??best?.predictiveConfidence),strict=5,consistency=5,penalty=uncertaintyPenalty(body?.scoreline?.uncertainty)+(sufficiency.decisionEligible?0:18),score=Math.max(0,Math.min(100,p*55+evidence+conf+strict+consistency-penalty));
+ return{score:Math.round(score*10)/10,best:{market:String(best.target),probability:p,fairOdds:p>0?Math.round((1/p)*1000)/1000:null,confidence:best?.confidence??best?.predictiveConfidence??null},eligible:sufficiency.displayEligible,reason:sufficiency.displayEligible?null:sufficiency.reason,evidence:{home:h,away:a,h2h:hh},evidenceSufficiency:sufficiency};
 }
