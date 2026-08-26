@@ -16,10 +16,23 @@ test('image input exposes provenance and can BET only with verified fresh odds',
 });
 
 test('legacy or unverified odds can never produce BET',()=>{
-  const out=buildCfiOutputV3(prediction(),{input_mode:'IMAGE_ANALYSIS',now_ms:NOW,odds:{'3+ HT':2.2}});
+  const out=buildCfiOutputV3(prediction(),{input_mode:'IMAGE_ANALYSIS',fixture_identity:{verified:true},now_ms:NOW,odds:{'3+ HT':2.2}});
   assert.equal(out.gates.verifiedOdds,false);
   assert.equal(out.decisions.bet.length,0);
   assert.equal(out.champion.thresholds.find((x:any)=>x.market==='3+ HT').decision,'WATCH');
+});
+
+test('image mode requires explicit canonical fixture verification',()=>{
+  const out=buildCfiOutputV3(prediction(),{input_mode:'IMAGE_ANALYSIS',now_ms:NOW,odds:verifiedOdds({'3+ HT':2})});
+  assert.equal(out.final,'BLOCKED');
+  assert.equal(out.gates.fixtureIdentityVerified,false);
+});
+
+test('future-dated odds fail the freshness gate',()=>{
+  const odds={values:{'3+ HT':2},metadata:{bookmaker:'Pinnacle',capturedAt:'2026-08-26T09:10:00Z',verified:true}};
+  const out=buildCfiOutputV3(prediction(),{input_mode:'IMAGE_ANALYSIS',fixture_identity:{verified:true},now_ms:NOW,odds});
+  assert.equal(out.gates.freshOdds,false);
+  assert.equal(out.decisions.bet.length,0);
 });
 
 test('multi-market remains SHADOW until explicit promotion decisionUse',()=>{
@@ -30,7 +43,7 @@ test('multi-market remains SHADOW until explicit promotion decisionUse',()=>{
 });
 
 test('promoted multi-market becomes practical when odds and quality gates pass',()=>{
-  const out=buildCfiOutputV3(prediction(true),{input_mode:'DISCOVER_TOP_MATCHES',now_ms:NOW,odds:verifiedOdds({'FT 1':2,'FT O2.5':1.9})});
+  const out=buildCfiOutputV3(prediction(true),{input_mode:'DISCOVER_TOP_MATCHES',fixture_identity:{verified:true},now_ms:NOW,odds:verifiedOdds({'FT 1':2,'FT O2.5':1.9})});
   assert.equal(out.multiMarket.policy.decisionUse,true);
   assert.equal(out.multiMarket.oneXTwo.find((x:any)=>x.market==='FT 1').decision,'BET');
   assert.equal(out.input.mode,'DISCOVER_TOP_MATCHES');
