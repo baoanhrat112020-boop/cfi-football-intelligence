@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CFI Football Intelligence Production API
-  version: 5.2.5-p0-discovery
+  version: 5.2.5-practical-output-v3
   description: Strict-prior CFI production API with Discovery-first opportunity scanning, single-match prediction, live prediction, immutable history and settlement.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
@@ -36,6 +36,10 @@ paths:
                 max_matches: { type: integer, minimum: 1, maximum: 10, default: 5 }
                 market_filter: { type: string }
                 competition_filter: { type: string }
+                odds_by_fixture:
+                  type: object
+                  additionalProperties: true
+                  description: Optional verified odds packages keyed by provider fixture ID or "Home vs Away". Each package must contain values plus bookmaker/capturedAt/verified metadata; otherwise CFI remains WATCH/NO_BET.
       responses:
         "200":
           description: CFI Daily Opportunity Board with real fixtures and strict-prior prediction evidence
@@ -56,7 +60,7 @@ paths:
     post:
       operationId: cfiPredictMatch
       summary: Run complete CFI pre-match prediction for a specified HOME/AWAY fixture
-      description: Use when the user names a specific match. target_date is mandatory. Countdown/warm-up is PREMATCH and must not be treated as LIVE. Successful responses may include Champion 6-target, practical output and Multi-Market SHADOW fields; SHADOW decisionUse must remain false.
+      description: Use when the user names a specific match or supplies match/odds screenshots. The GPT extracts auditable fields from images and sends input_mode=IMAGE_ANALYSIS; raw image pixels are not prediction evidence. target_date is mandatory. Successful responses include Practical Output V3. SHADOW decisionUse must remain false.
       requestBody:
         required: true
         content:
@@ -70,7 +74,22 @@ paths:
                 away: { type: string, minLength: 1 }
                 target_date: { type: string, format: date }
                 language: { type: string, enum: [vi, en, zh, th, id], default: vi }
-                odds: { type: object, additionalProperties: true }
+                input_mode:
+                  type: string
+                  enum: [IMAGE_ANALYSIS, SINGLE_MATCH]
+                  default: SINGLE_MATCH
+                fixture_identity:
+                  type: object
+                  additionalProperties: true
+                  description: Canonical fixture verification result. Set verified=false when screenshot identity is ambiguous; Practical Output V3 then blocks decisions.
+                image_evidence:
+                  type: object
+                  additionalProperties: true
+                  description: Image count and extracted field names for provenance only. Screenshot history is not model evidence unless separately canonicalized and strict-prior stored.
+                odds:
+                  type: object
+                  additionalProperties: true
+                  description: Use {values, metadata}. metadata requires bookmaker, capturedAt, verified=true, source and optional maxAgeMinutes. Legacy unwrapped odds are never sufficient for BET in Output V3.
       responses:
         "200":
           description: Complete CFI prediction
