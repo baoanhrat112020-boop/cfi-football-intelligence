@@ -1,96 +1,16 @@
-name: CFI GPT Current-Day Production Acceptance
+name: CFI GPT Current-Day Acceptance (PAUSED)
+
+# PAUSED 2026-08-27: duplicate acceptance path. The canonical production gate is
+# .github/workflows/cfi-final-production-e2e.yml. This file remains manual-only
+# to preserve history and avoid duplicate acceptance signals.
+
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/cfi-gpt-current-day-acceptance.yml'
-      - 'cloudflare-worker/**'
-      - 'src/discovery/**'
-      - 'src/presentation/**'
-      - 'src/prediction/multi-market-*.ts'
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
-  acceptance:
+  paused:
     runs-on: ubuntu-latest
     steps:
-      - name: Native discovery production acceptance
-        shell: bash
+      - name: Explain consolidation
         run: |
-          set -euo pipefail
-          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
-          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/request.json
-          echo 'REQUEST_CONTAINS_ZERO_FIXTURE_CANDIDATES=true'
-          curl -fsS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" -o /tmp/acceptance.json
-          node - <<'NODE'
-          const fs=require('fs');
-          const x=JSON.parse(fs.readFileSync('/tmp/acceptance.json','utf8'));
-          const c=x?.counts||{};
-          const first=(x.board||[])[0]||null;
-          const compactMarkets=r=>{
-            const o=r?.prediction?.outputV2||{};
-            const g=o?.marketGroups||{};
-            return {
-              visibility:o?.visibility??null,
-              counts:{
-                oneXTwoHT:g?.oneXTwo?.ht?.length??0,
-                oneXTwoFT:g?.oneXTwo?.ft?.length??0,
-                overUnderHT:g?.overUnder?.ht?.length??0,
-                overUnderFT:g?.overUnder?.ft?.length??0,
-                asianHandicapHT:g?.asianHandicap?.ht?.length??0,
-                asianHandicapFT:g?.asianHandicap?.ft?.length??0,
-              },
-              fullMarketReportPresent:typeof r?.prediction?.fullMarketReport==='string'&&r.prediction.fullMarketReport.includes('CFI MULTI-MARKET FULL BOARD'),
-              renderedReportContainsFullMarkets:typeof r?.prediction?.renderedReport==='string'&&r.prediction.renderedReport.includes('CFI MULTI-MARKET FULL BOARD'),
-            };
-          };
-          console.log(JSON.stringify({
-            provider:x.provider,
-            counts:c,
-            search:x.search,
-            providerAttempts:x.providerAttempts,
-            diagnostics:(x.diagnostics||[]).map(d=>({match:d.match,predictionStatus:d.predictionStatus,predictionError:d.predictionError,strictPrior:d.strictPrior,failureLayer:d.failureLayer,reasonCode:d.reasonCode,exactTeam:d.exactTeam,temporalEvidenceAudit:d.temporalEvidenceAudit})),
-            board:(x.board||[]).map(r=>({match:r.match,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete,fullMarkets:compactMarkets(r)})),
-            firstPredictionProof:first?{
-              match:first.match,
-              strictPrior:first.prediction?.strictPrior??null,
-              strictPriorAudit:first.prediction?.strictPriorAudit??null,
-              temporalEvidenceAudit:first.prediction?.temporalEvidenceAudit??null,
-              futureEvidenceCount:first.prediction?.futureEvidenceCount??first.prediction?.strictPriorAudit?.evidence?.futureEvidenceCount??null,
-              sameDateEvidenceCount:first.prediction?.sameDateEvidenceCount??first.prediction?.strictPriorAudit?.evidence?.sameDateEvidenceCount??null,
-              maxEvidenceDate:first.prediction?.maxEvidenceDate??first.prediction?.strictPriorAudit?.evidence?.maxEvidenceDate??null,
-              sixTargetMatrix:first.prediction?.sixTargetMatrix??null,
-              consistencyGuard:first.prediction?.consistencyGuard??null,
-              multiMarketIntegration:first.prediction?.multiMarketIntegration??first.prediction?.multiMarket??null,
-              fullMarkets:compactMarkets(first)
-            }:null,
-            final:x.final
-          },null,2));
-          const fail=m=>{console.error('ACCEPTANCE_FAIL='+m);process.exit(1)};
-          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
-          if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0');
-          if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
-          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
-          if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
-          if(!Array.isArray(x.board)||x.board.length<1)fail('Daily Board missing');
-          for(const r of x.board){
-            if(r.strictPrior!==true)fail('strict-prior not verified');
-            if(r.prediction?.sixTargetMatrix?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||r.prediction?.sixTargetMatrix?.verification?.complete!==true)fail('Champion 6 incomplete');
-            if(r.multiMarketDecisionUse!==false)fail('shadow Multi-Market promoted');
-            const o=r.prediction?.outputV2,g=o?.marketGroups||{},v=o?.visibility||{};
-            if(v.fullMultiMarketVisible!==true||v.allTargetsExposed!==true||v.decisionUse!==false)fail('full multi-market visibility contract missing');
-            if((g?.oneXTwo?.ht?.length??0)!==3||(g?.oneXTwo?.ft?.length??0)!==3)fail('1X2 HT/FT incomplete');
-            if((g?.overUnder?.ht?.length??0)!==18||(g?.overUnder?.ft?.length??0)!==26)fail('O/U HT/FT ladders incomplete');
-            if((g?.asianHandicap?.ht?.length??0)!==34||(g?.asianHandicap?.ft?.length??0)!==34)fail('AH HT/FT quarter-line ladders incomplete');
-            const shadow=o?.shadowMarkets??[];
-            if(!shadow.length||shadow.some(m=>m.status!=='SHADOW'))fail('new markets not uniformly shadow locked');
-            if(typeof r.prediction?.fullMarketReport!=='string'||!r.prediction.fullMarketReport.includes('CFI MULTI-MARKET FULL BOARD'))fail('fullMarketReport missing');
-            if(typeof r.prediction?.renderedReport!=='string'||!r.prediction.renderedReport.includes('CFI MULTI-MARKET FULL BOARD'))fail('renderedReport does not expose full markets');
-            for(const heading of ['1X2 — FULL','OVER/UNDER HT — FULL LADDER','OVER/UNDER FT — FULL LADDER','ASIAN HANDICAP HT — FULL LADDER','ASIAN HANDICAP FT — FULL LADDER'])if(!r.prediction.fullMarketReport.includes(heading))fail(`missing full market section: ${heading}`);
-          }
-          console.log('CFI_GPT_NATIVE_DISCOVERY_FULL_MARKETS_PRODUCTION_ACCEPTANCE=PASS');
-          NODE
+          echo "PAUSED: use CFI Final Production E2E as the single practical acceptance gate."
