@@ -54,14 +54,10 @@ jobs:
               if (!(field in row)) failures.push(`REJECTED_FIXTURE_MISSING_${field.toUpperCase()}`);
             }
           }
-          if (counters.fixturesDiscovered > counters.predictionSuccess && rejected.length === 0) {
-            failures.push('MISSING_PER_FIXTURE_FAILURE_REASONS');
-          }
+          if (counters.fixturesDiscovered > counters.predictionSuccess && rejected.length === 0) failures.push('MISSING_PER_FIXTURE_FAILURE_REASONS');
           const strictPriorFailures = board.filter(row => row?.strictPrior === false || row?.audit?.strictPrior === false);
           if (strictPriorFailures.length) failures.push('STRICT_PRIOR_FAILURE');
-          if (body.multiMarket?.decisionUse !== false && a.multiMarketDecisionUse !== false) {
-            failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
-          }
+          if (body.multiMarket?.decisionUse !== false && a.multiMarketDecisionUse !== false) failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
           console.log(JSON.stringify({requested, ...counters, rejectedCount: rejected.length, failures}, null, 2));
           if (failures.length) process.exit(1);
           NODE
