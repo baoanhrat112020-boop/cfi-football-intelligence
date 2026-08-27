@@ -20,6 +20,8 @@ test("GPT Action OpenAPI parses and exposes P0 discovery plus legacy production 
   assert.ok(discovery.properties.target_date);
   assert.ok(discovery.properties.timezone);
   assert.ok(discovery.properties.max_matches);
+  assert.equal(discovery.properties.response_mode.default,"compact");
+  assert.equal(discovery.required.includes("response_mode"),true);
   assert.ok(discovery.properties.fixture_candidates);
   assert.equal(discovery.properties.fixture_candidates.items.required.includes("sourceUrls"),true);
   assert.equal(discovery.properties.internal_provider_diagnostics.default,false);
