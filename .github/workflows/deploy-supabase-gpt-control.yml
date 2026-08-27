@@ -36,16 +36,12 @@ jobs:
       - name: Deploy only production-critical functions
         run: |
           set -euo pipefail
-          for fn in \
-            cfi-gpt-control \
-            cfi-discovery-feed \
-            cfi-bigdb-retrieval \
-            cfi-current-refresh \
-            cfi-result-collector \
-            cfi-multimarket-settlement-eval
-          do
-            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
-          done
+          supabase functions deploy cfi-gpt-control --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy cfi-discovery-feed --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy cfi-bigdb-retrieval --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy cfi-current-refresh --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy cfi-result-collector --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy cfi-multimarket-settlement-eval --project-ref "$SUPABASE_PROJECT_REF"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
