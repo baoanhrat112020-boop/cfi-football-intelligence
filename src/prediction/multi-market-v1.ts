@@ -3,9 +3,9 @@ export const MULTI_MARKET_STATUS = 'SHADOW_RESEARCH';
 export const CROSS_MARKET_COHERENCE_VERSION = 'CFI_CROSS_MARKET_COHERENCE_GATE_V1';
 
 type ScoreCell = { home:number; away:number; total:number; probability:number };
+type ScoreGridInput = { score?:string; home?:number; away?:number; total?:number; probability:number };
 type Settlement = { fullWin:number; halfWin:number; push:number; halfLoss:number; fullLoss:number; fairDecimal:number|null };
 
-const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x));
 const round=(x:number)=>Math.round(x*1e12)/1e12;
 
 function poisson(lambda:number,max:number){
@@ -23,6 +23,22 @@ export function buildIndependentScoreGrid(homeLambda:number,awayLambda:number,ma
   let z=0;
   for(let i=0;i<h.length;i++)for(let j=0;j<a.length;j++){const probability=h[i]*a[j];grid.push({home:i,away:j,total:i+j,probability});z+=probability;}
   return grid.map(r=>({...r,probability:r.probability/z}));
+}
+
+function normalizeScoreGrid(rows:ScoreGridInput[],label:string):ScoreCell[]{
+  if(!Array.isArray(rows)||!rows.length)throw new Error(`${label}_SCORE_GRID_REQUIRED`);
+  const out:ScoreCell[]=[];let z=0;
+  for(const row of rows){
+    let home=Number(row?.home),away=Number(row?.away);
+    if((!Number.isInteger(home)||home<0||!Number.isInteger(away)||away<0)&&typeof row?.score==='string'){
+      const m=row.score.match(/^(\d+)-(\d+)$/);if(m){home=Number(m[1]);away=Number(m[2]);}
+    }
+    const probability=Number(row?.probability);
+    if(!Number.isInteger(home)||home<0||!Number.isInteger(away)||away<0||!Number.isFinite(probability)||probability<0)throw new Error(`${label}_SCORE_GRID_INVALID`);
+    out.push({home,away,total:home+away,probability});z+=probability;
+  }
+  if(!Number.isFinite(z)||z<=0)throw new Error(`${label}_SCORE_GRID_ZERO_MASS`);
+  return out.map(r=>({...r,probability:r.probability/z}));
 }
 
 function oneXTwo(grid:ScoreCell[]){
@@ -86,9 +102,7 @@ function consistency(one:any,htTotals:any,ftTotals:any,htAh:any,ftAh:any){
   return {version:CROSS_MARKET_COHERENCE_VERSION,status:violations.length?'FAIL':'PASS',violations};
 }
 
-export function buildMultiMarketV1(input:{htHome:number;htAway:number;ftHome:number;ftAway:number}){
-  const htGrid=buildIndependentScoreGrid(input.htHome,input.htAway,10);
-  const ftGrid=buildIndependentScoreGrid(input.ftHome,input.ftAway,14);
+function buildFromGrids(htGrid:ScoreCell[],ftGrid:ScoreCell[],model:any){
   const one={ht:oneXTwo(htGrid),ft:oneXTwo(ftGrid)};
   const htTotals=totals(htGrid,[0.5,1,1.5,2,2.5,3,3.5,4,4.5]);
   const ftTotals=totals(ftGrid,[1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5]);
@@ -96,15 +110,25 @@ export function buildMultiMarketV1(input:{htHome:number;htAway:number;ftHome:num
   const htAh=asianHandicap(htGrid,lines),ftAh=asianHandicap(ftGrid,lines);
   const guard=consistency(one,htTotals,ftTotals,htAh,ftAh);
   return {
-    version:MULTI_MARKET_VERSION,
-    status:MULTI_MARKET_STATUS,
-    decisionUse:false,
-    promotionRequired:true,
-    model:{family:'INDEPENDENT_POISSON_SCORE_GRID_V1',source:'existing CFI expected-goal telemetry',maxGoals:{ht:10,ft:14}},
-    oneXTwo:one,
-    overUnder:{ht:htTotals,ft:ftTotals},
-    asianHandicap:{ht:htAh,ft:ftAh},
+    version:MULTI_MARKET_VERSION,status:MULTI_MARKET_STATUS,decisionUse:false,promotionRequired:true,model,
+    oneXTwo:one,overUnder:{ht:htTotals,ft:ftTotals},asianHandicap:{ht:htAh,ft:ftAh},
     derivedChecks:{ftOver6_5:(ftTotals['6.5'] as any).over.fullWin,htOver2_5:(htTotals['2.5'] as any).over.fullWin},
     consistencyGuard:guard,
   };
+}
+
+export function buildMultiMarketV1(input:{htHome:number;htAway:number;ftHome:number;ftAway:number}){
+  return buildFromGrids(
+    buildIndependentScoreGrid(input.htHome,input.htAway,10),
+    buildIndependentScoreGrid(input.ftHome,input.ftAway,14),
+    {family:'INDEPENDENT_POISSON_SCORE_GRID_V1',source:'existing CFI expected-goal telemetry',maxGoals:{ht:10,ft:14}},
+  );
+}
+
+export function buildMultiMarketFromScoreGrids(input:{ht:ScoreGridInput[];ft:ScoreGridInput[]}){
+  return buildFromGrids(
+    normalizeScoreGrid(input.ht,'HT'),
+    normalizeScoreGrid(input.ft,'FT'),
+    {family:'CFI_FINAL_CALIBRATED_SCORE_GRID_V1',source:'FINAL_CALIBRATED_SCORE_DISTRIBUTION',singleCore:true},
+  );
 }

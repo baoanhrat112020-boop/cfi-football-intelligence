@@ -1,0 +1,57 @@
+name: Deploy CFI research ops
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/cfi-historical-backfill/**'
+      - 'supabase/functions/cfi-multimarket-settlement-eval/**'
+      - '.github/workflows/deploy-supabase-research-ops.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/cfi-historical-backfill/**'
+      - 'supabase/functions/cfi-multimarket-settlement-eval/**'
+      - '.github/workflows/deploy-supabase-research-ops.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm test
+      - name: Guard Multi-Market research-only contracts
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const settlement=readFileSync('supabase/functions/cfi-multimarket-settlement-eval/index.ts','utf8');
+          for(const token of ['CFI_MULTI_MARKET_SETTLEMENT_V2','IMMUTABLE_PREDICTION_SNAPSHOT_PLUS_SETTLED_ACTUAL','legacySnapshotsSkipped:true','decisionUse:false']) if(!settlement.includes(token)) throw new Error(`settlement guard missing ${token}`);
+          const backfill=readFileSync('supabase/functions/cfi-historical-backfill/index.ts','utf8');
+          for(const token of ['CFI_BIGDB_SOURCE_EXPANSION_V1','division_code:\'EC\'','division_code:\'SC1\'','division_code:\'SC2\'','division_code:\'SC3\'','CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.1']) if(!backfill.includes(token)) throw new Error(`backfill guard missing ${token}`);
+          NODE
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy research ops
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          supabase functions deploy cfi-historical-backfill --project-ref kovmddkkzttquupdgmel
+          supabase functions deploy cfi-multimarket-settlement-eval --project-ref kovmddkkzttquupdgmel
