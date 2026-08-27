@@ -8,8 +8,10 @@ const outputV3=fs.readFileSync(new URL('../src/presentation/cfi-output-v3.ts',im
 
 test('Champion Fusion is visible across single-match and compact discovery outputs',()=>{
   assert.match(v50,/CHAMPION FUSION V1:/);
+  assert.match(v50,/decisionUse=/);
   assert.match(compact,/championFusion:compactChampionFusion/);
   assert.match(outputV3,/championFusionView/);
   assert.match(outputV3,/CHAMPION FUSION:/);
-  assert.match(outputV3,/decisionUse:false/);
+  assert.match(outputV3,/decisionUse:f\.decisionUse===true/);
+  assert.match(outputV3,/decisionUse=false/);
 });
