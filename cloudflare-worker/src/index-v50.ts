@@ -1,5 +1,6 @@
 import base from './index-v49.ts';
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS } from '../../src/prediction/final-engine.ts';
+import { buildChampionFusionV1, CHAMPION_FUSION_VERSION } from '../../src/prediction/multi-market-champion-fusion-v1.ts';
 
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.2.1';
 const BIG_DB_RETRIEVAL_VERSION='CFI_BIG_DB_RETRIEVAL_V2_NATIVE_DIVERSITY_FIX';
@@ -74,7 +75,7 @@ function sixTargetMatrix(prediction:any){
 function renderedReport(prediction:any,matrix:any){
   const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
   const list=(rows:any)=>Array.isArray(rows)?rows.map((r:any,i:number)=>`${i+1}) ${r.score} ${pct(r.probability)}`).join(' · '):'—';
-  const t=matrix.threshold,s=matrix.scoreline;
+  const t=matrix.threshold,s=matrix.scoreline,f=prediction?.championFusion,fw=f?.gating?.ft?.weights??{},fmm=f?.multiMarket;
   return [
     `CFI 2 METHODS × 6 TARGETS — ${matrix.contract}`,
     `MATCH: ${prediction?.target?.home??'—'} vs ${prediction?.target?.away??'—'} | ${prediction?.target?.date??'—'} | ENGINE ${prediction?.engine??ENGINE_VERSION}`,
@@ -93,7 +94,15 @@ function renderedReport(prediction:any,matrix:any){
     `FINAL: ${list(s['Top-3 FT']?.final)}`,
     '',
     `VERDICT: ${prediction?.verdict??'—'} | UNCERTAINTY: ${prediction?.scoreline?.uncertainty??'—'}`,
-    `CONTRACT COMPLETE: ${matrix.verification.complete?'YES':'NO'}`
+    `CONTRACT COMPLETE: ${matrix.verification.complete?'YES':'NO'}`,
+    '',
+    `CHAMPION FUSION V1: ${f?.status??'UNAVAILABLE'} | decisionUse=${f?.decisionUse===true?'true':'false'} | coherence=${f?.coherence?.status??'—'} | uncertainty=${f?.uncertainty??'—'}`,
+    `Fusion Champion: 3+ HT ${pct(f?.champion?.thresholds?.['3+ HT'])} | 7+ FT ${pct(f?.champion?.thresholds?.['7+ FT'])} | Other HT ${pct(f?.champion?.thresholds?.['Other HT'])} | Other FT ${pct(f?.champion?.thresholds?.['Other FT'])}`,
+    `Fusion Top-3 HT: ${list(f?.champion?.top3HT)} `,
+    `Fusion Top-3 FT: ${list(f?.champion?.top3FT)} `,
+    `Fusion FT 1X2: H ${pct(fmm?.oneXTwo?.ft?.home)} | X ${pct(fmm?.oneXTwo?.ft?.draw)} | A ${pct(fmm?.oneXTwo?.ft?.away)} | FT O2.5 ${pct(fmm?.overUnder?.ft?.['2.5']?.over?.fullWin)} | FT O6.5 ${pct(fmm?.overUnder?.ft?.['6.5']?.over?.fullWin)}`,
+    `Fusion FT weights: HIST ${pct(fw.HISTORICAL)} | RECENT ${pct(fw.RECENT_FORM)} | FUTURE_SIX ${pct(fw.FUTURE_SIX)} | DIR_POISSON ${pct(fw.DIRECTIONAL_POISSON)}`,
+    `Fusion policy: SHADOW_RESEARCH only; prospective paired settlement required before promotion.`
   ].join('\n');
 }
 
@@ -131,7 +140,8 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     // for team-specific feature extraction while preserving the submitted fixture
     // names in the public target/audit contract.
     const predictionHome=String(big?.identity?.homeCanonical||home),predictionAway=String(big?.identity?.awayCanonical||away);
-    const prediction:any=buildPrediction({home:predictionHome,away:predictionAway,targetDate,language:String(input?.language||'vi'),homePayload:{fixtures:big?.fixtures?.home??[]},awayPayload:{fixtures:big?.fixtures?.away??[]},h2hPayload:{fixtures:big?.fixtures?.h2h??[]}});
+    const homePayload={fixtures:big?.fixtures?.home??[]},awayPayload={fixtures:big?.fixtures?.away??[]},h2hPayload={fixtures:big?.fixtures?.h2h??[]};
+    const prediction:any=buildPrediction({home:predictionHome,away:predictionAway,targetDate,language:String(input?.language||'vi'),homePayload,awayPayload,h2hPayload});
     prediction.target={home,away,date:targetDate};
     const evidenceCounts=prediction?.evidence?.counts??prediction?.evidence??{};
     if(prediction?.status!=='DATA_READY'||Number(evidenceCounts?.htCoverage??0)<=0||Number(evidenceCounts?.ftCoverage??0)<=0){
@@ -142,6 +152,11 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     prediction.engine=ENGINE_VERSION;
     prediction.temporalEvidenceAudit=temporal;
     prediction.strictPriorAudit={required:true,verified:true,targetDate,telemetryVersion:'CFI_TEMPORAL_AUDIT_V1.1',evidence:temporal};
+    try{
+      prediction.championFusion=buildChampionFusionV1({home:predictionHome,away:predictionAway,targetDate,homePayload,awayPayload,h2hPayload,incumbentMultiMarket:prediction?.multiMarket});
+    }catch(e:any){
+      prediction.championFusion={version:CHAMPION_FUSION_VERSION,status:'SHADOW_ERROR',decisionUse:false,researchOnly:true,productionEligible:false,error:String(e?.message||e),promotionGate:{decisionUseUntilPromoted:false}};
+    }
 
     const globalPrior=attachGlobalPriorTelemetry(prediction,big);
     const retrieval={version:BIG_DB_RETRIEVAL_VERSION,required:true,source:'PERSISTENT_DB',targetDate,currentSessionProvenance:big?.currentSessionProvenance??'NOT_OBSERVABLE',exactTeam:big?.exactTeam??null,bigDbOnlyAdded:Number(big?.bigDbOnlyAdded??0),globalPrior,predictionInput:{homeFixtures:(big?.fixtures?.home??[]).length,awayFixtures:(big?.fixtures?.away??[]).length,h2hFixtures:(big?.fixtures?.h2h??[]).length,globalPriorApplied:true},temporalAudit:temporal,note:'Global priors are context telemetry only; match-specific outputs are never directly shrunk.'};
@@ -150,8 +165,9 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
 
     const report=renderedReport(prediction,matrix);
     // Snapshot only after exact-team, strict-prior, score-evidence and six-target gates pass.
+    // championFusion is attached before this call, so the shadow challenger is immutable and prospectively settleable.
     const audit=await recordAudit(env,input,{...prediction,bigDbRetrieval:retrieval});
-    return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract},runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,baseEngine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_DIVERSITY_FIX',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION},diversityGuard:{active:true,native:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false},audit});
+    return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract},runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,baseEngine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_DIVERSITY_FIX_PLUS_CHAMPION_FUSION_V1_SHADOW',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION,championFusion:CHAMPION_FUSION_VERSION},diversityGuard:{active:true,native:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false},audit});
   }catch(e:any){
     return Response.json({status:'ERROR',error:'BIG_DB_V2_PREDICTION_FAILURE',message:String(e?.message||e),runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:500});
   }
