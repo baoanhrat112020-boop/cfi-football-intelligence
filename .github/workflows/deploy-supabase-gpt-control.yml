@@ -19,21 +19,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify production contracts only
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --test tests/v14-alias-resolution-contract.test.mjs
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const gpt=readFileSync('supabase/functions/cfi-gpt-control/index.ts','utf8');
+          for (const token of ['AUDIT_3D','futureEvidenceCount','sameDateEvidenceCount','maxEvidenceDate']) {
+            if (!gpt.includes(token)) throw new Error(`missing fail-closed token: ${token}`);
+          }
+          const big=readFileSync('supabase/functions/cfi-bigdb-retrieval/index.ts','utf8');
+          for (const token of ['CANONICAL_FOLDED_EXACT','CANONICAL_CLUB_KEY_EXACT','AMBIGUOUS_EXACT_IDENTITY_KEY']) {
+            if (!big.includes(token)) throw new Error(`missing identity token: ${token}`);
+          }
+          if (/similarity\s*\(/i.test(big)) throw new Error('fuzzy similarity matching is forbidden');
+          NODE
+
   deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy only production-critical functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      - name: Deploy only production-critical functions
         run: |
           set -euo pipefail
           supabase functions deploy cfi-gpt-control --project-ref "$SUPABASE_PROJECT_REF"
@@ -42,6 +69,39 @@ jobs:
           supabase functions deploy cfi-current-refresh --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy cfi-result-collector --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy cfi-multimarket-settlement-eval --project-ref "$SUPABASE_PROJECT_REF"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+
+  native-production-gate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [verify, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run single native production discovery gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
+          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          BODY=$(mktemp)
+          HTTP=$(curl --fail-with-body --silent --show-error --retry 2 --retry-delay 2 --max-time 180 \
+            -o "$BODY" -w '%{http_code}' -X POST "$BASE/api/discover" \
+            -H 'content-type: application/json' \
+            --data "{\"target_date\":\"$TARGET_DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"response_mode\":\"compact\"}")
+          test "$HTTP" = '200'
+          node - "$BODY" <<'NODE'
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const a=x.audit||x.counts||{};
+          const board=Array.isArray(x.board)?x.board:[];
+          const n=v=>Number(v||0);
+          const required={fixturesDiscovered:n(a.fixturesDiscovered),canonicalized:n(a.canonicalized),predictionAttempts:n(a.predictionAttempts),predictionSuccess:n(a.predictionSuccess),fullPredictionsExecuted:n(a.fullPredictionsExecuted),boardRows:board.length};
+          const failures=[];
+          for(const [k,v] of Object.entries(required)) if(v<5) failures.push(`VERIFIED_SHORTFALL_${k.toUpperCase()}_${v}_OF_5`);
+          const rejected=Array.isArray(a.rejectedFixtures)?a.rejectedFixtures:[];
+          if(required.fixturesDiscovered>required.predictionSuccess&&rejected.length===0) failures.push('MISSING_PER_FIXTURE_FAILURE_REASONS');
+          for(const row of rejected){for(const f of ['match','predictionStatus','strictPrior','failureLayer','reasonCode']) if(!(f in row)) failures.push(`REJECTED_FIXTURE_MISSING_${f.toUpperCase()}`);}
+          if(board.some(r=>r?.strictPrior===false||r?.audit?.strictPrior===false)) failures.push('STRICT_PRIOR_FAILURE');
+          if(x.multiMarket?.decisionUse!==false&&a.multiMarketDecisionUse!==false) failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
+          console.log(JSON.stringify({...required,rejectedCount:rejected.length,failures},null,2));
+          if(failures.length) process.exit(1);
+          NODE
