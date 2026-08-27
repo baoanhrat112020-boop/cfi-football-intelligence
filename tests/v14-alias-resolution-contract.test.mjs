@@ -1,17 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { discoveryFinal } from '../cloudflare-worker/src/discovery-final.ts';
 
 const read=(path)=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 
 test('V1.4 reports completed predictions truthfully',()=>{
   const router=read('cloudflare-worker/src/index-p0-router.ts');
+  const finalState=read('cloudflare-worker/src/discovery-final.ts');
   assert.match(router,/fullPredictionsExecuted:predictionSuccess/);
   assert.doesNotMatch(router,/fullPredictionsExecuted:predictionAttempts/);
+  assert.match(finalState,/Number\(counts\.predictionSuccess\)!==0/);
+  assert.match(finalState,/DISCOVERY_UNAVAILABLE/);
+  assert.match(finalState,/PREDICTION_NOT_EXECUTED/);
+  assert.match(finalState,/INSUFFICIENT_EVIDENCE/);
   const acceptance=read('.github/workflows/cfi-final-production-e2e.yml');
   assert.match(acceptance,/if\(!\(Number\(c\.predictionSuccess\)>0\)\)fail\('predictionSuccess <= 0'\)/);
   assert.match(acceptance,/if\(!\(Number\(c\.fullPredictionsExecuted\)>0\)\)fail\('fullPredictionsExecuted <= 0'\)/);
   assert.doesNotMatch(acceptance,/fullPredictionsExecuted\s*[:=]\s*predictionAttempts/);
+});
+
+test('native discovery fails closed with a truthful terminal reason before any prediction succeeds',async()=>{
+  const cases=[
+    [{fixturesDiscovered:0,predictionAttempts:0,predictionSuccess:0,insufficient:0},'DISCOVERY_UNAVAILABLE'],
+    [{fixturesDiscovered:2,predictionAttempts:0,predictionSuccess:0,insufficient:0},'PREDICTION_NOT_EXECUTED'],
+    [{fixturesDiscovered:2,predictionAttempts:2,predictionSuccess:0,insufficient:2},'INSUFFICIENT_EVIDENCE'],
+    [{fixturesDiscovered:2,predictionAttempts:2,predictionSuccess:0,insufficient:1},'PREDICTION_NOT_EXECUTED'],
+  ];
+  for(const [counts,expected] of cases){
+    assert.equal(discoveryFinal({action:'CFI_DISCOVERY',counts,final:'NO_BET'}),expected);
+  }
+  assert.equal(discoveryFinal({action:'CFI_DISCOVERY',counts:{fixturesDiscovered:1,predictionAttempts:1,predictionSuccess:1,insufficient:0},final:'NO_BET'}),'NO_BET');
 });
 
 test('BigDB resolution stays exact and bridges provider club-name formatting without fuzzy matching',()=>{
@@ -36,7 +55,10 @@ test('BigDB resolution stays exact and bridges provider club-name formatting wit
 test('Supabase production deploy includes BigDB retrieval and a real native discovery gate',()=>{
   const workflow=read('.github/workflows/deploy-supabase-gpt-control.yml');
   assert.match(workflow,/supabase\/functions\/cfi-bigdb-retrieval\/\*\*/);
+  assert.match(workflow,/supabase\/functions\/cfi-discovery-feed\/\*\*/);
   assert.match(workflow,/functions deploy cfi-bigdb-retrieval/);
+  assert.match(workflow,/functions deploy cfi-discovery-feed/);
+  assert.match(workflow,/needs: \[verify, deploy\]/);
   assert.match(workflow,/\$BASE\/api\/discover/);
   assert.match(workflow,/predictionSuccess/);
   assert.match(workflow,/fullPredictionsExecuted/);
