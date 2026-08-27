@@ -7,6 +7,7 @@ on:
       - '.github/workflows/cfi-final-production-e2e.yml'
       - 'cloudflare-worker/**'
       - 'src/discovery/**'
+      - 'src/prediction/**'
   workflow_dispatch:
 
 permissions:
@@ -51,11 +52,17 @@ jobs:
           const board=Array.isArray(x.board)?x.board:[];
           const errors=[];
           const check=(condition,message)=>{if(!condition)errors.push(message)};
+          const fail=(message)=>{throw new Error(message)};
 
           check(x.status==='OK'&&x.action==='CFI_DISCOVERY'&&x.version===process.env.EXPECTED_VERSION,`discovery contract failed: ${x.version}`);
           check(x.search?.mode==='GPT_SEARCH_FIRST','GPT search-first telemetry missing');
           check(x.search?.aiCandidatesReceived===0&&x.search?.aiCandidatesAccepted===0&&Number(c.aiDiscoveredFixtures??0)===0,'injected fixture candidate entered native acceptance');
           check(x.search?.internalProviderDiagnostics===true&&Array.isArray(x.providerAttempts)&&x.providerAttempts.length>0,'native provider path not exercised');
+
+          // Preserve explicit hard guards used by the production contract tests.
+          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
+          if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
+          if(x.search?.aiCandidatesReceived!==0||x.search?.aiCandidatesAccepted!==0)fail('injected fixture candidate entered native acceptance');
 
           // Practical product acceptance is intentionally stricter than a smoke test:
           // a max_matches=5 request is PASS only when five real fixtures complete the full prediction path.
