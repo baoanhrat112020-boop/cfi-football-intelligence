@@ -16,8 +16,10 @@ test('V1.4 reports completed predictions truthfully',()=>{
   assert.match(finalState,/PREDICTION_NOT_EXECUTED/);
   assert.match(finalState,/INSUFFICIENT_EVIDENCE/);
   const acceptance=read('.github/workflows/cfi-final-production-e2e.yml');
-  assert.match(acceptance,/if\(!\(Number\(c\.predictionSuccess\)>0\)\)fail\('predictionSuccess <= 0'\)/);
-  assert.match(acceptance,/if\(!\(Number\(c\.fullPredictionsExecuted\)>0\)\)fail\('fullPredictionsExecuted <= 0'\)/);
+  assert.match(acceptance,/const requested = 5/);
+  assert.match(acceptance,/if \(value < requested\) failures\.push\(`VERIFIED_SHORTFALL_/);
+  assert.match(acceptance,/predictionSuccess: n\(a\.predictionSuccess\)/);
+  assert.match(acceptance,/fullPredictionsExecuted: n\(a\.fullPredictionsExecuted\)/);
   assert.doesNotMatch(acceptance,/fullPredictionsExecuted\s*[:=]\s*predictionAttempts/);
 });
 
@@ -85,9 +87,11 @@ test('Supabase production deploy includes BigDB retrieval and a real native disc
 
 test('final production E2E is native discovery with zero predetermined fixture cohort',()=>{
   const workflow=read('.github/workflows/cfi-final-production-e2e.yml');
-  assert.match(workflow,/\$BASE\/api\/discover/);
-  assert.match(workflow,/Injected\/predetermined fixture input forbidden/);
-  assert.match(workflow,/aiCandidatesReceived!==0\|\|x\.search\?\.aiCandidatesAccepted!==0/);
+  assert.match(workflow,/\$CFI_DISCOVERY_URL/);
+  assert.match(workflow,/const requested = 5/);
+  assert.match(workflow,/\\"max_matches\\":5/);
+  assert.doesNotMatch(workflow,/fixture_candidates/);
+  assert.doesNotMatch(workflow,/odds_by_fixture/);
   for(const fixture of ['Bradford City','Newcastle United','Tottenham Hotspur','Preston North End','Real Sociedad']){
     assert.doesNotMatch(workflow,new RegExp(fixture));
   }
