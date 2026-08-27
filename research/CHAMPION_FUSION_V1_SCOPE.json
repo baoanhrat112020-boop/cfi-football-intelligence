@@ -1,0 +1,10 @@
+{
+  "version": "CFI_MULTI_MARKET_CHAMPION_FUSION_V1",
+  "status": "SHADOW_RESEARCH",
+  "decisionUse": false,
+  "singleRuntimeCore": "src/prediction/multi-market-champion-fusion.ts",
+  "predictionEntrypoint": "src/prediction/final-engine.ts#buildPrediction",
+  "fusionLayer": "score_distribution",
+  "deriveMarkets": ["Champion 6", "1X2 HT/FT", "O/U HT/FT", "AH HT/FT"],
+  "promotionRequires": ["historical_full_contract", "prospective_paired_settlement", "segment_regression", "coherence", "calibration_uncertainty"]
+}
