@@ -1,22 +1,27 @@
-name: Deploy Supabase GPT Control
+name: Deploy Supabase Production Control
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'supabase/functions/**'
-      - 'supabase/migrations/**'
+      - 'supabase/functions/_shared/**'
+      - 'supabase/functions/cfi-gpt-control/**'
+      - 'supabase/functions/cfi-discovery-feed/**'
+      - 'supabase/functions/cfi-bigdb-retrieval/**'
+      - 'supabase/functions/cfi-current-refresh/**'
+      - 'supabase/functions/cfi-result-collector/**'
+      - 'supabase/functions/cfi-multimarket-settlement-eval/**'
       - '.github/workflows/deploy-supabase-gpt-control.yml'
 
 concurrency:
-  group: cfi-supabase-control-deploy
+  group: cfi-supabase-production-deploy
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
@@ -28,8 +33,19 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      - name: Deploy production control functions
-        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy only production-critical functions
+        run: |
+          set -euo pipefail
+          for fn in \
+            cfi-gpt-control \
+            cfi-discovery-feed \
+            cfi-bigdb-retrieval \
+            cfi-current-refresh \
+            cfi-result-collector \
+            cfi-multimarket-settlement-eval
+          do
+            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+          done
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
