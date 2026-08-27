@@ -24,5 +24,15 @@ jobs:
           node - "$BODY" <<'NODE'
           const fs=require('fs');
           const body=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
-          console.log(JSON.stringify({status:body.status,error:body.error,message:body.message,runtime:body.runtime,strictPrior:body.strictPrior,temporalEvidenceAudit:body.temporalEvidenceAudit,championFusion:body.championFusion&&{status:body.championFusion.status,reason:body.championFusion.reason}},null,2));
+          console.log(JSON.stringify({
+            status:body.status,error:body.error,message:body.message,
+            topLevelKeys:Object.keys(body).sort(),
+            runtime:body.runtime,
+            strictPrior:body.strictPrior,
+            temporalEvidenceAudit:body.temporalEvidenceAudit,
+            championFusion:body.championFusion&&{version:body.championFusion.version,status:body.championFusion.status,reason:body.championFusion.reason,decisionUse:body.championFusion.decisionUse},
+            outputV3Fusion:body.outputV3?.championFusion&&{version:body.outputV3.championFusion.version,status:body.outputV3.championFusion.status,decisionUse:body.outputV3.championFusion.decisionUse},
+            renderedHasFusion:typeof body.renderedReport==='string'&&body.renderedReport.includes('CHAMPION FUSION'),
+            practicalHasFusion:typeof body.outputV3?.renderedPracticalReport==='string'&&body.outputV3.renderedPracticalReport.includes('CHAMPION FUSION')
+          },null,2));
           NODE
