@@ -44,28 +44,66 @@ jobs:
           set -euo pipefail
           node - <<'NODE'
           const fs=require('fs');
+          const req=JSON.parse(fs.readFileSync('/tmp/final-request.json','utf8'));
           const x=JSON.parse(fs.readFileSync('/tmp/final-production.json','utf8'));
-          const c=x?.counts||{}; const fail=(m)=>{throw new Error(m)};
-          if(x.status!=='OK'||x.action!=='CFI_DISCOVERY'||x.version!==process.env.EXPECTED_VERSION)fail(`discovery contract failed: ${x.version}`);
-          if(x.search?.mode!=='GPT_SEARCH_FIRST')fail('GPT search-first telemetry missing');
-          if(x.search?.aiCandidatesReceived!==0||x.search?.aiCandidatesAccepted!==0||Number(c.aiDiscoveredFixtures??0)!==0)fail('injected fixture candidate entered native acceptance');
-          if(x.search?.internalProviderDiagnostics!==true||!Array.isArray(x.providerAttempts)||x.providerAttempts.length===0)fail('native provider path not exercised');
-          if(!(Number(c.fixturesDiscovered)>0))fail('fixturesDiscovered <= 0');
-          if(!(Number(c.canonicalized)>0))fail('canonicalized <= 0');
-          if(!(Number(c.predictionAttempts)>0))fail('predictionAttempts <= 0');
-          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
-          if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
-          if(!Array.isArray(x.board)||x.board.length<1)fail('production board missing');
-          if(x.rules?.strictPriorRequired!==true||x.rules?.shadowDecisionUse!==false||x.rules?.gptSearchFirstRequired!==true)fail('safety contract changed');
-          for(const row of x.board){
+          const requestedMatches=Number(req.max_matches??5);
+          const c=x?.counts||{};
+          const board=Array.isArray(x.board)?x.board:[];
+          const errors=[];
+          const check=(condition,message)=>{if(!condition)errors.push(message)};
+
+          check(x.status==='OK'&&x.action==='CFI_DISCOVERY'&&x.version===process.env.EXPECTED_VERSION,`discovery contract failed: ${x.version}`);
+          check(x.search?.mode==='GPT_SEARCH_FIRST','GPT search-first telemetry missing');
+          check(x.search?.aiCandidatesReceived===0&&x.search?.aiCandidatesAccepted===0&&Number(c.aiDiscoveredFixtures??0)===0,'injected fixture candidate entered native acceptance');
+          check(x.search?.internalProviderDiagnostics===true&&Array.isArray(x.providerAttempts)&&x.providerAttempts.length>0,'native provider path not exercised');
+
+          // Practical product acceptance is intentionally stricter than a smoke test:
+          // a max_matches=5 request is PASS only when five real fixtures complete the full prediction path.
+          check(Number(c.fixturesDiscovered)>=requestedMatches,`VERIFIED_SHORTFALL fixturesDiscovered=${Number(c.fixturesDiscovered??0)}/${requestedMatches}`);
+          check(Number(c.canonicalized)>=requestedMatches,`VERIFIED_SHORTFALL canonicalized=${Number(c.canonicalized??0)}/${requestedMatches}`);
+          check(Number(c.predictionAttempts)>=requestedMatches,`VERIFIED_SHORTFALL predictionAttempts=${Number(c.predictionAttempts??0)}/${requestedMatches}`);
+          check(Number(c.predictionSuccess)>=requestedMatches,`VERIFIED_SHORTFALL predictionSuccess=${Number(c.predictionSuccess??0)}/${requestedMatches}`);
+          check(Number(c.fullPredictionsExecuted)>=requestedMatches,`VERIFIED_SHORTFALL fullPredictionsExecuted=${Number(c.fullPredictionsExecuted??0)}/${requestedMatches}`);
+          check(board.length>=requestedMatches,`VERIFIED_SHORTFALL boardRows=${board.length}/${requestedMatches}`);
+          check(x.rules?.strictPriorRequired===true&&x.rules?.shadowDecisionUse===false&&x.rules?.gptSearchFirstRequired===true,'safety contract changed');
+
+          for(const row of board){
             const p=row.prediction, v=p?.outputV3, s=p?.sixTargetMatrix;
-            if(row.strictPrior!==true)fail(`${row.match}: strict-prior missing`);
-            if(s?.contract!=='CFI_2_METHODS_X_6_TARGETS_V1'||s?.verification?.complete!==true)fail(`${row.match}: Champion 6 incomplete`);
-            if(row.multiMarketDecisionUse!==false)fail(`${row.match}: shadow Multi-Market promoted`);
-            if(!v?.marketSummary?.oneXTwo||!v?.marketSummary?.overUnder||!v?.marketSummary?.asianHandicap)fail(`${row.match}: market summary incomplete`);
+            check(row.strictPrior===true,`${row.match}: strict-prior missing`);
+            check(s?.contract==='CFI_2_METHODS_X_6_TARGETS_V1'&&s?.verification?.complete===true,`${row.match}: Champion 6 incomplete`);
+            check(row.multiMarketDecisionUse===false,`${row.match}: shadow Multi-Market promoted`);
+            check(Boolean(v?.marketSummary?.oneXTwo&&v?.marketSummary?.overUnder&&v?.marketSummary?.asianHandicap),`${row.match}: market summary incomplete`);
           }
-          fs.writeFileSync('/tmp/final-summary.json',JSON.stringify({status:x.status,version:x.version,targetDate:x.targetDate,provider:x.provider,search:x.search,providerAttempts:x.providerAttempts,counts:c,final:x.final,board:x.board.map(r=>({match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete}))},null,2));
+
+          const practicalShortfall={
+            requestedMatches,
+            fixturesDiscovered:Number(c.fixturesDiscovered??0),
+            canonicalized:Number(c.canonicalized??0),
+            predictionAttempts:Number(c.predictionAttempts??0),
+            predictionSuccess:Number(c.predictionSuccess??0),
+            fullPredictionsExecuted:Number(c.fullPredictionsExecuted??0),
+            boardRows:board.length,
+            missingBoardRows:Math.max(0,requestedMatches-board.length),
+            verifiedShortfall:board.length<requestedMatches||Number(c.predictionSuccess??0)<requestedMatches
+          };
+          const summary={
+            acceptance:errors.length?'FAIL':'PASS',
+            errors,
+            status:x.status,
+            version:x.version,
+            targetDate:x.targetDate,
+            requestedMatches,
+            provider:x.provider,
+            search:x.search,
+            providerAttempts:x.providerAttempts,
+            counts:c,
+            practicalShortfall,
+            final:x.final,
+            board:board.map(r=>({match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete}))
+          };
+          fs.writeFileSync('/tmp/final-summary.json',JSON.stringify(summary,null,2));
           console.log(fs.readFileSync('/tmp/final-summary.json','utf8'));
+          if(errors.length)throw new Error(`CFI_PRODUCTION_ACCEPTANCE_FAIL: ${errors.join('; ')}`);
           NODE
 
       - name: Publish final production evidence
