@@ -23,12 +23,13 @@ test('Champion Fusion creates one coherent shadow distribution for every market'
   assert.equal(x.multiMarket.consistencyGuard.status,'PASS');
   assert.equal(x.fusion.singleLatentDistribution,true);
   assert.equal(x.fusion.deriveAllMarketsFromFusedDistribution,true);
-  const htWeight=Object.values(x.gating.ht).reduce((a,b)=>a+b,0);
-  const ftWeight=Object.values(x.gating.ft).reduce((a,b)=>a+b,0);
+  const htWeight=Object.values(x.gating.ht.weights).reduce((a,b)=>a+Number(b),0);
+  const ftWeight=Object.values(x.gating.ft.weights).reduce((a,b)=>a+Number(b),0);
   assert.ok(Math.abs(htWeight-1)<1e-9);
   assert.ok(Math.abs(ftWeight-1)<1e-9);
   assert.ok(Math.abs(x.champion['3+ HT']-x.multiMarket.overUnder.ht['2.5'].over.fullWin)<1e-9);
   assert.ok(Math.abs(x.champion['7+ FT']-x.multiMarket.overUnder.ft['6.5'].over.fullWin)<1e-9);
+  assert.deepEqual(x.champion.thresholds['3+ HT'],x.champion['3+ HT']);
 });
 
 test('Champion Fusion abstains instead of pretending confidence on thin evidence',()=>{
