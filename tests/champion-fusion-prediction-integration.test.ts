@@ -24,7 +24,8 @@ test('official prediction persists coherent Champion Fusion shadow',()=>{
   assert.equal(prediction.championFusion.strictPrior.verified,true);
   assert.equal(prediction.championFusion.multiMarket.consistencyGuard.status,'PASS');
   assert.ok(prediction.championFusion.activeExperts.includes('FUTURE_SIX'));
-  assert.ok(prediction.championFusion.activeExperts.includes('HISTORICAL_RECENCY'));
+  assert.ok(prediction.championFusion.activeExperts.includes('HISTORICAL'));
+  assert.ok(prediction.championFusion.activeExperts.includes('INCUMBENT_FINAL'));
   assert.equal(prediction.championFusion.candidateExperts.F10P,'HISTORICAL_V2_INCOMPLETE');
   const output:any=buildCfiOutputV3(prediction,{input_mode:'SINGLE_MATCH'});
   assert.equal(output.championFusion.version,'CFI_MULTI_MARKET_CHAMPION_FUSION_V1');
