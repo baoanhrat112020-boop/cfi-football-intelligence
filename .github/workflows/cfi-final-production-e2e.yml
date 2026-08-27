@@ -3,7 +3,7 @@ name: CFI Final Production E2E
 on:
   workflow_dispatch:
   schedule:
-    - cron: '47 0 * * *'
+    - cron: '17 */6 * * *'
 
 concurrency:
   group: cfi-final-production-e2e
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Run the single truthful 5-match production acceptance
+      - name: Run the single truthful production acceptance
         env:
           CFI_DISCOVERY_URL: https://cfi-football-intelligence.gpt-openai.workers.dev/api/discover
         run: |
