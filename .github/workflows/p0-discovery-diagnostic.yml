@@ -1,42 +1,16 @@
-name: P0 Discovery Diagnostic
+name: P0 Discovery Diagnostic (PAUSED)
+
+# PAUSED 2026-08-27: diagnostics are consolidated into the authoritative
+# production acceptance/smoke path. Keeping this file as manual-only preserves
+# history without generating duplicate green signals or repeated provider probes.
+
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p0-discovery-diagnostic.yml'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  diagnostic:
+  paused:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Probe zero-input native discovery
-        shell: bash
+      - name: Explain consolidation
         run: |
-          set -euo pipefail
-          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
-          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          echo 'TRACE_TRIGGER=2026-08-26-P0-B'
-          mkdir -p audit
-          printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/request.json
-          HTTP=$(curl -sS --max-time 180 -o /tmp/response.json -w '%{http_code}' -H 'content-type: application/json' --data-binary @/tmp/request.json "$BASE/api/discover" || true)
-          node - "$HTTP" "$TARGET_DATE" <<'NODE' > audit/p0-discovery-latest.json
-          const fs=require('fs');
-          const [http,targetDate]=process.argv.slice(2);
-          let body=null; try{body=JSON.parse(fs.readFileSync('/tmp/response.json','utf8'))}catch(e){body={parseError:String(e),raw:fs.existsSync('/tmp/response.json')?fs.readFileSync('/tmp/response.json','utf8'):null}}
-          const out={capturedAt:new Date().toISOString(),targetDate,request:{target_date:targetDate,timezone:'Asia/Ho_Chi_Minh',max_matches:5,scan_limit:80,internal_provider_diagnostics:true,fixture_candidates_present:false},httpStatus:Number(http)||null,response:body};
-          process.stdout.write(JSON.stringify(out,null,2)+'\n');
-          NODE
-      - name: Persist trace evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add audit/p0-discovery-latest.json
-          git commit -m 'audit: capture native discovery production trace' || exit 0
-          git push
+          echo "PAUSED: use the authoritative CFI production acceptance/smoke workflow."
