@@ -1,0 +1,25 @@
+name: TMP Discover 500 Diagnostic
+
+on:
+  push:
+    branches: [fix/discover-500-post-retry]
+    paths:
+      - '.github/workflows/tmp-discover-500-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Capture production discovery response
+        run: |
+          set -euo pipefail
+          TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          BODY=$(mktemp)
+          HTTP=$(curl --silent --show-error --max-time 180 -o "$BODY" -w '%{http_code}' \
+            -X POST 'https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/discover' \
+            -H 'content-type: application/json' \
+            --data "{\"target_date\":\"$TODAY\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"response_mode\":\"compact\",\"internal_provider_diagnostics\":true}")
+          echo "HTTP=$HTTP"
+          cat "$BODY"
