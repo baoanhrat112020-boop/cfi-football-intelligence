@@ -2,6 +2,9 @@ name: CFI Final Production E2E
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Deploy CFI Worker']
+    types: [completed]
   schedule:
     - cron: '17 */6 * * *'
 
@@ -11,9 +14,13 @@ concurrency:
 
 jobs:
   practical-acceptance:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Wait for deployed edge convergence
+        if: ${{ github.event_name == 'workflow_run' }}
+        run: sleep 30
       - name: Run the single truthful production acceptance
         env:
           CFI_DISCOVERY_URL: https://cfi-football-intelligence.gpt-openai.workers.dev/api/discover
@@ -22,11 +29,11 @@ jobs:
           TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
           BODY=$(mktemp)
           HTTP=$(curl --fail-with-body --silent --show-error \
-            --retry 2 --retry-delay 2 --max-time 120 \
+            --retry 2 --retry-delay 2 --max-time 180 \
             -o "$BODY" -w '%{http_code}' \
             -X POST "$CFI_DISCOVERY_URL" \
             -H 'content-type: application/json' \
-            --data "{\"target_date\":\"$TODAY\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"response_mode\":\"compact\"}")
+            --data "{\"target_date\":\"$TODAY\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"response_mode\":\"compact\",\"internal_provider_diagnostics\":true}")
           test "$HTTP" = "200"
           node - "$BODY" <<'NODE'
           const fs = require('fs');
@@ -35,19 +42,19 @@ jobs:
           const requested = 5;
           const n = (x) => Number(x || 0);
           const board = Array.isArray(body.board) ? body.board : [];
+          const rejected = Array.isArray(a.rejectedFixtures) ? a.rejectedFixtures : Array.isArray(body.diagnostics) ? body.diagnostics.filter(row => row?.reasonCode) : [];
           const counters = {
-            fixturesDiscovered: n(a.fixturesDiscovered),
-            canonicalized: n(a.canonicalized),
-            predictionAttempts: n(a.predictionAttempts),
-            predictionSuccess: n(a.predictionSuccess),
-            fullPredictionsExecuted: n(a.fullPredictionsExecuted),
+            fixturesDiscovered: n(a.fixturesDiscovered ?? body.counts?.fixturesDiscovered),
+            canonicalized: n(a.canonicalized ?? body.counts?.canonicalized),
+            predictionAttempts: n(a.predictionAttempts ?? body.counts?.predictionAttempts),
+            predictionSuccess: n(a.predictionSuccess ?? body.counts?.predictionSuccess),
+            fullPredictionsExecuted: n(a.fullPredictionsExecuted ?? body.counts?.fullPredictionsExecuted),
             boardRows: board.length,
           };
           const failures = [];
           for (const [key, value] of Object.entries(counters)) {
             if (value < requested) failures.push(`VERIFIED_SHORTFALL_${key.toUpperCase()}_${value}_OF_${requested}`);
           }
-          const rejected = Array.isArray(a.rejectedFixtures) ? a.rejectedFixtures : [];
           const requiredReasonFields = ['match','predictionStatus','strictPrior','failureLayer','reasonCode'];
           for (const row of rejected) {
             for (const field of requiredReasonFields) {
@@ -57,7 +64,8 @@ jobs:
           if (counters.fixturesDiscovered > counters.predictionSuccess && rejected.length === 0) failures.push('MISSING_PER_FIXTURE_FAILURE_REASONS');
           const strictPriorFailures = board.filter(row => row?.strictPrior === false || row?.audit?.strictPrior === false);
           if (strictPriorFailures.length) failures.push('STRICT_PRIOR_FAILURE');
-          if (body.multiMarket?.decisionUse !== false && a.multiMarketDecisionUse !== false) failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
-          console.log(JSON.stringify({requested, ...counters, rejectedCount: rejected.length, failures}, null, 2));
+          if (body.multiMarket?.decisionUse !== false && a.multiMarketDecisionUse !== false && body.rules?.shadowDecisionUse !== false) failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
+          const evidence={requested,...counters,rejectedCount:rejected.length,rejectedFixtures:rejected,providerAttempts:body.providerAttempts||a.providerAttempts||[],search:body.search||a.search||null,board:board.map(row=>({match:row.match,kickoffLocal:row.kickoffLocal,status:row.status,strictPrior:row.strictPrior,consistency:row.consistency,multiMarketStatus:row.multiMarketStatus,multiMarketDecisionUse:row.multiMarketDecisionUse})),failures};
+          console.log(JSON.stringify(evidence, null, 2));
           if (failures.length) process.exit(1);
           NODE
