@@ -96,3 +96,9 @@ test('final production E2E is native discovery with zero predetermined fixture c
     assert.doesNotMatch(workflow,new RegExp(fixture));
   }
 });
+
+test('production discovery provenance never references the feed-local database variable out of scope',()=>{
+  const router=read('cloudflare-worker/src/index-p0-router.ts');
+  assert.doesNotMatch(router,/noDuplicateWorkerProviderCrawler:database!==null/);
+  assert.match(router,/noDuplicateWorkerProviderCrawler:f\.search\?\.workerProviderFallbackAllowed===false/);
+});
