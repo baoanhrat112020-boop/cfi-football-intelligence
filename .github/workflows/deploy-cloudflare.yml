@@ -31,15 +31,21 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Configure BigDB production credential
+      - name: Verify or configure BigDB production credential
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CFI_DB_KEY: ${{ secrets.CFI_DB_KEY || secrets.CFI_ACTION_KEY }}
         run: |
           set -euo pipefail
-          test -n "$CFI_DB_KEY"
-          printf '%s' "$CFI_DB_KEY" | npx wrangler secret put CFI_DB_KEY
+          if npx wrangler secret list 2>/dev/null | grep -q 'CFI_DB_KEY'; then
+            echo 'CFI_DB_KEY already exists in Cloudflare; preserving existing secret.'
+          elif [ -n "$CFI_DB_KEY" ]; then
+            printf '%s' "$CFI_DB_KEY" | npx wrangler secret put CFI_DB_KEY
+          else
+            echo 'CFI_DB_KEY is absent in Cloudflare and no GitHub source secret is configured.' >&2
+            exit 42
+          fi
       - name: Deploy production Worker
         run: npx wrangler deploy
         env:
