@@ -21,7 +21,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [target_date]
+              required: [target_date, response_mode]
               properties:
                 target_date: {type: string, format: date}
                 timezone: {type: string, default: Asia/Ho_Chi_Minh}
@@ -29,6 +29,7 @@ paths:
                 end_time: {type: string}
                 max_matches: {type: integer, minimum: 1, maximum: 10, default: 5}
                 scan_limit: {type: integer, minimum: 1, maximum: 200, default: 80}
+                response_mode: {type: string, enum: [compact, full], default: compact, description: Use compact for GPT Discovery boards to stay within Action response limits. Use full only for direct technical audits.}
                 internal_provider_diagnostics: {type: boolean, default: false}
                 fixture_candidates:
                   type: array

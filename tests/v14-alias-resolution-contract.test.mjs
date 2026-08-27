@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { discoveryFinal } from '../cloudflare-worker/src/discovery-final.ts';
+import { compactDiscoveryRow } from '../cloudflare-worker/src/discovery-compact.ts';
 
 const read=(path)=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 
@@ -40,6 +41,15 @@ test('native discovery retries transient database-feed and catalog failures befo
   assert.match(router,/if\(attempt===0\)await new Promise/);
   assert.match(feed,/for\(let attempt=0;attempt<3;attempt\+\+\)/);
   assert.match(feed,/150\*\(attempt\+1\)/);
+});
+
+test('compact GPT discovery keeps decision contracts but removes oversized technical payloads',()=>{
+  const row=compactDiscoveryRow({match:'A vs B',strictPrior:true,status:'WATCH',multiMarketDecisionUse:false,prediction:{status:'SUCCESS',fullMarketReport:'x'.repeat(100000),renderedReport:'y'.repeat(100000),sixTargetMatrix:{contract:'CFI_2_METHODS_X_6_TARGETS_V1',verification:{complete:true}},temporalEvidenceAudit:{verified:true},multiMarketIntegration:{status:'SHADOW_BLOCKED',decisionUse:false},outputV2:{visibility:{fullMultiMarketVisible:true,allTargetsExposed:true,decisionUse:false}}}});
+  assert.equal(row.prediction.sixTargetMatrix.verification.complete,true);
+  assert.equal(row.prediction.multiMarketVisibility.fullMultiMarketVisible,true);
+  assert.equal(row.prediction.fullMarketReport,undefined);
+  assert.equal(row.prediction.renderedReport,undefined);
+  assert.ok(JSON.stringify(row).length<10000);
 });
 
 test('BigDB resolution stays exact and bridges provider club-name formatting without fuzzy matching',()=>{

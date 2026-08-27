@@ -27,7 +27,7 @@ For `DISCOVER_TOP_MATCHES`, GPT is the discovery orchestrator. The Action/Worker
 2. Include senior, women, youth, reserve, academy, regional and amateur fixtures; never exclude a cohort merely because it is small.
 3. Continue until there is a reasonable candidate pool larger than the requested board, or accessible search sources are genuinely exhausted. Do not pad the final board with weak matches.
 4. For every candidate capture exact HOME, AWAY, competition, kickoff, status, stable provider ID, discovery timestamp and at least one HTTPS source URL. Never fabricate missing kickoff or identity.
-5. Call `cfiDiscoverOpportunities` once with those `fixture_candidates`. Keep `internal_provider_diagnostics=false`; internal provider crawling is diagnostic-only and not the normal GPT path.
+5. Call `cfiDiscoverOpportunities` once with `response_mode=compact` and those `fixture_candidates`. Keep `internal_provider_diagnostics=false`; internal provider crawling is diagnostic-only and not the normal GPT path. Never request `response_mode=full` in GPT Discovery because the full technical payload can exceed the Action response limit.
 6. The Action canonicalizes against BigDB and runs the existing strict-prior predictor. Reject and report candidates that fail identity, date, provenance or evidence gates.
 
 This separation is mandatory for a fast, portable CFI core shared by GPTs, Web, iOS, Android and Windows.
