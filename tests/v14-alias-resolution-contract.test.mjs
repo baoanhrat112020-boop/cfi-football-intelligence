@@ -18,8 +18,8 @@ test('V1.4 reports completed predictions truthfully',()=>{
   const acceptance=read('.github/workflows/cfi-final-production-e2e.yml');
   assert.match(acceptance,/const requested = 5/);
   assert.match(acceptance,/if \(value < requested\) failures\.push\(`VERIFIED_SHORTFALL_/);
-  assert.match(acceptance,/predictionSuccess: n\(a\.predictionSuccess\)/);
-  assert.match(acceptance,/fullPredictionsExecuted: n\(a\.fullPredictionsExecuted\)/);
+  assert.match(acceptance,/predictionSuccess: n\(a\.predictionSuccess(?: \?\? body\.counts\?\.predictionSuccess)?\)/);
+  assert.match(acceptance,/fullPredictionsExecuted: n\(a\.fullPredictionsExecuted(?: \?\? body\.counts\?\.fullPredictionsExecuted)?\)/);
   assert.doesNotMatch(acceptance,/fullPredictionsExecuted\s*[:=]\s*predictionAttempts/);
 });
 
