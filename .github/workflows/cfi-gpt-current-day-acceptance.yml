@@ -1,16 +1,15 @@
-name: CFI GPT Current-Day Acceptance (PAUSED)
+name: CFI GPT Current-Day Acceptance (ARCHIVED)
 
-# PAUSED 2026-08-27: duplicate acceptance path. The canonical production gate is
-# .github/workflows/cfi-final-production-e2e.yml. This file remains manual-only
-# to preserve history and avoid duplicate acceptance signals.
+# ARCHIVED 2026-08-27. Canonical practical acceptance is
+# .github/workflows/cfi-final-production-e2e.yml.
+# No automatic or manual trigger is intentionally exposed here; history remains in git.
 
 on:
   workflow_dispatch:
 
 jobs:
-  paused:
+  archived:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - name: Explain consolidation
-        run: |
-          echo "PAUSED: use CFI Final Production E2E as the single practical acceptance gate."
+      - run: echo "Archived duplicate acceptance workflow."
