@@ -117,7 +117,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     attachCfiOutputV2(body,input?.odds?.values??input?.odds??{});
     attachCfiOutputV3(body,input);
     attachCfiBettingBoard(body);
-    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2_PLUS_CHAMPION_FUSION_V1_SHADOW',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
+    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
     if(body?.status==='DATA_READY'){
       body.upstreamStatus='DATA_READY';
       body.status='SUCCESS';
