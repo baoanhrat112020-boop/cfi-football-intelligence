@@ -18,10 +18,7 @@ jobs:
           set +e
           D=$(TZ=Asia/Ho_Chi_Minh date +%F)
           NOW=$(date -u +%FT%TZ)
-          Y=${D:0:4}
-          M=${D:5:2}
-          if [ "$M" -ge 7 ]; then SEASON="$Y-$((10#$Y+1))"; else SEASON="$((10#$Y-1))-$Y"; fi
-          echo "TARGET_DATE=$D NOW_UTC=$NOW SEASON=$SEASON"
+          echo "TARGET_DATE=$D NOW_UTC=$NOW"
           for OFF in -1 0 1; do
             Q=$(date -u -d "$D $OFF day" +%F)
             E=${Q//-/}
@@ -46,23 +43,21 @@ jobs:
             done
           done
 
-          echo '=== THESPORTSDB SEASON SCHEDULE PROBE ==='
-          for LEAGUE in 4480 4481 5071 4328; do
-            U="https://www.thesportsdb.com/api/v1/json/3/eventsseason.php?id=$LEAGUE&s=$SEASON"
-            F=$(mktemp)
-            CODE=$(curl -L -sS --compressed --max-time 30 \
-              -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' \
-              -H 'accept: application/json, text/plain, */*' \
-              -o "$F" -w '%{http_code}' "$U")
-            echo "LEAGUE=$LEAGUE HTTP=$CODE BYTES=$(wc -c < "$F")"
-            if [ "$CODE" = 200 ]; then
-              jq -r --arg day "$D" '
-                if (.events|type)=="array" then
-                  "EVENT_COUNT=\(.events|length)",
-                  "TARGET_DAY_COUNT=\([.events[] | select((.dateEvent // (.strTimestamp|tostring)[0:10]))==$day] | length)",
-                  (.events[] | select((.dateEvent // (.strTimestamp|tostring)[0:10]))==$day) | [(.strTimestamp // .dateEvent),(.strStatus // ""),.strHomeTeam,.strAwayTeam,.strLeague] | @tsv)
-                else . end' "$F" 2>/dev/null || head -c 1000 "$F"
-            else
-              head -c 500 "$F"; echo
-            fi
+          echo '=== THESPORTSDB LEAGUE-FILTERED DAY PROBE ==='
+          for OFF in -1 0 1; do
+            Q=$(date -u -d "$D $OFF day" +%F)
+            for LEAGUE in 4480 4481 5071 4328; do
+              U="https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=$Q&l=$LEAGUE"
+              F=$(mktemp)
+              CODE=$(curl -L -sS --compressed --max-time 30 \
+                -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' \
+                -H 'accept: application/json, text/plain, */*' \
+                -o "$F" -w '%{http_code}' "$U")
+              echo "DATE=$Q LEAGUE=$LEAGUE HTTP=$CODE BYTES=$(wc -c < "$F")"
+              if [ "$CODE" = 200 ]; then
+                jq -r 'if (.events|type)=="array" then "EVENT_COUNT=\(.events|length)", (.events[] | [(.strTimestamp // .dateEvent),(.strStatus // ""),.strHomeTeam,.strAwayTeam,.strLeague] | @tsv) else . end' "$F" 2>/dev/null || head -c 1000 "$F"
+              else
+                head -c 500 "$F"; echo
+              fi
+            done
           done
