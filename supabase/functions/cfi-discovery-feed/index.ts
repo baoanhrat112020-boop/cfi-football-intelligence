@@ -15,7 +15,7 @@ const clubKey=(value:string)=>fold(value).split(' ').filter(token=>token&&!clubD
 const add=(map:Map<string,Map<string,Resolved>>,key:string,value:Resolved)=>{if(!key||key.length<2)return;const bucket=map.get(key)||new Map<string,Resolved>();bucket.set(value.team_id,value);map.set(key,bucket);};
 const unique=(bucket:Map<string,Resolved>|undefined)=>{const xs=bucket?[...bucket.values()]:[];return xs.length===1?xs[0]:null;};
 
-async function fetchAll(db:any,table:string,columns:string){const out:any[]=[];for(let from=0;from<20000;from+=1000){const {data,error}=await db.from(table).select(columns).range(from,from+999);if(error)throw new Error(`${table.toUpperCase()}_CATALOG_FAILED:${error.message}`);const rows=Array.isArray(data)?data:[];out.push(...rows);if(rows.length<1000)break;}return out;}
+async function fetchAll(db:any,table:string,columns:string){const out:any[]=[];for(let from=0;from<20000;from+=1000){let data:any=null,error:any=null;for(let attempt=0;attempt<3;attempt++){const result=await db.from(table).select(columns).range(from,from+999);data=result.data;error=result.error;if(!error)break;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,150*(attempt+1)));}if(error)throw new Error(`${table.toUpperCase()}_CATALOG_FAILED:${error.message}`);const rows=Array.isArray(data)?data:[];out.push(...rows);if(rows.length<1000)break;}return out;}
 async function loadCatalog(db:any):Promise<Catalog>{
  const [teams,aliases]=await Promise.all([fetchAll(db,'teams','team_id,canonical_name'),fetchAll(db,'team_aliases','team_id,alias_display')]);
  const teamById=new Map<string,string>();for(const row of teams){const id=clean(row?.team_id),name=clean(row?.canonical_name);if(id&&name)teamById.set(id,name);}
