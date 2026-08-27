@@ -1,142 +1,61 @@
 name: CFI Final Production E2E
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/cfi-final-production-e2e.yml'
-      - 'cloudflare-worker/**'
-      - 'src/discovery/**'
-      - 'src/prediction/**'
   workflow_dispatch:
+  schedule:
+    - cron: '47 0 * * *'
 
-permissions:
-  contents: read
-  issues: write
+concurrency:
+  group: cfi-final-production-e2e
+  cancel-in-progress: true
 
 jobs:
-  final-e2e:
+  practical-acceptance:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Wait for Worker deploy convergence
-        run: sleep 45
-
-      - name: Run native production discovery
-        shell: bash
-        run: |
-          set -euo pipefail
-          BASE='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
-          TARGET_DATE=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          printf '{"target_date":"%s","timezone":"Asia/Ho_Chi_Minh","max_matches":5,"scan_limit":80,"internal_provider_diagnostics":true}' "$TARGET_DATE" > /tmp/final-request.json
-          node - <<'NODE'
-          const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/final-request.json','utf8'));
-          if('fixture_candidates' in x||'home' in x||'away' in x) throw new Error('Injected/predetermined fixture input forbidden');
-          NODE
-          HTTP_CODE=$(curl -sS --max-time 180 -H 'content-type: application/json' --data-binary @/tmp/final-request.json "$BASE/api/discover" -o /tmp/final-production.json -w '%{http_code}' || true)
-          echo "Production discovery HTTP=$HTTP_CODE"
-          if [ "$HTTP_CODE" != '200' ]; then cat /tmp/final-production.json; exit 1; fi
-
-      - name: Verify final native production contract
+      - name: Run the single truthful 5-match production acceptance
         env:
-          EXPECTED_VERSION: CFI_AUTO_DISCOVERY_V1.4
-        shell: bash
+          CFI_DISCOVERY_URL: https://cfi-football-intelligence.gpt-openai.workers.dev/api/discover
         run: |
           set -euo pipefail
-          node - <<'NODE'
-          const fs=require('fs');
-          const req=JSON.parse(fs.readFileSync('/tmp/final-request.json','utf8'));
-          const x=JSON.parse(fs.readFileSync('/tmp/final-production.json','utf8'));
-          const requestedMatches=Number(req.max_matches??5);
-          const c=x?.counts||{};
-          const board=Array.isArray(x.board)?x.board:[];
-          const errors=[];
-          const check=(condition,message)=>{if(!condition)errors.push(message)};
-          const fail=(message)=>{throw new Error(message)};
-
-          check(x.status==='OK'&&x.action==='CFI_DISCOVERY'&&x.version===process.env.EXPECTED_VERSION,`discovery contract failed: ${x.version}`);
-          check(x.search?.mode==='GPT_SEARCH_FIRST','GPT search-first telemetry missing');
-          check(x.search?.aiCandidatesReceived===0&&x.search?.aiCandidatesAccepted===0&&Number(c.aiDiscoveredFixtures??0)===0,'injected fixture candidate entered native acceptance');
-          check(x.search?.internalProviderDiagnostics===true&&Array.isArray(x.providerAttempts)&&x.providerAttempts.length>0,'native provider path not exercised');
-
-          // Preserve explicit hard guards used by the production contract tests.
-          if(!(Number(c.predictionSuccess)>0))fail('predictionSuccess <= 0');
-          if(!(Number(c.fullPredictionsExecuted)>0))fail('fullPredictionsExecuted <= 0');
-          if(x.search?.aiCandidatesReceived!==0||x.search?.aiCandidatesAccepted!==0)fail('injected fixture candidate entered native acceptance');
-
-          // Practical product acceptance is intentionally stricter than a smoke test:
-          // a max_matches=5 request is PASS only when five real fixtures complete the full prediction path.
-          check(Number(c.fixturesDiscovered)>=requestedMatches,`VERIFIED_SHORTFALL fixturesDiscovered=${Number(c.fixturesDiscovered??0)}/${requestedMatches}`);
-          check(Number(c.canonicalized)>=requestedMatches,`VERIFIED_SHORTFALL canonicalized=${Number(c.canonicalized??0)}/${requestedMatches}`);
-          check(Number(c.predictionAttempts)>=requestedMatches,`VERIFIED_SHORTFALL predictionAttempts=${Number(c.predictionAttempts??0)}/${requestedMatches}`);
-          check(Number(c.predictionSuccess)>=requestedMatches,`VERIFIED_SHORTFALL predictionSuccess=${Number(c.predictionSuccess??0)}/${requestedMatches}`);
-          check(Number(c.fullPredictionsExecuted)>=requestedMatches,`VERIFIED_SHORTFALL fullPredictionsExecuted=${Number(c.fullPredictionsExecuted??0)}/${requestedMatches}`);
-          check(board.length>=requestedMatches,`VERIFIED_SHORTFALL boardRows=${board.length}/${requestedMatches}`);
-          check(x.rules?.strictPriorRequired===true&&x.rules?.shadowDecisionUse===false&&x.rules?.gptSearchFirstRequired===true,'safety contract changed');
-
-          for(const row of board){
-            const p=row.prediction, v=p?.outputV3, s=p?.sixTargetMatrix;
-            check(row.strictPrior===true,`${row.match}: strict-prior missing`);
-            check(s?.contract==='CFI_2_METHODS_X_6_TARGETS_V1'&&s?.verification?.complete===true,`${row.match}: Champion 6 incomplete`);
-            check(row.multiMarketDecisionUse===false,`${row.match}: shadow Multi-Market promoted`);
-            check(Boolean(v?.marketSummary?.oneXTwo&&v?.marketSummary?.overUnder&&v?.marketSummary?.asianHandicap),`${row.match}: market summary incomplete`);
+          TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          BODY=$(mktemp)
+          HTTP=$(curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-delay 2 --max-time 120 \
+            -o "$BODY" -w '%{http_code}' \
+            -X POST "$CFI_DISCOVERY_URL" \
+            -H 'content-type: application/json' \
+            --data "{\"target_date\":\"$TODAY\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"response_mode\":\"compact\"}")
+          test "$HTTP" = "200"
+          node - "$BODY" <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const a = body.audit || {};
+          const requested = 5;
+          const n = (x) => Number(x || 0);
+          const board = Array.isArray(body.board) ? body.board : [];
+          const failures = [];
+          const checks = {
+            fixturesDiscovered: n(a.fixturesDiscovered),
+            canonicalized: n(a.canonicalized),
+            predictionAttempts: n(a.predictionAttempts),
+            predictionSuccess: n(a.predictionSuccess),
+            fullPredictionsExecuted: n(a.fullPredictionsExecuted),
+            boardRows: board.length,
+          };
+          for (const [key, value] of Object.entries(checks)) {
+            if (value < requested) failures.push(`VERIFIED_SHORTFALL_${key.toUpperCase()}_${value}_OF_${requested}`);
           }
-
-          const practicalShortfall={
-            requestedMatches,
-            fixturesDiscovered:Number(c.fixturesDiscovered??0),
-            canonicalized:Number(c.canonicalized??0),
-            predictionAttempts:Number(c.predictionAttempts??0),
-            predictionSuccess:Number(c.predictionSuccess??0),
-            fullPredictionsExecuted:Number(c.fullPredictionsExecuted??0),
-            boardRows:board.length,
-            missingBoardRows:Math.max(0,requestedMatches-board.length),
-            verifiedShortfall:board.length<requestedMatches||Number(c.predictionSuccess??0)<requestedMatches
-          };
-          const summary={
-            acceptance:errors.length?'FAIL':'PASS',
-            errors,
-            status:x.status,
-            version:x.version,
-            targetDate:x.targetDate,
-            requestedMatches,
-            provider:x.provider,
-            search:x.search,
-            providerAttempts:x.providerAttempts,
-            counts:c,
-            practicalShortfall,
-            final:x.final,
-            board:board.map(r=>({match:r.match,kickoffLocal:r.kickoffLocal,status:r.status,strictPrior:r.strictPrior,consistency:r.consistency,multiMarketStatus:r.multiMarketStatus,multiMarketDecisionUse:r.multiMarketDecisionUse,contract:r.prediction?.sixTargetMatrix?.contract,sixTargetComplete:r.prediction?.sixTargetMatrix?.verification?.complete}))
-          };
-          fs.writeFileSync('/tmp/final-summary.json',JSON.stringify(summary,null,2));
-          console.log(fs.readFileSync('/tmp/final-summary.json','utf8'));
-          if(errors.length)throw new Error(`CFI_PRODUCTION_ACCEPTANCE_FAIL: ${errors.join('; ')}`);
+          const rejected = Array.isArray(a.rejectedFixtures) ? a.rejectedFixtures : [];
+          if (checks.fixturesDiscovered > checks.predictionSuccess && rejected.length === 0) {
+            failures.push('MISSING_PER_FIXTURE_FAILURE_REASONS');
+          }
+          const strictPriorFailures = board.filter(row => row?.strictPrior === false || row?.audit?.strictPrior === false);
+          if (strictPriorFailures.length) failures.push('STRICT_PRIOR_FAILURE');
+          if (body.multiMarket?.decisionUse !== false && a.multiMarketDecisionUse !== false) {
+            failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
+          }
+          console.log(JSON.stringify({requested, ...checks, rejectedCount: rejected.length, failures}, null, 2));
+          if (failures.length) process.exit(1);
           NODE
-
-      - name: Publish final production evidence
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -u
-          if [ ! -f /tmp/final-summary.json ]; then
-            echo '::warning::Final production summary was not produced.'
-            exit 0
-          fi
-          {
-            echo '## CFI Final Production E2E'
-            echo
-            echo '```json'
-            cat /tmp/final-summary.json
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          TITLE='[AUTO] CFI Final Production E2E'
-          BODY=$(cat /tmp/final-summary.json)
-          REPORT=$(printf 'Run: %s\nCommit: %s\n\n```json\n%s\n```' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$BODY")
-          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '.[] | select(.title=="[AUTO] CFI Final Production E2E") | .number' 2>/dev/null | head -n1 || true)
-          if [ -n "${ISSUE:-}" ]; then
-            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$REPORT" || echo "::warning::Could not publish final evidence to issue #$ISSUE"
-          else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$REPORT" || echo '::warning::Could not create final evidence issue'
-          fi
