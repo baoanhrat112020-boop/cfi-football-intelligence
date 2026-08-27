@@ -12,6 +12,7 @@ on:
       - 'wrangler.jsonc'
       - 'package.json'
       - 'package-lock.json'
+      - 'tests/v14-alias-resolution-contract.test.mjs'
       - '.github/workflows/deploy-cloudflare.yml'
 
 concurrency:
