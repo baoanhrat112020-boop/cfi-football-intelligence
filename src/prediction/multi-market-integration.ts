@@ -36,7 +36,7 @@ function attachK048Shadow(body:any,input:{htHome:number;htAway:number;ftHome:num
 export function attachMultiMarketShadow(body:any){
   const e=body?.scoreline?.expectedGoals,htHome=finiteNonNegative(e?.htHome),htAway=finiteNonNegative(e?.htAway),ftHome=finiteNonNegative(e?.ftHome),ftAway=finiteNonNegative(e?.ftAway),observable=[htHome,htAway,ftHome,ftAway].every(v=>v!==null);
   const nativeSingleCore=body?.multiMarket?.version===MULTI_MARKET_VERSION&&body?.multiMarket?.model?.source==='FINAL_CALIBRATED_SCORE_DISTRIBUTION';
-  if(!nativeSingleCore&&!observable){body.multiMarketIntegration={version:MULTI_MARKET_VERSION,status:'UNAVAILABLE',decisionUse:false,reason:'MULTI_MARKET_SOURCE_REQUIRED'};unavailableK048(body,'EXPECTED_GOALS_TELEMETRY_REQUIRED');return body;}
+  if(!nativeSingleCore&&!observable){body.multiMarketIntegration={version:MULTI_MARKET_VERSION,status:'UNAVAILABLE',decisionUse:false,reason:'EXPECTED_GOALS_TELEMETRY_REQUIRED'};unavailableK048(body,'EXPECTED_GOALS_TELEMETRY_REQUIRED');return body;}
   const input=observable?{htHome:htHome!,htAway:htAway!,ftHome:ftHome!,ftAway:ftAway!}:null;
   const multiMarket=nativeSingleCore?body.multiMarket:buildMultiMarketV1(input!);
   const crossCoreConsistency=crossCoreEquivalence(body,multiMarket);
