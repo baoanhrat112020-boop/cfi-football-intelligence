@@ -35,8 +35,7 @@ jobs:
           const requested = 5;
           const n = (x) => Number(x || 0);
           const board = Array.isArray(body.board) ? body.board : [];
-          const failures = [];
-          const checks = {
+          const counters = {
             fixturesDiscovered: n(a.fixturesDiscovered),
             canonicalized: n(a.canonicalized),
             predictionAttempts: n(a.predictionAttempts),
@@ -44,11 +43,18 @@ jobs:
             fullPredictionsExecuted: n(a.fullPredictionsExecuted),
             boardRows: board.length,
           };
-          for (const [key, value] of Object.entries(checks)) {
+          const failures = [];
+          for (const [key, value] of Object.entries(counters)) {
             if (value < requested) failures.push(`VERIFIED_SHORTFALL_${key.toUpperCase()}_${value}_OF_${requested}`);
           }
           const rejected = Array.isArray(a.rejectedFixtures) ? a.rejectedFixtures : [];
-          if (checks.fixturesDiscovered > checks.predictionSuccess && rejected.length === 0) {
+          const requiredReasonFields = ['match','predictionStatus','strictPrior','failureLayer','reasonCode'];
+          for (const row of rejected) {
+            for (const field of requiredReasonFields) {
+              if (!(field in row)) failures.push(`REJECTED_FIXTURE_MISSING_${field.toUpperCase()}`);
+            }
+          }
+          if (counters.fixturesDiscovered > counters.predictionSuccess && rejected.length === 0) {
             failures.push('MISSING_PER_FIXTURE_FAILURE_REASONS');
           }
           const strictPriorFailures = board.filter(row => row?.strictPrior === false || row?.audit?.strictPrior === false);
@@ -56,6 +62,6 @@ jobs:
           if (body.multiMarket?.decisionUse !== false && a.multiMarketDecisionUse !== false) {
             failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
           }
-          console.log(JSON.stringify({requested, ...checks, rejectedCount: rejected.length, failures}, null, 2));
+          console.log(JSON.stringify({requested, ...counters, rejectedCount: rejected.length, failures}, null, 2));
           if (failures.length) process.exit(1);
           NODE
