@@ -13,12 +13,11 @@ const ESPN_LEAGUES=[
  'kor.1','eng.w.1','usa.nwsl','uefa.wchampions',
 ] as const;
 const ESPN_BATCH_SIZE=6;
-// TheSportsDB's unfiltered free eventsday endpoint is capped at three rows. Use
-// legitimate league-level "next event" fallbacks for high-value competitions so
-// late-day discovery does not silently miss a real fixture simply because it was
-// outside that global three-row sample. These are provider league IDs, never
-// fixture/team IDs, and every returned event still passes the normal date/time
-// and prematch filters below.
+// TheSportsDB free day endpoint is capped at three rows globally. Keep the
+// earliest league-level next-event probes, then for product-sized requests only
+// supplement them with league-filtered day probes. The latter are also capped at
+// three rows per league, but combining distinct league IDs broadens truthful
+// fixture coverage while staying below the provider's free 30 req/min rate.
 const THESPORTSDB_NEXT_LEAGUES=['4480','4481','5071','4328'] as const;
 
 const TERMINAL=new Set(['finished','inprogress','canceled','cancelled','postponed','abandoned','match finished','ft','in']);
@@ -111,13 +110,24 @@ export async function discoverFixtures(window:DiscoveryWindow,fetchFn:typeof fet
  }
  await Promise.all(jobs);
  const minimumRows=Math.max(1,Math.min(100,Math.floor(Number(window.minimumRows??5))||5));
- // The free day endpoint is intentionally capped by TheSportsDB. Supplement it
- // with one next-event request per configured league, stopping as soon as the
- // requested pool is satisfied. This stays inside the same legitimate provider
- // and preserves all strict target-date/prematch filters in the parser.
+ // The free global day endpoint is capped. First retain the provider's earliest
+ // upcoming event per configured league because those are especially useful late
+ // in the local day.
  for(const leagueId of THESPORTSDB_NEXT_LEAGUES){
   if(dedupeFixtures(sources.flatMap(source=>source.rows)).length>=minimumRows)break;
   await tryProvider('THESPORTSDB',`https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=${leagueId}`,parseTheSportsDbEvents);
+ }
+ // Product discovery asks for five rows. Only for that larger request, supplement
+ // the next-event probes with league-filtered day endpoints (max three rows per
+ // league on the free tier). Query adjacent provider dates because the requested
+ // local day can straddle UTC; the parser remains the single target-date gate.
+ if(minimumRows>=5){
+  outer: for(const date of queryDates){
+   for(const leagueId of THESPORTSDB_NEXT_LEAGUES){
+    if(dedupeFixtures(sources.flatMap(source=>source.rows)).length>=minimumRows)break outer;
+    await tryProvider('THESPORTSDB',`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${date}&l=${leagueId}`,parseTheSportsDbEvents);
+   }
+  }
  }
  const espnDate=window.targetDate.replaceAll('-','');
  for(let offset=0;offset<ESPN_LEAGUES.length;offset+=ESPN_BATCH_SIZE){
