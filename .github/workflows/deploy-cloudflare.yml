@@ -1,54 +1,34 @@
-name: Deploy Cloudflare Worker
+name: Deploy CFI Worker
+
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'cloudflare-worker/**'
-      - 'src/prediction/**'
-      - 'src/runtime/**'
-      - 'src/discovery/**'
-      - 'src/presentation/**'
-      - 'wrangler.jsonc'
+      - 'src/**'
+      - 'worker/**'
+      - 'wrangler.toml'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/deploy-cloudflare.yml'
-  workflow_dispatch:
+
+concurrency:
+  group: cfi-production-deploy
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: 20
+          cache: npm
       - run: npm ci
-      - name: Verify Wrangler config and bundle
-        run: |
-          set -euo pipefail
-          node --version
-          npx wrangler --version
-          npx wrangler deploy --dry-run
-      - name: Verify Cloudflare credentials are configured
+      - run: npm test
+      - name: Deploy production Worker
+        run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error title=Cloudflare deploy blocked::Missing repository secret CLOUDFLARE_API_TOKEN"
-            exit 1
-          fi
-          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            echo "::error title=Cloudflare deploy blocked::Missing repository secret CLOUDFLARE_ACCOUNT_ID"
-            exit 1
-          fi
-          echo "Cloudflare credential presence check: PASS"
-      - name: Deploy Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          npx wrangler deploy
