@@ -32,7 +32,7 @@ async function withBackend(fn:()=>Promise<void>){
   try{await fn();}finally{globalThis.fetch=original;}
 }
 
-test('production bundle exposes multi-market shadow without mutating six-target Champion contract',async()=>{
+test('production bundle exposes single-core multi-market shadow without mutating six-target Champion contract',async()=>{
   await withBackend(async()=>{
     const response=await router.fetch(request(),env,ctx);
     assert.equal(response.status,200);
@@ -47,9 +47,10 @@ test('production bundle exposes multi-market shadow without mutating six-target 
     assert.equal(body.multiMarket.version,'CFI_MULTI_MARKET_V1');
     assert.equal(body.multiMarket.status,'SHADOW_RESEARCH');
     assert.equal(body.multiMarket.decisionUse,false);
-    assert.equal(body.multiMarketIntegration.status,'SHADOW_BLOCKED');
-    assert.equal(body.multiMarketIntegration.reason,'CROSS_CORE_EQUIVALENCE_FAIL');
-    assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'FAIL');
+    assert.equal(body.multiMarketIntegration.status,'SHADOW_READY');
+    assert.equal(body.multiMarketIntegration.source,'FINAL_CALIBRATED_SCORE_DISTRIBUTION');
+    assert.equal(body.multiMarketIntegration.singleCore,true);
+    assert.equal(body.multiMarketIntegration.crossCoreConsistency.status,'PASS');
     assert.equal(body.multiMarketIntegration.championMutation,false);
     assert.equal(body.multiMarket.consistencyGuard.status,'PASS');
     const ft=body.multiMarket.oneXTwo.ft;
