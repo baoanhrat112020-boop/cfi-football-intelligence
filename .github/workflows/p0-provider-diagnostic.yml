@@ -1,40 +1,17 @@
-name: P0 Provider Diagnostic
+name: P0 Provider Diagnostic (PAUSED)
+
+# PAUSED 2026-08-27: provider diagnostics are now subordinate to the single
+# production acceptance path. No scheduled/manual duplicate probing by default.
+# Re-enable only for a new provider-specific incident that cannot be diagnosed
+# from the authoritative production smoke logs.
+
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
-  diagnostic:
+  paused:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe fixture providers across local day
-        shell: bash
+      - name: Explain consolidation
         run: |
-          set +e
-          D=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          NOW=$(date -u +%FT%TZ)
-          echo "TARGET_DATE=$D NOW_UTC=$NOW"
-          for OFF in -1 0 1; do
-            Q=$(date -u -d "$D $OFF day" +%F)
-            E=${Q//-/}
-            echo "=== PROVIDER_DATE=$Q ==="
-            for U in \
-              "https://api.sofascore.com/api/v1/sport/football/scheduled-events/$Q" \
-              "https://www.sofascore.com/api/v1/sport/football/scheduled-events/$Q" \
-              "https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=$Q&s=Soccer" \
-              "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=$E&limit=1000"; do
-              echo "=== $U ==="
-              F=$(mktemp)
-              CODE=$(curl -L -sS --compressed --max-time 30 \
-                -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' \
-                -H 'accept: application/json, text/plain, */*' \
-                -o "$F" -w '%{http_code}' "$U")
-              echo "HTTP=$CODE BYTES=$(wc -c < "$F")"
-              if [ "$CODE" = 200 ]; then
-                jq -r 'if (.events|type)=="array" then "EVENT_COUNT=\(.events|length)", (.events[0:10][] | [(.date // .startTimestamp // .strTimestamp),(.status.type.state // .status.type // .strStatus),(.competitions[0].competitors[]? | select(.homeAway=="home") | .team.displayName) // .homeTeam.name // .strHomeTeam, (.competitions[0].competitors[]? | select(.homeAway=="away") | .team.displayName) // .awayTeam.name // .strAwayTeam] | @tsv) else . end' "$F" 2>/dev/null || head -c 1000 "$F"
-              else
-                head -c 500 "$F"; echo
-              fi
-            done
-          done
+          echo "PAUSED: provider probing consolidated into production acceptance diagnostics."
