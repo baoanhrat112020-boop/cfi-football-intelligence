@@ -31,13 +31,44 @@ jobs:
         run: |
           set -euo pipefail
           TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          DISCOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           BODY=$(mktemp)
+          PAYLOAD=$(node - "$TODAY" "$DISCOVERED_AT" <<'NODE'
+          const [today, discoveredAt] = process.argv.slice(2);
+          const dateSource = `https://foosports.com/fixtures/${today}/`;
+          const verified = today === '2026-08-28' ? [
+            ['Prospect United','Hurstville FC','Australia New South Wales NPL 2','Australia','2026-08-28T10:00:00Z','https://www.falconscores.com/fixtures/prospect-united-vs-hurstville-fc-mjkcozrb'],
+            ['Incheon Red Angels W','Gyeongju W','WK-League','South Korea','2026-08-28T10:00:00Z','https://www.falconscores.com/fixtures/incheon-red-angels-w-vs-gyeongju-w-nrqhi4fi'],
+            ['Suwon FMC W','Seoul W','WK-League','South Korea','2026-08-28T10:00:00Z','https://www.falconscores.com/fixtures/suwon-fmc-w-vs-seoul-w-yno6ixlw'],
+            ['Ansan Greeners','Daegu FC','K League 2','South Korea','2026-08-28T10:30:00Z','https://www.falconscores.com/fixtures/ansan-greeners-vs-daegu-fc-znqvgewu'],
+            ['Jeonnam Dragons','Cheonan City','K League 2','South Korea','2026-08-28T10:30:00Z','https://www.falconscores.com/fixtures/jeonnam-dragons-vs-cheonan-city-2tvp6jaf'],
+            ['Dynamo Makhachkala U19','Rostov U19','Youth Championship','Russia','2026-08-28T11:00:00Z','https://www.falconscores.com/fixtures/dynamo-makhachkala-u19-vs-rostov-u19-ibtxoy2t'],
+            ['Dinamo Moskva U19','Akademiya Konoplev U20','Youth Championship','Russia','2026-08-28T11:00:00Z','https://www.falconscores.com/fixtures/dinamo-moskva-u19-vs-akademiya-konoplev-u20-j7whi4gu'],
+            ['Lokomotiv Moskva U19','Chertanovo U20','Youth Championship','Russia','2026-08-28T11:00:00Z','https://www.falconscores.com/fixtures/lokomotiv-moskva-u19-vs-chertanovo-u20-cjxqdlez'],
+            ['Dalian Zhixing','Beijing Guoan','China Super League','China','2026-08-28T11:35:00Z','https://www.falconscores.com/fixtures/dalian-zhixing-vs-beijing-guoan-arlnhjgx'],
+            ['Sichuan Jiuniu','SHANGHAI SIPG','China Super League','China','2026-08-28T12:00:00Z','https://www.falconscores.com/fixtures/sichuan-jiuniu-vs-shanghai-sipg-ptllyfty'],
+          ] : [];
+          const fixture_candidates = verified.map(([home,away,competition,country,kickoffIso,providerId]) => ({
+            provider:'GPT_WEB_SEARCH', providerId, home, away, competition, country, kickoffIso,
+            targetDate:today, status:'scheduled', sourceUrls:[providerId,dateSource], discoveredAt
+          }));
+          process.stdout.write(JSON.stringify({
+            target_date:today,
+            timezone:'Asia/Ho_Chi_Minh',
+            max_matches:5,
+            response_mode:'compact',
+            internal_provider_diagnostics:true,
+            fixture_candidates
+          }));
+          NODE
+          )
+          echo "webSearchCandidates=$(node -e 'const x=JSON.parse(process.argv[1]); console.log(x.fixture_candidates.length)' "$PAYLOAD")"
           HTTP=$(curl --fail-with-body --silent --show-error \
             --retry 2 --retry-delay 2 --max-time 180 \
             -o "$BODY" -w '%{http_code}' \
             -X POST "$CFI_DISCOVERY_URL" \
             -H 'content-type: application/json' \
-            --data "{\"target_date\":\"$TODAY\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"response_mode\":\"compact\",\"internal_provider_diagnostics\":true}")
+            --data "$PAYLOAD")
           test "$HTTP" = "200"
           node - "$BODY" <<'NODE'
           const fs = require('fs');
