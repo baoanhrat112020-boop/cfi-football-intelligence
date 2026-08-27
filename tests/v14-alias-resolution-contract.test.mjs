@@ -85,15 +85,12 @@ test('Supabase production deploy includes BigDB retrieval and a real native disc
   assert.match(workflow,/fullPredictionsExecuted/);
 });
 
-test('final production E2E uses auditable search-first candidates and requests five predictions',()=>{
+test('final production E2E is native discovery with zero predetermined fixture cohort',()=>{
   const workflow=read('.github/workflows/cfi-final-production-e2e.yml');
   assert.match(workflow,/\$CFI_DISCOVERY_URL/);
   assert.match(workflow,/const requested = 5/);
-  assert.match(workflow,/max_matches:5/);
-  assert.match(workflow,/fixture_candidates/);
-  assert.match(workflow,/GPT_WEB_SEARCH/);
-  assert.match(workflow,/sourceUrls:\[providerId,dateSource\]/);
-  assert.match(workflow,/discoveredAt/);
+  assert.match(workflow,/\\"max_matches\\":5/);
+  assert.doesNotMatch(workflow,/fixture_candidates/);
   assert.doesNotMatch(workflow,/odds_by_fixture/);
   for(const fixture of ['Bradford City','Newcastle United','Tottenham Hotspur','Preston North End','Real Sociedad']){
     assert.doesNotMatch(workflow,new RegExp(fixture));
