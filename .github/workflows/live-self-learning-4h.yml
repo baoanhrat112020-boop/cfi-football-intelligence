@@ -1,37 +1,17 @@
-name: CFI LIVE Self-Learning 4H
+name: CFI Live Self Learning (PAUSED)
+
+# PAUSED 2026-08-27: non-production research loop removed from automatic execution
+# while CFI is in production-first recovery. Immutable historical evidence is preserved.
+# Re-enable only when a new verified prospective cohort exists and this workflow has
+# a unique, measurable promotion/settlement outcome not covered by production pipelines.
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-env:
-  NODE_VERSION: '22'
-
 jobs:
-  research-shadow-gate:
+  paused:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm install
-      - name: Regression suite
-        run: npm test
-      - name: Evaluate LIVE challenger artifact
-        run: node research/live-self-learning-v1.mjs research/live-candidate.json
-      - name: Upload audit artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: cfi-live-self-learning-audit
-          path: artifacts/live-self-learning-result.json
-          retention-days: 30
-
-# P0 production-first freeze:
-# - Scheduled P2 research is intentionally disabled until P0 production acceptance passes.
-# - Manual workflow_dispatch is retained for explicit engineering use only.
-# - This workflow never deploys or mutates production.
+      - name: Explain pause
+        run: |
+          echo "PAUSED: production-first recovery; no scheduled self-learning runs."
