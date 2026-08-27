@@ -5,6 +5,7 @@ on:
     paths:
       - 'supabase/functions/cfi-gpt-control/**'
       - 'supabase/functions/cfi-bigdb-retrieval/**'
+      - 'supabase/functions/cfi-discovery-feed/**'
       - 'tests/v14-alias-resolution-contract.test.mjs'
       - '.github/workflows/deploy-supabase-gpt-control.yml'
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - 'supabase/functions/cfi-gpt-control/**'
       - 'supabase/functions/cfi-bigdb-retrieval/**'
+      - 'supabase/functions/cfi-discovery-feed/**'
       - 'tests/v14-alias-resolution-contract.test.mjs'
       - '.github/workflows/deploy-supabase-gpt-control.yml'
   workflow_dispatch:
@@ -69,10 +71,11 @@ jobs:
           set -euo pipefail
           supabase functions deploy cfi-bigdb-retrieval --project-ref kovmddkkzttquupdgmel --no-verify-jwt
           supabase functions deploy cfi-gpt-control --project-ref kovmddkkzttquupdgmel --no-verify-jwt
+          supabase functions deploy cfi-discovery-feed --project-ref kovmddkkzttquupdgmel --no-verify-jwt
 
   native-production-gate:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
+    needs: [verify, deploy]
     runs-on: ubuntu-latest
     steps:
       - name: Run real native production prediction gate
@@ -124,7 +127,7 @@ jobs:
 
   search-first-product-gate:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
+    needs: [verify, deploy]
     runs-on: ubuntu-latest
     steps:
       - name: Probe current-day covered GPT search-first path
