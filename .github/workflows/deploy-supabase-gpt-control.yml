@@ -1,4 +1,5 @@
 name: Deploy Supabase Production Control
+# Production source-controlled deploy trigger for CFI_DISCOVERY_FEED_V4.
 
 on:
   workflow_dispatch:
