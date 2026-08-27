@@ -48,12 +48,12 @@ function fusionReportLines(body:any){
   const f=body?.championFusion;if(!f)return['CHAMPION FUSION V1: UNAVAILABLE'];
   const c=f?.champion?.thresholds??{},mm=f?.multiMarket,w=f?.gating?.ft?.weights??{};
   return[
-    `CHAMPION FUSION V1: ${f.status??'—'} | decisionUse=${f.decisionUse===true?'true':'false'} | coherence=${f?.coherence?.status??mm?.consistencyGuard?.status??'—'} | uncertainty=${f?.uncertainty??'—'}`,
+    `CHAMPION FUSION V1: ${f.status??'—'} | decisionUse=${f.decisionUse===true?'true':'false'} | coherence=${f?.coherence?.status??mm?.consistencyGuard?.status??'—'} | uncertainty=${f?.uncertainty?.level??'—'} | confidence=${pct(f?.uncertainty?.confidence)} | abstain=${f?.uncertainty?.abstain===true?'YES':'NO'}`,
     `Fusion Champion: 3+ HT ${pct(c['3+ HT'])} | 7+ FT ${pct(c['7+ FT'])} | Other HT ${pct(c['Other HT'])} | Other FT ${pct(c['Other FT'])}`,
     `Fusion Top-3 HT: ${list(f?.champion?.top3HT)}`,
     `Fusion Top-3 FT: ${list(f?.champion?.top3FT)}`,
     `Fusion FT 1X2: H ${pct(mm?.oneXTwo?.ft?.home)} | X ${pct(mm?.oneXTwo?.ft?.draw)} | A ${pct(mm?.oneXTwo?.ft?.away)} | FT O2.5 ${pct(mm?.overUnder?.ft?.['2.5']?.over?.fullWin)} | FT O6.5 ${pct(mm?.overUnder?.ft?.['6.5']?.over?.fullWin)}`,
-    `Fusion FT weights: HIST ${pct(w.HISTORICAL)} | RECENT ${pct(w.RECENT_FORM)} | FUTURE_SIX ${pct(w.FUTURE_SIX)} | DIR_POISSON ${pct(w.DIRECTIONAL_POISSON)}`,
+    `Fusion FT weights: INC ${pct(w.INCUMBENT_FINAL)} | HIST ${pct(w.HISTORICAL)} | FUTURE_SIX ${pct(w.FUTURE_SIX)} | RECENT ${pct(w.RECENT_FORM)} | DIR ${pct(w.DIRECTIONAL_RECONCILIATION)}`,
     'Fusion policy: SHADOW_RESEARCH only; paired prospective settlement + full Multi-Market promotion gate required.'
   ];
 }
@@ -71,12 +71,6 @@ function normalizeReleaseTelemetry(body:any){
   body.bigDbRetrieval={...(body.bigDbRetrieval??{}),version:BIGDB_VERSION};
   body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
   body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
-}
-function attachFusionOutput(body:any){
-  const f=body?.championFusion;if(!f||!body?.outputV3)return;
-  body.outputV3.championFusion={version:f.version??null,status:f.status??null,decisionUse:f.decisionUse===true,researchOnly:f.researchOnly!==false,productionEligible:f.productionEligible===true,architecture:f.architecture??null,uncertainty:f.uncertainty??null,strictPrior:f.strictPrior??null,gating:f.gating??null,champion:f.champion??null,multiMarket:{oneXTwo:f?.multiMarket?.oneXTwo??null,overUnder:f?.multiMarket?.overUnder??null,asianHandicap:f?.multiMarket?.asianHandicap??null,consistencyGuard:f?.multiMarket?.consistencyGuard??null},incumbentDelta:f.incumbentDelta??null,promotionGate:f.promotionGate??null};
-  const extra=fusionReportLines(body).join('\n');
-  if(typeof body.outputV3.renderedPracticalReport==='string')body.outputV3.renderedPracticalReport=`${body.outputV3.renderedPracticalReport}\n\n${extra}`;
 }
 const nonNegativeCount=(v:any)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
 function zeroEvidenceGuard(body:any){
@@ -122,7 +116,6 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     attachMultiMarketShadow(body);
     attachCfiOutputV2(body,input?.odds?.values??input?.odds??{});
     attachCfiOutputV3(body,input);
-    attachFusionOutput(body);
     attachCfiBettingBoard(body);
     body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2_PLUS_CHAMPION_FUSION_V1_SHADOW',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
     if(body?.status==='DATA_READY'){
