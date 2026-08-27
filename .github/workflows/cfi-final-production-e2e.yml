@@ -38,17 +38,17 @@ jobs:
           node - "$BODY" <<'NODE'
           const fs = require('fs');
           const body = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const a = body.audit || {};
+          const a = {...(body.counts || {}), ...(body.audit || {})};
           const requested = 5;
           const n = (x) => Number(x || 0);
           const board = Array.isArray(body.board) ? body.board : [];
           const rejected = Array.isArray(a.rejectedFixtures) ? a.rejectedFixtures : Array.isArray(body.diagnostics) ? body.diagnostics.filter(row => row?.reasonCode) : [];
           const counters = {
-            fixturesDiscovered: n(a.fixturesDiscovered ?? body.counts?.fixturesDiscovered),
-            canonicalized: n(a.canonicalized ?? body.counts?.canonicalized),
-            predictionAttempts: n(a.predictionAttempts ?? body.counts?.predictionAttempts),
-            predictionSuccess: n(a.predictionSuccess ?? body.counts?.predictionSuccess),
-            fullPredictionsExecuted: n(a.fullPredictionsExecuted ?? body.counts?.fullPredictionsExecuted),
+            fixturesDiscovered: n(a.fixturesDiscovered),
+            canonicalized: n(a.canonicalized),
+            predictionAttempts: n(a.predictionAttempts),
+            predictionSuccess: n(a.predictionSuccess),
+            fullPredictionsExecuted: n(a.fullPredictionsExecuted),
             boardRows: board.length,
           };
           const failures = [];
