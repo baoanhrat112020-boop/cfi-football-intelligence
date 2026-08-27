@@ -2,6 +2,10 @@ name: CFI Final Production E2E
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cfi-final-production-e2e.yml'
   workflow_run:
     workflows: ['Deploy CFI Worker']
     types: [completed]
@@ -23,7 +27,7 @@ jobs:
         run: sleep 30
       - name: Run the single truthful production acceptance
         env:
-          CFI_DISCOVERY_URL: https://cfi-football-intelligence.gpt-openai.workers.dev/api/discover
+          CFI_DISCOVERY_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/discover
         run: |
           set -euo pipefail
           TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
