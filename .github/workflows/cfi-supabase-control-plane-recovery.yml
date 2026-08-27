@@ -4,13 +4,25 @@ on:
   pull_request:
     paths:
       - '.github/workflows/cfi-supabase-control-plane-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cfi-supabase-control-plane-recovery.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  verify-pr-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recovery is main-only
+        run: echo 'Production Management API credentials are intentionally unavailable to PR runs; recovery executes after trusted main merge.'
+
   recover:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
     env:
