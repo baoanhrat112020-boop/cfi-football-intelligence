@@ -33,6 +33,15 @@ test('native discovery fails closed with a truthful terminal reason before any p
   assert.equal(discoveryFinal({action:'CFI_DISCOVERY',counts:{fixturesDiscovered:1,predictionAttempts:1,predictionSuccess:1,insufficient:0},final:'NO_BET'}),'NO_BET');
 });
 
+test('native discovery retries transient database-feed and catalog failures before provider fallback',()=>{
+  const router=read('cloudflare-worker/src/index-p0-router.ts');
+  const feed=read('supabase/functions/cfi-discovery-feed/index.ts');
+  assert.match(router,/for\(let attempt=0;attempt<2;attempt\+\+\)/);
+  assert.match(router,/if\(attempt===0\)await new Promise/);
+  assert.match(feed,/for\(let attempt=0;attempt<3;attempt\+\+\)/);
+  assert.match(feed,/150\*\(attempt\+1\)/);
+});
+
 test('BigDB resolution stays exact and bridges provider club-name formatting without fuzzy matching',()=>{
   const migration=read('supabase/sql/cfi_team_alias_resolution_v1.sql');
   const override=read('supabase/sql/cfi_team_alias_resolution_v1_1.sql');
