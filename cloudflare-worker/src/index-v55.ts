@@ -44,19 +44,32 @@ function consistencyViolations(body:any){
   }
   return violations;
 }
+function fusionReportLines(body:any){
+  const f=body?.championFusion;if(!f)return['CHAMPION FUSION V1: UNAVAILABLE'];
+  const c=f?.champion?.thresholds??{},mm=f?.multiMarket,w=f?.gating?.ft?.weights??{};
+  return[
+    `CHAMPION FUSION V1: ${f.status??'—'} | decisionUse=${f.decisionUse===true?'true':'false'} | coherence=${f?.coherence?.status??mm?.consistencyGuard?.status??'—'} | uncertainty=${f?.uncertainty?.level??'—'} | confidence=${pct(f?.uncertainty?.confidence)} | abstain=${f?.uncertainty?.abstain===true?'YES':'NO'}`,
+    `Fusion Champion: 3+ HT ${pct(c['3+ HT'])} | 7+ FT ${pct(c['7+ FT'])} | Other HT ${pct(c['Other HT'])} | Other FT ${pct(c['Other FT'])}`,
+    `Fusion Top-3 HT: ${list(f?.champion?.top3HT)}`,
+    `Fusion Top-3 FT: ${list(f?.champion?.top3FT)}`,
+    `Fusion FT 1X2: H ${pct(mm?.oneXTwo?.ft?.home)} | X ${pct(mm?.oneXTwo?.ft?.draw)} | A ${pct(mm?.oneXTwo?.ft?.away)} | FT O2.5 ${pct(mm?.overUnder?.ft?.['2.5']?.over?.fullWin)} | FT O6.5 ${pct(mm?.overUnder?.ft?.['6.5']?.over?.fullWin)}`,
+    `Fusion FT weights: INC ${pct(w.INCUMBENT_FINAL)} | HIST ${pct(w.HISTORICAL)} | FUTURE_SIX ${pct(w.FUTURE_SIX)} | RECENT ${pct(w.RECENT_FORM)} | DIR ${pct(w.DIRECTIONAL_RECONCILIATION)}`,
+    'Fusion policy: SHADOW_RESEARCH only; paired prospective settlement + full Multi-Market promotion gate required.'
+  ];
+}
 function rebuildMatrix(body:any){
   if(!body?.sixTargetMatrix)return;
   for(const market of MARKET_CODES){const r=body?.markets?.[market];if(r&&body.sixTargetMatrix.threshold?.[market])Object.assign(body.sixTargetMatrix.threshold[market],{methodA:r.methodA,methodB:r.methodB,final:r.final});}
   const ranking=MARKET_CODES.map(m=>({target:m,probability:Number(body?.markets?.[m]?.final),confidence:body?.markets?.[m]?.predictiveConfidence??body?.markets?.[m]?.confidence})).sort((a,b)=>b.probability-a.probability);
   body.ranking=ranking;body.verdict=(ranking[0]?.probability??0)>=.6?'STRONG_SIGNAL':'NO_STRONG_SIGNAL';
   const t=body.sixTargetMatrix.threshold,s=body.sixTargetMatrix.scoreline;
-  body.renderedReport=[`CFI 2 METHODS × 6 TARGETS — ${body.sixTargetMatrix.contract}`,`MATCH: ${body?.target?.home??'—'} vs ${body?.target?.away??'—'} | ${body?.target?.date??'—'} | ENGINE ${ENGINE_VERSION}`,'','THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',...MARKET_CODES.map(m=>`${m}: A ${pct(t[m]?.methodA)} | B ${pct(t[m]?.methodB)} | FINAL ${pct(t[m]?.final)} | ${t[m]?.confidence??'—'}`),'','TOP-3 HT — PRIMARY TARGET',`Method A: ${list(s['Top-3 HT']?.methodA)}`,`Method B: ${list(s['Top-3 HT']?.methodB)}`,`FINAL: ${list(s['Top-3 HT']?.final)}`,'','TOP-3 FT — PRIMARY TARGET',`Method A: ${list(s['Top-3 FT']?.methodA)}`,`Method B: ${list(s['Top-3 FT']?.methodB)}`,`FINAL: ${list(s['Top-3 FT']?.final)}`,'',`VERDICT: ${body.verdict} | UNCERTAINTY: ${body?.scoreline?.uncertainty??'—'}`,`CONTRACT COMPLETE: ${body.sixTargetMatrix.verification?.complete?'YES':'NO'}`].join('\n');
+  body.renderedReport=[`CFI 2 METHODS × 6 TARGETS — ${body.sixTargetMatrix.contract}`,`MATCH: ${body?.target?.home??'—'} vs ${body?.target?.away??'—'} | ${body?.target?.date??'—'} | ENGINE ${ENGINE_VERSION}`,'','THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',...MARKET_CODES.map(m=>`${m}: A ${pct(t[m]?.methodA)} | B ${pct(t[m]?.methodB)} | FINAL ${pct(t[m]?.final)} | ${t[m]?.confidence??'—'}`),'','TOP-3 HT — PRIMARY TARGET',`Method A: ${list(s['Top-3 HT']?.methodA)}`,`Method B: ${list(s['Top-3 HT']?.methodB)}`,`FINAL: ${list(s['Top-3 HT']?.final)}`,'','TOP-3 FT — PRIMARY TARGET',`Method A: ${list(s['Top-3 FT']?.methodA)}`,`Method B: ${list(s['Top-3 FT']?.methodB)}`,`FINAL: ${list(s['Top-3 FT']?.final)}`,'',`VERDICT: ${body.verdict} | UNCERTAINTY: ${body?.scoreline?.uncertainty??'—'}`,`CONTRACT COMPLETE: ${body.sixTargetMatrix.verification?.complete?'YES':'NO'}`,'',...fusionReportLines(body)].join('\n');
 }
 function normalizeReleaseTelemetry(body:any){
   body.engine=ENGINE_VERSION;
-  body.runtime={...(body.runtime??{}),version:RUNTIME_VERSION,engine:ENGINE_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER};
+  body.runtime={...(body.runtime??{}),version:RUNTIME_VERSION,engine:ENGINE_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
   body.bigDbRetrieval={...(body.bigDbRetrieval??{}),version:BIGDB_VERSION};
-  body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER};
+  body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
   body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
 }
 const nonNegativeCount=(v:any)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
@@ -104,7 +117,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     attachCfiOutputV2(body,input?.odds?.values??input?.odds??{});
     attachCfiOutputV3(body,input);
     attachCfiBettingBoard(body);
-    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION};
+    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
     if(body?.status==='DATA_READY'){
       body.upstreamStatus='DATA_READY';
       body.status='SUCCESS';
