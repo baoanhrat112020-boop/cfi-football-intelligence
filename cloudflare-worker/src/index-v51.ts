@@ -1,4 +1,4 @@
-import v50 from './index-v50.ts';
+import v50 from './index-v50-resilient.ts';
 
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.3';
 const ENGINE_VERSION='CFI_FINAL_V5.2.4';
