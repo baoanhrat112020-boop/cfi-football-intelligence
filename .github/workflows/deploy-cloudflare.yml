@@ -6,8 +6,10 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'cloudflare-worker/**'
       - 'worker/**'
       - 'wrangler.toml'
+      - 'wrangler.jsonc'
       - 'package.json'
       - 'package-lock.json'
 
