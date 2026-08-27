@@ -12,6 +12,7 @@ on:
       - 'wrangler.jsonc'
       - 'package.json'
       - 'package-lock.json'
+      - '.github/workflows/deploy-cloudflare.yml'
 
 concurrency:
   group: cfi-production-deploy
