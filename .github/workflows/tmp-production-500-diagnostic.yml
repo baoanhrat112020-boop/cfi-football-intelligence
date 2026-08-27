@@ -1,0 +1,28 @@
+name: TMP Production 500 Diagnostic
+
+on:
+  push:
+    branches: [fix/production-500-fusion-instructions]
+    paths:
+      - '.github/workflows/tmp-production-500-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Capture production prediction response
+        run: |
+          set -euo pipefail
+          BODY=$(mktemp)
+          HTTP=$(curl --silent --show-error --max-time 180 -o "$BODY" -w '%{http_code}' \
+            -X POST 'https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/predict' \
+            -H 'content-type: application/json' \
+            --data '{"home":"Freiburg","away":"Motherwell","target_date":"2026-08-27","language":"vi"}')
+          echo "HTTP=$HTTP"
+          node - "$BODY" <<'NODE'
+          const fs=require('fs');
+          const body=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          console.log(JSON.stringify({status:body.status,error:body.error,message:body.message,runtime:body.runtime,strictPrior:body.strictPrior,temporalEvidenceAudit:body.temporalEvidenceAudit,championFusion:body.championFusion&&{status:body.championFusion.status,reason:body.championFusion.reason}},null,2));
+          NODE
