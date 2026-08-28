@@ -104,7 +104,7 @@ test('production discovery uses public providers whenever the verified DB/web po
   assert.match(router,/const usePublicProviders=workerProviderFallbackAllowed/);
   assert.match(router,/providerFallbackReason:providerFallbackTriggered\?'VERIFIED_POOL_SHORTFALL':null/);
   assert.doesNotMatch(router,/CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK/);
-  assert.match(router,/noDuplicateWorkerProviderCrawler:!usePublicProviders/);
+  assert.match(router,/noDuplicateWorkerProviderCrawler:f\.search\?\.workerProviderFallbackAllowed===false/);
 });
 
 test('discovery predicts only evidence-ready candidates and keeps filling after failures',()=>{
