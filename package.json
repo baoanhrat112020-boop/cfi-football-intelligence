@@ -5,7 +5,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs tests/*.test.ts",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "cfi:node": "node local-node/index.mjs"
+    "cfi:node": "node local-node/index.mjs",
+    "cfi:historical": "node local-node/harvester/football-data/historical-pilot.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
