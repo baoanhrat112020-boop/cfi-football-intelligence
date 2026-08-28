@@ -12,7 +12,8 @@
     "cfi:historical:rebuild-local": "node local-node/harvester/football-data/historical-rebuild-local.mjs",
     "cfi:openfootball": "node local-node/harvester/openfootball/sync.mjs",
     "cfi:openfootball:audit": "node local-node/harvester/openfootball/world-audit.mjs",
-    "cfi:openfootball:parse": "node local-node/harvester/openfootball/world-parse.mjs"
+    "cfi:openfootball:parse": "node local-node/harvester/openfootball/world-parse.mjs",
+    "cfi:browser:fixtures": "node local-node/browser/fixture-collector/index.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
