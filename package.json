@@ -6,7 +6,8 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "cfi:node": "node local-node/index.mjs",
-    "cfi:historical": "node local-node/harvester/football-data/historical-pilot.mjs"
+    "cfi:historical": "node local-node/harvester/football-data/historical-pilot.mjs",
+    "cfi:historical:registry": "node local-node/harvester/football-data/historical-registry-runner.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
