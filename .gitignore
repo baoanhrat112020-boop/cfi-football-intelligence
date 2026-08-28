@@ -1,0 +1,6 @@
+node_modules/
+local-node/cache/
+local-node/logs/
+local-node/state/
+.env
+.env.*
