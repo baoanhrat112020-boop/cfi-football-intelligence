@@ -9,7 +9,10 @@
     "cfi:historical": "node local-node/harvester/football-data/historical-pilot.mjs",
     "cfi:historical:registry": "node local-node/harvester/football-data/historical-registry-runner.mjs",
     "cfi:historical:audit": "node local-node/harvester/football-data/historical-audit.mjs",
-    "cfi:historical:rebuild-local": "node local-node/harvester/football-data/historical-rebuild-local.mjs"
+    "cfi:historical:rebuild-local": "node local-node/harvester/football-data/historical-rebuild-local.mjs",
+    "cfi:openfootball": "node local-node/harvester/openfootball/sync.mjs",
+    "cfi:openfootball:audit": "node local-node/harvester/openfootball/world-audit.mjs",
+    "cfi:openfootball:parse": "node local-node/harvester/openfootball/world-parse.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
