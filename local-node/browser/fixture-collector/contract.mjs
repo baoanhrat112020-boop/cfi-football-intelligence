@@ -45,10 +45,10 @@ export function classifyCandidate(candidate) {
     competition_class = "WOMEN";
   } else if (age_band !== "UNKNOWN") {
     competition_class = "YOUTH";
-  } else if (
-    /\breserves?\b/i.test(text)
-  ) {
-    competition_class = "RESERVE";
+ } else if (
+  /\breserv(?:e|es|a)\b/i.test(text)
+) {
+  competition_class = "RESERVE";
   } else if (
     /\bsemi[\s-]?pro(?:fessional)?\b/i.test(text)
   ) {

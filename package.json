@@ -13,7 +13,13 @@
     "cfi:openfootball": "node local-node/harvester/openfootball/sync.mjs",
     "cfi:openfootball:audit": "node local-node/harvester/openfootball/world-audit.mjs",
     "cfi:openfootball:parse": "node local-node/harvester/openfootball/world-parse.mjs",
-    "cfi:browser:fixtures": "node local-node/browser/fixture-collector/index.mjs"
+    "cfi:browser:fixtures": "node local-node/browser/fixture-collector/index.mjs",
+    "cfi:browser:probe": "node local-node/browser/fixture-collector/probe.mjs",
+    "cfi:browser:snapshot-audit": "node local-node/browser/fixture-collector/snapshot-audit.mjs",
+    "cfi:browser:soccerway": "node local-node/browser/fixture-collector/soccerway-adapter.mjs",
+    "cfi:browser:sofascore-probe": "node local-node/browser/fixture-collector/sofascore-probe.mjs",
+    "cfi:browser:sofascore": "node local-node/browser/fixture-collector/sofascore-adapter.mjs",
+    "cfi:browser:cross-verify": "node local-node/browser/fixture-collector/cross-verify.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
@@ -21,6 +27,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "playwright": "^1.62.1",
     "wrangler": "^4.0.0",
     "yaml": "^2.9.0"
   }
