@@ -102,3 +102,16 @@ test('production discovery provenance never references the feed-local database v
   assert.doesNotMatch(router,/noDuplicateWorkerProviderCrawler:database!==null/);
   assert.match(router,/noDuplicateWorkerProviderCrawler:f\.search\?\.workerProviderFallbackAllowed===false/);
 });
+
+test('discovery predicts only evidence-ready candidates and keeps filling after failures',()=>{
+  const router=read('cloudflare-worker/src/index-p0-router.ts');
+  assert.match(router,/homeN>0&&awayN>0&&temporal/);
+  assert.match(router,/const evidenceReady=preflight\.filter\(x=>x\.ready\)/);
+  assert.match(router,/for\(const rejected of evidenceRejected\)diagnostics\.push\(preflightDiagnostic\(rejected\)\)/);
+  assert.doesNotMatch(router,/canonicalRows=\[\.\.\.evidenceReady,\.\.\.evidenceUnknown\]/);
+  assert.match(router,/evaluated\.length<maxMatches/);
+  assert.match(router,/const remaining=maxMatches-evaluated\.length/);
+  assert.match(router,/engineSucceeded&&strictPrior&&score\.eligible&&evaluated\.length<maxMatches/);
+  assert.match(router,/continueAfterCandidateFailure:true/);
+  assert.match(router,/stopAtSuccessfulMaxMatches:true/);
+});
