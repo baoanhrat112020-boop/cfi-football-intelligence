@@ -97,10 +97,14 @@ test('final production E2E is native discovery with zero predetermined fixture c
   }
 });
 
-test('production discovery provenance never references the feed-local database variable out of scope',()=>{
+test('production discovery uses public providers whenever the verified DB/web pool is short',()=>{
   const router=read('cloudflare-worker/src/index-p0-router.ts');
-  assert.doesNotMatch(router,/noDuplicateWorkerProviderCrawler:database!==null/);
-  assert.match(router,/noDuplicateWorkerProviderCrawler:f\.search\?\.workerProviderFallbackAllowed===false/);
+  assert.match(router,/const providerFallbackTriggered=verifiedBeforeProviders\.length<requestedRows/);
+  assert.match(router,/const workerProviderFallbackAllowed=explicitProviderDiagnostics\|\|providerFallbackTriggered/);
+  assert.match(router,/const usePublicProviders=workerProviderFallbackAllowed/);
+  assert.match(router,/providerFallbackReason:providerFallbackTriggered\?'VERIFIED_POOL_SHORTFALL':null/);
+  assert.doesNotMatch(router,/CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK/);
+  assert.match(router,/noDuplicateWorkerProviderCrawler:!usePublicProviders/);
 });
 
 test('discovery predicts only evidence-ready candidates and keeps filling after failures',()=>{
