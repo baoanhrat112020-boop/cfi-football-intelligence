@@ -1,58 +1,59 @@
-﻿export const HISTORICAL_SOURCES = [
-  {
-    id: "football-data-2526-E0",
-    season: "2025/26",
-    competition: "E0",
-    league: "England Premier League",
-    url: "https://www.football-data.co.uk/mmz4281/2526/E0.csv"
-  },
-  {
-    id: "football-data-2526-E1",
-    season: "2025/26",
-    competition: "E1",
-    league: "England Championship",
-    url: "https://www.football-data.co.uk/mmz4281/2526/E1.csv"
-  },
-  {
-    id: "football-data-2526-D1",
-    season: "2025/26",
-    competition: "D1",
-    league: "Germany Bundesliga",
-    url: "https://www.football-data.co.uk/mmz4281/2526/D1.csv"
-  },
-  {
-    id: "football-data-2526-I1",
-    season: "2025/26",
-    competition: "I1",
-    league: "Italy Serie A",
-    url: "https://www.football-data.co.uk/mmz4281/2526/I1.csv"
-  },
-  {
-    id: "football-data-2526-SP1",
-    season: "2025/26",
-    competition: "SP1",
-    league: "Spain La Liga",
-    url: "https://www.football-data.co.uk/mmz4281/2526/SP1.csv"
-  },
-  {
-    id: "football-data-2526-F1",
-    season: "2025/26",
-    competition: "F1",
-    league: "France Ligue 1",
-    url: "https://www.football-data.co.uk/mmz4281/2526/F1.csv"
-  },
-  {
-    id: "football-data-2526-N1",
-    season: "2025/26",
-    competition: "N1",
-    league: "Netherlands Eredivisie",
-    url: "https://www.football-data.co.uk/mmz4281/2526/N1.csv"
-  },
-  {
-    id: "football-data-2526-P1",
-    season: "2025/26",
-    competition: "P1",
-    league: "Portugal Primeira Liga",
-    url: "https://www.football-data.co.uk/mmz4281/2526/P1.csv"
-  }
+﻿const SEASONS = [
+  { id: "2021", label: "2020/21" },
+  { id: "2122", label: "2021/22" },
+  { id: "2223", label: "2022/23" },
+  { id: "2324", label: "2023/24" },
+  { id: "2425", label: "2024/25" },
+  { id: "2526", label: "2025/26" }
 ];
+
+const DIVISIONS = [
+  ["E0",  "England Premier League"],
+  ["E1",  "England Championship"],
+  ["E2",  "England League One"],
+  ["E3",  "England League Two"],
+  ["EC",  "England National League"],
+
+  ["SC0", "Scotland Premiership"],
+  ["SC1", "Scotland Championship"],
+  ["SC2", "Scotland League One"],
+  ["SC3", "Scotland League Two"],
+
+  ["D1",  "Germany Bundesliga"],
+  ["D2",  "Germany 2. Bundesliga"],
+
+  ["I1",  "Italy Serie A"],
+  ["I2",  "Italy Serie B"],
+
+  ["SP1", "Spain La Liga"],
+  ["SP2", "Spain Segunda Division"],
+
+  ["F1",  "France Ligue 1"],
+  ["F2",  "France Ligue 2"],
+
+  ["N1",  "Netherlands Eredivisie"],
+  ["B1",  "Belgium First Division A"],
+  ["P1",  "Portugal Primeira Liga"],
+  ["T1",  "Turkey Super Lig"],
+  ["G1",  "Greece Super League"]
+];
+
+export const HISTORICAL_SOURCES = SEASONS.flatMap(
+  season =>
+    DIVISIONS.map(([competition, league]) => ({
+      id: `football-data-${season.id}-${competition}`,
+      season: season.label,
+      seasonCode: season.id,
+      competition,
+      league,
+      evidenceClass: "HT_FT_PRIMARY",
+      url:
+        `https://www.football-data.co.uk/mmz4281/${season.id}/${competition}.csv`
+    }))
+);
+
+if (HISTORICAL_SOURCES.length !== 132) {
+  throw new Error(
+    `HISTORICAL_REGISTRY_COUNT_MISMATCH_${HISTORICAL_SOURCES.length}`
+  );
+}

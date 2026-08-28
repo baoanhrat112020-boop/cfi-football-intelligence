@@ -7,7 +7,9 @@
     "dev": "wrangler dev",
     "cfi:node": "node local-node/index.mjs",
     "cfi:historical": "node local-node/harvester/football-data/historical-pilot.mjs",
-    "cfi:historical:registry": "node local-node/harvester/football-data/historical-registry-runner.mjs"
+    "cfi:historical:registry": "node local-node/harvester/football-data/historical-registry-runner.mjs",
+    "cfi:historical:audit": "node local-node/harvester/football-data/historical-audit.mjs",
+    "cfi:historical:rebuild-local": "node local-node/harvester/football-data/historical-rebuild-local.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
