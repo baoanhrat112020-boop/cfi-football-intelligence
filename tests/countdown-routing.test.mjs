@@ -5,10 +5,10 @@ import { readFileSync } from 'node:fs';
 const main=readFileSync(new URL('../gpt-action/CFI_GPT_INSTRUCTIONS.md',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../gpt-action/COUNTDOWN_ROUTING_POLICY.md',import.meta.url),'utf8');
 
-test('countdown is prematch and keeps historical retrieval',()=>{
-  assert.match(main,/COUNTDOWN TO KICKOFF/);
-  assert.match(main,/PREMATCH/);
-  assert.match(main,/retrieve strict-prior historical HOME\/AWAY\/H2H evidence normally/);
+test('countdown is prematch and keeps strict-prior historical semantics',()=>{
+  assert.match(main,/Countdown\/warm-up\/lineups = PREMATCH/);
+  assert.match(main,/strict-prior BigDB/);
+  assert.match(main,/LIVE không backfill PREMATCH/);
   assert.match(policy,/Countdown does not disable historical retrieval/);
 });
 
@@ -20,6 +20,7 @@ test('countdown resolves nearest imminent kickoff date rather than distant fixtu
 });
 
 test('live routing requires positive evidence play started',()=>{
+  assert.match(main,/running minute, 1H\/HT\/2H hoặc event sau kickoff/);
   assert.match(policy,/positive evidence that play has started/);
   assert.match(policy,/running match minute\/period/);
 });

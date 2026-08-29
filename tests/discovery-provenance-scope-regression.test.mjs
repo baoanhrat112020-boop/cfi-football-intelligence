@@ -9,6 +9,8 @@ test('discovery provenance never references feed-local variables outside scope',
   assert.doesNotMatch(p0,/noDuplicateWorkerProviderCrawler:database!==null/);
   assert.doesNotMatch(p0,/noDuplicateWorkerProviderCrawler:!usePublicProviders/);
   assert.match(p0,/const database=await databaseFeed/);
-  assert.match(p0,/workerProviderFallbackAllowed=explicitProviderDiagnostics\|\|providerFallbackTriggered/);
+  assert.match(p0,/workerProviderFallbackAllowed=explicitProviderDiagnostics/);
   assert.match(p0,/providerFallbackTriggered=verifiedBeforeProviders\.length<requestedRows/);
+  assert.match(p0,/canonicalFeedOwnsProviderFallback:true/);
+  assert.match(p0,/CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK/);
 });
