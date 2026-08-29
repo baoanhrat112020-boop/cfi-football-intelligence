@@ -183,6 +183,11 @@ function fixtureOdds(row:FeedRow,input:any){
   return{values:{},metadata:{verified:false,source:'NONE'}};
 }
 
+function suppliedProvider(row:FeedRow,input:any){
+  const candidate=(Array.isArray(input?.fixture_candidates)?input.fixture_candidates:[]).find((item:any)=>String(item?.providerId??'').trim()===row.providerId);
+  return String(candidate?.provider??'').trim()||'EXTERNAL_SUPPLIED';
+}
+
 async function predictSupplied(row:FeedRow,input:any,env:Env,ctx:ExecutionContext){
   const request=new Request('https://cfi.internal/api/predict',{
     method:'POST',
@@ -258,7 +263,7 @@ async function suppliedDiscovery(request:Request,input:any,env:Env,ctx:Execution
       country:row.country,
       kickoff:row.kickoffIso,
       kickoffLocal:row.kickoffLocal,
-      provider:row.provider,
+      provider:suppliedProvider(row,input),
       providerId:row.providerId,
       fixtureProvenance:row.sourceUrls??null,
       discoveredAt:row.discoveredAt??null,
@@ -318,6 +323,7 @@ async function suppliedDiscovery(request:Request,input:any,env:Env,ctx:Execution
       aiCandidatesReceived:received,
       aiCandidatesAccepted:accepted,
       aiCandidatesRejected:normalized.rejected,
+      suppliedProviders:[...new Set(rows.map(row=>suppliedProvider(row,input)))],
       internalProviderDiagnostics:false,
       providerFallbackTriggered:false,
       workerProviderFallbackAllowed:false,
