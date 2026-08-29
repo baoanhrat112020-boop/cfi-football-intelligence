@@ -1,0 +1,79 @@
+name: CFI V4 Image Analysis Smoke
+
+on:
+  push:
+    branches: ['test/v4-next-date-cohort']
+    paths:
+      - '.github/workflows/cfi-v4-image-analysis-smoke.yml'
+
+jobs:
+  image-analysis-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Compare SINGLE_MATCH and IMAGE_ANALYSIS on same verified fixture
+        env:
+          CFI_PREDICT_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/predict
+          CFI_FEED_URL: https://kovmddkkzttquupdgmel.supabase.co/functions/v1/cfi-discovery-feed
+          CFI_DB_KEY: ${{ secrets.CFI_DB_KEY || secrets.CFI_ACTION_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${CFI_DB_KEY:-}"
+          BASE=$(TZ=Asia/Ho_Chi_Minh date +%F)
+          FEED=$(mktemp)
+          TARGET=''
+          for OFFSET in 1 2 3; do
+            DATE=$(date -u -d "$BASE +$OFFSET day" +%F)
+            CODE=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 90 -o "$FEED" -w '%{http_code}' -X POST "$CFI_FEED_URL" -H 'content-type: application/json' -H "x-cfi-key: $CFI_DB_KEY" --data "{\"target_date\":\"$DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"limit\":10}")
+            if [ "$CODE" = "200" ]; then
+              COUNT=$(node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));console.log(Array.isArray(x.rows)?x.rows.length:0)" "$FEED")
+              if [ "$COUNT" -gt 0 ]; then TARGET="$DATE"; break; fi
+            fi
+          done
+          test -n "$TARGET"
+
+          BASE_REQ=$(mktemp)
+          IMG_REQ=$(mktemp)
+          node - "$FEED" "$BASE_REQ" "$IMG_REQ" "$TARGET" <<'NODE'
+          const fs=require('fs');
+          const [feedPath,basePath,imgPath,targetDate]=process.argv.slice(2);
+          const feed=JSON.parse(fs.readFileSync(feedPath,'utf8'));
+          const row=(Array.isArray(feed?.rows)?feed.rows:[]).find(r=>r?.home&&r?.away);
+          if(!row) throw new Error('NO_VERIFIED_FIXTURE');
+          const base={home:String(row.home),away:String(row.away),target_date:targetDate,response_mode:'compact',input_mode:'SINGLE_MATCH'};
+          const image={...base,input_mode:'IMAGE_ANALYSIS',fixture_identity:{verified:true,provider:String(row.provider??'CFI_LIVING_VERIFIED_FIXTURE'),providerId:String(row.providerId??row.id??''),kickoffIso:String(row.kickoffIso??'')},image_evidence:{provenanceOnly:true,imageCount:0,extractedFields:['home','away','target_date'],note:'routing-test-no-image-bytes'}};
+          fs.writeFileSync(basePath,JSON.stringify(base));
+          fs.writeFileSync(imgPath,JSON.stringify(image));
+          console.log(JSON.stringify({gate:'IMAGE_TEST_FIXTURE',targetDate,match:`${base.home} vs ${base.away}`,provider:row.provider??null,providerId:row.providerId??row.id??null},null,2));
+          NODE
+
+          BASE_OUT=$(mktemp)
+          IMG_OUT=$(mktemp)
+          BH=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 180 -o "$BASE_OUT" -w '%{http_code}' -X POST "$CFI_PREDICT_URL" -H 'content-type: application/json' --data-binary "@$BASE_REQ")
+          IH=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 180 -o "$IMG_OUT" -w '%{http_code}' -X POST "$CFI_PREDICT_URL" -H 'content-type: application/json' --data-binary "@$IMG_REQ")
+          echo "SINGLE_HTTP=$BH IMAGE_HTTP=$IH"
+          test "$BH" = "200"
+          test "$IH" = "200"
+
+          node - "$BASE_OUT" "$IMG_OUT" <<'NODE'
+          const fs=require('fs');
+          const base=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const img=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
+          const failures=[];
+          const ok=x=>x?.status==='SUCCESS'||x?.status==='DATA_READY';
+          const strict=x=>x?.strictPrior?.verified===true||x?.strictPriorAudit?.evidence?.verified===true;
+          const contract=x=>x?.sixTargetMatrix?.contract??x?.presentationContract?.contract;
+          const complete=x=>x?.sixTargetMatrix?.verification?.complete===true;
+          if(!ok(base)) failures.push('BASE_NOT_SUCCESS');
+          if(!ok(img)) failures.push('IMAGE_NOT_SUCCESS');
+          if(!strict(base)||!strict(img)) failures.push('STRICT_PRIOR_FAIL');
+          if(contract(base)!=='CFI_2_METHODS_X_6_TARGETS_V1'||contract(img)!=='CFI_2_METHODS_X_6_TARGETS_V1') failures.push('CONTRACT_FAIL');
+          if(!complete(base)||!complete(img)) failures.push('SIX_TARGET_INCOMPLETE');
+          if(img?.championFusion?.decisionUse===true) failures.push('FUSION_ACTIONABLE');
+          const sameMatrix=JSON.stringify(base?.sixTargetMatrix??null)===JSON.stringify(img?.sixTargetMatrix??null);
+          if(!sameMatrix) failures.push('IMAGE_MODE_MUTATED_SIX_TARGET_MATRIX');
+          const imageLeakedIntoEvidence=JSON.stringify(img?.evidence??{}).includes('routing-test-no-image-bytes')||JSON.stringify(img?.evidence??{}).includes('provenanceOnly');
+          if(imageLeakedIntoEvidence) failures.push('IMAGE_PROVENANCE_LEAKED_INTO_MODEL_EVIDENCE');
+          console.log(JSON.stringify({gate:'IMAGE_ANALYSIS_BOUNDARY',result:failures.length?'FAIL':'PASS',baseStatus:base?.status??null,imageStatus:img?.status??null,strictPriorBase:strict(base),strictPriorImage:strict(img),contract:contract(img),complete:complete(img),sameSixTargetMatrix:sameMatrix,fusionStatus:img?.championFusion?.status??null,fusionDecisionUse:img?.championFusion?.decisionUse??null,imageProvenanceLeakedIntoModelEvidence:imageLeakedIntoEvidence,failures},null,2));
+          if(failures.length) process.exit(1);
+          NODE
