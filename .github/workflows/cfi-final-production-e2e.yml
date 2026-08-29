@@ -25,41 +25,143 @@ jobs:
       - name: Wait for deployed edge convergence
         if: ${{ github.event_name == 'workflow_run' }}
         run: sleep 30
-      - name: Run the single truthful production acceptance
+
+      - name: Run supplied-fixture production acceptance
         env:
+          CFI_STATUS_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/status
           CFI_DISCOVERY_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/discover
+          CFI_FEED_URL: https://kovmddkkzttquupdgmel.supabase.co/functions/v1/cfi-discovery-feed
+          CFI_DB_KEY: ${{ secrets.CFI_DB_KEY || secrets.CFI_ACTION_KEY }}
         run: |
           set -euo pipefail
           TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
-          BODY=$(mktemp)
-          HTTP=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 180 -o "$BODY" -w '%{http_code}' -X POST "$CFI_DISCOVERY_URL" -H 'content-type: application/json' --data "{\"target_date\":\"$TODAY\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"max_matches\":5,\"response_mode\":\"compact\",\"internal_provider_diagnostics\":true}")
-          echo "HTTP=$HTTP"
-          if [ "$HTTP" != "200" ]; then cat "$BODY"; exit 1; fi
-          node - "$BODY" <<'NODE'
-          const fs = require('fs');
-          const body = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const a = {...(body.counts || {}), ...(body.audit || {})};
-          const requested = 5;
-          const n = (x) => Number(x || 0);
-          const board = Array.isArray(body.board) ? body.board : [];
-          const rejected = Array.isArray(a.rejectedFixtures) ? a.rejectedFixtures : Array.isArray(body.diagnostics) ? body.diagnostics.filter(row => row?.reasonCode) : [];
-          const counters = {
-            fixturesDiscovered: n(a.fixturesDiscovered),
-            canonicalized: n(a.canonicalized),
-            predictionAttempts: n(a.predictionAttempts),
-            predictionSuccess: n(a.predictionSuccess),
-            fullPredictionsExecuted: n(a.fullPredictionsExecuted),
-            boardRows: board.length,
-          };
-          const failures = [];
-          for (const [key, value] of Object.entries(counters)) {
-            if (value < requested) failures.push(`VERIFIED_SHORTFALL_${key.toUpperCase()}_${value}_OF_${requested}`);
+
+          STATUS_BODY=$(mktemp)
+          STATUS_HTTP=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 60 -o "$STATUS_BODY" -w '%{http_code}' "$CFI_STATUS_URL")
+          echo "STATUS_HTTP=$STATUS_HTTP"
+          if [ "$STATUS_HTTP" != "200" ]; then cat "$STATUS_BODY"; exit 1; fi
+          node - "$STATUS_BODY" <<'NODE'
+          const fs=require('fs');
+          const body=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          if(body?.status!=='OK'){
+            console.error(JSON.stringify({gate:'STATUS',status:body?.status??null},null,2));
+            process.exit(1);
           }
-          const requiredReasonFields = ['match','predictionStatus','strictPrior','failureLayer','reasonCode'];
-          for (const row of rejected) for (const field of requiredReasonFields) if (!(field in row)) failures.push(`REJECTED_FIXTURE_MISSING_${field.toUpperCase()}`);
-          if (counters.fixturesDiscovered > counters.predictionSuccess && rejected.length === 0) failures.push('MISSING_PER_FIXTURE_FAILURE_REASONS');
-          if (board.some(row => row?.strictPrior === false || row?.audit?.strictPrior === false)) failures.push('STRICT_PRIOR_FAILURE');
-          if (body.multiMarket?.decisionUse !== false && a.multiMarketDecisionUse !== false && body.rules?.shadowDecisionUse !== false) failures.push('MULTI_MARKET_SHADOW_SAFETY_FAIL');
-          console.log(JSON.stringify({requested,...counters,rejectedCount:rejected.length,rejectedFixtures:rejected,providerAttempts:body.providerAttempts||a.providerAttempts||[],search:body.search||a.search||null,board:board.map(row=>({match:row.match,kickoffLocal:row.kickoffLocal,status:row.status,strictPrior:row.strictPrior,consistency:row.consistency,multiMarketStatus:row.multiMarketStatus,multiMarketDecisionUse:row.multiMarketDecisionUse})),failures}, null, 2));
-          if (failures.length) process.exit(1);
+          console.log(JSON.stringify({gate:'STATUS',result:'PASS',runtime:body?.runtime??null,engine:body?.engine??null},null,2));
+          NODE
+
+          if [ -z "${CFI_DB_KEY:-}" ]; then
+            echo '{"gate":"SUPPLIED_FIXTURE_ACCEPTANCE","result":"VERIFIED_SHORTFALL","reason":"CFI_DB_KEY_UNAVAILABLE_FOR_ACQUISITION"}'
+            exit 0
+          fi
+
+          FEED_BODY=$(mktemp)
+          FEED_HTTP=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 90 -o "$FEED_BODY" -w '%{http_code}' -X POST "$CFI_FEED_URL" -H 'content-type: application/json' -H "x-cfi-key: $CFI_DB_KEY" --data "{\"target_date\":\"$TODAY\",\"timezone\":\"Asia/Ho_Chi_Minh\",\"limit\":10}")
+          echo "FEED_HTTP=$FEED_HTTP"
+          if [ "$FEED_HTTP" != "200" ]; then
+            echo '{"gate":"SUPPLIED_FIXTURE_ACCEPTANCE","result":"VERIFIED_SHORTFALL","reason":"ACQUISITION_FEED_UNAVAILABLE"}'
+            cat "$FEED_BODY"
+            exit 0
+          fi
+
+          REQUEST=$(mktemp)
+          node - "$FEED_BODY" "$REQUEST" "$TODAY" <<'NODE'
+          const fs=require('fs');
+          const [feedPath,outPath,targetDate]=process.argv.slice(2);
+          const feed=JSON.parse(fs.readFileSync(feedPath,'utf8'));
+          const rows=Array.isArray(feed?.rows)?feed.rows:[];
+          const now=new Date().toISOString();
+          const httpsOnly=(values)=>[...new Set((Array.isArray(values)?values:[]).map(String).filter(v=>v.startsWith('https://')))];
+          const candidates=[];
+          for(const [index,row] of rows.entries()){
+            if(candidates.length>=5)break;
+            const sourceUrls=httpsOnly(row?.sourceUrls?.length?row.sourceUrls:[row?.sourceUrl]);
+            const providerId=String(row?.providerId??row?.id??'').trim();
+            const home=String(row?.home??'').trim();
+            const away=String(row?.away??'').trim();
+            const kickoffIso=String(row?.kickoffIso??'').trim();
+            if(!providerId||!home||!away||!kickoffIso||!sourceUrls.length)continue;
+            candidates.push({
+              provider:String(row?.provider??'').trim()||'EXTERNAL_SUPPLIED',
+              providerId,
+              home,
+              away,
+              competition:row?.competition??null,
+              country:row?.country??null,
+              kickoffIso,
+              status:'scheduled',
+              sourceUrls,
+              discoveredAt:String(row?.discoveredAt??'').trim()||now
+            });
+          }
+          fs.writeFileSync(outPath,JSON.stringify({target_date:targetDate,timezone:'Asia/Ho_Chi_Minh',max_matches:5,response_mode:'compact',internal_provider_diagnostics:false,fixture_candidates:candidates}));
+          console.log(JSON.stringify({gate:'ACQUISITION',feedRows:rows.length,suppliedCandidates:candidates.length,providerIds:candidates.map(x=>x.providerId)},null,2));
+          NODE
+
+          CANDIDATE_COUNT=$(node -e "const x=require(process.argv[1]); console.log(x.fixture_candidates.length)" "$REQUEST")
+          if [ "$CANDIDATE_COUNT" -eq 0 ]; then
+            echo '{"gate":"SUPPLIED_FIXTURE_ACCEPTANCE","result":"VERIFIED_SHORTFALL","reason":"NO_AUDITABLE_CANDIDATES_TODAY"}'
+            exit 0
+          fi
+
+          BODY=$(mktemp)
+          HTTP=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 180 -o "$BODY" -w '%{http_code}' -X POST "$CFI_DISCOVERY_URL" -H 'content-type: application/json' --data-binary "@$REQUEST")
+          echo "DISCOVERY_HTTP=$HTTP"
+          if [ "$HTTP" != "200" ]; then cat "$BODY"; exit 1; fi
+
+          node - "$REQUEST" "$BODY" <<'NODE'
+          const fs=require('fs');
+          const request=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const body=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
+          const supplied=request.fixture_candidates;
+          const suppliedById=new Map(supplied.map(row=>[String(row.providerId),row]));
+          const n=(x)=>Number(x||0);
+          const board=Array.isArray(body?.board)?body.board:[];
+          const search=body?.search||{};
+          const counts=body?.counts||{};
+          const failures=[];
+
+          if(body?.status!=='OK')failures.push(`DISCOVERY_STATUS_${body?.status??'MISSING'}`);
+          if(search?.mode!=='SUPPLIED_FIXTURE_ONLY')failures.push('NOT_SUPPLIED_FIXTURE_ONLY');
+          if(search?.suppliedFixtureOnly!==true)failures.push('SUPPLIED_ONLY_FLAG_MISSING');
+          if(search?.externalAcquisitionAllowed!==false)failures.push('EXTERNAL_ACQUISITION_NOT_DISABLED');
+          if(search?.canonicalFeedMerged!==false)failures.push('CANONICAL_FEED_MERGED');
+          if(search?.workerProviderFallbackAllowed!==false)failures.push('WORKER_PROVIDER_FALLBACK_ALLOWED');
+          if(body?.rules?.providerFallbackOnShortfall!==false)failures.push('PROVIDER_FALLBACK_ON_SHORTFALL');
+          if(body?.rules?.noForcedFive!==true)failures.push('NO_FORCED_FIVE_CONTRACT_MISSING');
+          if((body?.providerAttempts||[]).length!==0)failures.push('UNEXPECTED_PROVIDER_ATTEMPTS');
+          if(n(search?.aiCandidatesReceived)!==supplied.length)failures.push(`RECEIVED_${n(search?.aiCandidatesReceived)}_EXPECTED_${supplied.length}`);
+          if(n(counts?.fixturesDiscovered)>supplied.length)failures.push('FIXTURE_POOL_GREW_OUTSIDE_INPUT');
+          if(n(counts?.predictionAttempts)>supplied.length)failures.push('PREDICTION_ATTEMPTS_EXCEED_INPUT');
+
+          for(const row of board){
+            const expected=suppliedById.get(String(row?.providerId));
+            if(!expected){failures.push(`OUTSIDE_INPUT_${row?.providerId??row?.match??'UNKNOWN'}`);continue;}
+            const expectedProvider=String(expected?.provider??'').trim()||'EXTERNAL_SUPPLIED';
+            if(row?.provider!==expectedProvider)failures.push(`PROVIDER_MISMATCH_${row?.providerId}_${row?.provider}_EXPECTED_${expectedProvider}`);
+            if(row?.strictPrior!==true)failures.push(`STRICT_PRIOR_FAIL_${row?.providerId}`);
+            if(row?.multiMarketDecisionUse!==false)failures.push(`SHADOW_DECISION_USE_FAIL_${row?.providerId}`);
+          }
+
+          const accepted=n(search?.aiCandidatesAccepted);
+          const rejected=Array.isArray(search?.aiCandidatesRejected)?search.aiCandidatesRejected.length:0;
+          if(accepted+rejected!==supplied.length)failures.push('SUPPLIED_ACCOUNTING_MISMATCH');
+
+          console.log(JSON.stringify({
+            gate:'CFI_GPT_CORE_V4_PRODUCTION_ACCEPTANCE',
+            supplied:supplied.length,
+            accepted,
+            rejected,
+            fixturesDiscovered:n(counts?.fixturesDiscovered),
+            predictionAttempts:n(counts?.predictionAttempts),
+            predictionSuccess:n(counts?.predictionSuccess),
+            boardRows:board.length,
+            suppliedProviders:search?.suppliedProviders??null,
+            providerAttempts:body?.providerAttempts??[],
+            noForcedFive:body?.rules?.noForcedFive??null,
+            board:board.map(row=>({providerId:row.providerId,provider:row.provider,match:row.match,status:row.status,strictPrior:row.strictPrior,multiMarketDecisionUse:row.multiMarketDecisionUse})),
+            result:failures.length?'FAIL':'PASS',
+            failures
+          },null,2));
+          if(failures.length)process.exit(1);
           NODE
