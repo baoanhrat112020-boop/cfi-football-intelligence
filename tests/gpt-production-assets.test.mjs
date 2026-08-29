@@ -6,9 +6,10 @@ import { parse } from "yaml";
 const schemaText=readFileSync(new URL("../gpt-action/openapi.yaml",import.meta.url),"utf8");
 const instructions=readFileSync(new URL("../gpt-action/CFI_GPT_INSTRUCTIONS.md",import.meta.url),"utf8");
 
-test("GPT Action OpenAPI parses and exposes P0 discovery plus legacy production operations",()=>{
+test("GPT Action OpenAPI parses and exposes exactly the Core V4 seven-action contract",()=>{
   const schema=parse(schemaText);
   assert.equal(schema.openapi,"3.1.0");
+  assert.equal(schema.info.version,"5.3.1-core-v4");
   assert.equal(schema.paths["/api/status"].get.operationId,"cfiGetStatus");
   assert.equal(schema.paths["/api/discover"].post.operationId,"cfiDiscoverOpportunities");
   assert.equal(schema.paths["/api/predict"].post.operationId,"cfiPredictMatch");
@@ -16,12 +17,13 @@ test("GPT Action OpenAPI parses and exposes P0 discovery plus legacy production 
   assert.equal(schema.paths["/api/prediction-history"].get.operationId,"cfiGetPredictionHistory");
   assert.equal(schema.paths["/api/results"].get.operationId,"cfiGetResults");
   assert.equal(schema.paths["/api/collect-results"].post.operationId,"cfiCollectResults");
+  assert.equal(schema.paths["/api/bets"],undefined);
   const discovery=schema.paths["/api/discover"].post.requestBody.content["application/json"].schema;
   assert.ok(discovery.properties.target_date);
   assert.ok(discovery.properties.timezone);
   assert.ok(discovery.properties.max_matches);
   assert.equal(discovery.properties.response_mode.default,"compact");
-  assert.equal(discovery.required.includes("response_mode"),true);
+  assert.deepEqual(discovery.required,["target_date","response_mode","fixture_candidates"]);
   assert.ok(discovery.properties.fixture_candidates);
   assert.equal(discovery.properties.fixture_candidates.items.required.includes("sourceUrls"),true);
   assert.equal(discovery.properties.internal_provider_diagnostics.default,false);
@@ -29,34 +31,35 @@ test("GPT Action OpenAPI parses and exposes P0 discovery plus legacy production 
   assert.equal(discovery.properties.away,undefined);
   const request=schema.paths["/api/predict"].post.requestBody.content["application/json"].schema;
   assert.deepEqual(request.required,["home","away","target_date"]);
+  assert.deepEqual(request.properties.input_mode.enum,["SINGLE_MATCH","IMAGE_ANALYSIS"]);
   const live=schema.paths["/api/predict-live"].post.requestBody.content["application/json"].schema;
   assert.deepEqual(live.required,["home","away","target_date","live"]);
 });
 
-test("GPT instructions route discovery intent without HOME/AWAY and preserve Champion safety",()=>{
+test("GPT instructions enforce supplied-fixture ranking, explicit external acquisition and Champion safety",()=>{
   for(const token of [
     "cfiDiscoverOpportunities",
-    "GPT must search fixtures first",
     "internal_provider_diagnostics=false",
-    "iOS, Android and Windows",
-    "NEVER ask the user to provide HOME/AWAY first",
-    "CFI DAILY OPPORTUNITY BOARD",
+    "Không tự search thêm chỉ vì danh sách ít hơn 5",
+    "Web Search chỉ khi user yêu cầu acquisition ngoài",
     "cfiPredictMatch",
     "cfiPredictLive",
     "CFI_2_METHODS_X_6_TARGETS_V1",
     "sixTargetMatrix.verification.complete",
-    "renderedReport",
-    "RENDER_RENDERED_REPORT_VERBATIM",
     "Method A",
     "Method B",
     "FINAL",
     "Top-3 HT",
     "Top-3 FT",
-    "SHADOW != ACTIONABLE",
-    "decisionUse=false"
+    "decisionUse=false",
+    "Không forced Top-5"
   ]) assert.match(instructions,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
-  assert.match(instructions,/Never reconstruct/i);
-  assert.match(instructions,/Never search File Library/i);
+  assert.match(instructions,/Fixture acquisition thuộc User \/ Web Search \/ Local Node/);
+  assert.match(instructions,/Ảnh prematch → cfiPredictMatch IMAGE_ANALYSIS/);
+  assert.match(instructions,/Không reconstruct prediction sau kết quả/);
+  assert.match(instructions,/File Library/);
+  assert.doesNotMatch(instructions,/GPT must search fixtures first/);
+  assert.doesNotMatch(instructions,/P0 Discovery-first routing/i);
 });
 
 test("production config exposes discovery through canonical router chain and preserves V55 Champion",()=>{
