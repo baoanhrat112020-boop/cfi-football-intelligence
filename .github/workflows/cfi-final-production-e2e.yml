@@ -73,7 +73,7 @@ jobs:
           const now=new Date().toISOString();
           const httpsOnly=(values)=>[...new Set((Array.isArray(values)?values:[]).map(String).filter(v=>v.startsWith('https://')))];
           const candidates=[];
-          for(const [index,row] of rows.entries()){
+          for(const row of rows){
             if(candidates.length>=5)break;
             const sourceUrls=httpsOnly(row?.sourceUrls?.length?row.sourceUrls:[row?.sourceUrl]);
             const providerId=String(row?.providerId??row?.id??'').trim();
@@ -98,7 +98,7 @@ jobs:
           console.log(JSON.stringify({gate:'ACQUISITION',feedRows:rows.length,suppliedCandidates:candidates.length,providerIds:candidates.map(x=>x.providerId)},null,2));
           NODE
 
-          CANDIDATE_COUNT=$(node -e "const x=require(process.argv[1]); console.log(x.fixture_candidates.length)" "$REQUEST")
+          CANDIDATE_COUNT=$(node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); console.log(x.fixture_candidates.length)" "$REQUEST")
           if [ "$CANDIDATE_COUNT" -eq 0 ]; then
             echo '{"gate":"SUPPLIED_FIXTURE_ACCEPTANCE","result":"VERIFIED_SHORTFALL","reason":"NO_AUDITABLE_CANDIDATES_TODAY"}'
             exit 0
