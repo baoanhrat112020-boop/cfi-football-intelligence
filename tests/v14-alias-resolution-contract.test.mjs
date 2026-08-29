@@ -110,7 +110,7 @@ test('production discovery uses public providers whenever the verified DB/web po
 test('discovery predicts only evidence-ready candidates and keeps filling after failures',()=>{
   const router=read('cloudflare-worker/src/index-p0-router.ts');
   assert.match(router,/homeN>0&&awayN>0&&temporal/);
-  assert.match(router,/const evidenceReady=preflight\.filter\(x=>x\.ready\)/);
+  assert.match(router,/const evidenceReady=preflight\s*\.filter\(x=>x\.ready\)/);
   assert.match(router,/for\(const rejected of evidenceRejected\)diagnostics\.push\(preflightDiagnostic\(rejected\)\)/);
   assert.doesNotMatch(router,/canonicalRows=\[\.\.\.evidenceReady,\.\.\.evidenceUnknown\]/);
   assert.match(router,/evaluated\.length<maxMatches/);
