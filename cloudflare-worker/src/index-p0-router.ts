@@ -8,6 +8,7 @@ type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 type FeedRow={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoff?:number;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string;canonicalExact?:boolean;canonicalHomeTeamId?:string|null;canonicalAwayTeamId?:string|null;odds?:Record<string,number>;oddsMetadata?:Record<string,unknown>;sourceUrls?:string[];discoveredAt?:string;discoveryMode?:string};
 
 const TRUSTED_SCHEDULE_PROVIDERS=new Set(['SOFASCORE','THESPORTSDB','ESPN','GPT_WEB_SEARCH']);
+const CANONICAL_FEED_LOCAL_PROVIDERS=new Set(['CFI_LIVING_VERIFIED_FIXTURE','CFI_FORWARD_CAPTURE']);
 
 async function readJson(r:Response){
   try{return await r.clone().json()}catch{return null}
@@ -49,16 +50,20 @@ async function feed(input:any,env:Env){
   const window={targetDate:String(input.target_date),timeZone:String(input.timezone??'Asia/Ho_Chi_Minh'),startTime:input.start_time??null,endTime:input.end_time??null,minimumRows:providerScanRows};
   const ai=normalizeAiFixtureCandidates(input?.fixture_candidates??[],window);
   const database=await databaseFeed(input,env).catch(()=>null);
-  const verifiedBeforeProviders=mergeDiscoveryRows<FeedRow>([ai.rows as FeedRow[],(database?.rows??[]) as FeedRow[]],scanLimit);
+  const canonicalFeedRows=(database?.rows??[]) as FeedRow[];
+  const verifiedBeforeProviders=mergeDiscoveryRows<FeedRow>([ai.rows as FeedRow[],canonicalFeedRows],scanLimit);
   const explicitProviderDiagnostics=input?.internal_provider_diagnostics===true;
   const providerFallbackTriggered=verifiedBeforeProviders.length<requestedRows;
-  const workerProviderFallbackAllowed=explicitProviderDiagnostics||providerFallbackTriggered;
+  const workerProviderFallbackAllowed=explicitProviderDiagnostics;
   const usePublicProviders=workerProviderFallbackAllowed;
   const publicProviders=usePublicProviders
     ?await discoverFixtures(window).catch(error=>({provider:'ERROR',providers:[],rows:[],sourceUrl:null,attempts:[{provider:'MULTI_SOURCE',ok:false,error:String(error)}],search:null}))
-    :{provider:'DISABLED',providers:[],rows:[],sourceUrl:null,attempts:[],search:null};
+    :{provider:'DISABLED_CANONICAL_FEED_OWNS_FALLBACK',providers:[],rows:[],sourceUrl:null,attempts:[],search:null};
   const rows=mergeDiscoveryRows<FeedRow>([verifiedBeforeProviders,(publicProviders?.rows??[]) as FeedRow[]],scanLimit);
   const providers=[...new Set(rows.map(row=>row.provider))];
+  const canonicalFeedLocalRows=canonicalFeedRows.filter(row=>CANONICAL_FEED_LOCAL_PROVIDERS.has(String(row.provider).toUpperCase()));
+  const canonicalFeedProviderRows=canonicalFeedRows.filter(row=>!CANONICAL_FEED_LOCAL_PROVIDERS.has(String(row.provider).toUpperCase()));
+  const workerProviderRows=(publicProviders?.rows??[]) as FeedRow[];
   return{
     status:'OK',
     source:providers.length>1?'AI_PLUS_BIGDB':providers[0]??String(publicProviders?.provider??'NONE'),
@@ -77,13 +82,14 @@ async function feed(input:any,env:Env){
       internalProviderDiagnostics:explicitProviderDiagnostics,
       providerFallbackTriggered,
       workerProviderFallbackAllowed,
-      providerFallbackReason:providerFallbackTriggered?'VERIFIED_POOL_SHORTFALL':null,
+      providerFallbackReason:providerFallbackTriggered?'CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK':null,
       verifiedRowsBeforeProviderFallback:verifiedBeforeProviders.length,
+      canonicalFeedOwnsProviderFallback:true,
       internalProviderSearch:publicProviders?.search??null
     },
-    databaseRows:Array.isArray(database?.rows)?database.rows.length:0,
+    databaseRows:canonicalFeedLocalRows.length,
     aiRows:ai.rows.length,
-    publicRows:Array.isArray(publicProviders?.rows)?publicProviders.rows.length:0
+    publicRows:canonicalFeedProviderRows.length+workerProviderRows.length
   };
 }
 
@@ -413,7 +419,7 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
     final:actionable.length?'PRACTICAL_BETS_READY':board.length?'WATCHLIST_READY':'NO_BET',
     provenance:{
       fixtureSource:String(f.source??'GPT_SEARCH_THEN_BIGDB'),
-      discoveryStrategy:'WEB_DB_PROVIDER_POOL_THEN_BIGDB_PREFLIGHT_THEN_EXACT_IDS_THEN_EXACT_HISTORY_THEN_STRICT_PRIOR_THEN_EVIDENCE_READY_FIRST_THEN_SUCCESS_FILL',
+      discoveryStrategy:'CANONICAL_FEED_PROVIDER_FALLBACK_THEN_BIGDB_PREFLIGHT_THEN_EXACT_IDS_THEN_EXACT_HISTORY_THEN_STRICT_PRIOR_THEN_EVIDENCE_READY_FIRST_THEN_SUCCESS_FILL',
       noDuplicatePredictionEngine:true,
       noDuplicateWorkerProviderCrawler:f.search?.workerProviderFallbackAllowed===false
     }
