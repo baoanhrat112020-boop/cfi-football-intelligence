@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: CFI Football Intelligence Production API
-  version: 5.2.5-practical-output-v3
-  description: Strict-prior CFI production API with Discovery-first opportunity scanning, single-match prediction, live prediction, immutable history and settlement.
+  version: 5.2.5-gpt-input-v3
+  description: Strict-prior CFI production API for single-match prediction, supplied-fixture ranking, live prediction, immutable history and settlement. GPT is not required to autonomously crawl schedules or force five fixtures.
 servers:
   - url: https://cfi-football-intelligence.baoanhrat112020.workers.dev
 paths:
@@ -16,78 +16,12 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
-  /api/discover:
-    post:
-      operationId: cfiDiscoverOpportunities
-      summary: Discover and rank real pre-match CFI opportunities without requiring HOME/AWAY
-      description: Use for requests such as "tìm trận tốt nhất hôm nay", "tìm 5 trận tốt nhất ngày ...", or a date/time-window scan. GPT first web-searches a broad real fixture pool and passes it as fixture_candidates with HTTPS provenance. The action canonicalizes those candidates against BigDB, runs the existing strict-prior CFI predictor, and returns the Daily Opportunity Board. Never ask the user for HOME/AWAY when the intent is discovery.
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [response_mode]
-              properties:
-                target_date: { type: string, format: date, description: Local target date. If omitted, production resolves the current local date for timezone. }
-                start_time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
-                end_time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
-                timezone: { type: string, default: Asia/Ho_Chi_Minh }
-                max_matches: { type: integer, minimum: 1, maximum: 10, default: 5 }
-                response_mode: { type: string, enum: [compact, full], default: compact, description: Use compact for GPT Discovery boards. Full is reserved for direct technical audits because it can exceed GPT Action response limits. }
-                market_filter: { type: string }
-                competition_filter: { type: string }
-                fixture_candidates:
-                  type: array
-                  maxItems: 100
-                  description: Real scheduled fixtures found by GPT web search before the Action call. Search broadly across senior, women, youth, reserve and amateur competitions. Each candidate requires exact teams, kickoff, a stable provider ID, discovery timestamp and at least one HTTPS schedule source. Do not fabricate or infer missing fixtures.
-                  items:
-                    type: object
-                    additionalProperties: false
-                    required: [providerId, home, away, kickoffIso, status, sourceUrls, discoveredAt]
-                    properties:
-                      providerId: { type: string, minLength: 1 }
-                      home: { type: string, minLength: 1 }
-                      away: { type: string, minLength: 1 }
-                      competition: { type: [string, "null"] }
-                      country: { type: [string, "null"] }
-                      kickoffIso: { type: string, format: date-time }
-                      status: { type: string, enum: [scheduled, notstarted, pre] }
-                      sourceUrls:
-                        type: array
-                        minItems: 1
-                        items: { type: string, format: uri, pattern: "^https://" }
-                      discoveredAt: { type: string, format: date-time }
-                internal_provider_diagnostics:
-                  type: boolean
-                  default: false
-                  description: Diagnostic-only legacy provider probe. GPT discovery must leave this false; production search belongs to the GPT orchestration layer.
-                odds_by_fixture:
-                  type: object
-                  additionalProperties: true
-                  description: Verified odds packages gathered after the first discovery call by exact-fixture web search, keyed by provider fixture ID or "Home vs Away". Capture available 1X2, main O/U and AH prices in values plus bookmaker/capturedAt/source/verified metadata, then rerun discovery. Missing prices remain unavailable.
-      responses:
-        "200":
-          description: CFI Daily Opportunity Board from GPT-sourced real fixtures with strict-prior prediction evidence and always-visible 1X2/O-U/AH model summaries. Rerun with odds_by_fixture after web odds enrichment.
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
-        "400":
-          description: Invalid discovery input
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
-        "500":
-          description: Discovery fail-closed runtime failure
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
+
   /api/predict:
     post:
       operationId: cfiPredictMatch
-      summary: Run complete CFI pre-match prediction for a specified HOME/AWAY fixture
-      description: Use when the user names a specific match or supplies match/odds screenshots. The GPT extracts auditable fields from images and sends input_mode=IMAGE_ANALYSIS; raw image pixels are not prediction evidence. target_date is mandatory. Successful responses include Practical Output V3. SHADOW decisionUse must remain false.
+      summary: Run complete CFI prematch prediction for one specified fixture
+      description: Use when the user names a specific HOME/AWAY match or provides prematch screenshots. target_date is mandatory. Successful responses preserve the Champion 2 Methods x 6 Targets contract and additive Multi-Market output.
       requestBody:
         required: true
         content:
@@ -108,15 +42,15 @@ paths:
                 fixture_identity:
                   type: object
                   additionalProperties: true
-                  description: Canonical fixture verification result. Set verified=false when screenshot identity is ambiguous; Practical Output V3 then blocks decisions.
+                  description: Canonical fixture verification. Use verified=false when identity is ambiguous.
                 image_evidence:
                   type: object
                   additionalProperties: true
-                  description: Image count and extracted field names for provenance only. Screenshot history is not model evidence unless separately canonicalized and strict-prior stored.
+                  description: Screenshot provenance only. Raw screenshots are not historical prediction evidence.
                 odds:
                   type: object
                   additionalProperties: true
-                  description: Use {values, metadata}. metadata requires bookmaker, capturedAt, verified=true, source and optional maxAgeMinutes. Legacy unwrapped odds are never sufficient for BET in Output V3.
+                  description: Optional {values, metadata}. Verified metadata should include bookmaker, capturedAt, source and verified=true.
       responses:
         "200":
           description: Complete CFI prediction
@@ -124,7 +58,7 @@ paths:
             application/json:
               schema: { type: object, additionalProperties: true }
         "422":
-          description: Exact-team evidence insufficient
+          description: Exact-team evidence insufficient or fail-closed input rejection
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
@@ -133,11 +67,93 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+
+  /api/discover:
+    post:
+      operationId: cfiDiscoverOpportunities
+      summary: Rank a supplied set of real prematch fixtures with CFI
+      description: Use only when the user or an external verified source provides a fixture set. GPT must not autonomously crawl until it finds five matches. The action canonicalizes, deduplicates, performs strict-prior BigDB preflight, predicts usable candidates and returns a ranked board. The board may contain fewer rows than max_matches.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [response_mode, fixture_candidates]
+              properties:
+                target_date:
+                  type: string
+                  format: date
+                  description: Local target date for the supplied fixture set.
+                start_time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+                end_time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+                timezone: { type: string, default: Asia/Ho_Chi_Minh }
+                max_matches:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  default: 5
+                  description: Maximum rows to rank from the supplied set. This is never a requirement to find or fabricate that many fixtures.
+                response_mode:
+                  type: string
+                  enum: [compact, full]
+                  default: compact
+                  description: Use compact for normal GPT ranking. Full is for technical audit only.
+                market_filter: { type: string }
+                competition_filter: { type: string }
+                fixture_candidates:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  description: Real scheduled fixtures supplied by the user, Local Node, screenshots/export, or an explicitly requested external search step. Never fabricate missing identity, kickoff, provider ID or provenance.
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [providerId, home, away, kickoffIso, status, sourceUrls, discoveredAt]
+                    properties:
+                      providerId: { type: string, minLength: 1 }
+                      home: { type: string, minLength: 1 }
+                      away: { type: string, minLength: 1 }
+                      competition: { type: [string, "null"] }
+                      country: { type: [string, "null"] }
+                      kickoffIso: { type: string, format: date-time }
+                      status: { type: string, enum: [scheduled, notstarted, pre] }
+                      sourceUrls:
+                        type: array
+                        minItems: 1
+                        items: { type: string, format: uri, pattern: "^https://" }
+                      discoveredAt: { type: string, format: date-time }
+                internal_provider_diagnostics:
+                  type: boolean
+                  default: false
+                  description: Diagnostic-only. Normal GPT use must keep this false to avoid duplicate provider crawling.
+                odds_by_fixture:
+                  type: object
+                  additionalProperties: true
+                  description: Optional verified odds packages keyed by provider ID or exact Home vs Away. Do not fabricate missing prices.
+      responses:
+        "200":
+          description: Ranked CFI board for the supplied candidate set. Shortfall is allowed and must be reported truthfully.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400":
+          description: Invalid candidate-set input
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "500":
+          description: Discovery/ranking fail-closed runtime failure
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
   /api/predict-live:
     post:
       operationId: cfiPredictLive
-      summary: Run CFI LIVE using the immutable strict-prior prematch prior plus current live state
-      description: Use only after positive evidence that play has started. Countdown is not LIVE.
+      summary: Run CFI LIVE using strict-prior prematch evidence plus current live state
+      description: Use only after positive evidence that play has started. Countdown is prematch, not LIVE.
       requestBody:
         required: true
         content:
@@ -166,6 +182,7 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+
   /api/prediction-history:
     get:
       operationId: cfiGetPredictionHistory
@@ -183,6 +200,7 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+
   /api/results:
     get:
       operationId: cfiGetResults
@@ -196,10 +214,11 @@ paths:
         - { name: selected_only, in: query, required: false, schema: { type: boolean, default: true } }
       responses:
         "200":
-          description: Settled/pending result rows
+          description: Settled or pending result rows
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+
   /api/collect-results:
     post:
       operationId: cfiCollectResults
@@ -225,6 +244,7 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+
   /api/bets:
     get:
       operationId: cfiGetBetHistory
@@ -241,7 +261,7 @@ paths:
     post:
       operationId: cfiRecordOrSettleBet
       summary: Record a user-confirmed bet or settle it after verified FT results
-      description: This endpoint never places a wager. RECORD requires confirmed_by_user=true. SETTLE requires verified result scores, a result source URL, and result provenance.
+      description: This endpoint never places a wager. RECORD requires explicit user confirmation. SETTLE requires verified result provenance.
       requestBody:
         required: true
         content:
@@ -279,7 +299,5 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
-        "401":
-          description: Unauthorized ledger request
-        "422":
-          description: Missing explicit confirmation or verified result provenance
+        "401": { description: Unauthorized ledger request }
+        "422": { description: Missing explicit confirmation or verified result provenance }
