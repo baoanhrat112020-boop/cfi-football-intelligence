@@ -1,4 +1,5 @@
-﻿import { spawn } from "node:child_process";
+import { spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import {
   appendFile,
   mkdir,
@@ -594,8 +595,7 @@ process.on("SIGTERM", () => {
 process.on("exit", () => {
   if (lockOwned) {
     try {
-      const fs = require("node:fs");
-      fs.rmSync(LOCK_FILE, {
+      rmSync(LOCK_FILE, {
         force: true
       });
     } catch {}
