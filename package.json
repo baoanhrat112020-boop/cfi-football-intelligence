@@ -21,7 +21,9 @@
     "cfi:browser:sofascore": "node local-node/browser/fixture-collector/sofascore-adapter.mjs",
     "cfi:browser:cross-verify": "node local-node/browser/fixture-collector/cross-verify.mjs",
     "cfi:canonical:merge": "node local-node/canonical/canonical-merge.mjs",
-    "cfi:bigdb:dry-run": "node local-node/canonical/bigdb-dry-run.mjs"
+    "cfi:bigdb:dry-run": "node local-node/canonical/bigdb-dry-run.mjs",
+    "cfi:node:once": "node local-node/index.mjs --once",
+    "cfi:node:deep": "node local-node/index.mjs --once --deep"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
