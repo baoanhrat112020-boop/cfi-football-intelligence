@@ -97,13 +97,13 @@ test('final production E2E is native discovery with zero predetermined fixture c
   }
 });
 
-test('production discovery uses public providers whenever the verified DB/web pool is short',()=>{
+test('production discovery has one provider fallback owner and no duplicate worker crawler by default',()=>{
   const router=read('cloudflare-worker/src/index-p0-router.ts');
   assert.match(router,/const providerFallbackTriggered=verifiedBeforeProviders\.length<requestedRows/);
-  assert.match(router,/const workerProviderFallbackAllowed=explicitProviderDiagnostics\|\|providerFallbackTriggered/);
+  assert.match(router,/const workerProviderFallbackAllowed=explicitProviderDiagnostics/);
   assert.match(router,/const usePublicProviders=workerProviderFallbackAllowed/);
-  assert.match(router,/providerFallbackReason:providerFallbackTriggered\?'VERIFIED_POOL_SHORTFALL':null/);
-  assert.doesNotMatch(router,/CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK/);
+  assert.match(router,/providerFallbackReason:providerFallbackTriggered\?'CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK':null/);
+  assert.match(router,/canonicalFeedOwnsProviderFallback:true/);
   assert.match(router,/noDuplicateWorkerProviderCrawler:f\.search\?\.workerProviderFallbackAllowed===false/);
 });
 
