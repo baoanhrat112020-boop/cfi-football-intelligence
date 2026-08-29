@@ -64,10 +64,20 @@ test("production config exposes discovery through canonical router chain and pre
   const liveRouter=readFileSync(new URL("../cloudflare-worker/src/index-live-router.ts",import.meta.url),"utf8");
   const config=readFileSync(new URL("../wrangler.jsonc",import.meta.url),"utf8");
   const p0Url=new URL("../cloudflare-worker/src/index-p0-router.ts",import.meta.url);
+  const gptCoreUrl=new URL("../cloudflare-worker/src/index-gpt-core-v4.ts",import.meta.url);
   const usesP0=/index-p0-router\.ts/.test(config);
-  assert.match(config,/index-(?:p0|live)-router\.ts/);
-  if(usesP0){
-    assert.equal(existsSync(p0Url),true,"configured P0 router must exist");
+  const usesGptCore=/index-gpt-core-v4\.ts/.test(config);
+  assert.match(config,/index-(?:p0|live)-router\.ts|index-gpt-core-v4\.ts/);
+  if(usesGptCore){
+    assert.equal(existsSync(gptCoreUrl),true,"configured GPT Core V4 wrapper must exist");
+    const gptCore=readFileSync(gptCoreUrl,"utf8");
+    assert.match(gptCore,/import core from '\.\/index-p0-router\.ts'/);
+    assert.match(gptCore,/SUPPLIED_FIXTURE_ONLY/);
+    assert.match(gptCore,/CFI_GPT_PREDICT_COMPACT_V1/);
+    assert.match(gptCore,/return core\.fetch\(request,env,ctx\)/);
+  }
+  if(usesP0||usesGptCore){
+    assert.equal(existsSync(p0Url),true,"canonical P0 router must exist behind production entrypoint");
     const p0=readFileSync(p0Url,"utf8");
     assert.match(p0,/import base from '\.\/index-live-router\.ts'/);
     assert.match(p0,/\/api\/discover/);
