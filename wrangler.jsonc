@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "cfi-football-intelligence",
-  "main": "cloudflare-worker/src/index-p0-router.ts",
+  "main": "cloudflare-worker/src/index-gpt-core-v4.ts",
   "compatibility_date": "2026-08-15",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
