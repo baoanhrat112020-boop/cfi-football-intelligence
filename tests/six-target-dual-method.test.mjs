@@ -19,12 +19,14 @@ test('CFI exposes four thresholds plus Top-1 HT and Top-1 FT with independent Fu
   assert.deepEqual(p.primaryTargets.codes,[...PRIMARY_TARGETS]);
   assert.equal(p.scoreline.futureSix.version,FUTURE_SIX_SCORELINE_VERSION);
   for(const value of Object.values(p.scoreline.futureSix.factors)) assert.ok(Number.isFinite(value));
+  assert.equal(p.scoreline.diagnosticTop3.compatibilityOnly,true);
+  assert.equal(p.scoreline.diagnosticTop3.primary,false);
   for(const side of ['ht','ft']){
     assert.equal(p.scoreline[side].methodA.length,3);
     assert.equal(p.scoreline[side].methodB.length,3);
     assert.equal(p.scoreline[side].final.length,3);
     assert.notStrictEqual(p.scoreline[side].methodA,p.scoreline[side].methodB);
-    assert.equal(p.scoreline.diagnosticTop3[side].compatibilityOnly,true);
+    assert.equal(p.scoreline.diagnosticTop3[side].final.length,3);
   }
   for(const m of ['3+ HT','7+ FT','Other HT','Other FT']){
     assert.ok(Number.isFinite(p.markets[m].methodA));
