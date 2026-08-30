@@ -1,222 +1,29 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
-  status,
-  headers: { "content-type": "application/json" },
-});
+const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json"}});
+const STOP=new Set(["fc","cf","sc","afc","fk","club","football","de"]);
+const n=(v:unknown)=>{const x=Number(v);return Number.isFinite(x)&&x>=0?Math.trunc(x):null;};
+const minute=(v:unknown)=>{const m=String(v??"").match(/^(\d+)/);return m?Number(m[1]):null;};
+function norm(v:string){return String(v??"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\bsaint\b/g,"st").replace(/\b(w|women's|womens)\b/g,"women").replace(/\breserves?\b/g,"reserve").replace(/\b(u[\s-]?23|under[\s-]?23|youth)\b/g,"youth").replace(/\b(u[\s-]?21|under[\s-]?21)\b/g,"u21").replace(/\b\d{4}\b/g," ").replace(/[^a-z0-9]+/g," ").trim();}
+function toks(v:string){return norm(v).split(/\s+/).filter(x=>x&&!STOP.has(x));}
+function sim(a:string,b:string){const A=toks(a),B=toks(b),sa=new Set(A),sb=new Set(B),u=new Set([...A,...B]);let i=0;for(const x of sa)if(sb.has(x))i++;const j=u.size?i/u.size:0,ca=A.join(""),cb=B.join("");return Math.max(j,ca&&cb&&(ca.includes(cb)||cb.includes(ca))?0.9:0);}
+function parseKV(block:string){const o:Record<string,string>={};for(const p of block.split("¬")){const i=p.indexOf("÷");if(i>0)o[p.slice(0,i).replace(/^~/,"")]=p.slice(i+1);}return o;}
+async function fetchText(url:string,headers:Record<string,string>={}){const r=await fetch(url,{headers:{"user-agent":"Mozilla/5.0 (compatible; CFI-Football-Intelligence/settlement-v9)",accept:"*/*",...headers}});if(!r.ok)throw new Error(`FETCH_${r.status}:${url}`);return r.text();}
+async function fetchJson(url:string,referer="https://www.sofascore.com/"){return JSON.parse(await fetchText(url,{referer,accept:"application/json,text/plain,*/*"}));}
+async function sofa(path:string){let last="";for(const base of ["https://api.sofascore.com/api/v1","https://www.sofascore.com/api/v1"]){try{return await fetchJson(`${base}${path}`);}catch(e){last=e instanceof Error?e.message:String(e);}}throw new Error(last);}
+function sofaEvent(e:any){return{source:"SOFASCORE",id:String(e?.id??""),home:e?.homeTeam?.name??"",away:e?.awayTeam?.name??"",finished:e?.status?.type==="finished"||e?.status?.code===100,hh:n(e?.homeScore?.period1),ha:n(e?.awayScore?.period1),fh:n(e?.homeScore?.normaltime??e?.homeScore?.current),fa:n(e?.awayScore?.normaltime??e?.awayScore?.current),htEvidence:"SCORE_OBJECT"};}
+function espnEvent(comp:any,id:unknown){const cs=comp?.competitors??[],h=cs.find((x:any)=>x.homeAway==="home"),a=cs.find((x:any)=>x.homeAway==="away");const half=(x:any)=>{const p=(x?.linescores??[]).find((z:any)=>Number(z.period)===1);return n(p?.value??p?.score??p?.displayValue);};return{source:"ESPN",id:String(id??comp?.id??""),home:h?.team?.displayName??h?.team?.name??"",away:a?.team?.displayName??a?.team?.name??"",finished:Boolean(comp?.status?.type?.completed)||comp?.status?.type?.state==="post",hh:half(h),ha:half(a),fh:n(h?.score),fa:n(a?.score),htEvidence:"LINESCORE"};}
+function flashEvents(raw:string){const out:any[]=[];for(const block of raw.split("~")){if(!block.startsWith("AA÷"))continue;const x=parseKV(block);out.push({source:"FLASHSCORE",id:x.AA??"",home:x.AE??x.CX??"",away:x.AF??"",finished:x.AB==="3",hh:n(x.BA),ha:n(x.BB),fh:n(x.AG),fa:n(x.AH),htEvidence:x.BA!==undefined&&x.BB!==undefined?"DATE_FEED_PERIOD":"MISSING"});}return out;}
+function dayOffset(date:string){const today=new Date(new Date().toISOString().slice(0,10)+"T00:00:00Z").getTime(),target=new Date(date+"T00:00:00Z").getTime();return Math.round((today-target)/86400000);}
+async function flashList(date:string){const off=dayOffset(date);if(off<0||off>7)throw new Error(`FLASHSCORE_OFFSET_UNSUPPORTED:${off}`);const raw=await fetchText(`https://2.flashscore.ninja/2/x/feed/f_1_${off}_3_en_1`,{"x-fsign":"SW9D1eZo",referer:"https://www.flashscore.com/"});return flashEvents(raw);}
+async function providers(date:string){const events:any[]=[],errors:string[]=[];try{const x=await sofa(`/sport/football/scheduled-events/${date}`);events.push(...(x?.events??[]).map(sofaEvent));}catch(e){errors.push(`SOFA:${e instanceof Error?e.message:String(e)}`);}try{const d=date.replaceAll("-",""),x=await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?limit=1000&dates=${d}`,"https://www.espn.com/");events.push(...(x?.events??[]).flatMap((e:any)=>e?.competitions?.[0]?[espnEvent(e.competitions[0],e.id)]:[]));}catch(e){errors.push(`ESPN:${e instanceof Error?e.message:String(e)}`);}try{events.push(...await flashList(date));}catch(e){errors.push(`FLASH:${e instanceof Error?e.message:String(e)}`);}return{events,errors};}
+function flashDetailHT(raw:string,ftH:number|null,ftA:number|null){let hh=0,ha=0,saw=false;for(const block of raw.split("~")){if(!block.startsWith("III÷")&&!block.startsWith("IIIX÷"))continue;const x=parseKV(block),m=minute(x.IB??x.IBX),h=n(x.INX),a=n(x.IOX);if(m!==null&&m<=45&&h!==null&&a!==null){hh=h;ha=a;saw=true;}}if(!saw)return null;if(ftH!==null&&ftA!==null&&(hh>ftH||ha>ftA))return null;return{hh,ha,evidence:"DETAIL_EVENT_STATE_AT_45"};}
+async function detail(ev:any){if(ev.source==="SOFASCORE"){const x=await sofa(`/event/${ev.id}`);return sofaEvent(x?.event??x);}if(ev.source==="ESPN")throw new Error("ESPN_SUPPORTING_ONLY_NO_SETTLEMENT_DETAIL");const raw=await fetchText(`https://2.flashscore.ninja/2/x/feed/df_sui_1_${ev.id}`,{"x-fsign":"SW9D1eZo",referer:"https://www.flashscore.com/"});if(!raw||raw.length<5)throw new Error("FLASHSCORE_DETAIL_EMPTY");const htd=flashDetailHT(raw,ev.fh,ev.fa);if((ev.hh===null||ev.ha===null)&&!htd)throw new Error("FLASHSCORE_HT_DERIVATION_FAILED");const states=[...raw.matchAll(/INX÷(\d+)[^~]*?IOX÷(\d+)/g)].map(m=>[Number(m[1]),Number(m[2])]);if(states.length&&ev.fh!==null&&ev.fa!==null){const max=states.reduce((best,x)=>x[0]+x[1]>=best[0]+best[1]?x:best,[0,0]);if(max[0]!==ev.fh||max[1]!==ev.fa)throw new Error(`FLASHSCORE_DETAIL_SCORE_MISMATCH:${max[0]}-${max[1]}`);}return{...ev,hh:ev.hh??htd?.hh??null,ha:ev.ha??htd?.ha??null,htEvidence:ev.hh!==null&&ev.ha!==null?ev.htEvidence:htd?.evidence,detailVerified:true};}
+function valid(e:any){return[e.hh,e.ha,e.fh,e.fa].every((x:any)=>Number.isInteger(x))&&e.hh<=e.fh&&e.ha<=e.fa;}
+function key(e:any){return`${e.hh}-${e.ha}|${e.fh}-${e.fa}`;}
+function pick(s:any,events:any[],source:string){const c=events.filter((e:any)=>e.source===source).map((e:any)=>({e,h:sim(s.home_team,e.home),a:sim(s.away_team,e.away)})).filter((x:any)=>x.h>=.6&&x.a>=.6).sort((x:any,y:any)=>(y.h+y.a)-(x.h+x.a));if(!c.length)return{status:"MISSING",source};if(c[1]&&((c[0].h+c[0].a)-(c[1].h+c[1].a))<.15)return{status:"AMBIGUOUS",source};return{status:"MATCH",source,event:c[0].e,confidence:(c[0].h+c[0].a)/2};}
+function espnSupport(s:any,events:any[]){const p:any=pick(s,events,"ESPN");if(p.status!=="MATCH")return{source:"ESPN",authority:"SUPPORTING_ONLY",status:p.status};const e=p.event;return{source:"ESPN",authority:"SUPPORTING_ONLY",status:e.finished?"FINISHED_MATCH":"MATCH_NOT_FINISHED",eventId:e.id,confidence:p.confidence,ht:[e.hh,e.ha],ft:[e.fh,e.fa]};}
 
-const STOP = new Set(["fc", "cf", "sc", "afc", "fk", "club", "football", "de"]);
-const num = (value: unknown) => {
-  const x = Number(value);
-  return Number.isFinite(x) && x >= 0 ? Math.trunc(x) : null;
-};
-const minute = (value: unknown) => {
-  const match = String(value ?? "").match(/^(\d+)/);
-  return match ? Number(match[1]) : null;
-};
-
-function norm(value: string) {
-  return String(value ?? "")
-    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/\bsaint\b/g, "st")
-    .replace(/\b(w|women's|womens)\b/g, "women")
-    .replace(/\b\d{4}\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
-}
-function tokens(value: string) { return norm(value).split(/\s+/).filter((x) => x && !STOP.has(x)); }
-function similarity(a: string, b: string) {
-  const A = tokens(a), B = tokens(b), sa = new Set(A), sb = new Set(B), union = new Set([...A, ...B]);
-  let intersection = 0;
-  for (const x of sa) if (sb.has(x)) intersection++;
-  const jaccard = union.size ? intersection / union.size : 0;
-  const ca = A.join(""), cb = B.join("");
-  return Math.max(jaccard, ca && cb && (ca.includes(cb) || cb.includes(ca)) ? 0.9 : 0);
-}
-function parseKV(block: string) {
-  const out: Record<string, string> = {};
-  for (const part of block.split("¬")) {
-    const at = part.indexOf("÷");
-    if (at > 0) out[part.slice(0, at).replace(/^~/, "")] = part.slice(at + 1);
-  }
-  return out;
-}
-
-async function fetchText(url: string, headers: Record<string, string> = {}) {
-  const response = await fetch(url, {
-    headers: {
-      "user-agent": "Mozilla/5.0 (compatible; CFI-Football-Intelligence/5.1)",
-      accept: "*/*",
-      ...headers,
-    },
-  });
-  if (!response.ok) throw new Error(`FETCH_${response.status}:${url}`);
-  return response.text();
-}
-async function fetchJson(url: string) {
-  return JSON.parse(await fetchText(url, { referer: "https://www.espn.com/", accept: "application/json,text/plain,*/*" }));
-}
-async function sofa(path: string) {
-  let last = "";
-  for (const base of ["https://api.sofascore.com/api/v1", "https://www.sofascore.com/api/v1"]) {
-    try { return await fetchJson(`${base}${path}`); }
-    catch (error) { last = error instanceof Error ? error.message : String(error); }
-  }
-  throw new Error(last);
-}
-function sofaEvent(event: any) {
-  return {
-    source: "SOFASCORE", id: String(event?.id ?? ""), home: event?.homeTeam?.name ?? "", away: event?.awayTeam?.name ?? "",
-    finished: event?.status?.type === "finished" || event?.status?.code === 100,
-    hh: num(event?.homeScore?.period1), ha: num(event?.awayScore?.period1),
-    fh: num(event?.homeScore?.normaltime ?? event?.homeScore?.current), fa: num(event?.awayScore?.normaltime ?? event?.awayScore?.current),
-    htEvidence: "SCORE_OBJECT",
-  };
-}
-function espnEvent(competition: any, id: unknown) {
-  const competitors = competition?.competitors ?? [];
-  const home = competitors.find((x: any) => x.homeAway === "home"), away = competitors.find((x: any) => x.homeAway === "away");
-  const half = (x: any) => {
-    const period = (x?.linescores ?? []).find((z: any) => Number(z.period) === 1);
-    return num(period?.value ?? period?.score ?? period?.displayValue);
-  };
-  return {
-    source: "ESPN", id: String(id ?? competition?.id ?? ""), home: home?.team?.displayName ?? home?.team?.name ?? "", away: away?.team?.displayName ?? away?.team?.name ?? "",
-    finished: Boolean(competition?.status?.type?.completed) || competition?.status?.type?.state === "post",
-    hh: half(home), ha: half(away), fh: num(home?.score), fa: num(away?.score), htEvidence: "LINESCORE",
-  };
-}
-function flashEvents(raw: string) {
-  const events: any[] = [];
-  for (const block of raw.split("~")) {
-    if (!block.startsWith("AA÷")) continue;
-    const x = parseKV(block);
-    events.push({ source: "FLASHSCORE", id: x.AA ?? "", home: x.AE ?? x.CX ?? "", away: x.AF ?? "", finished: x.AB === "3", hh: num(x.BA), ha: num(x.BB), fh: num(x.AG), fa: num(x.AH), htEvidence: x.BA !== undefined && x.BB !== undefined ? "DATE_FEED_PERIOD" : "MISSING" });
-  }
-  return events;
-}
-function dayOffset(date: string) {
-  const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
-  const target = new Date(date + "T00:00:00Z").getTime();
-  return Math.round((today - target) / 86400000);
-}
-async function flashList(date: string) {
-  const offset = dayOffset(date);
-  if (offset < 0 || offset > 7) throw new Error(`FLASHSCORE_OFFSET_UNSUPPORTED:${offset}`);
-  const raw = await fetchText(`https://2.flashscore.ninja/2/x/feed/f_1_${offset}_3_en_1`, { "x-fsign": "SW9D1eZo", referer: "https://www.flashscore.com/" });
-  return flashEvents(raw);
-}
-async function listProviders(date: string) {
-  const events: any[] = [], errors: string[] = [];
-  try { const data = await sofa(`/sport/football/scheduled-events/${date}`); events.push(...(data?.events ?? []).map(sofaEvent)); }
-  catch (error) { errors.push(`SOFA:${error instanceof Error ? error.message : String(error)}`); }
-  try {
-    const d = date.replaceAll("-", "");
-    const data = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?limit=1000&dates=${d}`);
-    events.push(...(data?.events ?? []).flatMap((event: any) => event?.competitions?.[0] ? [espnEvent(event.competitions[0], event.id)] : []));
-  } catch (error) { errors.push(`ESPN:${error instanceof Error ? error.message : String(error)}`); }
-  try { events.push(...await flashList(date)); }
-  catch (error) { errors.push(`FLASH:${error instanceof Error ? error.message : String(error)}`); }
-  return { events, errors };
-}
-function flashDetailHT(raw: string, ftHome: number | null, ftAway: number | null) {
-  let hh = 0, ha = 0, saw = false;
-  for (const block of raw.split("~")) {
-    if (!block.startsWith("III÷") && !block.startsWith("IIIX÷")) continue;
-    const x = parseKV(block), m = minute(x.IB ?? x.IBX), h = num(x.INX), a = num(x.IOX);
-    if (m !== null && m <= 45 && h !== null && a !== null) { hh = h; ha = a; saw = true; }
-  }
-  if (ftHome !== null && ftAway !== null && (hh > ftHome || ha > ftAway)) return null;
-  return { hh, ha, evidence: saw ? "DETAIL_EVENT_STATE_AT_45" : "DETAIL_NO_FIRST_HALF_SCORE_STATE" };
-}
-async function detail(event: any) {
-  if (event.source === "SOFASCORE") { const data = await sofa(`/event/${event.id}`); return sofaEvent(data?.event ?? data); }
-  if (event.source === "ESPN") {
-    const data = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(event.id)}`);
-    const competition = data?.header?.competitions?.[0];
-    if (!competition) throw new Error("ESPN_SUMMARY_NO_COMPETITION");
-    return espnEvent(competition, event.id);
-  }
-  const raw = await fetchText(`https://2.flashscore.ninja/2/x/feed/df_sui_1_${event.id}`, { "x-fsign": "SW9D1eZo", referer: "https://www.flashscore.com/" });
-  if (!raw || raw.length < 5) throw new Error("FLASHSCORE_DETAIL_EMPTY");
-  const ht = flashDetailHT(raw, event.fh, event.fa);
-  if ((event.hh === null || event.ha === null) && !ht) throw new Error("FLASHSCORE_HT_DERIVATION_FAILED");
-  const states = [...raw.matchAll(/INX÷(\d+)[^~]*?IOX÷(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
-  if (states.length && event.fh !== null && event.fa !== null) {
-    const max = states.reduce((best, x) => x[0] + x[1] >= best[0] + best[1] ? x : best, [0, 0]);
-    if (max[0] !== event.fh || max[1] !== event.fa) throw new Error(`FLASHSCORE_DETAIL_SCORE_MISMATCH:${max[0]}-${max[1]}`);
-  }
-  return { ...event, hh: event.hh ?? ht?.hh ?? null, ha: event.ha ?? ht?.ha ?? null, htEvidence: event.hh !== null && event.ha !== null ? event.htEvidence : ht?.evidence, detailVerified: true };
-}
-function validScores(event: any) {
-  return [event.hh, event.ha, event.fh, event.fa].every((x) => Number.isInteger(x)) && event.hh <= event.fh && event.ha <= event.fa;
-}
-
-Deno.serve(async (request) => {
-  if (request.method !== "POST") return json({ error: "POST_REQUIRED" }, 405);
-  const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRole) return json({ error: "SERVER_SECRET_MISSING" }, 500);
-  const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } });
-  const body = await request.json().catch(() => ({}));
-  const only = typeof body?.snapshotId === "string" ? body.snapshotId : null, verifyOnly = Boolean(body?.verifyOnly);
-  let query = db.from("cfi_prediction_snapshots").select("snapshot_id,target_date,home_team,away_team,engine_version,created_at").order("target_date");
-  query = only ? query.eq("snapshot_id", only) : query.lte("target_date", new Date().toISOString().slice(0, 10));
-  const { data: snapshots, error: snapshotError } = await query.limit(200);
-  if (snapshotError) return json({ error: "SNAPSHOT_READ_FAILED", message: snapshotError.message }, 500);
-  const { data: settlements, error: settlementReadError } = await db.from("cfi_prediction_settlements").select("snapshot_id");
-  if (settlementReadError) return json({ error: "SETTLEMENT_READ_FAILED", message: settlementReadError.message }, 500);
-  const settled = new Set((settlements ?? []).map((x: any) => x.snapshot_id));
-  const work = (snapshots ?? []).filter((snapshot: any) => only || !settled.has(snapshot.snapshot_id));
-  const groups = new Map<string, any[]>();
-  for (const snapshot of work) { if (!groups.has(snapshot.target_date)) groups.set(snapshot.target_date, []); groups.get(snapshot.target_date)!.push(snapshot); }
-
-  const outcomes: any[] = [];
-  let verified = 0, pending = 0, rejected = 0, conflict = 0, upserted = 0;
-  for (const [date, items] of groups) {
-    const listing = await listProviders(date);
-    for (const snapshot of items) {
-      const candidates = listing.events.map((event: any) => ({ event, home: similarity(snapshot.home_team, event.home), away: similarity(snapshot.away_team, event.away) }))
-        .filter((x: any) => x.home >= 0.6 && x.away >= 0.6)
-        .sort((a: any, b: any) => (b.home + b.away) - (a.home + a.away));
-      if (!candidates.length) { pending++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "PENDING", reason: "NO_CONFIDENT_MATCH", providerErrors: listing.errors }); continue; }
-      const best = candidates[0], second = candidates[1], confidence = (best.home + best.away) / 2;
-      if (second && second.event.source === best.event.source && ((best.home + best.away) - (second.home + second.away)) < 0.15) { rejected++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "REJECTED", reason: "AMBIGUOUS_MATCH", provider: best.event.source, confidence }); continue; }
-      if (!best.event.finished) { pending++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "PENDING", reason: "NOT_FINISHED", provider: best.event.source, eventId: best.event.id, externalHome: best.event.home, externalAway: best.event.away, confidence }); continue; }
-      let resolved: any;
-      try { resolved = await detail(best.event); }
-      catch (error) { pending++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "PENDING", reason: "DETAIL_FETCH_FAILED", provider: best.event.source, eventId: best.event.id, message: error instanceof Error ? error.message : String(error) }); continue; }
-      const homeConfidence = similarity(snapshot.home_team, resolved.home), awayConfidence = similarity(snapshot.away_team, resolved.away);
-      if (homeConfidence < 0.6 || awayConfidence < 0.6 || !resolved.finished || !validScores(resolved)) { rejected++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "REJECTED", reason: "DETAIL_VERIFICATION_FAILED", provider: resolved.source, eventId: resolved.id }); continue; }
-      if (verifyOnly) { verified++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "VERIFIED", verifyOnly: true, provider: resolved.source, eventId: resolved.id, ht: [resolved.hh, resolved.ha], ft: [resolved.fh, resolved.fa], htEvidence: resolved.htEvidence }); continue; }
-
-      const { data: upsert, error: upsertError } = await db.rpc("cfi_upsert_fixture", {
-        p_match_date: snapshot.target_date, p_home_team: snapshot.home_team, p_away_team: snapshot.away_team,
-        p_ht_home: resolved.hh, p_ht_away: resolved.ha, p_ft_home: resolved.fh, p_ft_away: resolved.fa,
-        p_source_type: "RESULT_COLLECTOR", p_source_label: `${resolved.source}_EVENT:${resolved.id}`, p_image_hash: null,
-      });
-      if (upsertError) { rejected++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "REJECTED", reason: "UPSERT_ERROR", message: upsertError.message }); continue; }
-      const upsertStatus = String(upsert?.status ?? "");
-      if (upsertStatus === "CONFLICT") { conflict++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "CONFLICT", provider: resolved.source, eventId: resolved.id, upsert }); continue; }
-      if (!["NEW", "DUPLICATE_COMPATIBLE", "COMPLEMENTARY"].includes(upsertStatus)) { rejected++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "REJECTED", reason: "UPSERT_NOT_ACCEPTED", upsert }); continue; }
-      upserted++;
-      const verificationMethod = resolved.source === "ESPN" ? "ESPN_SCOREBOARD_PLUS_SUMMARY" : resolved.source === "FLASHSCORE" ? "FLASHSCORE_DATE_FEED_PLUS_DETAIL_EVENT_STATES" : "SOFASCORE_SCHEDULED_PLUS_EVENT_DETAIL";
-      const { error: resolutionError } = await db.from("cfi_result_resolutions").upsert({
-        snapshot_id: snapshot.snapshot_id, source: resolved.source, source_event_id: resolved.id, match_date: snapshot.target_date,
-        home_team: snapshot.home_team, away_team: snapshot.away_team, external_home_team: resolved.home, external_away_team: resolved.away,
-        name_confidence: (homeConfidence + awayConfidence) / 2, ht_home: resolved.hh, ht_away: resolved.ha, ft_home: resolved.fh, ft_away: resolved.fa,
-        verification_method: verificationMethod, status: "VERIFIED", details: { engineVersion: snapshot.engine_version, upsertStatus, htEvidence: resolved.htEvidence },
-      }, { onConflict: "snapshot_id,source,source_event_id" });
-      if (resolutionError) { rejected++; outcomes.push({ snapshotId: snapshot.snapshot_id, status: "REJECTED", reason: "AUDIT_WRITE_FAILED", message: resolutionError.message }); continue; }
-      verified++;
-      outcomes.push({ snapshotId: snapshot.snapshot_id, status: "VERIFIED", provider: resolved.source, eventId: resolved.id, ht: [resolved.hh, resolved.ha], ft: [resolved.fh, resolved.fa], htEvidence: resolved.htEvidence, upsertStatus });
-    }
-  }
-
-  let settlement: any = { status: "NOT_RUN", settled: 0 };
-  if (!verifyOnly && verified > 0) {
-    const { data, error } = await db.rpc("cfi_settle_prediction_snapshots");
-    settlement = error ? { status: "ERROR", message: error.message } : data ?? { status: "OK", settled: 0 };
-  }
-  const summary = { status: "COMPLETED", mode: verifyOnly ? "VERIFY_ONLY" : "AUTO_RESULT_COLLECTOR", checked: work.length, verified, pending, rejected, conflict, upserted, settlement, outcomes };
-  if (!verifyOnly) await db.from("cfi_result_collector_runs").insert({ checked: work.length, verified, pending, rejected, conflicts: conflict, upserted, settled: Number(settlement?.settled ?? 0), outcomes });
-  console.log(JSON.stringify({ collectorSummary: summary }));
-  return json(summary);
-});
+Deno.serve(async(req)=>{if(req.method!=="POST")return json({error:"POST_REQUIRED"},405);const su=Deno.env.get("SUPABASE_URL"),sr=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");if(!su||!sr)return json({error:"SERVER_SECRET_MISSING"},500);const db=createClient(su,sr,{auth:{persistSession:false,autoRefreshToken:false}});const body=await req.json().catch(()=>({})),only=typeof body?.snapshotId==="string"?body.snapshotId:null,verifyOnly=Boolean(body?.verifyOnly);let q=db.from("cfi_prediction_snapshots").select("snapshot_id,target_date,home_team,away_team,engine_version,created_at").order("target_date");q=only?q.eq("snapshot_id",only):q.lte("target_date",new Date().toISOString().slice(0,10));const{data:ss,error:se}=await q.limit(200);if(se)return json({error:"SNAPSHOT_READ_FAILED",message:se.message},500);const{data:xs,error:xe}=await db.from("cfi_prediction_settlements").select("snapshot_id");if(xe)return json({error:"SETTLEMENT_READ_FAILED",message:xe.message},500);const settled=new Set((xs??[]).map((x:any)=>x.snapshot_id)),work=(ss??[]).filter((s:any)=>only||!settled.has(s.snapshot_id)),groups=new Map<string,any[]>();for(const s of work){if(!groups.has(s.target_date))groups.set(s.target_date,[]);groups.get(s.target_date)!.push(s);}const outcomes:any[]=[];let verified=0,pending=0,rejected=0,conflict=0,upserted=0;
+for(const[date,items]of groups){const listing=await providers(date);for(const s of items){const sp:any=pick(s,listing.events,"SOFASCORE"),fp:any=pick(s,listing.events,"FLASHSCORE"),espn=espnSupport(s,listing.events),ps=[sp,fp];const amb=ps.find((p:any)=>p.status==="AMBIGUOUS");if(amb){rejected++;outcomes.push({snapshotId:s.snapshot_id,status:"REJECTED",reason:"AMBIGUOUS_PRIMARY_MATCH",provider:amb.source,espn,providerErrors:listing.errors});continue;}const miss=ps.filter((p:any)=>p.status!=="MATCH");if(miss.length){pending++;outcomes.push({snapshotId:s.snapshot_id,status:"PENDING",reason:"PRIMARY_CONSENSUS_INCOMPLETE",missingPrimary:miss.map((p:any)=>p.source),espn,providerErrors:listing.errors});continue;}if(ps.some((p:any)=>!p.event.finished)){pending++;outcomes.push({snapshotId:s.snapshot_id,status:"PENDING",reason:"PRIMARY_NOT_FINISHED",providers:ps.map((p:any)=>({source:p.source,eventId:p.event.id,finished:p.event.finished})),espn});continue;}const rs:any[]=[];let fail:any=null;for(const p of ps){try{const d=await detail(p.event),h=sim(s.home_team,d.home),a=sim(s.away_team,d.away);if(h<.6||a<.6||!d.finished||!valid(d)){fail={source:p.source,eventId:p.event.id,reason:"DETAIL_VERIFICATION_FAILED"};break;}rs.push({...d,nameConfidence:(h+a)/2});}catch(e){fail={source:p.source,eventId:p.event.id,reason:"DETAIL_FETCH_FAILED",message:e instanceof Error?e.message:String(e)};break;}}if(fail){pending++;outcomes.push({snapshotId:s.snapshot_id,status:"PENDING",reason:fail.reason,detailFailure:fail,espn});continue;}if(key(rs[0])!==key(rs[1])){conflict++;outcomes.push({snapshotId:s.snapshot_id,status:"CONFLICT",reason:"PRIMARY_SCORE_CONFLICT",primary:rs.map((d:any)=>({source:d.source,eventId:d.id,ht:[d.hh,d.ha],ft:[d.fh,d.fa],htEvidence:d.htEvidence})),espn});continue;}const consensus={ht:[rs[0].hh,rs[0].ha],ft:[rs[0].fh,rs[0].fa],sources:rs.map((d:any)=>d.source),eventIds:rs.map((d:any)=>d.id)};if(verifyOnly){verified++;outcomes.push({snapshotId:s.snapshot_id,status:"VERIFIED",verifyOnly:true,verificationMethod:"PRIMARY_DUAL_SOURCE_EXACT_CONSENSUS",consensus,espn});continue;}const sf=rs.find((d:any)=>d.source==="SOFASCORE"),ff=rs.find((d:any)=>d.source==="FLASHSCORE");const{data:up,error:ue}=await db.rpc("cfi_upsert_fixture",{p_match_date:s.target_date,p_home_team:s.home_team,p_away_team:s.away_team,p_ht_home:rs[0].hh,p_ht_away:rs[0].ha,p_ft_home:rs[0].fh,p_ft_away:rs[0].fa,p_source_type:"RESULT_COLLECTOR",p_source_label:`CONSENSUS:SOFASCORE:${sf?.id}|FLASHSCORE:${ff?.id}`,p_image_hash:null});if(ue){rejected++;outcomes.push({snapshotId:s.snapshot_id,status:"REJECTED",reason:"UPSERT_ERROR",message:ue.message,consensus});continue;}const us=String(up?.status??"");if(us==="CONFLICT"){conflict++;outcomes.push({snapshotId:s.snapshot_id,status:"CONFLICT",reason:"CANONICAL_UPSERT_CONFLICT",upsert:up,consensus});continue;}if(!["NEW","DUPLICATE_COMPATIBLE","COMPLEMENTARY"].includes(us)){rejected++;outcomes.push({snapshotId:s.snapshot_id,status:"REJECTED",reason:"UPSERT_NOT_ACCEPTED",upsert:up,consensus});continue;}upserted++;let auditFail=false;for(const d of rs){const{error:re}=await db.from("cfi_result_resolutions").upsert({snapshot_id:s.snapshot_id,source:d.source,source_event_id:d.id,match_date:s.target_date,home_team:s.home_team,away_team:s.away_team,external_home_team:d.home,external_away_team:d.away,name_confidence:d.nameConfidence,ht_home:d.hh,ht_away:d.ha,ft_home:d.fh,ft_away:d.fa,verification_method:"PRIMARY_DUAL_SOURCE_EXACT_CONSENSUS",status:"VERIFIED",details:{engineVersion:s.engine_version,upsertStatus:us,htEvidence:d.htEvidence,consensusSources:["SOFASCORE","FLASHSCORE"],espnAuthority:"SUPPORTING_ONLY"}},{onConflict:"snapshot_id,source,source_event_id"});if(re){auditFail=true;outcomes.push({snapshotId:s.snapshot_id,status:"REJECTED",reason:"AUDIT_WRITE_FAILED",provider:d.source,message:re.message});break;}}if(auditFail){rejected++;continue;}verified++;outcomes.push({snapshotId:s.snapshot_id,status:"VERIFIED",verificationMethod:"PRIMARY_DUAL_SOURCE_EXACT_CONSENSUS",consensus,espn,upsertStatus:us});}}
+let settlement:any={status:"NOT_RUN",settled:0};if(!verifyOnly&&verified>0){const{data,error}=await db.rpc("cfi_settle_prediction_snapshots");settlement=error?{status:"ERROR",message:error.message}:data??{status:"OK",settled:0};}const summary={status:"COMPLETED",mode:verifyOnly?"VERIFY_ONLY":"AUTO_RESULT_COLLECTOR",policy:"CFI_RESULT_CONSENSUS_V2",authority:{primary:["SOFASCORE","FLASHSCORE"],supportingOnly:["ESPN"],settlementRequires:"EXACT_HT_FT_CONSENSUS_OF_BOTH_PRIMARY_SOURCES"},checked:work.length,verified,pending,rejected,conflict,upserted,settlement,outcomes};if(!verifyOnly)await db.from("cfi_result_collector_runs").insert({checked:work.length,verified,pending,rejected,conflicts:conflict,upserted,settled:Number(settlement?.settled??0),outcomes});console.log(JSON.stringify({collectorSummary:summary}));return json(summary);});
