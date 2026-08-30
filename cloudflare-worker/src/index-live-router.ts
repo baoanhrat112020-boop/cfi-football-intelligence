@@ -57,7 +57,7 @@ async function enrichPredictionResponse(request:Request,response:Response){
 async function syncedStatus(request:Request,env:Env,ctx:ExecutionContext){
   const response=await prematch.fetch(request,env,ctx),body:any=await readJson(response);if(!body||typeof body!=='object')return response;
   body.engine=PREMATCH_ENGINE;
-  body.runtime={...(body.runtime??{}),version:PREMATCH_RUNTIME,engine:PREMATCH_ENGINE,predictionPath:PREMATCH_PATH,primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',productionEntrypoint:'index-live-router.ts',prematchEntrypoint:'index-v55.ts'};
+  body.runtime={...(body.runtime??{}),version:PREMATCH_RUNTIME,engine:PREMATCH_ENGINE,predictionPath:PREMATCH_PATH,primaryTargets:6,sixTargetContract:'CFI_2_METHODS_X_6_TARGETS_V2',bigDbRetrieval:BIGDB_VERSION,primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',productionEntrypoint:'index-live-router.ts',prematchEntrypoint:'index-v55.ts'};
   body.bigDbRetrieval={...(body.bigDbRetrieval??{}),version:BIGDB_VERSION};
   body.diversityGuard={version:DIVERSITY_GUARD,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false};
   body.multiMarket={supported:true,mode:'SHADOW_RESEARCH',decisionUse:false};
