@@ -44,13 +44,13 @@ test("GPT instructions enforce supplied-fixture ranking, explicit external acqui
     "Web Search chỉ khi user yêu cầu acquisition ngoài",
     "cfiPredictMatch",
     "cfiPredictLive",
-    "CFI_2_METHODS_X_6_TARGETS_V1",
+    "CFI_2_METHODS_X_6_TARGETS_V2",
     "sixTargetMatrix.verification.complete",
     "METHOD A",
     "METHOD B",
     "FINAL",
-    "Top-3 HT",
-    "Top-3 FT",
+    "Top-1 HT",
+    "Top-1 FT",
     "decisionUse=false",
     "Không forced Top-5"
   ]) assert.match(instructions,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
@@ -94,9 +94,10 @@ test("production config exposes discovery through canonical router chain and pre
   assert.match(liveRouter,/attachMultiMarketShadow/);
   assert.match(liveRouter,/attachCfiBettingBoard/);
   assert.match(liveRouter,/multiMarketDecisionUse:false/);
-  assert.match(worker,/CFI_FINAL_V5\.2\.5/);
-  assert.match(worker,/CFI_SIX_TARGET_RUNTIME_V1\.4/);
+  assert.match(worker,/CFI_FINAL_V5\.3\.0/);
+  assert.match(worker,/CFI_PRIMARY_TOP1_RUNTIME_V2/);
   assert.match(worker,/CFI_MATCH_DIVERSITY_GUARD_V1/);
+  assert.match(worker,/PRIMARY_CONTRACT/);
   assert.match(worker,/ZERO_EXACT_TEAM_EVIDENCE/);
   assert.match(worker,/sixTargetMatrix/);
   assert.match(worker,/renderedReport/);

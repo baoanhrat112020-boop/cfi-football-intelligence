@@ -1,4 +1,4 @@
-# CFI KNOWLEDGE V3 — STABLE DOMAIN & DATA CONTRACT
+# CFI KNOWLEDGE V4 — STABLE DOMAIN & DATA CONTRACT
 
 Status: Production stable knowledge  
 Scope: canonical football evidence, Persistent DB, screenshot ingestion, strict-prior, six-target semantics, Multi-Market, Champion Fusion semantics, runtime boundaries.
@@ -239,12 +239,12 @@ CFI production has exactly six primary Champion targets.
 2. `7+ FT`: regulation FT total goals >= 7.
 3. `Other HT`: either team scores >= 4 goals in HT.
 4. `Other FT`: either team scores >= 5 goals in regulation FT.
-5. `Top-3 HT`: three highest-probability exact HT scorelines returned by the engine.
-6. `Top-3 FT`: three highest-probability exact FT scorelines returned by the engine.
+5. `Top-1 HT`: highest-probability exact HT scoreline returned by the engine.
+6. `Top-1 FT`: highest-probability exact FT scoreline returned by the engine.
 
 The first four are threshold events.
 
-Top-3 coverage is probability mass over selected scorelines and must not be interpreted as the same quantity as a threshold probability.
+Top-1 HT and Top-1 FT are exact-score targets and must not be interpreted as the same quantity as threshold probabilities.
 
 Never describe current CFI production as a four-target system.
 
@@ -302,7 +302,7 @@ Runtime may return an additive object named `championFusion`.
 Champion Fusion V1 is a score-distribution fusion layer. It combines multiple expert distributions through context-adaptive weighting, creates a fused latent HT/FT distribution, then derives markets consistently from that same distribution.
 
 Intended derivation:
-expert score distributions → context-adaptive gating → fused HT/FT distribution → Champion threshold targets → Top-3 HT/FT → 1X2 HT/FT → O/U HT/FT → AH HT/FT → coherence checks.
+expert score distributions → context-adaptive gating → fused HT/FT distribution → Champion threshold targets → Top-1 HT/FT → 1X2 HT/FT → O/U HT/FT → AH HT/FT → coherence checks.
 
 This architecture is intended to reduce contradictory probabilities across markets.
 
@@ -324,7 +324,7 @@ These may exist as research candidates and MUST NOT be silently activated:
 Knowledge does not promote them.
 
 ### Fusion output may include
-version, lineage, status, activeExperts, candidateExperts, gating weights for HT/FT, expert disagreement, uncertainty level/confidence, abstain flag/reasons, fused four threshold targets, fused Top-3 HT/FT, fused 1X2/O-U/AH HT/FT, quarter lines, coherence/consistency status and strict-prior audit.
+version, lineage, status, activeExperts, candidateExperts, gating weights for HT/FT, expert disagreement, uncertainty level/confidence, abstain flag/reasons, fused four threshold targets, fused Top-1 HT/FT, fused 1X2/O-U/AH HT/FT, quarter lines, coherence/consistency status and strict-prior audit.
 
 ### Fusion hard rules
 If `decisionUse=false` or `status=SHADOW_RESEARCH`, Champion Fusion is SHADOW only.
@@ -410,9 +410,9 @@ If the prediction Action did not successfully execute, GPT must not substitute i
 
 Successful Champion production output requires runtime confirmation of the canonical six-target contract.
 
-Expected contract: `CFI_2_METHODS_X_6_TARGETS_V1`.
+Expected contract: `CFI_2_METHODS_X_6_TARGETS_V2`.
 
-A valid successful output must preserve Method A, Method B — Future Six, FINAL, all four threshold targets, Top-3 HT and Top-3 FT.
+A valid successful output must preserve Method A, Method B — Future Six, FINAL, all four threshold targets, Top-1 HT and Top-1 FT.
 
 If the runtime reports the contract incomplete, do not reconstruct missing output. Return the runtime contract failure.
 
@@ -426,7 +426,7 @@ Settlement compares verified actual results only against immutable pre-match pre
 
 Never reconstruct predictions after knowing HT/FT.
 
-When runtime provides them, settlement may report threshold HIT/MISS, Top-3 HT HIT@3, Top-3 FT HIT@3, Top-1, rank-of-hit, Brier, log-loss, calibration, Multi-Market settlement, Fusion paired settlement and settlement status.
+When runtime provides them, settlement may report threshold HIT/MISS, Top-1 HT HIT/MISS, Top-1 FT HIT/MISS, Brier, log-loss, calibration, Multi-Market settlement, Fusion paired settlement and settlement status.
 
 Actual results do not retroactively modify prediction snapshots.
 

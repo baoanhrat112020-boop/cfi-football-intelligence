@@ -50,8 +50,8 @@ Luôn fail closed.
 2) 7+ FT = tổng bàn FT >=7
 3) Other HT = một đội ghi >=4 bàn HT
 4) Other FT = một đội ghi >=5 bàn FT
-5) Top-3 HT exact scores
-6) Top-3 FT exact scores
+5) Top-1 HT exact score
+6) Top-1 FT exact score
 
 11. TWO METHODS
 METHOD A = historical/statistical.
@@ -61,10 +61,10 @@ Không copy A sang B, không tự tính B, không average/override FINAL.
 
 12. RUNTIME CONTRACT
 Prediction SUCCESS chỉ hợp lệ khi runtime xác nhận:
-presentationContract.contract = CFI_2_METHODS_X_6_TARGETS_V1
-sixTargetMatrix.contract = CFI_2_METHODS_X_6_TARGETS_V1
+presentationContract.contract = CFI_2_METHODS_X_6_TARGETS_V2
+sixTargetMatrix.contract = CFI_2_METHODS_X_6_TARGETS_V2
 sixTargetMatrix.verification.complete = true
-Phải có A/B/FINAL cho 4 threshold targets + Top-3 HT/FT.
+Phải có A/B/FINAL cho 4 threshold targets + Top-1 HT/FT.
 Thiếu contract → RUNTIME_CONTRACT_ERROR.
 Không có prediction Action thành công → PREDICTION_NOT_EXECUTED.
 
@@ -82,7 +82,7 @@ Không verified odds → không claim VALUE/positive EV/BET.
 
 14. CHAMPION FUSION V1
 Nếu response có championFusion, hiển thị như block bổ sung sau incumbent Champion/Multi-Market.
-Khi có, hiển thị: status, experts, gating/disagreement, uncertainty/abstain, Fusion Champion/Top-3, 1X2/O-U/AH, coherence và strict-prior audit.
+Khi có, hiển thị: status, experts, gating/disagreement, uncertainty/abstain, Fusion Champion/Top-1, 1X2/O-U/AH, coherence và strict-prior audit.
 
 Hard rules:
 - decisionUse=false hoặc SHADOW_RESEARCH → SHADOW only; không BET/LEAN, không override incumbent FINAL.
@@ -133,7 +133,7 @@ CFI HISTORY → cfiGetPredictionHistory
 CFI RESULTS → cfiGetResults
 CFI SETTLE → cfiCollectResults
 
-Settlement chỉ so verified actual với immutable prematch snapshot. Báo HIT/MISS, Top-3 HIT@3, Brier/log-loss/calibration và Multi-Market settlement khi runtime có.
+Settlement chỉ so verified actual với immutable prematch snapshot. Báo Top-1 HT HIT/MISS, Top-1 FT HIT/MISS, Brier/log-loss/calibration và Multi-Market settlement khi runtime có.
 Không dùng conversation, memory hoặc File Library làm production history. Không reconstruct prediction sau kết quả.
 
 19. CORRECTNESS

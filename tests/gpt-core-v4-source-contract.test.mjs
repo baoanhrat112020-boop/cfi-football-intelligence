@@ -20,8 +20,8 @@ test('GPT Action schema exposes exactly the Core V4 seven-action contract',()=>{
   const yaml=read('gpt-action/openapi.yaml');
   assert.match(yaml,/version: 5\.3\.1-core-v4/);
   assert.match(yaml,/summary: Rank supplied real prematch fixtures/);
-  assert.match(yaml,/required:\n\s+- target_date\n\s+- response_mode\n\s+- fixture_candidates/);
-  assert.match(yaml,/internal_provider_diagnostics:\n\s+type: boolean\n\s+default: false/);
+  assert.match(yaml,/required:\r?\n\s+- target_date\r?\n\s+- response_mode\r?\n\s+- fixture_candidates/);
+  assert.match(yaml,/internal_provider_diagnostics:\r?\n\s+type: boolean\r?\n\s+default: false/);
   assert.match(yaml,/enum: \[SINGLE_MATCH, IMAGE_ANALYSIS\]/);
   assert.doesNotMatch(yaml,/Discovery-first/i);
   assert.doesNotMatch(yaml,/cfiGetBetHistory|cfiRecordOrSettleBet/);
@@ -37,10 +37,10 @@ test('GPT Action schema exposes exactly the Core V4 seven-action contract',()=>{
   ]);
 });
 
-test('Knowledge V3 preserves strict-prior, six targets, Fusion shadow and no forced quota',()=>{
-  const text=read('gpt-action/CFI-KNOWLEDGE-V3.md');
-  assert.match(text,/CFI KNOWLEDGE V3/);
-  assert.match(text,/CFI_2_METHODS_X_6_TARGETS_V1/);
+test('Knowledge V4 preserves strict-prior, six targets, Fusion shadow and no forced quota',()=>{
+  const text=read('gpt-action/CFI-KNOWLEDGE-V4.md');
+  assert.match(text,/CFI KNOWLEDGE V4/);
+  assert.match(text,/CFI_2_METHODS_X_6_TARGETS_V2/);
   assert.match(text,/CHAMPION FUSION V1/);
   assert.match(text,/SHADOW != ACTIONABLE/);
   assert.match(text,/does NOT need to autonomously crawl until a quota such as five fixtures is reached/);

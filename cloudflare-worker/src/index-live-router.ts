@@ -50,14 +50,14 @@ async function enrichPredictionResponse(request:Request,response:Response){
   const body:any=await readJson(response);if(!body||typeof body!=='object'||!response.ok)return response;
   let input:any={};try{input=await request.clone().json()}catch{}
   attachMultiMarketShadow(body);attachCfiOutputV2(body,input?.odds??{});attachCfiBettingBoard(body);
-  body.presentation={...(body.presentation??{}),version:'CFI_PRACTICAL_OUTPUT_V1',championFrozen:true,multiMarketDecisionUse:false,primaryContract:'CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1'};
+  body.presentation={...(body.presentation??{}),version:'CFI_PRACTICAL_OUTPUT_V1',championFrozen:true,multiMarketDecisionUse:false,primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2'};
   return Response.json(body,{status:response.status});
 }
 
 async function syncedStatus(request:Request,env:Env,ctx:ExecutionContext){
   const response=await prematch.fetch(request,env,ctx),body:any=await readJson(response);if(!body||typeof body!=='object')return response;
   body.engine=PREMATCH_ENGINE;
-  body.runtime={...(body.runtime??{}),version:PREMATCH_RUNTIME,engine:PREMATCH_ENGINE,predictionPath:PREMATCH_PATH,primaryContract:'CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1',productionEntrypoint:'index-live-router.ts',prematchEntrypoint:'index-v55.ts'};
+  body.runtime={...(body.runtime??{}),version:PREMATCH_RUNTIME,engine:PREMATCH_ENGINE,predictionPath:PREMATCH_PATH,primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',productionEntrypoint:'index-live-router.ts',prematchEntrypoint:'index-v55.ts'};
   body.bigDbRetrieval={...(body.bigDbRetrieval??{}),version:BIGDB_VERSION};
   body.diversityGuard={version:DIVERSITY_GUARD,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false};
   body.multiMarket={supported:true,mode:'SHADOW_RESEARCH',decisionUse:false};
@@ -67,7 +67,7 @@ async function syncedStatus(request:Request,env:Env,ctx:ExecutionContext){
 }
 
 function health(){
-  return Response.json({status:'OK',service:'CFI Football Intelligence',version:PREMATCH_ENGINE,engine:PREMATCH_ENGINE,runtime:{version:PREMATCH_RUNTIME,predictionPath:PREMATCH_PATH,primaryContract:'CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1'},bigDbRetrieval:{version:BIGDB_VERSION},diversityGuard:{version:DIVERSITY_GUARD,active:true},multiMarket:{mode:'SHADOW_RESEARCH',decisionUse:false},discovery:{version:CFI_DISCOVERY_VERSION},webApp:true,gptAction:true,resultActions:true});
+  return Response.json({status:'OK',service:'CFI Football Intelligence',version:PREMATCH_ENGINE,engine:PREMATCH_ENGINE,runtime:{version:PREMATCH_RUNTIME,predictionPath:PREMATCH_PATH,primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2'},bigDbRetrieval:{version:BIGDB_VERSION},diversityGuard:{version:DIVERSITY_GUARD,active:true},multiMarket:{mode:'SHADOW_RESEARCH',decisionUse:false},discovery:{version:CFI_DISCOVERY_VERSION},webApp:true,gptAction:true,resultActions:true});
 }
 
 async function rawDiscoveryPrediction(f:DiscoveredFixture,env:Env){

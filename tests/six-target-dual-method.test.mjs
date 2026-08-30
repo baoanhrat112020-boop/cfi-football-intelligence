@@ -34,6 +34,6 @@ test('CFI exposes six primary targets with independent Future Six scoreline meth
     assert.ok(p.markets[m].supportingFactors.some(x=>x===`future_six:${FUTURE_SIX_SCORELINE_VERSION}`));
   }
   assert.deepEqual(p.ranking.map(x=>x.target).sort(),['3+ HT','7+ FT','Other FT','Other HT'].sort());
-  assert.deepEqual(Object.keys(p.primaryTargets.scorelineTargets).sort(),['Top-3 FT','Top-3 HT'].sort());
+  assert.deepEqual(Object.keys(p.primaryTargets.scorelineTargets).sort(),['Top-1 FT','Top-1 HT'].sort());
   assert.equal(p.rankingPolicy.crossTypeRanking,false);
 });

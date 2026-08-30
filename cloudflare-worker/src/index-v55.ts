@@ -74,14 +74,16 @@ function rebuildPrimaryMatrix(body:any){
     final:top1From(x?.final??body?.scoreline?.[part]?.final),
   });
   const exactScore={'Top-1 HT':normalizeExact(ht,'ht'),'Top-1 FT':normalizeExact(ft,'ft')};
-  const complete=MARKET_CODES.every(m=>Number.isFinite(Number(threshold[m]?.final)))&&Boolean(exactScore['Top-1 HT'].final?.score)&&Boolean(exactScore['Top-1 FT'].final?.score);
-  body.primaryTargetMatrix={contract:PRIMARY_CONTRACT,targetCount:6,threshold,exactScore,verification:{complete,thresholdCount:4,top1Count:2}};
-  body.presentationContract={...(body.presentationContract??{}),contract:PRIMARY_CONTRACT,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete};
+  const thresholdComplete=MARKET_CODES.every(m=>Number.isFinite(Number(threshold[m]?.final)));
+  const scorelineComplete=Boolean(exactScore['Top-1 HT'].final?.score)&&Boolean(exactScore['Top-1 FT'].final?.score);
+  const verification={thresholdComplete,scorelineComplete,complete:thresholdComplete&&scorelineComplete,thresholdCount:4,top1Count:2};
+  body.sixTargetMatrix={contract:PRIMARY_CONTRACT,primary:true,targetCount:6,primaryTargets:[...MARKET_CODES,'Top-1 HT','Top-1 FT'],methods:['Method A','Method B','FINAL'],threshold,scoreline:exactScore,exactScore,verification};
+  body.primaryTargetMatrix={contract:PRIMARY_CONTRACT,targetCount:6,threshold,exactScore,verification};
+  body.presentationContract={...(body.presentationContract??{}),contract:PRIMARY_CONTRACT,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:verification.complete};
   body.primaryTargets={...(body.primaryTargets??{}),contract:PRIMARY_CONTRACT,count:6,codes:[...MARKET_CODES,'Top-1 HT','Top-1 FT'],scorelineTargets:exactScore};
-  if(legacy)body.sixTargetMatrix={...legacy,legacyCompatibilityOnly:true,primary:false,replacedBy:'primaryTargetMatrix'};
   const ranking=MARKET_CODES.map(m=>({target:m,probability:Number(body?.markets?.[m]?.final),confidence:body?.markets?.[m]?.predictiveConfidence??body?.markets?.[m]?.confidence})).sort((a,b)=>b.probability-a.probability);
   body.ranking=ranking;body.verdict=(ranking[0]?.probability??0)>=.6?'STRONG_SIGNAL':'NO_STRONG_SIGNAL';
-  body.renderedReport=[`CFI 4 THRESHOLDS + TOP-1 HT + TOP-1 FT — ${PRIMARY_CONTRACT}`,`MATCH: ${body?.target?.home??'—'} vs ${body?.target?.away??'—'} | ${body?.target?.date??'—'} | ENGINE ${ENGINE_VERSION}`,'','THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',...MARKET_CODES.map(m=>`${m}: A ${pct(threshold[m]?.methodA)} | B ${pct(threshold[m]?.methodB)} | FINAL ${pct(threshold[m]?.final)} | ${threshold[m]?.confidence??'—'}`),'','TOP-1 HT — PRIMARY TARGET',`Method A: ${exact(exactScore['Top-1 HT'].methodA)}`,`Method B: ${exact(exactScore['Top-1 HT'].methodB)}`,`FINAL: ${exact(exactScore['Top-1 HT'].final)}`,'','TOP-1 FT — PRIMARY TARGET',`Method A: ${exact(exactScore['Top-1 FT'].methodA)}`,`Method B: ${exact(exactScore['Top-1 FT'].methodB)}`,`FINAL: ${exact(exactScore['Top-1 FT'].final)}`,'',`VERDICT: ${body.verdict} | UNCERTAINTY: ${body?.scoreline?.uncertainty??'—'}`,`CONTRACT COMPLETE: ${complete?'YES':'NO'}`,'',...fusionReportLines(body)].join('\n');
+  body.renderedReport=[`CFI 4 THRESHOLDS + TOP-1 HT + TOP-1 FT — ${PRIMARY_CONTRACT}`,`MATCH: ${body?.target?.home??'—'} vs ${body?.target?.away??'—'} | ${body?.target?.date??'—'} | ENGINE ${ENGINE_VERSION}`,'','THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',...MARKET_CODES.map(m=>`${m}: A ${pct(threshold[m]?.methodA)} | B ${pct(threshold[m]?.methodB)} | FINAL ${pct(threshold[m]?.final)} | ${threshold[m]?.confidence??'—'}`),'','TOP-1 HT — PRIMARY TARGET',`Method A: ${exact(exactScore['Top-1 HT'].methodA)}`,`Method B: ${exact(exactScore['Top-1 HT'].methodB)}`,`FINAL: ${exact(exactScore['Top-1 HT'].final)}`,'','TOP-1 FT — PRIMARY TARGET',`Method A: ${exact(exactScore['Top-1 FT'].methodA)}`,`Method B: ${exact(exactScore['Top-1 FT'].methodB)}`,`FINAL: ${exact(exactScore['Top-1 FT'].final)}`,'',`VERDICT: ${body.verdict} | UNCERTAINTY: ${body?.scoreline?.uncertainty??'—'}`,`CONTRACT COMPLETE: ${verification.complete?'YES':'NO'}`,'',...fusionReportLines(body)].join('\n');
 }
 function normalizeReleaseTelemetry(body:any){
   body.engine=ENGINE_VERSION;

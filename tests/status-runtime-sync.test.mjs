@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 const router=readFileSync(new URL('../cloudflare-worker/src/index-live-router.ts',import.meta.url),'utf8');
 
 test('status endpoint advertises current prematch production runtime while preserving DB payload',()=>{
-  for(const token of ['/api/status','CFI_FINAL_V5.2.5','CFI_SIX_TARGET_RUNTIME_V1.4','NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2','CFI_BIG_DB_RETRIEVAL_V2.1.2','CFI_MATCH_DIVERSITY_GUARD_V1']) assert.match(router,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  for(const token of ['/api/status','CFI_FINAL_V5.3.0','CFI_PRIMARY_TOP1_RUNTIME_V2','NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_1_2','CFI_BIG_DB_RETRIEVAL_V2.1.2','CFI_MATCH_DIVERSITY_GUARD_V1']) assert.match(router,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  assert.match(router,/CFI_2_METHODS_X_6_TARGETS_V2/);
   assert.match(router,/body\.engine=PREMATCH_ENGINE/);
   assert.match(router,/\.\.\.\(body\.runtime\?\?\{\}\)/);
   assert.match(router,/\.\.\.\(body\.bigDbRetrieval\?\?\{\}\)/);

@@ -5,7 +5,7 @@ import { buildMultiMarketFromScoreGrids } from './multi-market-v1.ts';
 import { buildMultiMarketChampionFusion, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE } from './multi-market-champion-fusion.ts';
 
 export const FINAL_VERSION = "CFI_FINAL_V5.3.0";
-export const PRIMARY_CONTRACT = "CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1";
+export const PRIMARY_CONTRACT = "CFI_2_METHODS_X_6_TARGETS_V2";
 export const MARKET_CODES = ["3+ HT", "7+ FT", "Other HT", "Other FT"] as const;
 export const PRIMARY_TARGETS = [...MARKET_CODES, "Top-1 HT", "Top-1 FT"] as const;
 

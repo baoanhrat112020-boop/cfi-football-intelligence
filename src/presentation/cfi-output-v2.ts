@@ -122,7 +122,7 @@ export function buildCfiOutputV2(body:any,odds:any={}){
   const report=fullMarketReport(body,marketGroups);
   return {
     version:CFI_OUTPUT_V2,
-    contract:body?.primaryTargetMatrix?.contract??body?.primaryTargets?.contract??'CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1',
+    contract:body?.primaryTargetMatrix?.contract??body?.primaryTargets?.contract??'CFI_2_METHODS_X_6_TARGETS_V2',
     match:{home:body?.target?.home??null,away:body?.target?.away??null,date:body?.target?.date??null},
     headline:{status:best?.status??'PASS',market:best?.market??null,probability:best?.probability??null,fairOdds:best?.fairOdds??null,marketOdds:best?.marketOdds??null,edge:best?.edge??null,message:best?`${best.status} ${best.market} · P ${pct(best.probability)} · Fair ${best.fairOdds??'—'}${best.marketOdds?` · Market ${best.marketOdds}`:''}`:'No qualified market'},
     quickDecision:{bet:actionable,watch,pass:all.filter(x=>x.status==='PASS'),shadow:all.filter(x=>x.status==='SHADOW')},
