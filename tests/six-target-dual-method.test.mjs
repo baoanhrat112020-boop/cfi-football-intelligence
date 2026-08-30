@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrediction, FINAL_VERSION, PRIMARY_TARGETS } from '../src/prediction/final-engine.ts';
+import { buildPrediction, FINAL_VERSION, PRIMARY_TARGETS, PRIMARY_CONTRACT } from '../src/prediction/final-engine.ts';
 import { FUTURE_SIX_SCORELINE_VERSION } from '../src/prediction/future-six-scoreline.ts';
 
 const fixtures=[];
@@ -10,9 +10,10 @@ for(let i=0;i<24;i++){
   fixtures.push({id:`a${i}`,matchDate:`2026-06-${d}`,homeTeam:i%2?'Away':'Z',awayTeam:i%2?'Q':'Away',ht:{home:i%2,away:i%3},ft:{home:i%3,away:1+(i%4)}});
 }
 
-test('CFI exposes six primary targets with independent Future Six scoreline methods',()=>{
+test('CFI exposes four thresholds plus Top-1 HT and Top-1 FT with independent Future Six scoreline methods',()=>{
   const p=buildPrediction({home:'Home',away:'Away',targetDate:'2026-08-19',language:'en',homePayload:fixtures,awayPayload:fixtures,h2hPayload:[]});
   assert.equal(p.engine,FINAL_VERSION);
+  assert.equal(p.contract,PRIMARY_CONTRACT);
   assert.equal(PRIMARY_TARGETS.length,6);
   assert.equal(p.primaryTargets.count,6);
   assert.deepEqual(p.primaryTargets.codes,[...PRIMARY_TARGETS]);
@@ -23,6 +24,7 @@ test('CFI exposes six primary targets with independent Future Six scoreline meth
     assert.equal(p.scoreline[side].methodB.length,3);
     assert.equal(p.scoreline[side].final.length,3);
     assert.notStrictEqual(p.scoreline[side].methodA,p.scoreline[side].methodB);
+    assert.equal(p.scoreline.diagnosticTop3[side].compatibilityOnly,true);
   }
   for(const m of ['3+ HT','7+ FT','Other HT','Other FT']){
     assert.ok(Number.isFinite(p.markets[m].methodA));
@@ -34,6 +36,8 @@ test('CFI exposes six primary targets with independent Future Six scoreline meth
     assert.ok(p.markets[m].supportingFactors.some(x=>x===`future_six:${FUTURE_SIX_SCORELINE_VERSION}`));
   }
   assert.deepEqual(p.ranking.map(x=>x.target).sort(),['3+ HT','7+ FT','Other FT','Other HT'].sort());
-  assert.deepEqual(Object.keys(p.primaryTargets.scorelineTargets).sort(),['Top-3 FT','Top-3 HT'].sort());
+  assert.deepEqual(Object.keys(p.primaryTargets.scorelineTargets).sort(),['Top-1 FT','Top-1 HT'].sort());
+  assert.equal(p.primaryTargets.scorelineTargets['Top-1 HT'].final?.score,p.scoreline.ht.final[0]?.score);
+  assert.equal(p.primaryTargets.scorelineTargets['Top-1 FT'].final?.score,p.scoreline.ft.final[0]?.score);
   assert.equal(p.rankingPolicy.crossTypeRanking,false);
 });
