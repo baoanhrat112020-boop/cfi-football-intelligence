@@ -1,5 +1,6 @@
 import v54 from './index-v54.ts';
 import { MARKET_CODES, PRIMARY_CONTRACT } from '../../src/prediction/final-engine.ts';
+import { verifyPrimaryContractV2 } from '../../src/prediction/primary-contract-v2.ts';
 import { attachMultiMarketShadow } from '../../src/prediction/multi-market-integration.ts';
 import { attachCfiOutputV2 } from '../../src/presentation/cfi-output-v2.ts';
 import { attachCfiOutputV3 } from '../../src/presentation/cfi-output-v3.ts';
@@ -74,9 +75,7 @@ function rebuildPrimaryMatrix(body:any){
     final:top1From(x?.final??body?.scoreline?.[part]?.final),
   });
   const exactScore={'Top-1 HT':normalizeExact(ht,'ht'),'Top-1 FT':normalizeExact(ft,'ft')};
-  const thresholdComplete=MARKET_CODES.every(m=>Number.isFinite(Number(threshold[m]?.final)));
-  const scorelineComplete=Boolean(exactScore['Top-1 HT'].final?.score)&&Boolean(exactScore['Top-1 FT'].final?.score);
-  const verification={thresholdComplete,scorelineComplete,complete:thresholdComplete&&scorelineComplete,thresholdCount:4,top1Count:2};
+  const verification=verifyPrimaryContractV2(threshold,exactScore,MARKET_CODES);
   body.sixTargetMatrix={contract:PRIMARY_CONTRACT,primary:true,targetCount:6,primaryTargets:[...MARKET_CODES,'Top-1 HT','Top-1 FT'],methods:['Method A','Method B','FINAL'],threshold,scoreline:exactScore,exactScore,verification};
   body.primaryTargetMatrix={contract:PRIMARY_CONTRACT,targetCount:6,threshold,exactScore,verification};
   body.presentationContract={...(body.presentationContract??{}),contract:PRIMARY_CONTRACT,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:verification.complete};
@@ -133,6 +132,26 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     }
     body.consistencyGuard={status:'PASS',violations:[]};
     rebuildPrimaryMatrix(body);
+    if(body?.sixTargetMatrix?.verification?.complete!==true){
+      body.status='RUNTIME_CONTRACT_ERROR';
+      body.error='RUNTIME_CONTRACT_ERROR';
+      body.contractGate={
+        status:'FAIL_CLOSED',
+        contract:PRIMARY_CONTRACT,
+        verification:body?.sixTargetMatrix?.verification??null,
+        requiredMethods:['methodA','methodB','final'],
+        requiredTargets:[...MARKET_CODES,'Top-1 HT','Top-1 FT'],
+      };
+      body.runtime={
+        ...(body.runtime??{}),
+        predictionPath:'RUNTIME_CONTRACT_FAIL_CLOSED',
+        diversityGuard:DIVERSITY_GUARD_VERSION,
+      };
+      delete body.renderedReport;
+      delete body.ranking;
+      delete body.verdict;
+      return Response.json(body,{status:422});
+    }
     attachMultiMarketShadow(body);
     attachCfiOutputV2(body,input?.odds?.values??input?.odds??{});
     attachCfiOutputV3(body,input);

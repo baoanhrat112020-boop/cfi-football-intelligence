@@ -15,5 +15,8 @@ assert.match(wrapper,/sixTargetMatrix=\{contract:PRIMARY_CONTRACT/);
 assert.match(wrapper,/presentationContract=.*contract:PRIMARY_CONTRACT/);
 assert.match(wrapper,/TOP-1 HT/);
 assert.match(wrapper,/TOP-1 FT/);
+assert.match(wrapper,/verifyPrimaryContractV2/);
+assert.match(wrapper,/RUNTIME_CONTRACT_ERROR/);
+assert.match(wrapper,/RUNTIME_CONTRACT_FAIL_CLOSED/);
 assert.match(live,/CFI_PRIMARY_TOP1_RUNTIME_V2/);
 console.log('top1-primary-contract: PASS');
