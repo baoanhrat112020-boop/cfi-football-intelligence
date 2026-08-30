@@ -47,26 +47,30 @@ function score(v: string|undefined) {
 }
 
 async function fetchOne(code: string, url: string): Promise<FootballDataEvent[]> {
-  const r=await fetch(url,{headers:{'user-agent':'CFI-Football-Intelligence/result-settlement','accept':'text/csv,*/*'}});
-  if (!r.ok) return [];
-  const text=await r.text();
-  const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
-  if (lines.length<2) return [];
-  const h=csvLine(lines[0]);
-  const idx=(name:string)=>h.indexOf(name);
-  const iDate=idx('Date'), iHome=idx('HomeTeam'), iAway=idx('AwayTeam'), iFh=idx('FTHG'), iFa=idx('FTAG'), iHh=idx('HTHG'), iHa=idx('HTAG');
-  if ([iDate,iHome,iAway,iFh,iFa,iHh,iHa].some(i=>i<0)) return [];
-  const out: FootballDataEvent[]=[];
-  for (const line of lines.slice(1)) {
-    const c=csvLine(line), date=ymd(c[iDate]);
-    if (!date) continue;
-    const hh=score(c[iHh]),ha=score(c[iHa]),fh=score(c[iFh]),fa=score(c[iFa]);
-    if ([hh,ha,fh,fa].some(x=>x===null)) continue;
-    const home=String(c[iHome]??'').trim(), away=String(c[iAway]??'').trim();
-    if (!home||!away) continue;
-    out.push({source:'FOOTBALL_DATA',id:`${code}:${date}:${home}:${away}`,home,away,finished:true,hh,ha,fh,fa,htEvidence:'FOOTBALL_DATA_CSV_HT_FIELDS',detailVerified:true,seed:url,targetDate:date});
+  try {
+    const r=await fetch(url,{headers:{'user-agent':'CFI-Football-Intelligence/result-settlement','accept':'text/csv,*/*'}});
+    if (!r.ok) return [];
+    const text=await r.text();
+    const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
+    if (lines.length<2) return [];
+    const h=csvLine(lines[0]);
+    const idx=(name:string)=>h.indexOf(name);
+    const iDate=idx('Date'), iHome=idx('HomeTeam'), iAway=idx('AwayTeam'), iFh=idx('FTHG'), iFa=idx('FTAG'), iHh=idx('HTHG'), iHa=idx('HTAG');
+    if ([iDate,iHome,iAway,iFh,iFa,iHh,iHa].some(i=>i<0)) return [];
+    const out: FootballDataEvent[]=[];
+    for (const line of lines.slice(1)) {
+      const c=csvLine(line), date=ymd(c[iDate]);
+      if (!date) continue;
+      const hh=score(c[iHh]),ha=score(c[iHa]),fh=score(c[iFh]),fa=score(c[iFa]);
+      if ([hh,ha,fh,fa].some(x=>x===null)) continue;
+      const home=String(c[iHome]??'').trim(), away=String(c[iAway]??'').trim();
+      if (!home||!away) continue;
+      out.push({source:'FOOTBALL_DATA',id:`${code}:${date}:${home}:${away}`,home,away,finished:true,hh,ha,fh,fa,htEvidence:'FOOTBALL_DATA_CSV_HT_FIELDS',detailVerified:true,seed:url,targetDate:date});
+    }
+    return out;
+  } catch {
+    return [];
   }
-  return out;
 }
 
 let cache: Promise<FootballDataEvent[]>|null=null;
