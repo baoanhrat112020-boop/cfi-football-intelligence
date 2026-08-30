@@ -9,6 +9,15 @@ type Candidate = {
   content: string;
 };
 
+type CredentialResolution = {
+  apiKey?: string;
+  keySource?: "ENV" | "ENCRYPTED_DB" | "NEW_REGISTRATION";
+  claimUrl?: string | null;
+  verificationCode?: string | null;
+  blocked?: string;
+  httpStatus?: number;
+};
+
 const MOLTBOOK_BASE = "https://www.moltbook.com";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -27,6 +36,98 @@ const latestIso = (value: unknown) => {
   const parsed = new Date(String(value ?? ""));
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : new Date(0).toISOString();
 };
+const toB64 = (bytes: Uint8Array) => {
+  let raw = "";
+  for (const byte of bytes) raw += String.fromCharCode(byte);
+  return btoa(raw);
+};
+const fromB64 = (value: string) => {
+  const raw = atob(value);
+  return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+};
+const deriveAesKey = async (secret: string) => {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+};
+const encryptCredential = async (value: string, masterSecret: string) => {
+  const key = await deriveAesKey(masterSecret);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
+  return { ciphertext: toB64(new Uint8Array(ciphertext)), ivB64: toB64(iv) };
+};
+const decryptCredential = async (ciphertext: string, ivB64: string, masterSecret: string) => {
+  const key = await deriveAesKey(masterSecret);
+  const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(ivB64) }, key, fromB64(ciphertext));
+  return new TextDecoder().decode(clear);
+};
+
+const resolveCredential = async (db: any, config: any): Promise<CredentialResolution> => {
+  const envKey = Deno.env.get("MOLTBOOK_API_KEY");
+  if (envKey) return { apiKey: envKey, keySource: "ENV" };
+
+  const masterSecret = Deno.env.get("CFI_ACTION_KEY");
+  if (!masterSecret) return { blocked: "CFI_ACTION_KEY_MISSING" };
+
+  const { data: stored, error: storedError } = await db
+    .from("cfi_moltbook_credentials")
+    .select("agent_name,api_key_ciphertext,iv_b64,claim_url,verification_code,registration_status")
+    .eq("singleton", true)
+    .maybeSingle();
+  if (storedError) return { blocked: "MOLTBOOK_CREDENTIAL_READ_FAILED" };
+
+  if (stored?.api_key_ciphertext && stored?.iv_b64) {
+    try {
+      const apiKey = await decryptCredential(String(stored.api_key_ciphertext), String(stored.iv_b64), masterSecret);
+      return {
+        apiKey,
+        keySource: "ENCRYPTED_DB",
+        claimUrl: stored.claim_url ?? null,
+        verificationCode: stored.verification_code ?? null,
+      };
+    } catch {
+      return { blocked: "MOLTBOOK_CREDENTIAL_DECRYPT_FAILED" };
+    }
+  }
+
+  if (!config.auto_register) return { blocked: "MOLTBOOK_API_KEY_MISSING" };
+
+  const agentName = String(config.agent_name ?? "cfi-football-agent-26").trim();
+  const description = clamp(String(config.agent_description ?? "CFI Football Intelligence research agent."), 500);
+  const registerResponse = await fetch(`${MOLTBOOK_BASE}/api/v1/agents/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ name: agentName, description }),
+    redirect: "error",
+  }).catch(() => null);
+  if (!registerResponse) return { blocked: "MOLTBOOK_REGISTRATION_NETWORK_FAILED", httpStatus: 0 };
+
+  const registerStatus = registerResponse.status;
+  const registerText = await registerResponse.text().catch(() => "");
+  let parsed: any = null;
+  try { parsed = registerText ? JSON.parse(registerText) : null; } catch { parsed = null; }
+  if (!registerResponse.ok) return { blocked: "MOLTBOOK_REGISTRATION_FAILED", httpStatus: registerStatus };
+
+  const apiKey = String(parsed?.agent?.api_key ?? parsed?.api_key ?? parsed?.data?.api_key ?? "").trim();
+  const claimUrl = String(parsed?.agent?.claim_url ?? parsed?.claim_url ?? parsed?.data?.claim_url ?? "").trim() || null;
+  const verificationCode = String(parsed?.agent?.verification_code ?? parsed?.verification_code ?? parsed?.data?.verification_code ?? "").trim() || null;
+  if (!apiKey) return { blocked: "MOLTBOOK_REGISTRATION_KEY_MISSING", httpStatus: registerStatus };
+
+  const encrypted = await encryptCredential(apiKey, masterSecret);
+  const { error: saveError } = await db.from("cfi_moltbook_credentials").upsert({
+    singleton: true,
+    agent_name: agentName,
+    api_key_ciphertext: encrypted.ciphertext,
+    iv_b64: encrypted.ivB64,
+    claim_url: claimUrl,
+    verification_code: verificationCode,
+    registration_status: "PENDING_CLAIM",
+    registered_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "singleton" });
+  if (saveError) return { blocked: "MOLTBOOK_CREDENTIAL_SAVE_FAILED" };
+
+  return { apiKey, keySource: "NEW_REGISTRATION", claimUrl, verificationCode };
+};
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
@@ -42,13 +143,11 @@ Deno.serve(async (request) => {
     .select("token")
     .eq("token_name", "moltbook_publisher")
     .maybeSingle();
-  if (tokenError || !expectedToken?.token || schedulerToken !== expectedToken.token) {
-    return json({ error: "UNAUTHORIZED" }, 401);
-  }
+  if (tokenError || !expectedToken?.token || schedulerToken !== expectedToken.token) return json({ error: "UNAUTHORIZED" }, 401);
 
   const { data: config, error: configError } = await db
     .from("cfi_moltbook_config")
-    .select("enabled,submolt,min_interval_hours,publish_historical_runs,publish_verified_candidates,publish_prospective_milestones")
+    .select("enabled,submolt,min_interval_hours,publish_historical_runs,publish_verified_candidates,publish_prospective_milestones,auto_register,agent_name,agent_description")
     .eq("singleton", true)
     .maybeSingle();
   if (configError) return json({ error: "CONFIG_READ_FAILED", message: configError.message }, 500);
@@ -66,9 +165,7 @@ Deno.serve(async (request) => {
     .limit(1)
     .maybeSingle();
   if (recentError) return json({ error: "PUBLISH_LOG_READ_FAILED", message: recentError.message }, 500);
-  if (recentPost?.posted_at) {
-    return json({ status: "COOLDOWN", minIntervalHours, lastPostedAt: recentPost.posted_at, lastPostUrl: recentPost.moltbook_post_url ?? null });
-  }
+  if (recentPost?.posted_at) return json({ status: "COOLDOWN", minIntervalHours, lastPostedAt: recentPost.posted_at, lastPostUrl: recentPost.moltbook_post_url ?? null });
 
   const { data: postedRows, error: postedError } = await db
     .from("cfi_moltbook_publish_log")
@@ -89,8 +186,7 @@ Deno.serve(async (request) => {
       .limit(10);
     if (error) return json({ error: "HISTORICAL_RUN_READ_FAILED", message: error.message }, 500);
     for (const run of runs ?? []) {
-      const raw = `historical:${run.run_id}:${run.status}:${run.contract_version}:${run.processed_count}`;
-      const fp = await fingerprintHash(raw);
+      const fp = await fingerprintHash(`historical:${run.run_id}:${run.status}:${run.contract_version}:${run.processed_count}`);
       if (posted.has(fp)) continue;
       const processed = Number(run.processed_count ?? 0);
       const corpus = Number(run.corpus_count ?? 0);
@@ -120,8 +216,7 @@ Deno.serve(async (request) => {
       .limit(20);
     if (error) return json({ error: "CANDIDATE_READ_FAILED", message: error.message }, 500);
     for (const row of rows ?? []) {
-      const raw = `candidate:${row.candidate_id}:${row.status}:${row.updated_at}`;
-      const fp = await fingerprintHash(raw);
+      const fp = await fingerprintHash(`candidate:${row.candidate_id}:${row.status}:${row.updated_at}`);
       if (posted.has(fp)) continue;
       candidates.push({
         fingerprint: fp,
@@ -149,15 +244,9 @@ Deno.serve(async (request) => {
     const settled = Number(count ?? 0);
     if (settled >= 10) {
       const milestone = Math.floor(settled / 10) * 10;
-      const raw = `prospective:settled:${milestone}`;
-      const fp = await fingerprintHash(raw);
+      const fp = await fingerprintHash(`prospective:settled:${milestone}`);
       if (!posted.has(fp)) {
-        const { data: latest } = await db
-          .from("cfi_living_benchmark_settlements")
-          .select("settled_at")
-          .order("settled_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const { data: latest } = await db.from("cfi_living_benchmark_settlements").select("settled_at").order("settled_at", { ascending: false }).limit(1).maybeSingle();
         candidates.push({
           fingerprint: fp,
           sourceType: "PROSPECTIVE_SETTLEMENT_MILESTONE",
@@ -180,8 +269,8 @@ Deno.serve(async (request) => {
   const candidate = candidates[0];
   if (!candidate) return json({ status: "NO_NEW_PUBLISHABLE_RESEARCH" });
 
-  const apiKey = Deno.env.get("MOLTBOOK_API_KEY");
-  if (!apiKey) {
+  const credential = await resolveCredential(db, config);
+  if (!credential.apiKey) {
     await db.from("cfi_moltbook_publish_log").insert({
       fingerprint: candidate.fingerprint,
       source_type: candidate.sourceType,
@@ -190,14 +279,15 @@ Deno.serve(async (request) => {
       title: candidate.title,
       content: candidate.content,
       status: "FAILED",
-      error: "MOLTBOOK_API_KEY_MISSING",
+      http_status: credential.httpStatus ?? null,
+      error: credential.blocked ?? "MOLTBOOK_CREDENTIAL_UNAVAILABLE",
     });
-    return json({ status: "BLOCKED", error: "MOLTBOOK_API_KEY_MISSING", sourceType: candidate.sourceType, sourceRef: candidate.sourceRef }, 503);
+    return json({ status: "BLOCKED", error: credential.blocked ?? "MOLTBOOK_CREDENTIAL_UNAVAILABLE", httpStatus: credential.httpStatus ?? null }, 503);
   }
 
   const authResponse = await fetch(`${MOLTBOOK_BASE}/api/v1/agents/me`, {
     method: "GET",
-    headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" },
+    headers: { "Authorization": `Bearer ${credential.apiKey}`, "Accept": "application/json" },
     redirect: "error",
   }).catch(() => null);
   if (!authResponse || !authResponse.ok) {
@@ -216,10 +306,31 @@ Deno.serve(async (request) => {
     return json({ status: "BLOCKED", error: "MOLTBOOK_AUTH_FAILED", httpStatus: authStatus }, 502);
   }
 
+  let authJson: any = null;
+  try { authJson = await authResponse.json(); } catch { authJson = null; }
+  const agent = authJson?.agent ?? authJson?.data?.agent ?? authJson?.data ?? authJson;
+  const explicitClaimed = agent?.is_claimed;
+  const agentStatus = String(agent?.status ?? authJson?.status ?? "").toLowerCase();
+  const pendingClaim = explicitClaimed === false || agentStatus.includes("pending") || agentStatus.includes("unclaimed");
+  if (pendingClaim) {
+    await db.from("cfi_moltbook_credentials").update({ registration_status: "PENDING_CLAIM", updated_at: new Date().toISOString() }).eq("singleton", true);
+    return json({
+      status: "PENDING_HUMAN_CLAIM",
+      agentName: String(config.agent_name ?? "cfi-football-agent-26"),
+      claimUrl: credential.claimUrl ?? null,
+      verificationCode: credential.verificationCode ?? null,
+      keyStoredEncrypted: credential.keySource !== "ENV",
+    });
+  }
+
+  if (credential.keySource !== "ENV") {
+    await db.from("cfi_moltbook_credentials").update({ registration_status: "CLAIMED", updated_at: new Date().toISOString() }).eq("singleton", true);
+  }
+
   const postResponse = await fetch(`${MOLTBOOK_BASE}/api/v1/posts`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      "Authorization": `Bearer ${credential.apiKey}`,
       "Content-Type": "application/json",
       "Accept": "application/json",
     },
