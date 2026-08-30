@@ -8,7 +8,7 @@ const live=fs.readFileSync(new URL('../cloudflare-worker/src/index-live-router.t
 assert.match(engine,/Top-1 HT/);
 assert.match(engine,/Top-1 FT/);
 assert.doesNotMatch(engine,/PRIMARY_TARGETS = \[\.\.\.MARKET_CODES, "Top-3 HT", "Top-3 FT"\]/);
-assert.match(engine,/primaryTargets:\{count:6/);
+assert.match(engine,/primaryTargets:\{contract:PRIMARY_CONTRACT,count:6/);
 assert.match(wrapper,/CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1/);
 assert.match(wrapper,/TOP-1 HT/);
 assert.match(wrapper,/TOP-1 FT/);

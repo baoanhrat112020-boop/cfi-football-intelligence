@@ -112,8 +112,8 @@ export function buildCfiOutputV2(body:any,odds:any={}){
   const actionable=all.filter(x=>x.status==='BET').sort((a,b)=>(b.edge??-9)-(a.edge??-9));
   const watch=all.filter(x=>x.status==='WATCH').sort((a,b)=>(b.probability??0)-(a.probability??0));
   const best=actionable[0]??watch[0]??champion[0]??null;
-  const top3ht=body?.scoreline?.ht?.final??[];
-  const top3ft=body?.scoreline?.ft?.final??[];
+  const top1ht=body?.scoreline?.primaryTop1?.ht?.final??body?.primaryTargetMatrix?.exactScore?.['Top-1 HT']?.final??(Array.isArray(body?.scoreline?.ht?.final)?body.scoreline.ht.final[0]:body?.scoreline?.ht?.final)??null;
+  const top1ft=body?.scoreline?.primaryTop1?.ft?.final??body?.primaryTargetMatrix?.exactScore?.['Top-1 FT']?.final??(Array.isArray(body?.scoreline?.ft?.final)?body.scoreline.ft.final[0]:body?.scoreline?.ft?.final)??null;
   const marketGroups={
     oneXTwo:{ht:shadow.filter(x=>/^HT [1X2]$/.test(x.market)),ft:shadow.filter(x=>/^FT [1X2]$/.test(x.market))},
     overUnder:{ht:shadow.filter(x=>/^HT [OU]/.test(x.market)),ft:shadow.filter(x=>/^FT [OU]/.test(x.market))},
@@ -122,6 +122,7 @@ export function buildCfiOutputV2(body:any,odds:any={}){
   const report=fullMarketReport(body,marketGroups);
   return {
     version:CFI_OUTPUT_V2,
+    contract:body?.primaryTargetMatrix?.contract??body?.primaryTargets?.contract??'CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1',
     match:{home:body?.target?.home??null,away:body?.target?.away??null,date:body?.target?.date??null},
     headline:{status:best?.status??'PASS',market:best?.market??null,probability:best?.probability??null,fairOdds:best?.fairOdds??null,marketOdds:best?.marketOdds??null,edge:best?.edge??null,message:best?`${best.status} ${best.market} · P ${pct(best.probability)} · Fair ${best.fairOdds??'—'}${best.marketOdds?` · Market ${best.marketOdds}`:''}`:'No qualified market'},
     quickDecision:{bet:actionable,watch,pass:all.filter(x=>x.status==='PASS'),shadow:all.filter(x=>x.status==='SHADOW')},
@@ -136,7 +137,7 @@ export function buildCfiOutputV2(body:any,odds:any={}){
       status:body?.multiMarketIntegration?.status??mm?.status??'SHADOW_RESEARCH',
       counts:{oneXTwoHT:marketGroups.oneXTwo.ht.length,oneXTwoFT:marketGroups.oneXTwo.ft.length,overUnderHT:marketGroups.overUnder.ht.length,overUnderFT:marketGroups.overUnder.ft.length,asianHandicapHT:marketGroups.asianHandicap.ht.length,asianHandicapFT:marketGroups.asianHandicap.ft.length},
     },
-    scoreline:{top3HT:top3ht,top3FT:top3ft,path:body?.scoreline?.mostLikelyPath??null},
+    scoreline:{top1HT:top1ht,top1FT:top1ft,path:body?.scoreline?.mostLikelyPath??null},
     expectedGoals:body?.scoreline?.expectedGoals??null,
     quality:{strictPrior:body?.strictPrior?.verified??body?.strictPriorAudit?.evidence?.verified??null,consistency:body?.consistencyGuard?.status??null,multiMarketConsistency:mm?.consistencyGuard?.status??null,uncertainty:body?.scoreline?.uncertainty??null,multiMarketStatus:body?.multiMarketIntegration?.status??null},
     rules:{betRequiresOdds:true,minModelEdge:0.05,watchEdge:0.015,noGuaranteedWin:true,shadowDecisionUse:false,quarterAndIntegerLinesExposeSettlementStates:true},
@@ -148,6 +149,6 @@ export function attachCfiOutputV2(body:any,odds:any={}){
   body.outputV2=output;
   body.fullMarketReport=output.fullMarketReport;
   if(typeof body?.renderedReport==='string'&&output.fullMarketReport&&!body.renderedReport.includes(FULL_MARKET_REPORT_MARKER))body.renderedReport=`${body.renderedReport}\n\n${output.fullMarketReport}`;
-  body.presentation={...(body.presentation??{}),fullMultiMarketVisible:true,allTargetsExposed:true,multiMarketDecisionUse:false,fullMarketReportSource:'fullMarketReport'};
+  body.presentation={...(body.presentation??{}),fullMultiMarketVisible:true,allTargetsExposed:true,multiMarketDecisionUse:false,primaryScorelineOutput:'TOP1_HT_PLUS_TOP1_FT',fullMarketReportSource:'fullMarketReport'};
   return body;
 }

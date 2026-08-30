@@ -1,12 +1,12 @@
 import v54 from './index-v54.ts';
-import { MARKET_CODES } from '../../src/prediction/final-engine.ts';
+import { MARKET_CODES, PRIMARY_CONTRACT } from '../../src/prediction/final-engine.ts';
 import { attachMultiMarketShadow } from '../../src/prediction/multi-market-integration.ts';
 import { attachCfiOutputV2 } from '../../src/presentation/cfi-output-v2.ts';
 import { attachCfiOutputV3 } from '../../src/presentation/cfi-output-v3.ts';
 import { attachCfiBettingBoard } from '../../src/presentation/cfi-betting-board.ts';
 
-const ENGINE_VERSION='CFI_FINAL_V5.2.5';
-const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.4';
+const ENGINE_VERSION='CFI_FINAL_V5.3.0';
+const RUNTIME_VERSION='CFI_PRIMARY_TOP1_RUNTIME_V2';
 const BIGDB_VERSION='CFI_BIG_DB_RETRIEVAL_V2.1.2';
 const DIVERSITY_GUARD_VERSION='CFI_MATCH_DIVERSITY_GUARD_V1';
 const PRODUCTION_ENTRYPOINT='index-live-router.ts';
@@ -14,7 +14,7 @@ const PREMATCH_HANDLER='index-v55.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
-const list=(rows:any)=>Array.isArray(rows)?rows.map((r:any,i:number)=>`${i+1}) ${r.score} ${pct(r.probability)}`).join(' · '):'—';
+const exact=(row:any)=>row&&typeof row==='object'&&row.score?`${row.score} ${pct(row.probability)}`:'—';
 
 async function callControl(env:Env,action:string,payload:Record<string,unknown>={}){
   if(!env.CFI_DB_BASE_URL)return Response.json({status:'CONFIG_REQUIRED',message:'CFI_DB_BASE_URL missing'},{status:503});
@@ -31,7 +31,7 @@ function queryPayload(url:URL){
 }
 function preserveNativeScorelines(body:any){
   if(!body?.scoreline)return;
-  body.scorelinePriorPolicy={version:DIVERSITY_GUARD_VERSION,mode:'NATIVE_MATCH_SPECIFIC_DISTRIBUTION_ONLY',reason:'Global scoreline statistics are context/provenance only and must not mutate Top-3 or threshold outputs.'};
+  body.scorelinePriorPolicy={version:DIVERSITY_GUARD_VERSION,mode:'NATIVE_MATCH_SPECIFIC_DISTRIBUTION_ONLY',reason:'Global scoreline statistics are context/provenance only and must not mutate Top-1 primary exact-score outputs or threshold outputs.'};
 }
 function consistencyViolations(body:any){
   const violations:string[]=[];
@@ -44,42 +44,60 @@ function consistencyViolations(body:any){
   }
   return violations;
 }
+function top1From(value:any){return Array.isArray(value)?value[0]??null:value??null;}
 function fusionReportLines(body:any){
   const f=body?.championFusion;if(!f)return['CHAMPION FUSION V1: UNAVAILABLE'];
   const c=f?.champion?.thresholds??{},mm=f?.multiMarket,w=f?.gating?.ft?.weights??{};
   return[
     `CHAMPION FUSION V1: ${f.status??'—'} | decisionUse=${f.decisionUse===true?'true':'false'} | coherence=${f?.coherence?.status??mm?.consistencyGuard?.status??'—'} | uncertainty=${f?.uncertainty?.level??'—'} | confidence=${pct(f?.uncertainty?.confidence)} | abstain=${f?.uncertainty?.abstain===true?'YES':'NO'}`,
     `Fusion Champion: 3+ HT ${pct(c['3+ HT'])} | 7+ FT ${pct(c['7+ FT'])} | Other HT ${pct(c['Other HT'])} | Other FT ${pct(c['Other FT'])}`,
-    `Fusion Top-3 HT: ${list(f?.champion?.top3HT)}`,
-    `Fusion Top-3 FT: ${list(f?.champion?.top3FT)}`,
+    `Fusion Top-1 HT: ${exact(top1From(f?.champion?.top3HT))}`,
+    `Fusion Top-1 FT: ${exact(top1From(f?.champion?.top3FT))}`,
     `Fusion FT 1X2: H ${pct(mm?.oneXTwo?.ft?.home)} | X ${pct(mm?.oneXTwo?.ft?.draw)} | A ${pct(mm?.oneXTwo?.ft?.away)} | FT O2.5 ${pct(mm?.overUnder?.ft?.['2.5']?.over?.fullWin)} | FT O6.5 ${pct(mm?.overUnder?.ft?.['6.5']?.over?.fullWin)}`,
     `Fusion FT weights: INC ${pct(w.INCUMBENT_FINAL)} | HIST ${pct(w.HISTORICAL)} | FUTURE_SIX ${pct(w.FUTURE_SIX)} | RECENT ${pct(w.RECENT_FORM)} | DIR ${pct(w.DIRECTIONAL_RECONCILIATION)}`,
     'Fusion policy: SHADOW_RESEARCH only; paired prospective settlement + full Multi-Market promotion gate required.'
   ];
 }
-function rebuildMatrix(body:any){
-  if(!body?.sixTargetMatrix)return;
-  for(const market of MARKET_CODES){const r=body?.markets?.[market];if(r&&body.sixTargetMatrix.threshold?.[market])Object.assign(body.sixTargetMatrix.threshold[market],{methodA:r.methodA,methodB:r.methodB,final:r.final});}
+function rebuildPrimaryMatrix(body:any){
+  const legacy=body?.sixTargetMatrix;
+  const threshold:any={};
+  for(const market of MARKET_CODES){
+    const r=body?.markets?.[market]??legacy?.threshold?.[market]??{};
+    threshold[market]={methodA:r.methodA??null,methodB:r.methodB??null,final:r.final??null,confidence:r.predictiveConfidence??r.confidence??legacy?.threshold?.[market]?.confidence??null};
+  }
+  const sourceTargets=body?.primaryTargets?.scorelineTargets??{};
+  const ht=sourceTargets['Top-1 HT']??body?.scoreline?.primaryTop1?.ht??{};
+  const ft=sourceTargets['Top-1 FT']??body?.scoreline?.primaryTop1?.ft??{};
+  const normalizeExact=(x:any,part:'ht'|'ft')=>({
+    methodA:top1From(x?.methodA??body?.scoreline?.[part]?.methodA),
+    methodB:top1From(x?.methodB??body?.scoreline?.[part]?.methodB),
+    final:top1From(x?.final??body?.scoreline?.[part]?.final),
+  });
+  const exactScore={'Top-1 HT':normalizeExact(ht,'ht'),'Top-1 FT':normalizeExact(ft,'ft')};
+  const complete=MARKET_CODES.every(m=>Number.isFinite(Number(threshold[m]?.final)))&&Boolean(exactScore['Top-1 HT'].final?.score)&&Boolean(exactScore['Top-1 FT'].final?.score);
+  body.primaryTargetMatrix={contract:PRIMARY_CONTRACT,targetCount:6,threshold,exactScore,verification:{complete,thresholdCount:4,top1Count:2}};
+  body.presentationContract={...(body.presentationContract??{}),contract:PRIMARY_CONTRACT,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete};
+  body.primaryTargets={...(body.primaryTargets??{}),contract:PRIMARY_CONTRACT,count:6,codes:[...MARKET_CODES,'Top-1 HT','Top-1 FT'],scorelineTargets:exactScore};
+  if(legacy)body.sixTargetMatrix={...legacy,legacyCompatibilityOnly:true,primary:false,replacedBy:'primaryTargetMatrix'};
   const ranking=MARKET_CODES.map(m=>({target:m,probability:Number(body?.markets?.[m]?.final),confidence:body?.markets?.[m]?.predictiveConfidence??body?.markets?.[m]?.confidence})).sort((a,b)=>b.probability-a.probability);
   body.ranking=ranking;body.verdict=(ranking[0]?.probability??0)>=.6?'STRONG_SIGNAL':'NO_STRONG_SIGNAL';
-  const t=body.sixTargetMatrix.threshold,s=body.sixTargetMatrix.scoreline;
-  body.renderedReport=[`CFI 2 METHODS × 6 TARGETS — ${body.sixTargetMatrix.contract}`,`MATCH: ${body?.target?.home??'—'} vs ${body?.target?.away??'—'} | ${body?.target?.date??'—'} | ENGINE ${ENGINE_VERSION}`,'','THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',...MARKET_CODES.map(m=>`${m}: A ${pct(t[m]?.methodA)} | B ${pct(t[m]?.methodB)} | FINAL ${pct(t[m]?.final)} | ${t[m]?.confidence??'—'}`),'','TOP-3 HT — PRIMARY TARGET',`Method A: ${list(s['Top-3 HT']?.methodA)}`,`Method B: ${list(s['Top-3 HT']?.methodB)}`,`FINAL: ${list(s['Top-3 HT']?.final)}`,'','TOP-3 FT — PRIMARY TARGET',`Method A: ${list(s['Top-3 FT']?.methodA)}`,`Method B: ${list(s['Top-3 FT']?.methodB)}`,`FINAL: ${list(s['Top-3 FT']?.final)}`,'',`VERDICT: ${body.verdict} | UNCERTAINTY: ${body?.scoreline?.uncertainty??'—'}`,`CONTRACT COMPLETE: ${body.sixTargetMatrix.verification?.complete?'YES':'NO'}`,'',...fusionReportLines(body)].join('\n');
+  body.renderedReport=[`CFI 4 THRESHOLDS + TOP-1 HT + TOP-1 FT — ${PRIMARY_CONTRACT}`,`MATCH: ${body?.target?.home??'—'} vs ${body?.target?.away??'—'} | ${body?.target?.date??'—'} | ENGINE ${ENGINE_VERSION}`,'','THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',...MARKET_CODES.map(m=>`${m}: A ${pct(threshold[m]?.methodA)} | B ${pct(threshold[m]?.methodB)} | FINAL ${pct(threshold[m]?.final)} | ${threshold[m]?.confidence??'—'}`),'','TOP-1 HT — PRIMARY TARGET',`Method A: ${exact(exactScore['Top-1 HT'].methodA)}`,`Method B: ${exact(exactScore['Top-1 HT'].methodB)}`,`FINAL: ${exact(exactScore['Top-1 HT'].final)}`,'','TOP-1 FT — PRIMARY TARGET',`Method A: ${exact(exactScore['Top-1 FT'].methodA)}`,`Method B: ${exact(exactScore['Top-1 FT'].methodB)}`,`FINAL: ${exact(exactScore['Top-1 FT'].final)}`,'',`VERDICT: ${body.verdict} | UNCERTAINTY: ${body?.scoreline?.uncertainty??'—'}`,`CONTRACT COMPLETE: ${complete?'YES':'NO'}`,'',...fusionReportLines(body)].join('\n');
 }
 function normalizeReleaseTelemetry(body:any){
   body.engine=ENGINE_VERSION;
-  body.runtime={...(body.runtime??{}),version:RUNTIME_VERSION,engine:ENGINE_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
+  body.runtime={...(body.runtime??{}),version:RUNTIME_VERSION,engine:ENGINE_VERSION,primaryContract:PRIMARY_CONTRACT,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
   body.bigDbRetrieval={...(body.bigDbRetrieval??{}),version:BIGDB_VERSION};
-  body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
+  body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,primaryContract:PRIMARY_CONTRACT,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
   body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
 }
 const nonNegativeCount=(v:any)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
 function zeroEvidenceGuard(body:any){
-  const exact=body?.bigDbRetrieval?.exactTeam;
+  const exactTeam=body?.bigDbRetrieval?.exactTeam;
   const input=body?.bigDbRetrieval?.predictionInput;
   const counts=body?.evidence?.counts;
-  const home=nonNegativeCount(exact?.home?.retrieved)??nonNegativeCount(input?.homeFixtures)??nonNegativeCount(counts?.homeFixtures);
-  const away=nonNegativeCount(exact?.away?.retrieved)??nonNegativeCount(input?.awayFixtures)??nonNegativeCount(counts?.awayFixtures);
-  const h2h=nonNegativeCount(exact?.h2h?.retrieved)??nonNegativeCount(input?.h2hFixtures)??nonNegativeCount(counts?.h2hFixtures);
+  const home=nonNegativeCount(exactTeam?.home?.retrieved)??nonNegativeCount(input?.homeFixtures)??nonNegativeCount(counts?.homeFixtures);
+  const away=nonNegativeCount(exactTeam?.away?.retrieved)??nonNegativeCount(input?.awayFixtures)??nonNegativeCount(counts?.awayFixtures);
+  const h2h=nonNegativeCount(exactTeam?.h2h?.retrieved)??nonNegativeCount(input?.h2hFixtures)??nonNegativeCount(counts?.h2hFixtures);
   const observed=home!==null||away!==null||h2h!==null;
   const blocked=observed&&((home??0)<=0||(away??0)<=0);
   return {blocked,home,away,h2h,reason:blocked?'ZERO_EXACT_TEAM_EVIDENCE':null};
@@ -100,7 +118,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
       body.status='INSUFFICIENT_DATA';body.error='ZERO_EXACT_TEAM_EVIDENCE';
       body.zeroEvidenceGuard={status:'FAIL_CLOSED',...z,globalPriorFallbackAllowed:false,normalPredictionRendered:false};
       body.runtime={...(body.runtime??{}),predictionPath:'EXACT_TEAM_EVIDENCE_FAIL_CLOSED',diversityGuard:DIVERSITY_GUARD_VERSION};
-      delete body.renderedReport;delete body.presentationContract;delete body.sixTargetMatrix;delete body.markets;delete body.scoreline;delete body.ranking;delete body.verdict;
+      delete body.renderedReport;delete body.presentationContract;delete body.primaryTargetMatrix;delete body.sixTargetMatrix;delete body.markets;delete body.scoreline;delete body.ranking;delete body.verdict;
       return Response.json(body,{status:422});
     }
     preserveNativeScorelines(body);
@@ -112,12 +130,12 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
       return Response.json(body,{status:500});
     }
     body.consistencyGuard={status:'PASS',violations:[]};
-    rebuildMatrix(body);
+    rebuildPrimaryMatrix(body);
     attachMultiMarketShadow(body);
     attachCfiOutputV2(body,input?.odds?.values??input?.odds??{});
     attachCfiOutputV3(body,input);
     attachCfiBettingBoard(body);
-    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
+    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
     if(body?.status==='DATA_READY'){
       body.upstreamStatus='DATA_READY';
       body.status='SUCCESS';
