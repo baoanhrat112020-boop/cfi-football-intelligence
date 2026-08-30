@@ -27,12 +27,12 @@ test('production-host direct predict returns compact GPT transport with Top-1 pr
     assert.equal(response.status,200);const body:any=await response.json();
     assert.equal(body.status,'SUCCESS');assert.equal(body.responseMeta?.contract,'CFI_GPT_PREDICT_COMPACT_V1');assert.equal(body.responseMeta?.mode,'compact');
     assert.equal(body.presentationContract?.contract,'CFI_4_MARKETS_PLUS_TOP1_HT_FT_V1');
-    assert.equal(body.primaryTargetMatrix?.verification?.complete,true);
-    assert.equal(body.primaryTargetMatrix?.verification?.thresholdCount,4);
-    assert.equal(body.primaryTargetMatrix?.verification?.top1Count,2);
-    assert.ok(body.primaryTargetMatrix?.exactScore?.['Top-1 HT']?.final?.score);
-    assert.ok(body.primaryTargetMatrix?.exactScore?.['Top-1 FT']?.final?.score);
-    assert.equal(body.consistencyGuard?.status,'PASS');assert.ok(body.multiMarketIntegration);assert.ok(body.championFusion,'Champion Fusion must remain visible in compact transport');assert.equal(body.championFusion?.decisionUse,false);assert.equal(Object.prototype.hasOwnProperty.call(body,'scoreline'),false,'raw top-level scoreline internals must be omitted from compact response');assert.ok(Number(body.responseMeta?.bytes)>0);assert.ok(Number(body.responseMeta?.bytes)<100000,`compact response too large: ${body.responseMeta?.bytes}`);
+    assert.equal(body.presentationContract?.complete,true);
+    assert.equal(body.presentationContract?.targetCount,6);
+    assert.equal(body.presentationContract?.scorelineOutput,'TOP1_HT_PLUS_TOP1_FT');
+    assert.ok(body.practicalOutput?.scoreline?.top1HT?.score);
+    assert.ok(body.practicalOutput?.scoreline?.top1FT?.score);
+    assert.equal(body.consistencyGuard?.status,'PASS');assert.ok(body.multiMarketIntegration);assert.ok(body.championFusion,'Champion Fusion must remain visible in compact transport');assert.equal(body.championFusion?.decisionUse,false);assert.equal(Object.prototype.hasOwnProperty.call(body,'scoreline'),false,'raw top-level scoreline internals must be omitted from compact response');assert.equal(Object.prototype.hasOwnProperty.call(body,'primaryTargetMatrix'),false,'compact transport must not duplicate the full primary matrix');assert.ok(Number(body.responseMeta?.bytes)>0);assert.ok(Number(body.responseMeta?.bytes)<100000,`compact response too large: ${body.responseMeta?.bytes}`);
   });
 });
 
