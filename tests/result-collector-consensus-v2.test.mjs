@@ -5,10 +5,10 @@ import { readFileSync } from 'node:fs';
 const src = readFileSync(new URL('../supabase/functions/cfi-result-collector/index.ts', import.meta.url), 'utf8');
 
 test('collector keeps FotMob + Flashscore exact HT/FT authority', () => {
-  assert.match(src, /CFI_RESULT_CONSENSUS_V5_HISTORICAL_RESOLUTION/);
+  assert.match(src, /CFI_RESULT_CONSENSUS_V6_STRICT_TEMPORAL/);
   assert.match(src, /PRIMARY=\["FOTMOB","FLASHSCORE"\]/);
   assert.match(src, /SUPPORTING=\["ESPN","THESPORTSDB"\]/);
-  assert.match(src, /EXACT_HT_FT_CONSENSUS_OF_FOTMOB_AND_FLASHSCORE/);
+  assert.match(src, /STRICT_PRE_KICKOFF_PLUS_EXACT_HT_FT_CONSENSUS_OF_FOTMOB_AND_FLASHSCORE/);
   assert.match(src, /if\(key\(rs\[0\]\)!==key\(rs\[1\]\)\)/);
   assert.match(src, /reason:"PRIMARY_SCORE_CONFLICT"/);
   assert.match(src, /reason:"PRIMARY_CONSENSUS_INCOMPLETE"/);
@@ -39,6 +39,16 @@ test('FotMob HT parser prefers explicit halftime marker and supports array score
   assert.match(src, /halftime_short/);
   assert.match(src, /Array\.isArray\(arr\)/);
   assert.match(src, /FOTMOB_MATCH_DETAIL_GOAL_EVENTS_LE45/);
+});
+
+test('external kickoff is authoritative for settlement temporal eligibility', () => {
+  assert.match(src, /strict_prior!==true/);
+  assert.match(src, /STRICT_PRIOR_FLAG_REQUIRED/);
+  assert.match(src, /kickoffMs=Date\.parse/);
+  assert.match(src, /createdMs=Date\.parse/);
+  assert.match(src, /reason:"PRIMARY_KICKOFF_UNVERIFIED"/);
+  assert.match(src, /createdMs>=kickoffMs/);
+  assert.match(src, /reason:"POST_KICKOFF_SNAPSHOT"/);
 });
 
 test('verifyOnly cannot mutate actuals or run settlement', () => {
