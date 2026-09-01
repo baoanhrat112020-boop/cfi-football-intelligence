@@ -2,8 +2,6 @@ name: CFI Group A Full Suite
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -14,7 +12,6 @@ concurrency:
 
 jobs:
   replay:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/research-read-adapter'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
