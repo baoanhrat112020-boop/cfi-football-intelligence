@@ -21,7 +21,7 @@ jobs:
     env:
       CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
       CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-      NODE_OPTIONS: --max-old-space-size=4096
+      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
