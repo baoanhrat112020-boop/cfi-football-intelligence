@@ -34,7 +34,7 @@ jobs:
         run: docker build -f cfi-hf-shadow-node/Dockerfile -t cfi-hf-shadow-node:v1 .
       - name: Boot Docker Space and verify health
         run: |
-          docker run -d --rm --name cfi-hf-shadow -p 7860:7860 cfi-hf-shadow-node:v1
+          docker run -d --rm --name cfi-hf-shadow -p 7860:7860 -e CFI_CODE_COMMIT_SHA="$GITHUB_SHA" cfi-hf-shadow-node:v1
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:7860/health > /tmp/hf-health.json; then break; fi
             sleep 1
@@ -42,5 +42,6 @@ jobs:
           cat /tmp/hf-health.json
           grep -q '"shadow_only":true' /tmp/hf-health.json
           grep -q '"production_mutation":false' /tmp/hf-health.json
+          grep -q "\"code_commit_sha\":\"$GITHUB_SHA\"" /tmp/hf-health.json
           docker logs cfi-hf-shadow
           docker stop cfi-hf-shadow
