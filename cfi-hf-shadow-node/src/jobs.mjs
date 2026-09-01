@@ -24,9 +24,11 @@ function fixtureIdentity(snapshot) {
 
 export async function runHistoricalJob(spec) {
   const dataset = await loadPinnedArtifact(spec.dataset);
-  const fixtures = normalizeFixtures(dataset.payload);
-  if (!fixtures.length) throw new Error('HISTORICAL_CORPUS_EMPTY');
-  const r0 = runR0Bulk(dataset.payload, spec.options?.r0 ?? {});
+  const normalized = normalizeFixtures(dataset.payload);
+  const fixtures = normalized.filter((fixture) => fixture.ht && fixture.ft);
+  const rejectedIncompleteFixtures = normalized.length - fixtures.length;
+  if (!fixtures.length) throw new Error('HISTORICAL_SETTLED_CORPUS_EMPTY');
+  const r0 = runR0Bulk(fixtures, spec.options?.r0 ?? {});
   const multiMarket = walkForwardMultiMarketBacktest(
     fixtures,
     Number(spec.options?.min_team_prior ?? 1),
@@ -45,6 +47,9 @@ export async function runHistoricalJob(spec) {
     modelVersion: FINAL_VERSION,
     strictPriorAudit: {
       verified: true,
+      sourceFixtureCount: normalized.length,
+      settledFixtureCount: fixtures.length,
+      rejectedIncompleteFixtures,
       r0: r0.replay,
       multiMarket: {
         version: multiMarket.version,
@@ -57,7 +62,9 @@ export async function runHistoricalJob(spec) {
     output: shadowStamp({
       contract: 'CFI_HF_HISTORICAL_JOB_V1',
       historical_learning_contract: MULTI_MARKET_HISTORICAL_V2,
+      source_fixture_count: normalized.length,
       corpus_fixture_count: fixtures.length,
+      rejected_incomplete_fixtures: rejectedIncompleteFixtures,
       r0,
       multi_market: multiMarket,
       promotion_effect: 'NONE',
