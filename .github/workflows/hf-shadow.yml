@@ -1,0 +1,46 @@
+name: CFI HF Shadow Node
+
+on:
+  pull_request:
+    paths:
+      - 'cfi-hf-shadow-node/**'
+      - 'tests/hf-shadow-node.test.mjs'
+      - 'src/prediction/multi-market-backtest.ts'
+      - '.github/workflows/hf-shadow.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cfi-hf-shadow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shadow-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: HF shadow unit and E2E smoke tests
+        run: node --experimental-strip-types --test tests/hf-shadow-node.test.mjs
+      - name: HF shadow direct smoke
+        run: node --experimental-strip-types cfi-hf-shadow-node/src/smoke.mjs
+      - name: HF shadow short soak
+        run: node --experimental-strip-types cfi-hf-shadow-node/src/soak.mjs
+      - name: Build Docker Space image
+        run: docker build -f cfi-hf-shadow-node/Dockerfile -t cfi-hf-shadow-node:v1 .
+      - name: Boot Docker Space and verify health
+        run: |
+          docker run -d --rm --name cfi-hf-shadow -p 7860:7860 cfi-hf-shadow-node:v1
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:7860/health > /tmp/hf-health.json; then break; fi
+            sleep 1
+          done
+          cat /tmp/hf-health.json
+          grep -q '"shadow_only":true' /tmp/hf-health.json
+          grep -q '"production_mutation":false' /tmp/hf-health.json
+          docker logs cfi-hf-shadow
+          docker stop cfi-hf-shadow
