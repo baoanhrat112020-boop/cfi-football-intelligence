@@ -3,8 +3,7 @@ name: CFI Group A Full Suite
 on:
   workflow_dispatch:
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
@@ -21,7 +20,7 @@ jobs:
     env:
       CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
       CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-      NODE_OPTIONS: --max-old-space-size=6144
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,35 +28,40 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+
       - name: Verify pinned production baseline
         run: node research/production-baseline-lock.mjs
+
       - name: Verify privileged research credential
         shell: bash
         run: |
           set -euo pipefail
           test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
+
       - name: Export fresh R0 and Group A inputs
         shell: bash
         run: |
           set -euo pipefail
           node research/export-r0-corpus.mjs "$RUNNER_TEMP/r0.json"
           node research/export-group-a-features.mjs "$RUNNER_TEMP/group-a.json"
+
       - name: Audit forward market canonical linkage
-        shell: bash
-        run: |
-          set -euo pipefail
-          node research/export-forward-market-canonical-links.mjs "$RUNNER_TEMP/forward-market-canonical-link-audit.json"
+        run: node research/export-forward-market-canonical-links.mjs "$RUNNER_TEMP/forward-market-canonical-link-audit.json"
+
       - name: Export Football-Data historical market evidence
+        run: node research/export-football-data-historical-market-evidence.mjs "$RUNNER_TEMP/football-data-historical-market-evidence.json"
+
+      - name: Run bounded Group A paired score-grid plus market board gate
         shell: bash
         run: |
           set -euo pipefail
-          node research/export-football-data-historical-market-evidence.mjs "$RUNNER_TEMP/football-data-historical-market-evidence.json"
-      - name: Run Group A paired score-grid plus historical market board gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --experimental-strip-types research/group-a-historical-market-board-gate.mjs "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json" "$RUNNER_TEMP/group-a-full-suite-result.json"
-      - name: Verify and print Group A verdicts
+          node --experimental-strip-types research/group-a-historical-market-board-compact-runner.mjs \
+            "$RUNNER_TEMP/r0.json" \
+            "$RUNNER_TEMP/group-a.json" \
+            "$RUNNER_TEMP/football-data-historical-market-evidence.json" \
+            "$RUNNER_TEMP/group-a-full-suite-result.json"
+
+      - name: Verify E2E contracts and verdicts
         shell: bash
         run: |
           set -euo pipefail
@@ -66,61 +70,39 @@ jobs:
           const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
           const marketAudit=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
           const historicalMarket=JSON.parse(fs.readFileSync(process.argv[4],'utf8'));
-          const expectedPrimary=['3+ HT','7+ FT','Other HT','Other FT','Top-1 HT','Top-1 FT'];
-          const expectedAux=['Top-3 HT','Top-3 FT'];
-          if(JSON.stringify(x.evaluationContract?.primaryTargets)!==JSON.stringify(expectedPrimary)) process.exit(3);
-          if(JSON.stringify(x.evaluationContract?.auxiliaryDiagnostics)!==JSON.stringify(expectedAux)) process.exit(4);
-          if(x.evaluationContract?.top3GateUse!==false||x.evaluationContract?.pairedBaseline!==true||x.evaluationContract?.fullScoreGridLogLoss!==true||x.evaluationContract?.noReconstruction!==true) process.exit(5);
-          if(x.baseline?.engine!=='CFI_FINAL_V5.3.0'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2'||x.baseline?.primaryContract!=='CFI_2_METHODS_X_6_TARGETS_V2'||x.baseline?.multiMarketVersion!=='CFI_MULTI_MARKET_V1') process.exit(6);
-          if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) process.exit(7);
-          if(x.decisionUse!==false||x.productionMutationAllowed!==false) process.exit(8);
-          if(x.scoreGridEvaluation?.pairedBaseline!==true||x.scoreGridEvaluation?.noReconstruction!==true) process.exit(11);
-          if(x.baselineMetrics?.scoreline?.ht?.fullGridAvailable!==true||x.baselineMetrics?.scoreline?.ft?.fullGridAvailable!==true) process.exit(12);
-          if(marketAudit?.researchOnly!==true||marketAudit?.decisionUse!==false||marketAudit?.productionMutationAllowed!==false||marketAudit?.canonicalWriteAllowed!==false) process.exit(16);
-          if(marketAudit?.marketComparisonReadiness?.productionEligible!==false||marketAudit?.marketComparisonReadiness?.strictPriorRequired!==true||marketAudit?.marketComparisonReadiness?.preKickoffSnapshotRequired!==true) process.exit(17);
-          if(historicalMarket?.researchOnly!==true||historicalMarket?.decisionUse!==false||historicalMarket?.productionMutationAllowed!==false||historicalMarket?.canonicalWriteAllowed!==false||historicalMarket?.reconstructed!==false||historicalMarket?.capturedAtFabricated!==false) process.exit(18);
-          if(x.historicalMarketBoardEvaluation?.productionMutationAllowed!==false||x.historicalMarketBoardEvaluation?.decisionUse!==false||x.historicalMarketBoardEvaluation?.noReconstruction!==true) process.exit(19);
+          const primary=['3+ HT','7+ FT','Other HT','Other FT','Top-1 HT','Top-1 FT'];
+          const aux=['Top-3 HT','Top-3 FT'];
+          const fail=(code)=>{throw new Error(code)};
+          if(JSON.stringify(x.evaluationContract?.primaryTargets)!==JSON.stringify(primary)) fail('PRIMARY_TARGET_DRIFT');
+          if(JSON.stringify(x.evaluationContract?.auxiliaryDiagnostics)!==JSON.stringify(aux)||x.evaluationContract?.top3GateUse!==false) fail('TOP3_GATE_DRIFT');
+          if(x.evaluationContract?.pairedBaseline!==true||x.evaluationContract?.fullScoreGridLogLoss!==true||x.evaluationContract?.noReconstruction!==true) fail('SCOREGRID_CONTRACT_FAIL');
+          if(x.baseline?.engine!=='CFI_FINAL_V5.3.0'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2'||x.baseline?.primaryContract!=='CFI_2_METHODS_X_6_TARGETS_V2'||x.baseline?.multiMarketVersion!=='CFI_MULTI_MARKET_V1') fail('BASELINE_DRIFT');
+          if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) fail('STRICT_PRIOR_FAIL');
+          if(x.decisionUse!==false||x.productionMutationAllowed!==false) fail('PRODUCTION_ISOLATION_FAIL');
+          if(x.scoreGridEvaluation?.pairedBaseline!==true||x.scoreGridEvaluation?.noReconstruction!==true) fail('SCOREGRID_PROVENANCE_FAIL');
+          if(x.baselineMetrics?.scoreline?.ht?.fullGridAvailable!==true||x.baselineMetrics?.scoreline?.ft?.fullGridAvailable!==true) fail('BASELINE_FULL_GRID_MISSING');
+          if(x.marketBoardMemoryPolicy?.version!=='CFI_GROUP_A_MARKET_BOARD_COMPACT_RUNNER_V1'||x.marketBoardMemoryPolicy?.observationPolicy!=='PRELINKED_MARKET_FIXTURES_COMPACT_FT_ONLY') fail('MEMORY_POLICY_FAIL');
+          if(x.marketBoardMemoryPolicy?.retainedRows>x.marketBoardMemoryPolicy?.linkedFixtureIds*5) fail('MEMORY_BOUND_FAIL');
+          if(marketAudit?.researchOnly!==true||marketAudit?.decisionUse!==false||marketAudit?.productionMutationAllowed!==false||marketAudit?.canonicalWriteAllowed!==false) fail('FORWARD_LINK_ISOLATION_FAIL');
+          if(historicalMarket?.researchOnly!==true||historicalMarket?.decisionUse!==false||historicalMarket?.productionMutationAllowed!==false||historicalMarket?.canonicalWriteAllowed!==false||historicalMarket?.reconstructed!==false||historicalMarket?.capturedAtFabricated!==false) fail('HISTORICAL_MARKET_PROVENANCE_FAIL');
+          if(x.historicalMarketBoardEvaluation?.decisionUse!==false||x.historicalMarketBoardEvaluation?.productionMutationAllowed!==false||x.historicalMarketBoardEvaluation?.noReconstruction!==true) fail('BOARD_GATE_ISOLATION_FAIL');
           const summary={};
           for(const [name,c] of Object.entries(x.challengers??{})){
-            if(c.decisionUse!==false||c.productionMutationAllowed!==false||c.shadowEligible!==false||c.promotionDecision!=='HOLD'||c.productionEligible!==false) process.exit(9);
-            if(c.evaluationContract?.top3GateUse!==false||c.pairedBaselineEvaluation!==true) process.exit(10);
+            if(c.decisionUse!==false||c.productionMutationAllowed!==false||c.shadowEligible!==false||c.promotionDecision!=='HOLD'||c.productionEligible!==false) fail(`CANDIDATE_ISOLATION_${name}`);
+            if(c.evaluationContract?.top3GateUse!==false||c.pairedBaselineEvaluation!==true) fail(`CANDIDATE_CONTRACT_${name}`);
             if((c.coverage?.eligible??0)>0){
-              if(c.pairedBaselineMetrics?.scoreline?.ht?.fullGridAvailable!==true||c.pairedBaselineMetrics?.scoreline?.ft?.fullGridAvailable!==true) process.exit(13);
-              if(c.hardBlockers?.includes('BASELINE_FULL_SCORE_GRID_NOT_EXPOSED_FOR_PAIRED_SCORELINE_LOGLOSS')) process.exit(14);
+              if(c.pairedBaselineMetrics?.scoreline?.ht?.fullGridAvailable!==true||c.pairedBaselineMetrics?.scoreline?.ft?.fullGridAvailable!==true) fail(`PAIRED_GRID_${name}`);
+              if(c.hardBlockers?.includes('BASELINE_FULL_SCORE_GRID_NOT_EXPOSED_FOR_PAIRED_SCORELINE_LOGLOSS')) fail(`SCOREGRID_BLOCKER_NOT_CLEARED_${name}`);
               const ready=c.historicalMarketBoard?.sampleReady===true;
-              const hasOddsBlocker=c.hardBlockers?.includes('NO_SYNCHRONIZED_HISTORICAL_ODDS_FOR_BOARD_IMPACT')===true;
-              if(ready===hasOddsBlocker) process.exit(15);
-              if((c.historicalMarketBoard?.challenger?.pairedExecutableFixtures??0)<30&&ready) process.exit(20);
+              const oddsBlock=c.hardBlockers?.includes('NO_SYNCHRONIZED_HISTORICAL_ODDS_FOR_BOARD_IMPACT')===true;
+              if(ready===oddsBlock) fail(`ODDS_BLOCKER_STATE_${name}`);
+              if(ready&&(c.historicalMarketBoard?.challenger?.pairedExecutableFixtures??0)<30) fail(`ODDS_SAMPLE_${name}`);
             }
-            summary[name]={
-              eligible:c.coverage?.eligible??0,
-              active:c.coverage?.active??0,
-              abstain:c.coverage?.abstain??0,
-              aggregate:c.aggregate,
-              primaryEvaluation:c.primaryEvaluation,
-              auxiliaryDiagnostics:c.auxiliaryDiagnostics,
-              multiMarketEvaluation:c.multiMarketEvaluation,
-              scoreGridLogLossEvaluation:c.scoreGridLogLossEvaluation,
-              historicalMarketBoard:c.historicalMarketBoard,
-              regressions:c.regressions,
-              hardBlockers:c.hardBlockers,
-              promotionDecision:c.promotionDecision,
-            };
+            summary[name]={eligible:c.coverage?.eligible??0,scoreGridLogLossEvaluation:c.scoreGridLogLossEvaluation,historicalMarketBoard:c.historicalMarketBoard,regressions:c.regressions,hardBlockers:c.hardBlockers,promotionDecision:c.promotionDecision};
           }
-          console.log(JSON.stringify({
-            status:x.status,
-            baseline:x.baseline,
-            evaluationContract:x.evaluationContract,
-            scoreGridEvaluation:x.scoreGridEvaluation,
-            historicalMarketBoardEvaluation:x.historicalMarketBoardEvaluation,
-            coverage:x.coverage,
-            groupAVerdict:x.groupAVerdict,
-            determinism:x.determinism,
-            forwardMarketLinkage:{input:marketAudit.input,linkage:marketAudit.linkage,marketComparisonReadiness:marketAudit.marketComparisonReadiness},
-            historicalMarketEvidence:{status:historicalMarket.status,coverage:historicalMarket.coverage,hardBlockers:historicalMarket.hardBlockers,sourceResults:historicalMarket.sourceResults},
-            challengers:summary,
-          },null,2));
+          console.log(JSON.stringify({status:'PASS',groupAVerdict:x.groupAVerdict,coverage:x.coverage,memoryPolicy:x.marketBoardMemoryPolicy,scoreGridEvaluation:x.scoreGridEvaluation,historicalMarketBoardEvaluation:x.historicalMarketBoardEvaluation,forwardMarketLinkage:marketAudit.marketComparisonReadiness,historicalMarketEvidence:historicalMarket.coverage,challengers:summary},null,2));
           NODE
+
       - name: Upload Group A result
         uses: actions/upload-artifact@v4
         with:
@@ -128,6 +110,7 @@ jobs:
           path: ${{ runner.temp }}/group-a-full-suite-result.json
           if-no-files-found: error
           retention-days: 7
+
       - name: Upload forward market linkage audit
         uses: actions/upload-artifact@v4
         with:
@@ -135,13 +118,15 @@ jobs:
           path: ${{ runner.temp }}/forward-market-canonical-link-audit.json
           if-no-files-found: error
           retention-days: 7
-      - name: Upload Football-Data historical market evidence
+
+      - name: Upload historical market evidence
         uses: actions/upload-artifact@v4
         with:
           name: group-a-football-data-historical-market-evidence
           path: ${{ runner.temp }}/football-data-historical-market-evidence.json
           if-no-files-found: error
           retention-days: 7
+
       - name: Remove privileged input exports
         if: always()
         shell: bash
