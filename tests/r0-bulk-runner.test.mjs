@@ -23,11 +23,19 @@ test('R0 corpus contract freezes prospective holdout', () => {
 });
 
 test('R0 contract is pinned to current production release and actual replay prior gate', () => {
-  assert.equal(R0_DATASET_CONTRACT.productionChampion, 'CFI_FINAL_V5.2.5');
-  assert.equal(R0_DATASET_CONTRACT.productionEntrypoint, 'cloudflare-worker/src/index-v55.ts');
-  assert.equal(R0_DATASET_CONTRACT.productionRuntime, 'CFI_SIX_TARGET_RUNTIME_V1.4');
+  assert.equal(R0_DATASET_CONTRACT.baselineCommitSha, '518dfb57aafc8428e09b3ec84e440146c839a19e');
+  assert.equal(R0_DATASET_CONTRACT.productionChampion, 'CFI_FINAL_V5.3.0');
+  assert.equal(R0_DATASET_CONTRACT.productionEntrypoint, 'cloudflare-worker/src/index-live-router.ts');
+  assert.equal(R0_DATASET_CONTRACT.prematchEntrypoint, 'cloudflare-worker/src/index-v55.ts');
+  assert.equal(R0_DATASET_CONTRACT.productionRuntime, 'CFI_PRIMARY_TOP1_RUNTIME_V2');
+  assert.equal(R0_DATASET_CONTRACT.primaryContract, 'CFI_2_METHODS_X_6_TARGETS_V2');
+  assert.equal(R0_DATASET_CONTRACT.multiMarketVersion, 'CFI_MULTI_MARKET_V1');
+  assert.equal(R0_DATASET_CONTRACT.crossMarketCoherence, 'CFI_CROSS_MARKET_COHERENCE_GATE_V1');
+  assert.equal(R0_DATASET_CONTRACT.historicalEvaluator, 'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.1');
   assert.equal(R0_DATASET_CONTRACT.bigDbRetrieval, 'CFI_BIG_DB_RETRIEVAL_V2.1.2');
   assert.equal(R0_DATASET_CONTRACT.minGlobalPriorFixtures, 8);
+  assert.equal(R0_DATASET_CONTRACT.decisionUse, false);
+  assert.equal(R0_DATASET_CONTRACT.productionMutationAllowed, false);
   assert.equal('minTeamPrior' in R0_DATASET_CONTRACT, false);
   assert.match(R0_DATASET_CONTRACT.numericalCore, /buildPrediction/);
 });
@@ -46,10 +54,17 @@ test('2015 is warm-up only and never contributes scoring rows', () => {
 
 test('R0 bulk runner is research-only, strict-prior, and scores research window only', () => {
   const result = runR0Bulk(rows);
+  assert.equal(result.baselineVerification.status, 'PASS');
   assert.equal(result.replay.strictPrior, true);
   assert.equal(result.replay.sameDateLeakage, false);
   assert.equal(result.productionMutationAllowed, false);
-  assert.equal(result.productionParity.releaseEngine, 'CFI_FINAL_V5.2.5');
+  assert.equal(result.decisionUse, false);
+  assert.equal(result.productionParity.baselineCommitSha, '518dfb57aafc8428e09b3ec84e440146c839a19e');
+  assert.equal(result.productionParity.releaseEngine, 'CFI_FINAL_V5.3.0');
+  assert.equal(result.productionParity.runtime, 'CFI_PRIMARY_TOP1_RUNTIME_V2');
+  assert.equal(result.productionParity.primaryContract, 'CFI_2_METHODS_X_6_TARGETS_V2');
+  assert.equal(result.productionParity.multiMarketVersion, 'CFI_MULTI_MARKET_V1');
+  assert.equal(result.productionParity.verifiedByExactSourceBlobLock, true);
   assert.equal(result.productionParity.directGlobalPriorShrinkage, false);
   assert.deepEqual(result.replay.scoringWindow, { start: '2016-01-01', end: '2026-08-19' });
   assert.ok(['HOLD', 'SHADOW_ELIGIBLE_ONLY'].includes(result.promotionDecision));
