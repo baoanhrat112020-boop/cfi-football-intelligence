@@ -20,6 +20,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Verify pinned production baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          node research/production-baseline-lock.mjs
       - name: Verify privileged research credential is wired
         shell: bash
         run: |
@@ -41,12 +46,17 @@ jobs:
           if(x.fixtures.some(r=>String(r.match_date)>='2026-08-20')) throw new Error('R0_HOLDOUT_LEAKAGE');
           console.log(JSON.stringify({
             status:'PASS',
+            baseline:'CFI_FINAL_V5.3.0 + CFI_PRIMARY_TOP1_RUNTIME_V2 + CFI_MULTI_MARKET_V1',
+            baselineCommitSha:'518dfb57aafc8428e09b3ec84e440146c839a19e',
+            primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',
+            historicalEvaluator:'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.1',
             manifestVersion:x.manifestVersion,
             fixtureCount:x.fixtureCount,
             sourceFixtureCount:x.sourceFixtureCount,
             droppedUnresolvedTeamCount:x.droppedUnresolvedTeamCount,
             privilegedResearchRead:x.privilegedResearchRead,
             prospectiveHoldoutPreserved:true,
+            decisionUse:false,
             productionMutation:false
           },null,2));
           NODE
