@@ -1,0 +1,151 @@
+name: CFI HF Group A Shadow
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-hf-group-a-shadow.yml'
+      - 'research/hf-group-a-shadow.mjs'
+      - 'tests/hf-group-a-shadow.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  hf-shadow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
+      CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify pinned production baseline
+        run: node research/production-baseline-lock.mjs
+
+      - name: Verify shadow credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
+          test -n "${HF_TOKEN:-}" || { echo 'HF_TOKEN secret is missing'; exit 3; }
+
+      - name: Export sanitized research bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="$RUNNER_TEMP/cfi-hf-group-a-shadow"
+          mkdir -p "$BUNDLE/data" "$BUNDLE/research" "$BUNDLE/src" "$BUNDLE/cloudflare-worker/src"
+          node research/export-r0-corpus.mjs "$BUNDLE/data/r0.json"
+          node research/export-group-a-features.mjs "$BUNDLE/data/group-a.json"
+          cp -R src/prediction "$BUNDLE/src/prediction"
+          cp research/group-a-full-suite-v1.mjs "$BUNDLE/research/"
+          cp research/group-a-primary-v2-gate.mjs "$BUNDLE/research/"
+          cp research/production-baseline-lock.mjs "$BUNDLE/research/"
+          cp research/hf-group-a-shadow.mjs "$BUNDLE/research/"
+          cp cloudflare-worker/src/index-v55.ts "$BUNDLE/cloudflare-worker/src/"
+          cp cloudflare-worker/src/index-live-router.ts "$BUNDLE/cloudflare-worker/src/"
+          node --input-type=module - "$BUNDLE/manifest.json" <<'NODE'
+          import fs from 'node:fs';
+          const out=process.argv[2];
+          fs.writeFileSync(out, JSON.stringify({
+            version:'CFI_HF_GROUP_A_BUNDLE_V1',
+            source:'GITHUB_ACTIONS_SANITIZED_EXPORT',
+            githubRunId:process.env.GITHUB_RUN_ID,
+            githubSha:process.env.GITHUB_SHA,
+            baselineCommitSha:'518dfb57aafc8428e09b3ec84e440146c839a19e',
+            engine:'CFI_FINAL_V5.3.0',
+            runtime:'CFI_PRIMARY_TOP1_RUNTIME_V2',
+            primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',
+            multiMarketVersion:'CFI_MULTI_MARKET_V1',
+            strictPrior:true,
+            decisionUse:false,
+            productionMutationAllowed:false,
+            secretsIncluded:false,
+          },null,2)+'\n');
+          NODE
+          (cd "$BUNDLE" && find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256)
+
+      - name: Install pinned Hugging Face CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user 'huggingface_hub==1.29.0'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Submit and wait for HF Group A shadow job
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          cd "$RUNNER_TEMP"
+          hf jobs run \
+            --name "cfi-group-a-shadow-${GITHUB_RUN_ID}" \
+            --label cfi=group-a \
+            --label mode=shadow-research \
+            --flavor cpu-basic \
+            --timeout 25m \
+            -v ./cfi-hf-group-a-shadow:/workspace:ro \
+            node:24-bookworm \
+            node --experimental-strip-types \
+            /workspace/research/hf-group-a-shadow.mjs \
+            /workspace/data/r0.json \
+            /workspace/data/group-a.json \
+            | tee "$RUNNER_TEMP/hf-group-a-shadow.log"
+
+      - name: Verify HF result contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - "$RUNNER_TEMP/hf-group-a-shadow.log" "$RUNNER_TEMP/hf-group-a-summary.json" <<'NODE'
+          import fs from 'node:fs';
+          const [logPath,outPath]=process.argv.slice(2);
+          const text=fs.readFileSync(logPath,'utf8');
+          const line=text.split(/\r?\n/).find(x=>x.startsWith('CFI_HF_GROUP_A_RESULT='));
+          if(!line) throw new Error('HF_GROUP_A_RESULT_MISSING');
+          const x=JSON.parse(line.slice('CFI_HF_GROUP_A_RESULT='.length));
+          const selected=['OPPONENT_STRENGTH_ARM_V1','HIERARCHICAL_LEAGUE_SEGMENT_CALIBRATION_V1'];
+          if(x.version!=='CFI_HF_GROUP_A_SHADOW_V1') throw new Error('HF_GROUP_A_VERSION_DRIFT');
+          if(x.executionPlatform!=='HUGGING_FACE_JOBS') throw new Error('HF_GROUP_A_PLATFORM_MISMATCH');
+          if(x.baseline?.engine!=='CFI_FINAL_V5.3.0'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2') throw new Error('HF_GROUP_A_BASELINE_DRIFT');
+          if(x.baseline?.primaryContract!=='CFI_2_METHODS_X_6_TARGETS_V2'||x.baseline?.multiMarketVersion!=='CFI_MULTI_MARKET_V1') throw new Error('HF_GROUP_A_CONTRACT_DRIFT');
+          if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) throw new Error('HF_GROUP_A_PRIOR_GUARD_FAIL');
+          if(x.decisionUse!==false||x.productionMutationAllowed!==false||x.productionWritePath!==null) throw new Error('HF_GROUP_A_PRODUCTION_ISOLATION_FAIL');
+          if(x.evaluationContract?.top3GateUse!==false) throw new Error('HF_GROUP_A_TOP3_GATE_FAIL');
+          if(JSON.stringify(x.selectedCandidates)!==JSON.stringify(selected)) throw new Error('HF_GROUP_A_CANDIDATE_SET_DRIFT');
+          for(const name of selected){
+            const c=x.challengers?.[name];
+            if(!c) throw new Error(`HF_GROUP_A_MISSING_${name}`);
+            if(c.decisionUse!==false||c.productionMutationAllowed!==false) throw new Error(`HF_GROUP_A_ISOLATION_${name}`);
+            if(c.primaryRegressionCount!==0||c.multiMarketRegressionCount!==0||c.segmentRegressionCount!==0) throw new Error(`HF_GROUP_A_REGRESSION_${name}`);
+          }
+          fs.writeFileSync(outPath,JSON.stringify(x,null,2)+'\n');
+          console.log(JSON.stringify({status:'PASS',jobId:x.jobId,cpuCores:x.cpuCores,memory:x.memory,coverage:x.coverage,challengers:Object.fromEntries(selected.map(n=>[n,{eligible:x.challengers[n].eligible,delta:x.challengers[n].aggregate?.deltaVsProduction,hardBlockers:x.challengers[n].hardBlockers}]))},null,2));
+          NODE
+
+      - name: Upload sanitized HF evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hf-group-a-shadow-evidence
+          path: |
+            ${{ runner.temp }}/hf-group-a-summary.json
+            ${{ runner.temp }}/cfi-hf-group-a-shadow/manifest.json
+            ${{ runner.temp }}/cfi-hf-group-a-shadow/manifest.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove exported research bundle
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/cfi-hf-group-a-shadow"
