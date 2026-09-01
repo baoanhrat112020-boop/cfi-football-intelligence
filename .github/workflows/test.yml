@@ -48,7 +48,7 @@ jobs:
           if(r0.fixtures.some(r=>String(r.match_date)>='2026-08-20')) throw new Error('R0_HOLDOUT_LEAKAGE');
           if(ga.strictPrior!==true||ga.strengths.some(r=>r.strict_prior!==true)) throw new Error('GROUP_A_STRICT_PRIOR_NOT_PROVEN');
           if(ga.strengths.some(r=>String(r.as_of_date)>='2026-08-20')) throw new Error('GROUP_A_HOLDOUT_LEAKAGE');
-          if(ga.baselineCommitSha!==r0.fixtures && false) throw new Error('UNREACHABLE');
+          if(ga.baselineCommitSha!=='518dfb57aafc8428e09b3ec84e440146c839a19e') throw new Error('GROUP_A_BASELINE_LINEAGE_DRIFT');
           console.log(JSON.stringify({status:'PASS',fixtureCount:r0.fixtureCount,metadataCoverage:r0.metadataCoverage,strengthRowCount:ga.strengthRowCount,competitionCount:ga.competitionCount,segmentCount:ga.segmentCount,strictPrior:true,privilegedResearchRead:true,prospectiveHoldoutPreserved:true,decisionUse:false,productionMutation:false},null,2));
           NODE
           rm -f "$R0" "$GA" "$RUNNER_TEMP/r0-summary.json" "$RUNNER_TEMP/group-a-summary.json"
