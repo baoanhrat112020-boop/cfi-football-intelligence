@@ -1,9 +1,13 @@
 import { MARKETS, assertStrictPriorDate, clamp01 } from './fusion/contracts.mjs';
-import { evaluateRun, deriveTemporalStability } from './promotion-gate.mjs';
+import {
+  evaluateMultiMarketPromotion,
+  MULTIMARKET_RESEARCH_CONTRACT_VERSION,
+} from './multimarket-promotion-gate-v2.mjs';
 
-export const KNOWLEDGE_CANDIDATE_RUNNER_VERSION = 'CFI_KNOWLEDGE_CANDIDATE_RUNNERS_V1';
+export const KNOWLEDGE_CANDIDATE_RUNNER_VERSION = 'CFI_KNOWLEDGE_CANDIDATE_RUNNERS_V2';
 export const KNOWLEDGE_CANDIDATE_RUNNER_CONTRACT = Object.freeze({
   version: KNOWLEDGE_CANDIDATE_RUNNER_VERSION,
+  multiMarketContractVersion: MULTIMARKET_RESEARCH_CONTRACT_VERSION,
   researchOnly: true,
   strictPriorRequired: true,
   baselineLock: 'R0_IMMUTABLE',
@@ -15,16 +19,16 @@ export const KNOWLEDGE_CANDIDATE_RUNNER_CONTRACT = Object.freeze({
 });
 
 export const CANDIDATE_SPECS = Object.freeze({
-  'K038-STATIONARITY-RETRIEVAL': Object.freeze({requiredArtifacts:Object.freeze(['strict-prior retrieval runner','stationarity/regime score artifact','paired similarity-only baseline','segment Brier/calibration report'])}),
-  'K039-STRUCTURE-ANCHORED-MOE': Object.freeze({requiredArtifacts:Object.freeze(['strict-prior regime descriptor runner','expert-routing stability report','fixed-ensemble paired baseline','ablation by routing prior'])}),
-  'K040-EVIDENCE-ASYMMETRY-FORECAST': Object.freeze({requiredArtifacts:Object.freeze(['strict-prior evidence partitioner','agent provenance logs','error-correlation matrix','identical-evidence ablation','Brier/calibration report'])}),
+  'K038-STATIONARITY-RETRIEVAL': Object.freeze({requiredArtifacts:Object.freeze(['strict-prior retrieval runner','stationarity/regime score artifact','paired similarity-only baseline','full Multi-Market evaluation report'])}),
+  'K039-STRUCTURE-ANCHORED-MOE': Object.freeze({requiredArtifacts:Object.freeze(['strict-prior regime descriptor runner','expert-routing stability report','fixed-ensemble paired baseline','full Multi-Market evaluation report'])}),
+  'K040-EVIDENCE-ASYMMETRY-FORECAST': Object.freeze({requiredArtifacts:Object.freeze(['strict-prior evidence partitioner','agent provenance logs','error-correlation matrix','identical-evidence ablation','full Multi-Market evaluation report'])}),
 });
 
 const finite01=x=>Number.isFinite(Number(x))&&Number(x)>=0&&Number(x)<=1;
 const stableId=x=>String(x?.id??x?.evidenceId??x?.expert??'');
 const stableSort=(rows,compare)=>[...rows].sort((a,b)=>compare(a,b)||stableId(a).localeCompare(stableId(b)));
 function assertRunnerHeader({targetDate,maxEvidenceDate}={}){assertStrictPriorDate(maxEvidenceDate,targetDate);return{targetDate:String(targetDate),maxEvidenceDate:String(maxEvidenceDate)};}
-function immutableEnvelope(experimentCode,header,artifact){if(!CANDIDATE_SPECS[experimentCode])throw new Error('UNKNOWN_EXPERIMENT_CODE');return{experimentCode,runnerVersion:KNOWLEDGE_CANDIDATE_RUNNER_VERSION,contract:KNOWLEDGE_CANDIDATE_RUNNER_CONTRACT,strictPrior:{verified:true,...header},baselineLock:'R0_IMMUTABLE',researchOnly:true,productionEligible:false,artifact};}
+function immutableEnvelope(experimentCode,header,artifact){if(!CANDIDATE_SPECS[experimentCode])throw new Error('UNKNOWN_EXPERIMENT_CODE');return{experimentCode,runnerVersion:KNOWLEDGE_CANDIDATE_RUNNER_VERSION,contract:KNOWLEDGE_CANDIDATE_RUNNER_CONTRACT,strictPrior:{verified:true,...header},baselineLock:'R0_IMMUTABLE',researchOnly:true,decisionUse:false,productionEligible:false,artifact};}
 
 export function runK038StationarityRetrieval(input={}){
   const header=assertRunnerHeader(input),candidates=Array.isArray(input.candidates)?input.candidates:[];
@@ -58,12 +62,25 @@ export function partitionK040Evidence(input={}){
 }
 
 function pearson(a,b){if(a.length!==b.length||a.length<2)throw new Error('K040_ERROR_VECTOR_LENGTH_MISMATCH');const ma=a.reduce((s,x)=>s+x,0)/a.length,mb=b.reduce((s,x)=>s+x,0)/b.length;let num=0,da=0,db=0;for(let i=0;i<a.length;i++){const xa=a[i]-ma,xb=b[i]-mb;num+=xa*xb;da+=xa*xa;db+=xb*xb;}if(!(da>0)||!(db>0))return 0;return num/Math.sqrt(da*db);}
-export function buildK040ErrorCorrelation(agentErrors={}){const names=Object.keys(agentErrors).sort();if(names.length<2)throw new Error('K040_AGENT_ERRORS_REQUIRED');const vectors=Object.fromEntries(names.map(name=>{const xs=agentErrors[name];if(!Array.isArray(xs)||xs.length<2||xs.some(x=>!Number.isFinite(Number(x))))throw new Error('K040_INVALID_AGENT_ERROR_VECTOR');return[name,xs.map(Number)];}));const n=vectors[names[0]].length;if(names.some(name=>vectors[name].length!==n))throw new Error('K040_ERROR_VECTOR_LENGTH_MISMATCH');const matrix={};for(const a of names){matrix[a]={};for(const b of names)matrix[a][b]=a===b?1:Number(pearson(vectors[a],vectors[b]).toFixed(8));}return{type:'K040_ERROR_CORRELATION_MATRIX',sampleCount:n,agents:names,matrix,researchOnly:true,productionEligible:false,baselineLock:'R0_IMMUTABLE'};}
+export function buildK040ErrorCorrelation(agentErrors={}){const names=Object.keys(agentErrors).sort();if(names.length<2)throw new Error('K040_AGENT_ERRORS_REQUIRED');const vectors=Object.fromEntries(names.map(name=>{const xs=agentErrors[name];if(!Array.isArray(xs)||xs.length<2||xs.some(x=>!Number.isFinite(Number(x))))throw new Error('K040_INVALID_AGENT_ERROR_VECTOR');return[name,xs.map(Number)];}));const n=vectors[names[0]].length;if(names.some(name=>vectors[name].length!==n))throw new Error('K040_ERROR_VECTOR_LENGTH_MISMATCH');const matrix={};for(const a of names){matrix[a]={};for(const b of names)matrix[a][b]=a===b?1:Number(pearson(vectors[a],vectors[b]).toFixed(8));}return{type:'K040_ERROR_CORRELATION_MATRIX',sampleCount:n,agents:names,matrix,researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE'};}
 export function auditK040IdenticalEvidence(partitions=[]){const seen=new Map(),overlaps=[];for(const p of partitions){const agent=String(p?.agent??''),ids=[...new Set((p?.evidenceIds??[]).map(String))].sort();for(const id of ids){const owner=seen.get(id);if(owner&&owner!==agent)overlaps.push({evidenceId:id,agents:[owner,agent].sort()});else seen.set(id,agent);}}return{pass:overlaps.length===0,identicalEvidenceDetected:overlaps.length>0,overlaps,hardFailures:overlaps.length?['K040_IDENTICAL_EVIDENCE_ABLATION_FAIL']:[]};}
 
 export function buildRealChallengerEvaluation(input={}){
   const{experimentCode,fixtureId,targetDate,maxEvidenceDate,probabilities,outcomes}=input;if(!CANDIDATE_SPECS[experimentCode])throw new Error('UNKNOWN_EXPERIMENT_CODE');assertRunnerHeader({targetDate,maxEvidenceDate});if(!fixtureId)throw new Error('FIXTURE_ID_REQUIRED');if(input.synthetic===true||input.reconstructed===true||input.replayedPredictionHistory===true)throw new Error('REAL_STRICT_PRIOR_EVALUATION_REQUIRED');
   for(const market of MARKETS){if(!finite01(probabilities?.[market]))throw new Error(`INVALID_PROBABILITY:${market}`);if(outcomes?.[market]!==0&&outcomes?.[market]!==1)throw new Error(`INVALID_OUTCOME:${market}`);}
-  return{experimentCode,fixtureId:String(fixtureId),targetTimestamp:`${targetDate}T00:00:00.000Z`,maxEvidenceTimestamp:`${maxEvidenceDate}T23:59:59.999Z`,probabilities:Object.fromEntries(MARKETS.map(m=>[m,Number(probabilities[m])])),actual:Object.fromEntries(MARKETS.map(m=>[m,Number(outcomes[m])])),top3HT:Array.isArray(input.top3HT)?input.top3HT:[],top3FT:Array.isArray(input.top3FT)?input.top3FT:[],actualScore:input.actualScore??{},reconstructed:false,replayedPredictionHistory:false,nondeterministic:Boolean(input.nondeterministic),directionalFailure:Boolean(input.directionalFailure),researchOnly:true,productionEligible:false,baselineLock:'R0_IMMUTABLE'};
+  return{experimentCode,fixtureId:String(fixtureId),targetTimestamp:`${targetDate}T00:00:00.000Z`,maxEvidenceTimestamp:`${maxEvidenceDate}T23:59:59.999Z`,probabilities:Object.fromEntries(MARKETS.map(m=>[m,Number(probabilities[m])])),actual:Object.fromEntries(MARKETS.map(m=>[m,Number(outcomes[m])])),multiMarketOutput:input.multiMarketOutput??null,reconstructed:false,replayedPredictionHistory:false,nondeterministic:Boolean(input.nondeterministic),directionalFailure:Boolean(input.directionalFailure),researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE'};
 }
-export function evaluateRealCandidateRows(rows=[],options={}){if(!Array.isArray(rows)||!rows.length)return{status:'FAIL_HARD_GATE',score:0,shadowEligible:false,productionEligible:false,baselineLock:'R0_IMMUTABLE',hardFailures:['INSUFFICIENT_REAL_EVIDENCE']};const stability=deriveTemporalStability(rows,MARKETS,options.stabilityOptions??{}).score,result=evaluateRun(rows,{...options,markets:MARKETS,stability,requireTop3:options.requireTop3??false});return{...result,baselineLock:'R0_IMMUTABLE',productionEligible:false};}
+
+export function evaluateRealCandidateRows(rows=[],options={}){
+  if(!Array.isArray(rows)||!rows.length)return{status:'FAIL_HARD_GATE',score:0,shadowEligible:false,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE',hardFailures:['INSUFFICIENT_REAL_EVIDENCE']};
+  if(!options.multiMarketPromotionInput)return{status:'FAIL_HARD_GATE',score:0,shadowEligible:false,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE',hardFailures:['MULTIMARKET_EVALUATION_REQUIRED']};
+  if(rows.some(r=>r.reconstructed===true||r.replayedPredictionHistory===true))return{status:'FAIL_HARD_GATE',score:0,shadowEligible:false,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE',hardFailures:['REAL_STRICT_PRIOR_EVALUATION_REQUIRED']};
+  const result=evaluateMultiMarketPromotion({
+    ...options.multiMarketPromotionInput,
+    contractVersion:MULTIMARKET_RESEARCH_CONTRACT_VERSION,
+    sampleSupport:rows.length,
+    decisionUse:false,
+    productionMutationAllowed:false,
+  });
+  return{...result,runnerVersion:KNOWLEDGE_CANDIDATE_RUNNER_VERSION,baselineLock:'R0_IMMUTABLE',decisionUse:false,researchOnly:true,productionEligible:false};
+}
