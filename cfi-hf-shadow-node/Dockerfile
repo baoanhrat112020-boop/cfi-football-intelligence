@@ -1,18 +1,18 @@
 FROM node:24-bookworm-slim
 
-RUN useradd -m -u 1000 user
-USER user
-ENV HOME=/home/user \
-    NODE_ENV=production \
+ENV NODE_ENV=production \
     PORT=7860 \
     CFI_HF_SHADOW_MODE=1 \
-    CFI_HF_ARTIFACT_ROOT=/home/user/artifacts
-WORKDIR /home/user/app
+    CFI_HF_ARTIFACT_ROOT=/home/node/artifacts
 
-COPY --chown=user package.json package-lock.json ./
+RUN mkdir -p /home/node/app /home/node/artifacts && chown -R node:node /home/node/app /home/node/artifacts
+USER node
+WORKDIR /home/node/app
+
+COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY --chown=user . .
-RUN mkdir -p /home/user/artifacts && node --experimental-strip-types cfi-hf-shadow-node/src/self-check.mjs
+COPY --chown=node:node . .
+RUN node --experimental-strip-types cfi-hf-shadow-node/src/self-check.mjs
 
 EXPOSE 7860
 CMD ["node", "--experimental-strip-types", "cfi-hf-shadow-node/src/server.mjs"]
