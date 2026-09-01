@@ -1,0 +1,57 @@
+name: CFI Research R0 Read Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  r0-read-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CFI_SUPABASE_URL: ${{ secrets.CFI_SUPABASE_URL }}
+      CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify privileged research credentials are wired
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CFI_SUPABASE_URL:-}" || { echo 'CFI_SUPABASE_URL secret is missing'; exit 2; }
+          test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
+      - name: Export strict-prior R0 corpus read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/r0-corpus.json"
+          node research/export-r0-corpus.mjs "$OUT" > "$RUNNER_TEMP/r0-summary.json"
+          node --input-type=module - "$OUT" <<'NODE'
+          import fs from 'node:fs';
+          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          if(x.manifestVersion!=='CFI_TIME_MACHINE_V2') throw new Error(`UNEXPECTED_MANIFEST:${x.manifestVersion}`);
+          if(x.privilegedResearchRead!==true) throw new Error('PRIVILEGED_RESEARCH_READ_NOT_PROVEN');
+          if(!Number.isInteger(x.fixtureCount)||x.fixtureCount<=0) throw new Error('EMPTY_R0_CORPUS');
+          if(!Array.isArray(x.fixtures)||x.fixtures.length!==x.fixtureCount) throw new Error('R0_COUNT_MISMATCH');
+          if(x.fixtures.some(r=>String(r.match_date)>='2026-08-20')) throw new Error('R0_HOLDOUT_LEAKAGE');
+          console.log(JSON.stringify({
+            status:'PASS',
+            manifestVersion:x.manifestVersion,
+            fixtureCount:x.fixtureCount,
+            sourceFixtureCount:x.sourceFixtureCount,
+            droppedUnresolvedTeamCount:x.droppedUnresolvedTeamCount,
+            privilegedResearchRead:x.privilegedResearchRead,
+            prospectiveHoldoutPreserved:true,
+            productionMutation:false
+          },null,2));
+          NODE
+      - name: Remove corpus artifact
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/r0-corpus.json" "$RUNNER_TEMP/r0-summary.json"
