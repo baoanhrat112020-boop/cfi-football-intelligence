@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { replayDualHistorical } from '../src/learning/dual-historical-replay.ts';
 import { scoreReplayAllModels } from './replay-promotion-adapter.mjs';
+import { PRODUCTION_BASELINE_LOCK, verifyProductionBaselineLock } from './production-baseline-lock.mjs';
 
 export const R0_DATASET_CONTRACT = Object.freeze({
   manifestVersion: 'CFI_TIME_MACHINE_V2',
@@ -11,12 +12,22 @@ export const R0_DATASET_CONTRACT = Object.freeze({
   minGlobalPriorFixtures: 8,
   strictPrior: true,
   sameDayExcluded: true,
-  productionChampion: 'CFI_FINAL_V5.2.5',
-  productionEntrypoint: 'cloudflare-worker/src/index-v55.ts',
-  productionRuntime: 'CFI_SIX_TARGET_RUNTIME_V1.4',
-  bigDbRetrieval: 'CFI_BIG_DB_RETRIEVAL_V2.1.2',
+  baselineLockVersion: PRODUCTION_BASELINE_LOCK.version,
+  baselineCommitSha: PRODUCTION_BASELINE_LOCK.commitSha,
+  productionChampion: PRODUCTION_BASELINE_LOCK.engine,
+  productionRuntime: PRODUCTION_BASELINE_LOCK.runtime,
+  primaryContract: PRODUCTION_BASELINE_LOCK.primaryContract,
+  multiMarketVersion: PRODUCTION_BASELINE_LOCK.multiMarketVersion,
+  crossMarketCoherence: PRODUCTION_BASELINE_LOCK.crossMarketCoherence,
+  historicalEvaluator: PRODUCTION_BASELINE_LOCK.historicalEvaluator,
+  productionEntrypoint: PRODUCTION_BASELINE_LOCK.productionEntrypoint,
+  prematchEntrypoint: PRODUCTION_BASELINE_LOCK.prematchEntrypoint,
+  predictionPath: PRODUCTION_BASELINE_LOCK.predictionPath,
+  bigDbRetrieval: PRODUCTION_BASELINE_LOCK.bigDbRetrieval,
   numericalCore: 'src/prediction/final-engine.ts::buildPrediction',
-  parityBasis: 'index-v50 invokes buildPrediction; v51-v55 add strict-prior telemetry/release/consistency/diversity guards without direct global-prior shrinkage of six-target outputs',
+  decisionUse: false,
+  productionMutationAllowed: false,
+  parityBasis: 'Exact source blobs are pinned to production main commit; R0 and challengers must use CFI_FINAL_V5.3.0 + Top-1 V2 + CFI_MULTI_MARKET_V1. Any locked core drift fails closed before replay.',
 });
 
 function dateOf(row) {
@@ -52,6 +63,7 @@ export function restrictReplayToResearchWindow(replay) {
 }
 
 export function runR0Bulk(input, options = {}) {
+  const baselineVerification = verifyProductionBaselineLock(options.baselineLockOptions ?? {});
   const corpus = freezeR0Corpus(input);
   const replayFull = replayDualHistorical(corpus, {
     minPrior: options.minPrior ?? R0_DATASET_CONTRACT.minGlobalPriorFixtures,
@@ -61,12 +73,22 @@ export function runR0Bulk(input, options = {}) {
   const champion = scores.FINAL_CFI ?? null;
   return {
     contract: R0_DATASET_CONTRACT,
+    baselineVerification,
     productionParity: {
+      baselineCommitSha: R0_DATASET_CONTRACT.baselineCommitSha,
       releaseEngine: R0_DATASET_CONTRACT.productionChampion,
+      runtime: R0_DATASET_CONTRACT.productionRuntime,
+      primaryContract: R0_DATASET_CONTRACT.primaryContract,
+      multiMarketVersion: R0_DATASET_CONTRACT.multiMarketVersion,
+      crossMarketCoherence: R0_DATASET_CONTRACT.crossMarketCoherence,
+      historicalEvaluator: R0_DATASET_CONTRACT.historicalEvaluator,
+      predictionPath: R0_DATASET_CONTRACT.predictionPath,
       numericalCore: R0_DATASET_CONTRACT.numericalCore,
       productionEntrypoint: R0_DATASET_CONTRACT.productionEntrypoint,
+      prematchEntrypoint: R0_DATASET_CONTRACT.prematchEntrypoint,
       directGlobalPriorShrinkage: false,
-      verifiedBySourceContract: true,
+      decisionUse: false,
+      verifiedByExactSourceBlobLock: baselineVerification.status === 'PASS',
     },
     corpusCount: corpus.length,
     replay: {
@@ -82,6 +104,7 @@ export function runR0Bulk(input, options = {}) {
     scores,
     r0: champion,
     promotionDecision: champion?.shadowEligible ? 'SHADOW_ELIGIBLE_ONLY' : 'HOLD',
+    decisionUse: false,
     productionMutationAllowed: false,
   };
 }
