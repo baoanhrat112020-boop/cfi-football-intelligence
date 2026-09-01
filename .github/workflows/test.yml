@@ -22,3 +22,94 @@ jobs:
       - run: npm test
       - name: Verify Cloudflare Worker bundle
         run: npx wrangler deploy --dry-run --outdir /tmp/cfi-worker-dry-run
+
+  group_a_full_suite_one_shot:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/research-read-adapter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
+      CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify pinned production baseline
+        run: node research/production-baseline-lock.mjs
+      - name: Verify privileged research credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
+      - name: Export fresh R0 and Group A inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node research/export-r0-corpus.mjs "$RUNNER_TEMP/r0.json"
+          node research/export-group-a-features.mjs "$RUNNER_TEMP/group-a.json"
+      - name: Audit forward market canonical linkage
+        run: node research/export-forward-market-canonical-links.mjs "$RUNNER_TEMP/forward-market-canonical-link-audit.json"
+      - name: Export Football-Data historical market evidence
+        run: node research/export-football-data-historical-market-evidence.mjs "$RUNNER_TEMP/football-data-historical-market-evidence.json"
+      - name: Run paired score-grid plus historical market board gate
+        run: node --experimental-strip-types research/group-a-historical-market-board-gate.mjs "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json" "$RUNNER_TEMP/group-a-full-suite-result.json"
+      - name: Print bounded verdict summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - "$RUNNER_TEMP/group-a-full-suite-result.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json" <<'NODE'
+          import fs from 'node:fs';
+          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const m=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
+          const challengers=Object.fromEntries(Object.entries(x.challengers??{}).map(([name,c])=>[name,{
+            eligible:c.coverage?.eligible??0,
+            pairedExecutableFixtures:c.historicalMarketBoard?.challenger?.pairedExecutableFixtures??0,
+            sampleReady:c.historicalMarketBoard?.sampleReady===true,
+            regressions:c.regressions??[],
+            hardBlockers:c.hardBlockers??[],
+            promotionDecision:c.promotionDecision,
+          }]));
+          console.log(JSON.stringify({
+            status:x.status,
+            groupAVerdict:x.groupAVerdict,
+            strictPrior:x.strictPrior,
+            sameDateLeakage:x.sameDateLeakage,
+            futureLeakage:x.futureLeakage,
+            decisionUse:x.decisionUse,
+            productionMutationAllowed:x.productionMutationAllowed,
+            historicalMarketCoverage:m.coverage,
+            historicalMarketBlockers:m.hardBlockers,
+            challengers,
+          },null,2));
+          if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false) process.exit(3);
+          if(x.decisionUse!==false||x.productionMutationAllowed!==false) process.exit(4);
+          NODE
+      - name: Upload Group A result
+        uses: actions/upload-artifact@v4
+        with:
+          name: group-a-full-suite-primary-v2-one-shot
+          path: ${{ runner.temp }}/group-a-full-suite-result.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload historical market evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: group-a-football-data-historical-market-evidence-one-shot
+          path: ${{ runner.temp }}/football-data-historical-market-evidence.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload forward market linkage audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: group-a-forward-market-linkage-audit-one-shot
+          path: ${{ runner.temp }}/forward-market-canonical-link-audit.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove privileged input exports
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json" "$RUNNER_TEMP/forward-market-canonical-link-audit.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json"
