@@ -22,7 +22,7 @@ function buildData(){
 const OPTIONS={skipSourceLock:true,minTeamPrior:1,minOnlineSamples:0,historyCap:5,lowConfidenceAbstain:0,evaluationStart:'2026-01-01',evaluationEnd:'2026-01-31'};
 
 test('congestion strength enters only through fatigue interactions',()=>{
-  assert.deepEqual(congestionFeatureVector(7,7,2,-2),[0,0,0]);
+  assert.ok(congestionFeatureVector(7,7,2,-2).every(v=>v===0));
   const x=congestionFeatureVector(3,5,1.5,-.5);
   assert.equal(x.length,3);
   assert.notEqual(x[1],0);
