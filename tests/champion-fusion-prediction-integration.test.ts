@@ -15,11 +15,12 @@ function history(){
   return rows;
 }
 
-test('official prediction persists coherent Champion Fusion shadow',()=>{
+test('official prediction persists coherent Top-1-only Champion Fusion shadow',()=>{
   const rows=history();
   const prediction:any=buildPrediction({home:'Alpha',away:'Beta',targetDate:'2026-08-01',language:'vi',homePayload:rows,awayPayload:rows,h2hPayload:rows.filter(x=>(x.homeTeam==='Alpha'&&x.awayTeam==='Beta')||(x.homeTeam==='Beta'&&x.awayTeam==='Alpha'))});
   assert.equal(prediction.status,'DATA_READY');
   assert.equal(prediction.championFusion.version,'CFI_MULTI_MARKET_CHAMPION_FUSION_V1');
+  assert.equal(prediction.championFusion.scorelineContract,'TOP1_HT_PLUS_TOP1_FT');
   assert.equal(prediction.championFusion.decisionUse,false);
   assert.equal(prediction.championFusion.strictPrior.verified,true);
   assert.equal(prediction.championFusion.multiMarket.consistencyGuard.status,'PASS');
@@ -27,8 +28,13 @@ test('official prediction persists coherent Champion Fusion shadow',()=>{
   assert.ok(prediction.championFusion.activeExperts.includes('HISTORICAL'));
   assert.ok(prediction.championFusion.activeExperts.includes('INCUMBENT_FINAL'));
   assert.equal(prediction.championFusion.candidateExperts.F10P,'HISTORICAL_V2_INCOMPLETE');
+  assert.ok(prediction.championFusion.champion.top1HT?.score);
+  assert.ok(prediction.championFusion.champion.top1FT?.score);
+  for(const forbidden of ['top3HT','top3FT','Top-3 HT','Top-3 FT'])assert.equal(JSON.stringify(prediction.championFusion).includes(forbidden),false,forbidden);
   const output:any=buildCfiOutputV3(prediction,{input_mode:'SINGLE_MATCH'});
   assert.equal(output.championFusion.version,'CFI_MULTI_MARKET_CHAMPION_FUSION_V1');
+  assert.equal(output.championFusion.scorelineContract,'TOP1_HT_PLUS_TOP1_FT');
   assert.equal(output.championFusion.decisionUse,false);
   assert.match(output.renderedPracticalReport,/CHAMPION FUSION:/);
+  for(const forbidden of ['top3HT','top3FT','Top-3 HT','Top-3 FT'])assert.equal(JSON.stringify(output.championFusion).includes(forbidden),false,forbidden);
 });
