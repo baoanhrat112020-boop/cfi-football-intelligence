@@ -12,5 +12,6 @@ test('Champion Fusion has exactly one production prediction entrypoint',()=>{
   assert.match(finalEngine,/championFusion/);
   assert.doesNotMatch(v50,/buildChampionFusionV1\(/);
   assert.doesNotMatch(v50,/buildMultiMarketChampionFusion\(/);
-  assert.match(v50,/championFusion is produced inside buildPrediction/);
+  assert.match(v50,/buildPrediction\(/);
+  assert.match(v50,/prediction\?\.championFusion|prediction\.championFusion/);
 });
