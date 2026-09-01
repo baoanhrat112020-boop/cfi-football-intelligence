@@ -4,11 +4,13 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../supabase/functions/cfi-result-collector/index.ts', import.meta.url), 'utf8');
 
-test('collector keeps FotMob + Flashscore exact HT/FT authority', () => {
-  assert.match(src, /CFI_RESULT_CONSENSUS_V6_STRICT_TEMPORAL/);
-  assert.match(src, /PRIMARY=\["FOTMOB","FLASHSCORE"\]/);
+test('collector keeps FotMob plus Flashscore-or-Football-Data exact HT/FT authority', () => {
+  assert.match(src, /CFI_RESULT_CONSENSUS_V7_FREE_FALLBACK/);
+  assert.match(src, /PRIMARY=\["FOTMOB","FLASHSCORE_OR_FOOTBALL_DATA"\]/);
   assert.match(src, /SUPPORTING=\["ESPN","THESPORTSDB"\]/);
-  assert.match(src, /STRICT_PRE_KICKOFF_PLUS_EXACT_HT_FT_CONSENSUS_OF_FOTMOB_AND_FLASHSCORE/);
+  assert.match(src, /STRICT_PRE_KICKOFF_PLUS_EXACT_HT_FT_CONSENSUS_OF_FOTMOB_AND_\(FLASHSCORE_OR_FOOTBALL_DATA\)/);
+  assert.match(src, /FOOTBALL_DATA/);
+  assert.match(src, /FREE_CSV_HT_FT_WHEN_FLASHSCORE_MISSING/);
   assert.match(src, /if\(key\(rs\[0\]\)!==key\(rs\[1\]\)\)/);
   assert.match(src, /reason:"PRIMARY_SCORE_CONFLICT"/);
   assert.match(src, /reason:"PRIMARY_CONSENSUS_INCOMPLETE"/);
