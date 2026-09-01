@@ -87,14 +87,14 @@ async function loadPairedSuite() {
   source = replaceOnce(
     source,
     "if(inEval){const rb=record(baselineMetrics,{mm:pred.multiMarket,htGrid:null,ftGrid:null,pred,target});",
-    "if(inEval){const productionGrid=pred.__researchFullScoreGrid;if(!productionGrid?.ht||!productionGrid?.ft)throw new Error('BASELINE_FULL_SCORE_GRID_TAP_MISSING');const rb=record(baselineMetrics,{mm:pred.multiMarket,htGrid:productionGrid.ht,ftGrid:productionGrid.ft,pred,target});",
+    "if(inEval){const productionGrid=pred.__researchFullScoreGrid;if(!productionGrid?.ht||!productionGrid?.ft)throw new Error('BASELINE_FULL_SCORE_GRID_TAP_MISSING');const rb=record(baselineMetrics,{mm:pred.multiMarket,htGrid:productionGrid.ht,ftGrid:productionGrid.ft,pred,target});if(typeof options.rowObserver==='function')options.rowObserver({kind:'baseline',target,mm:pred.multiMarket});",
     'GROUP_A_SCOREGRID_GLOBAL_BASELINE_RECORD_DRIFT',
   );
 
   source = replaceOnce(
     source,
     "const rq=record(s.metrics,{mm,htGrid,ftGrid,pred:null,target});segAdd(s.segments,target.competitionSegment||'UNKNOWN','challenger',rq);s.eligible++;",
-    "const productionGrid=pred.__researchFullScoreGrid;if(!productionGrid?.ht||!productionGrid?.ft)throw new Error('BASELINE_FULL_SCORE_GRID_TAP_MISSING');const rbq=record(s.baselineMetrics,{mm:pred.multiMarket,htGrid:productionGrid.ht,ftGrid:productionGrid.ft,pred,target});segAdd(s.baselineSegments,target.competitionSegment||'UNKNOWN','baseline',rbq);const rq=record(s.metrics,{mm,htGrid,ftGrid,pred:null,target});segAdd(s.segments,target.competitionSegment||'UNKNOWN','challenger',rq);s.eligible++;",
+    "const productionGrid=pred.__researchFullScoreGrid;if(!productionGrid?.ht||!productionGrid?.ft)throw new Error('BASELINE_FULL_SCORE_GRID_TAP_MISSING');const rbq=record(s.baselineMetrics,{mm:pred.multiMarket,htGrid:productionGrid.ht,ftGrid:productionGrid.ft,pred,target});segAdd(s.baselineSegments,target.competitionSegment||'UNKNOWN','baseline',rbq);const rq=record(s.metrics,{mm,htGrid,ftGrid,pred:null,target});segAdd(s.segments,target.competitionSegment||'UNKNOWN','challenger',rq);if(typeof options.rowObserver==='function')options.rowObserver({kind:'challenger',name,target,mm});s.eligible++;",
     'GROUP_A_SCOREGRID_PAIRED_BASELINE_RECORD_DRIFT',
   );
 
