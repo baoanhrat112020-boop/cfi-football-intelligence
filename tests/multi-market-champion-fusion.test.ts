@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMultiMarketChampionFusion, CHAMPION_FUSION_VERSION } from '../src/prediction/multi-market-champion-fusion.ts';
+import { buildMultiMarketChampionFusion, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_SCORELINE_CONTRACT } from '../src/prediction/multi-market-champion-fusion.ts';
 
 const grid=(rows:Array<[string,number]>)=>rows.map(([score,probability])=>{const [h,a]=score.split('-').map(Number);return{score,home:h,away:a,total:h+a,probability};});
 const incumbent=grid([['0-0',.16],['1-0',.24],['0-1',.16],['1-1',.20],['2-0',.10],['0-2',.06],['2-1',.05],['1-2',.03]]);
@@ -30,6 +30,21 @@ test('Champion Fusion creates one coherent shadow distribution for every market'
   assert.ok(Math.abs(x.champion['3+ HT']-x.multiMarket.overUnder.ht['2.5'].over.fullWin)<1e-9);
   assert.ok(Math.abs(x.champion['7+ FT']-x.multiMarket.overUnder.ft['6.5'].over.fullWin)<1e-9);
   assert.deepEqual(x.champion.thresholds['3+ HT'],x.champion['3+ HT']);
+});
+
+test('Champion Fusion exact-score output is natively Top-1 only',()=>{
+  const x:any=run();
+  assert.equal(x.scorelineContract,CHAMPION_FUSION_SCORELINE_CONTRACT);
+  assert.equal(x.scorelineContract,'TOP1_HT_PLUS_TOP1_FT');
+  assert.equal(x.champion.scorelineContract,'TOP1_HT_PLUS_TOP1_FT');
+  assert.ok(x.champion.top1HT?.score);
+  assert.ok(Number.isFinite(Number(x.champion.top1HT?.probability)));
+  assert.ok(x.champion.top1FT?.score);
+  assert.ok(Number.isFinite(Number(x.champion.top1FT?.probability)));
+  assert.deepEqual(x.champion['Top-1 HT'],x.champion.top1HT);
+  assert.deepEqual(x.champion['Top-1 FT'],x.champion.top1FT);
+  const serialized=JSON.stringify(x);
+  for(const forbidden of ['top3HT','top3FT','Top-3 HT','Top-3 FT'])assert.equal(serialized.includes(forbidden),false,forbidden);
 });
 
 test('Champion Fusion abstains instead of pretending confidence on thin evidence',()=>{
