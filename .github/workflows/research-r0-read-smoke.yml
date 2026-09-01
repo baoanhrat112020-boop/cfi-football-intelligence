@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      CFI_SUPABASE_URL: ${{ secrets.CFI_SUPABASE_URL }}
+      CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
       CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
@@ -20,11 +20,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Verify privileged research credentials are wired
+      - name: Verify privileged research credential is wired
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${CFI_SUPABASE_URL:-}" || { echo 'CFI_SUPABASE_URL secret is missing'; exit 2; }
           test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
       - name: Export strict-prior R0 corpus read-only
         shell: bash
