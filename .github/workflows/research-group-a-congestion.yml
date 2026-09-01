@@ -1,0 +1,98 @@
+name: CFI Group A Congestion Replay
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/research-read-adapter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
+      CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify pinned production baseline
+        run: node research/production-baseline-lock.mjs
+      - name: Verify privileged research credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
+      - name: Export R0 and Group A read-only inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node research/export-r0-corpus.mjs "$RUNNER_TEMP/r0.json"
+          node research/export-group-a-features.mjs "$RUNNER_TEMP/group-a.json"
+      - name: Run opponent-conditioned congestion V1
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types research/opponent-conditioned-congestion-v1.mjs "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json" "$RUNNER_TEMP/congestion-result.json"
+      - name: Print research verdict
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - "$RUNNER_TEMP/congestion-result.json" <<'NODE'
+          import fs from 'node:fs';
+          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const champion=Object.fromEntries(Object.keys(x.metrics.challenger.champion).map(k=>[k,{
+            n:x.metrics.challenger.champion[k].n,
+            baselineBrier:x.metrics.productionBaseline.champion[k].brier,
+            challengerBrier:x.metrics.challenger.champion[k].brier,
+            delta:x.metrics.challenger.champion[k].brier-x.metrics.productionBaseline.champion[k].brier,
+          }]));
+          console.log(JSON.stringify({
+            status:x.status,
+            version:x.version,
+            baseline:x.baseline,
+            strictPrior:x.strictPrior,
+            sameDateLeakage:x.sameDateLeakage,
+            futureLeakage:x.futureLeakage,
+            noReconstruction:x.noReconstruction,
+            decisionUse:x.decisionUse,
+            productionMutationAllowed:x.productionMutationAllowed,
+            replayPolicy:x.replayPolicy,
+            coverage:x.coverage,
+            learner:x.learner,
+            aggregate:x.aggregate,
+            champion,
+            oneXTwo:{baseline:x.metrics.productionBaseline.oneXTwo,challenger:x.metrics.challenger.oneXTwo},
+            overUnder:{baseline:x.metrics.productionBaseline.overUnder,challenger:x.metrics.challenger.overUnder},
+            asianHandicap:{baseline:x.metrics.productionBaseline.asianHandicap,challenger:x.metrics.challenger.asianHandicap},
+            scoreline:{baseline:x.metrics.productionBaseline.scoreline,challenger:x.metrics.challenger.scoreline,comparison:x.scorelineComparison},
+            directionalSwap:x.directionalSwap,
+            determinism:x.determinism,
+            crossMarketCoherence:x.crossMarketCoherence,
+            hardBlockers:x.hardBlockers,
+            shadowEligible:x.shadowEligible,
+            promotionDecision:x.promotionDecision,
+            productionEligible:x.productionEligible,
+          },null,2));
+          if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) process.exit(3);
+          if(x.decisionUse!==false||x.productionMutationAllowed!==false||x.shadowEligible!==false||x.promotionDecision!=='HOLD') process.exit(4);
+          if(x.crossMarketCoherence.status!=='PASS'||x.directionalSwap.status!=='PASS') process.exit(5);
+          NODE
+      - name: Upload research result
+        uses: actions/upload-artifact@v4
+        with:
+          name: group-a-congestion-result
+          path: ${{ runner.temp }}/congestion-result.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove privileged input exports
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json"
