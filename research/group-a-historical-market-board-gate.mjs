@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { fairThreeWayProbabilities, fairTwoWayProbabilities } from './market-snapshot-contract.mjs';
-import { linkForwardMarketCaptureBatch } from './forward-market-canonical-linker.mjs';
+import { linkForwardMarketCaptureToCanonicalFixture } from './forward-market-canonical-linker.mjs';
 import { runGroupAFullSuitePrimaryV2ScoreGrid } from './group-a-primary-v2-scoregrid-gate.mjs';
 import { GROUP_A_CHALLENGERS } from './group-a-full-suite-v1.mjs';
 import { MULTIMARKET_MIN_SAMPLES } from './multimarket-promotion-gate-v2.mjs';
@@ -14,6 +14,7 @@ export const GROUP_A_HISTORICAL_MARKET_BOARD_GATE_V1 = Object.freeze({
   noReconstruction: true,
   sourceSemanticTimingAllowed: true,
   fabricatedCaptureTimestampAllowed: false,
+  pairedBaselineEvaluation: true,
   minimumPairedExecutableFixtures: MULTIMARKET_MIN_SAMPLES,
   decisionEdgeFloor: 0.03,
   outcomeBrierRegressionTolerance: 0.001,
@@ -62,20 +63,34 @@ function evidenceAudit(doc) {
 }
 
 function linkEvidence(doc, fixtures) {
-  const captures = (doc.rows ?? []).map(row => ({
-    targetDate: row.date,
-    homeTeam: row.home_team,
-    awayTeam: row.away_team,
-    externalFixtureKey: row.identity_key,
-  }));
-  const linked = linkForwardMarketCaptureBatch(captures, fixtures);
+  const fixturesByDate = new Map();
+  const fixtureById = new Map();
+  for (const fixture of fixtures) {
+    fixtureById.set(fixture.fixtureId, fixture);
+    const bucket = fixturesByDate.get(fixture.targetDate) ?? [];
+    bucket.push(fixture);
+    fixturesByDate.set(fixture.targetDate, bucket);
+  }
   const rows = [];
+  const reasons = {};
+  let verified = 0;
   let resultMismatch = 0;
-  for (let i = 0; i < linked.rows.length; i += 1) {
-    const link = linked.rows[i];
-    const evidence = doc.rows[i];
-    if (link.status !== 'VERIFIED_RESEARCH_LINK') continue;
-    const canonical = fixtures.find(row => row.fixtureId === link.fixture.fixtureId);
+  for (const evidence of doc.rows ?? []) {
+    const targetDate = text(evidence.date);
+    const sameDateFixtures = fixturesByDate.get(targetDate) ?? [];
+    const link = linkForwardMarketCaptureToCanonicalFixture({
+      targetDate,
+      homeTeam: evidence.home_team,
+      awayTeam: evidence.away_team,
+      externalFixtureKey: evidence.identity_key,
+    }, sameDateFixtures);
+    if (link.status !== 'VERIFIED_RESEARCH_LINK') {
+      const reason = link.reason ?? 'UNKNOWN';
+      reasons[reason] = (reasons[reason] ?? 0) + 1;
+      continue;
+    }
+    verified += 1;
+    const canonical = fixtureById.get(link.fixture.fixtureId);
     if (!canonical) continue;
     if (Number(evidence.actual_ft_home) !== canonical.actualFt.home || Number(evidence.actual_ft_away) !== canonical.actualFt.away) {
       resultMismatch += 1;
@@ -96,7 +111,12 @@ function linkEvidence(doc, fixtures) {
     unique.set(id, bucket[0]);
   }
   return {
-    linked,
+    linked: {
+      total: doc.rows?.length ?? 0,
+      verified,
+      blocked: (doc.rows?.length ?? 0) - verified,
+      reasons,
+    },
     unique,
     resultMismatch,
     duplicateFixtureEvidence,
@@ -258,16 +278,28 @@ export function applyHistoricalMarketBoardGate(result, observations, marketEvide
   if (linkage.resultMismatch > 0) globalBlockers.push('HISTORICAL_MARKET_RESULT_MISMATCH');
   if (linkage.duplicateFixtureEvidence > 0) globalBlockers.push('HISTORICAL_MARKET_DUPLICATE_CANONICAL_EVIDENCE');
 
-  const baselineBoard = initBoard();
-  for (const row of observations.baseline.values()) evaluateObservation(baselineBoard, row, linkage.unique, options);
-  const baselineFinished = finishBoard(baselineBoard);
+  const globalBaselineBoard = initBoard();
+  for (const row of observations.baseline.values()) evaluateObservation(globalBaselineBoard, row, linkage.unique, options);
+  const globalBaselineFinished = finishBoard(globalBaselineBoard);
   const challengers = {};
+  const pairedBaselineByCandidate = {};
+
   for (const name of GROUP_A_CHALLENGERS) {
+    const candidateRows = observations.challengers.get(name) ?? new Map();
+    const pairedBaselineBoard = initBoard();
     const candidateBoard = initBoard();
-    for (const row of observations.challengers.get(name)?.values() ?? []) evaluateObservation(candidateBoard, row, linkage.unique, options);
+    for (const [id, row] of candidateRows) {
+      const baselineRow = observations.baseline.get(id);
+      if (baselineRow) evaluateObservation(pairedBaselineBoard, baselineRow, linkage.unique, options);
+      evaluateObservation(candidateBoard, row, linkage.unique, options);
+    }
+    const baselineFinished = finishBoard(pairedBaselineBoard);
     const candidateFinished = finishBoard(candidateBoard);
-    const sampleReady = globalBlockers.length === 0 && candidateFinished.pairedExecutableFixtures >= Number(options.minimumPairedExecutableFixtures ?? GROUP_A_HISTORICAL_MARKET_BOARD_GATE_V1.minimumPairedExecutableFixtures);
+    pairedBaselineByCandidate[name] = baselineFinished;
+    const pairCountMatches = baselineFinished.pairedExecutableFixtures === candidateFinished.pairedExecutableFixtures;
+    const sampleReady = globalBlockers.length === 0 && pairCountMatches && candidateFinished.pairedExecutableFixtures >= Number(options.minimumPairedExecutableFixtures ?? GROUP_A_HISTORICAL_MARKET_BOARD_GATE_V1.minimumPairedExecutableFixtures);
     const boardRegressions = [];
+    if (!pairCountMatches) boardRegressions.push('HISTORICAL_MARKET_PAIRED_BASELINE_COVERAGE_MISMATCH');
     if (sampleReady && candidateFinished.outcomeBrier !== null && baselineFinished.outcomeBrier !== null && candidateFinished.outcomeBrier - baselineFinished.outcomeBrier > Number(options.outcomeBrierRegressionTolerance ?? GROUP_A_HISTORICAL_MARKET_BOARD_GATE_V1.outcomeBrierRegressionTolerance)) boardRegressions.push('HISTORICAL_MARKET_OUTCOME_BRIER_REGRESSION');
     if (sampleReady && candidateFinished.simulatedBets >= Number(options.minimumRoiComparisonBets ?? GROUP_A_HISTORICAL_MARKET_BOARD_GATE_V1.minimumRoiComparisonBets) && baselineFinished.simulatedBets >= Number(options.minimumRoiComparisonBets ?? GROUP_A_HISTORICAL_MARKET_BOARD_GATE_V1.minimumRoiComparisonBets) && candidateFinished.simulatedRoi !== null && baselineFinished.simulatedRoi !== null && candidateFinished.simulatedRoi - baselineFinished.simulatedRoi < -Number(options.roiRegressionTolerance ?? GROUP_A_HISTORICAL_MARKET_BOARD_GATE_V1.roiRegressionTolerance)) boardRegressions.push('HISTORICAL_MARKET_BOARD_UTILITY_REGRESSION');
     const current = result.challengers?.[name] ?? {};
@@ -285,7 +317,8 @@ export function applyHistoricalMarketBoardGate(result, observations, marketEvide
           simulatedRoi: candidateFinished.simulatedRoi !== null && baselineFinished.simulatedRoi !== null ? candidateFinished.simulatedRoi - baselineFinished.simulatedRoi : null,
           simulatedPnlUnits: candidateFinished.simulatedPnlUnits - baselineFinished.simulatedPnlUnits,
         },
-        selectionChanges: selectionChanges(baselineBoard, candidateBoard),
+        selectionChanges: selectionChanges(pairedBaselineBoard, candidateBoard),
+        pairedFixtureCountMatches: pairCountMatches,
         sampleReady,
         boardRegressions,
       },
@@ -313,7 +346,8 @@ export function applyHistoricalMarketBoardGate(result, observations, marketEvide
         duplicateFixtureEvidence: linkage.duplicateFixtureEvidence,
       },
       globalBlockers: [...new Set(globalBlockers)],
-      baseline: baselineFinished,
+      globalBaselineDiagnostic: globalBaselineFinished,
+      pairedBaselineByCandidate,
     },
     challengers,
     groupAVerdict: Object.values(challengers).every(candidate => candidate.hardBlockers.length === 0) ? 'PASS' : 'HOLD',
@@ -358,6 +392,7 @@ async function main() {
     globalBlockers: result.historicalMarketBoardEvaluation.globalBlockers,
     challengers: Object.fromEntries(Object.entries(result.challengers).map(([name, candidate]) => [name, {
       pairedExecutableFixtures: candidate.historicalMarketBoard?.challenger?.pairedExecutableFixtures ?? 0,
+      pairedBaselineFixtures: candidate.historicalMarketBoard?.baseline?.pairedExecutableFixtures ?? 0,
       sampleReady: candidate.historicalMarketBoard?.sampleReady ?? false,
       boardRegressions: candidate.historicalMarketBoard?.boardRegressions ?? [],
       hardBlockers: candidate.hardBlockers,
