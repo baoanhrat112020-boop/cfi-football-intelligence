@@ -30,6 +30,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Production deploys are gated by the full current contract suite.
       - run: npm test
       - name: Verify or configure BigDB production credential
         env:
