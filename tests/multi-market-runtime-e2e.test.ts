@@ -38,9 +38,9 @@ test('production bundle exposes single-core multi-market shadow without mutating
     assert.equal(response.status,200);
     const body:any=await response.json();
     assert.equal(body.status,'SUCCESS');
-    assert.equal(body.engine,'CFI_FINAL_V5.2.5');
-    assert.equal(body.runtime.version,'CFI_SIX_TARGET_RUNTIME_V1.4');
-    assert.equal(body.runtime.predictionPath,'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2');
+    assert.equal(body.engine,'CFI_FINAL_V5.3.0');
+    assert.equal(body.runtime.version,'CFI_PRIMARY_TOP1_RUNTIME_V2');
+    assert.equal(body.runtime.predictionPath,'NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_1_2');
     assert.equal(body.primaryTargets?.count??body.sixTargetMatrix?.primaryTargets?.count??6,6);
     assert.ok(body.markets?.['3+ HT']);assert.ok(body.markets?.['7+ FT']);assert.ok(body.markets?.['Other HT']);assert.ok(body.markets?.['Other FT']);
     assert.ok(body.scoreline?.ht?.final);assert.ok(body.scoreline?.ft?.final);
