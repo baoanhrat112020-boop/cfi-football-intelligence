@@ -16,7 +16,7 @@ export async function exportR0Corpus({ baseUrl, serviceRoleKey, key, fetchImpl =
   const teamNames = new Map(teams.map(t => [t.team_id, t.canonical_name]));
 
   const filter = [
-    'select=fixture_id,match_date,home_team_id,away_team_id,ht_home,ht_away,ft_home,ft_away,status',
+    'select=fixture_id,match_date,home_team_id,away_team_id,ht_home,ht_away,ft_home,ft_away,status,competition_key,competition_name,country,season,competition_segment',
     `match_date=gte.${R0_DATASET_CONTRACT.warmupStart}`,
     `match_date=lt.${R0_DATASET_CONTRACT.prospectiveHoldoutStart}`,
     'order=match_date.asc,fixture_id.asc',
@@ -29,6 +29,8 @@ export async function exportR0Corpus({ baseUrl, serviceRoleKey, key, fetchImpl =
   const rows = fixtures.map(f => ({
     fixture_id: f.fixture_id,
     match_date: f.match_date,
+    home_team_id: f.home_team_id,
+    away_team_id: f.away_team_id,
     home_team: teamNames.get(f.home_team_id) ?? null,
     away_team: teamNames.get(f.away_team_id) ?? null,
     ht_home: f.ht_home,
@@ -36,6 +38,11 @@ export async function exportR0Corpus({ baseUrl, serviceRoleKey, key, fetchImpl =
     ft_home: f.ft_home,
     ft_away: f.ft_away,
     status: f.status,
+    competition_key: f.competition_key ?? null,
+    competition_name: f.competition_name ?? null,
+    country: f.country ?? null,
+    season: f.season ?? null,
+    competition_segment: f.competition_segment ?? null,
   })).filter(f => f.home_team && f.away_team);
 
   if (rows.length === 0) {
@@ -45,6 +52,12 @@ export async function exportR0Corpus({ baseUrl, serviceRoleKey, key, fetchImpl =
     throw new Error('R0_HOLDOUT_LEAKAGE');
   }
 
+  const metadataCoverage = {
+    competition: rows.filter(r => r.competition_key).length,
+    season: rows.filter(r => r.season).length,
+    segment: rows.filter(r => r.competition_segment).length,
+  };
+
   return {
     manifestVersion: R0_DATASET_CONTRACT.manifestVersion,
     exportedAt: new Date().toISOString(),
@@ -52,6 +65,7 @@ export async function exportR0Corpus({ baseUrl, serviceRoleKey, key, fetchImpl =
     sourceFixtureCount: fixtures.length,
     droppedUnresolvedTeamCount: fixtures.length - rows.length,
     privilegedResearchRead: true,
+    metadataCoverage,
     fixtures: rows,
   };
 }
@@ -66,6 +80,7 @@ async function main() {
     fixtureCount: corpus.fixtureCount,
     manifestVersion: corpus.manifestVersion,
     privilegedResearchRead: corpus.privilegedResearchRead,
+    metadataCoverage: corpus.metadataCoverage,
   }) + '\n');
 }
 
