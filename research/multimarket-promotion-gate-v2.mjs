@@ -1,6 +1,25 @@
-export const MULTIMARKET_PROMOTION_GATE_VERSION='CFI_MULTIMARKET_PROMOTION_SCORE_V2';
+export const MULTIMARKET_PROMOTION_GATE_VERSION='CFI_MULTIMARKET_PROMOTION_SCORE_V2_1';
+export const MULTIMARKET_RESEARCH_CONTRACT_VERSION='CFI_MULTI_MARKET_RESEARCH_CONTRACT_V2_1';
 export const MULTIMARKET_PROMOTION_THRESHOLD=80;
 export const MULTIMARKET_MIN_SAMPLES=30;
+export const REQUIRED_OUTPUT_GROUPS=Object.freeze([
+  'CHAMPION_6',
+  'SCORELINE_HT',
+  'SCORELINE_FT',
+  'TOP3_HT',
+  'TOP3_FT',
+  '1X2_HT',
+  '1X2_FT',
+  'OU_HT',
+  'OU_FT',
+  'AH_HT',
+  'AH_FT',
+  'CALIBRATION_UNCERTAINTY_ABSTENTION',
+  'COHERENCE',
+  'DIRECTIONAL_SWAP',
+  'DETERMINISM',
+  'SEGMENT_ROBUSTNESS',
+]);
 export const COMPONENT_WEIGHTS=Object.freeze({
   accuracyBrier:20,
   calibrationEce:15,
@@ -11,20 +30,47 @@ export const COMPONENT_WEIGHTS=Object.freeze({
   determinismSwapDiversity:5,
   decisionUtilityMarketComparison:10,
 });
-const REQUIRED_BOOLEAN_GATES=Object.freeze(['strictPrior','temporalLeakage','validProbability','calibrationFloor','forecastCollapse','determinism','swap','crossMarketCoherence','noReconstruction','noHoldoutTuning']);
+const REQUIRED_BOOLEAN_GATES=Object.freeze(['strictPrior','temporalLeakage','validProbability','calibrationFloor','forecastCollapse','determinism','swap','crossMarketCoherence','noReconstruction','noHoldoutTuning','uncertaintyAbstention']);
 const clamp100=x=>Math.max(0,Math.min(100,Number.isFinite(Number(x))?Number(x):0));
+const finite=x=>Number.isFinite(Number(x));
+function validateOutputCoverage(input,hardFailures){
+  if(input.contractVersion!==MULTIMARKET_RESEARCH_CONTRACT_VERSION)hardFailures.push('MULTIMARKET_RESEARCH_CONTRACT_VERSION_REQUIRED');
+  const coverage=input.outputCoverage??{};
+  for(const group of REQUIRED_OUTPUT_GROUPS)if(coverage[group]!==true)hardFailures.push(`OUTPUT_${group}_MISSING`);
+}
+function validateNoRegression(input,hardFailures){
+  const comparison=input.baselineComparison??{};
+  if(comparison.paired!==true)hardFailures.push('PAIRED_BASELINE_REQUIRED');
+  if(comparison.baselineReproducible!==true)hardFailures.push('REPRODUCIBLE_BASELINE_REQUIRED');
+  if(comparison.aggregateNetImprovementOrPreservation!==true)hardFailures.push('MULTIMARKET_AGGREGATE_NO_IMPROVEMENT');
+  if(comparison.noUnacceptableRegression!==true)hardFailures.push('MULTIMARKET_UNACCEPTABLE_REGRESSION');
+  const required=Array.isArray(comparison.requiredGroups)?comparison.requiredGroups:REQUIRED_OUTPUT_GROUPS;
+  const perGroup=comparison.perGroup??{};
+  for(const group of required){
+    const row=perGroup[group];
+    if(!row||row.evaluated!==true)hardFailures.push(`BASELINE_COMPARISON_${group}_MISSING`);
+    else if(row.unacceptableRegression===true)hardFailures.push(`BASELINE_REGRESSION_${group}`);
+  }
+  if(comparison.aggregateBrierDelta!=null&&!finite(comparison.aggregateBrierDelta))hardFailures.push('INVALID_AGGREGATE_BRIER_DELTA');
+  if(comparison.aggregateLogLossDelta!=null&&!finite(comparison.aggregateLogLossDelta))hardFailures.push('INVALID_AGGREGATE_LOGLOSS_DELTA');
+}
 export function evaluateMultiMarketPromotion(input={}){
   const components=input.components??{};
   const gates=input.gates??{};
   const hardFailures=[];
   for(const gate of REQUIRED_BOOLEAN_GATES)if(gates[gate]!==true)hardFailures.push(`GATE_${gate.toUpperCase()}_FAIL`);
+  validateOutputCoverage(input,hardFailures);
+  validateNoRegression(input,hardFailures);
   const sampleSupport=Number(input.sampleSupport??0);
   if(!Number.isSafeInteger(sampleSupport)||sampleSupport<MULTIMARKET_MIN_SAMPLES)hardFailures.push('INSUFFICIENT_SAMPLE_SUPPORT');
   if(input.externalPretrained===true&&input.matchedCleanControl!==true&&input.prospectiveUnseenEvidence!==true)hardFailures.push('K017_MATCHED_CLEAN_OR_PROSPECTIVE_REQUIRED');
+  if(input.decisionUse===true)hardFailures.push('RESEARCH_GATE_CANNOT_ENABLE_DECISION_USE');
+  if(input.productionMutationAllowed===true)hardFailures.push('PRODUCTION_MUTATION_FORBIDDEN');
   let score=0;
   const normalized={};
   for(const [key,weight] of Object.entries(COMPONENT_WEIGHTS)){const value=clamp100(components[key]);normalized[key]=value;score+=value*weight/100;}
   score=Math.round(score*100)/100;
-  const shadowEligible=hardFailures.length===0&&score>=MULTIMARKET_PROMOTION_THRESHOLD;
-  return {version:MULTIMARKET_PROMOTION_GATE_VERSION,status:hardFailures.length?'FAIL_HARD_GATE':shadowEligible?'SHADOW_ELIGIBLE':'RESEARCH_ONLY',score,threshold:MULTIMARKET_PROMOTION_THRESHOLD,sampleSupport,minSamples:MULTIMARKET_MIN_SAMPLES,components:normalized,hardFailures,shadowEligible,productionEligible:false,productionPromotionRequired:true,baselineLock:'R0_IMMUTABLE'};
+  const uniqueFailures=[...new Set(hardFailures)];
+  const shadowEligible=uniqueFailures.length===0&&score>=MULTIMARKET_PROMOTION_THRESHOLD;
+  return {version:MULTIMARKET_PROMOTION_GATE_VERSION,contractVersion:MULTIMARKET_RESEARCH_CONTRACT_VERSION,status:uniqueFailures.length?'FAIL_HARD_GATE':shadowEligible?'SHADOW_ELIGIBLE':'RESEARCH_ONLY',score,threshold:MULTIMARKET_PROMOTION_THRESHOLD,sampleSupport,minSamples:MULTIMARKET_MIN_SAMPLES,components:normalized,outputCoverage:input.outputCoverage??{},baselineComparison:input.baselineComparison??{},hardFailures:uniqueFailures,shadowEligible,decisionUse:false,researchOnly:true,productionEligible:false,productionPromotionRequired:true,baselineLock:'R0_IMMUTABLE'};
 }
