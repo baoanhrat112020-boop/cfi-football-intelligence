@@ -19,7 +19,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
 const enginePath = path.join(repoRoot, 'src', 'prediction', 'final-engine.ts');
 const RETURN_ANCHOR = "return{status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA'";
-const GRID_INJECTION = "return{__researchFullScoreGrid:{ht:htFinal.map(r=>({...r})),ft:ftFinal.map(r=>({...r}))},status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA'";
+const GRID_INJECTION = "return{__researchFullScoreGrid:{ht:htFinal.map(r=>{const[h,a]=String(r.score).split('-').map(Number);return{...r,home:h,away:a,total:h+a}}),ft:ftFinal.map(r=>{const[h,a]=String(r.score).split('-').map(Number);return{...r,home:h,away:a,total:h+a}})},status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA'";
 
 function count(text, needle) {
   let n = 0;
@@ -46,6 +46,9 @@ function validateGrid(grid, label) {
     if (!Number.isFinite(p) || p < 0) throw new Error(`RESEARCH_SCORE_GRID_${label}_INVALID_PROBABILITY`);
     if (!Number.isSafeInteger(Number(row?.home)) || Number(row.home) < 0 || !Number.isSafeInteger(Number(row?.away)) || Number(row.away) < 0) {
       throw new Error(`RESEARCH_SCORE_GRID_${label}_INVALID_SCORE`);
+    }
+    if (String(row?.score) !== `${Number(row.home)}-${Number(row.away)}` || Number(row?.total) !== Number(row.home) + Number(row.away)) {
+      throw new Error(`RESEARCH_SCORE_GRID_${label}_SCORE_IDENTITY_MISMATCH`);
     }
     sum += p;
   }
