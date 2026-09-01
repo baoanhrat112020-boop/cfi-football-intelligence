@@ -23,10 +23,11 @@ function verifyReplayStrictPrior(replay) {
     return false;
   }
   for (const row of replay.evaluations ?? []) {
+    if (row.reconstructed === true || row.replayedPredictionHistory === true) return false;
+    if (!(Number(row.evidenceCount) > 0)) continue;
     if (!row?.targetTimestamp || !row?.maxEvidenceTimestamp || !(Date.parse(row.maxEvidenceTimestamp) < Date.parse(row.targetTimestamp))) {
       return false;
     }
-    if (row.reconstructed === true || row.replayedPredictionHistory === true) return false;
   }
   return true;
 }
