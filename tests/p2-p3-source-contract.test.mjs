@@ -10,5 +10,9 @@ test('P2 settlement evaluator is immutable-snapshot based and fail-closed for le
 
 test('P3 backfill adds verified missing divisions and reuses existing cron',()=>{
   const s=readFileSync(new URL('../supabase/functions/cfi-historical-backfill/index.ts',import.meta.url),'utf8');
-  for(const token of ["division_code:'EC'","division_code:'SC1'","division_code:'SC2'","division_code:'SC3'",'CFI_BIGDB_SOURCE_EXPANSION_V1','cfi_mm_historical_v2_runs','cfi-multimarket-settlement-eval']) assert.ok(s.includes(token),token);
+  for(const code of ['EC','SC1','SC2','SC3']){
+    const pattern=new RegExp(`division_code\\s*:\\s*['\"]${code}['\"]`);
+    assert.match(s,pattern,`division_code:${code}`);
+  }
+  for(const token of ['CFI_BIGDB_SOURCE_EXPANSION_V1','cfi_mm_historical_v2_runs','cfi-multimarket-settlement-eval']) assert.ok(s.includes(token),token);
 });
