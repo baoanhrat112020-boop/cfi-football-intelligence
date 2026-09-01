@@ -1,0 +1,96 @@
+name: CFI Group A Full Suite
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/research-read-adapter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
+      CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify pinned production baseline
+        run: node research/production-baseline-lock.mjs
+      - name: Verify privileged research credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
+      - name: Export fresh R0 and Group A inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node research/export-r0-corpus.mjs "$RUNNER_TEMP/r0.json"
+          node research/export-group-a-features.mjs "$RUNNER_TEMP/group-a.json"
+      - name: Run Group A full suite under Primary V2 gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types research/group-a-primary-v2-gate.mjs "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json" "$RUNNER_TEMP/group-a-full-suite-result.json"
+      - name: Verify and print Group A verdicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - "$RUNNER_TEMP/group-a-full-suite-result.json" <<'NODE'
+          import fs from 'node:fs';
+          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const expectedPrimary=['3+ HT','7+ FT','Other HT','Other FT','Top-1 HT','Top-1 FT'];
+          const expectedAux=['Top-3 HT','Top-3 FT'];
+          if(JSON.stringify(x.evaluationContract?.primaryTargets)!==JSON.stringify(expectedPrimary)) process.exit(3);
+          if(JSON.stringify(x.evaluationContract?.auxiliaryDiagnostics)!==JSON.stringify(expectedAux)) process.exit(4);
+          if(x.evaluationContract?.top3GateUse!==false) process.exit(5);
+          if(x.baseline?.engine!=='CFI_FINAL_V5.3.0'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2'||x.baseline?.primaryContract!=='CFI_2_METHODS_X_6_TARGETS_V2'||x.baseline?.multiMarketVersion!=='CFI_MULTI_MARKET_V1') process.exit(6);
+          if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) process.exit(7);
+          if(x.decisionUse!==false||x.productionMutationAllowed!==false) process.exit(8);
+          const summary={};
+          for(const [name,c] of Object.entries(x.challengers??{})){
+            if(c.decisionUse!==false||c.productionMutationAllowed!==false||c.shadowEligible!==false||c.promotionDecision!=='HOLD'||c.productionEligible!==false) process.exit(9);
+            if(c.evaluationContract?.top3GateUse!==false) process.exit(10);
+            summary[name]={
+              eligible:c.coverage?.eligible??0,
+              active:c.coverage?.active??0,
+              abstain:c.coverage?.abstain??0,
+              aggregate:c.aggregate,
+              primaryEvaluation:c.primaryEvaluation,
+              auxiliaryDiagnostics:c.auxiliaryDiagnostics,
+              multiMarketEvaluation:c.multiMarketEvaluation,
+              regressions:c.regressions,
+              hardBlockers:c.hardBlockers,
+              promotionDecision:c.promotionDecision,
+            };
+          }
+          console.log(JSON.stringify({
+            status:x.status,
+            baseline:x.baseline,
+            evaluationContract:x.evaluationContract,
+            coverage:x.coverage,
+            groupAVerdict:x.groupAVerdict,
+            determinism:x.determinism,
+            challengers:summary,
+          },null,2));
+          NODE
+      - name: Upload Group A result
+        uses: actions/upload-artifact@v4
+        with:
+          name: group-a-full-suite-primary-v2
+          path: ${{ runner.temp }}/group-a-full-suite-result.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove privileged input exports
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json"
