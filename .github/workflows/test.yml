@@ -22,3 +22,28 @@ jobs:
       - run: npm test
       - name: Verify Cloudflare Worker bundle
         run: npx wrangler deploy --dry-run --outdir /tmp/cfi-worker-dry-run
+      - name: Verify pinned production baseline before DB smoke
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/research-read-adapter'
+        run: node research/production-baseline-lock.mjs
+      - name: DB-backed R0 read smoke (read-only)
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/research-read-adapter'
+        env:
+          CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
+          CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CFI_SUPABASE_SERVICE_ROLE_KEY:-}" || { echo 'CFI_SUPABASE_SERVICE_ROLE_KEY secret is missing'; exit 2; }
+          OUT="$RUNNER_TEMP/r0-corpus.json"
+          node research/export-r0-corpus.mjs "$OUT" > "$RUNNER_TEMP/r0-summary.json"
+          node --input-type=module - "$OUT" <<'NODE'
+          import fs from 'node:fs';
+          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          if(x.manifestVersion!=='CFI_TIME_MACHINE_V2') throw new Error(`UNEXPECTED_MANIFEST:${x.manifestVersion}`);
+          if(x.privilegedResearchRead!==true) throw new Error('PRIVILEGED_RESEARCH_READ_NOT_PROVEN');
+          if(!Number.isInteger(x.fixtureCount)||x.fixtureCount<=0) throw new Error('EMPTY_R0_CORPUS');
+          if(!Array.isArray(x.fixtures)||x.fixtures.length!==x.fixtureCount) throw new Error('R0_COUNT_MISMATCH');
+          if(x.fixtures.some(r=>String(r.match_date)>='2026-08-20')) throw new Error('R0_HOLDOUT_LEAKAGE');
+          console.log(JSON.stringify({status:'PASS',fixtureCount:x.fixtureCount,sourceFixtureCount:x.sourceFixtureCount,droppedUnresolvedTeamCount:x.droppedUnresolvedTeamCount,privilegedResearchRead:x.privilegedResearchRead,prospectiveHoldoutPreserved:true,decisionUse:false,productionMutation:false},null,2));
+          NODE
+          rm -f "$OUT" "$RUNNER_TEMP/r0-summary.json"
