@@ -33,7 +33,9 @@ test('official prediction persists coherent Top-1-only Champion Fusion shadow',(
   for(const forbidden of ['top3HT','top3FT','Top-3 HT','Top-3 FT'])assert.equal(JSON.stringify(prediction.championFusion).includes(forbidden),false,forbidden);
   const output:any=buildCfiOutputV3(prediction,{input_mode:'SINGLE_MATCH'});
   assert.equal(output.championFusion.version,'CFI_MULTI_MARKET_CHAMPION_FUSION_V1');
-  assert.equal(output.championFusion.scorelineContract,'TOP1_HT_PLUS_TOP1_FT');
+  assert.equal(output.championFusion.champion?.scorelineContract,'TOP1_HT_PLUS_TOP1_FT');
+  assert.ok(output.championFusion.champion?.top1HT?.score);
+  assert.ok(output.championFusion.champion?.top1FT?.score);
   assert.equal(output.championFusion.decisionUse,false);
   assert.match(output.renderedPracticalReport,/CHAMPION FUSION:/);
   for(const forbidden of ['top3HT','top3FT','Top-3 HT','Top-3 FT'])assert.equal(JSON.stringify(output.championFusion).includes(forbidden),false,forbidden);
