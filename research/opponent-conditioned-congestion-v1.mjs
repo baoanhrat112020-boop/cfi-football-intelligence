@@ -26,6 +26,8 @@ export const OPPONENT_CONDITIONED_CONGESTION_V1 = Object.freeze({
   ftDeltaCap: 0.40,
   strengthClip: 2,
   lowConfidenceAbstain: 0.40,
+  calibrationBins: 10,
+  swapAuditMax: 256,
 });
 
 const EPS = 1e-12;
@@ -75,7 +77,7 @@ function strengthMap(bundle){
     if(r.strict_prior !== true) throw new Error('CONGESTION_NON_STRICT_PRIOR_STRENGTH_ROW');
     const asOf = String(r.as_of_date ?? '').slice(0,10);
     if(asOf >= OPPONENT_CONDITIONED_CONGESTION_V1.holdoutStart) throw new Error('CONGESTION_STRENGTH_HOLDOUT_LEAKAGE');
-    out.set(`${String(r.team_id)}|${asOf}`,r);
+    out.set(`${String(r.team_id)}|${asOf}`,{net_strength:Number(r.net_strength ?? 0),confidence:Number(r.confidence ?? 0)});
   }
   return out;
 }
@@ -148,25 +150,28 @@ function catLoss(probs,actualIndex){
   return {probs:ps,brier:ps.reduce((s,p,i)=>s+(p-(i===actualIndex?1:0))**2,0)/ps.length,logLoss:-Math.log(Math.max(EPS,ps[actualIndex]))};
 }
 function addMetric(m,loss){ if(!loss)return; m.n++;m.brierSum+=loss.brier;m.logLossSum+=loss.logLoss; }
-function ece(rows,bins=10){
-  if(!rows.length)return null;let out=0;
-  for(let b=0;b<bins;b++){
-    const lo=b/bins,hi=(b+1)/bins,xs=rows.filter(r=>r.p>=lo&&(b===bins-1?r.p<=hi:r.p<hi));
-    if(!xs.length)continue;const ap=xs.reduce((s,r)=>s+r.p,0)/xs.length,ay=xs.reduce((s,r)=>s+r.y,0)/xs.length;
-    out+=xs.length/rows.length*Math.abs(ap-ay);
+function newCalibration(binCount){ return {binCount,bins:Array.from({length:binCount},()=>({n:0,sumP:0,sumY:0})),total:0}; }
+function addCalibration(cal,loss,actualIndex){
+  if(!loss)return;
+  for(let i=0;i<loss.probs.length;i++){
+    const p=loss.probs[i],y=i===actualIndex?1:0,idx=Math.min(cal.binCount-1,Math.max(0,Math.floor(p*cal.binCount)));
+    const bin=cal.bins[idx];bin.n++;bin.sumP+=p;bin.sumY+=y;cal.total++;
   }
-  return out;
 }
-function addCalibration(rows,loss,actualIndex){ if(!loss)return; for(let i=0;i<loss.probs.length;i++) rows.push({p:loss.probs[i],y:i===actualIndex?1:0}); }
+function finishCalibration(cal){
+  if(!cal.total)return null;let value=0;
+  for(const bin of cal.bins){if(!bin.n)continue;value+=(bin.n/cal.total)*Math.abs(bin.sumP/bin.n-bin.sumY/bin.n);}
+  return value;
+}
 
-function initMetrics(){
+function initMetrics(calibrationBins){
   return {
     champion:Object.fromEntries(CHAMPION.map(m=>[m,newMetric()])),
     oneXTwo:{ht:newMetric(),ft:newMetric()},
     overUnder:{ht:newMetric(),ft:newMetric()},
     asianHandicap:{ht:newMetric(),ft:newMetric()},
     scoreline:{ht:{n:0,top1:0,top3:0,logLossSum:0,logLossAvailable:true},ft:{n:0,top1:0,top3:0,logLossSum:0,logLossAvailable:true}},
-    calibration:[],
+    calibration:newCalibration(calibrationBins),
   };
 }
 function baselineTopRows(pred,part){
@@ -189,7 +194,8 @@ function finishMetrics(m){
     overUnder:{ht:finishMetric(m.overUnder.ht),ft:finishMetric(m.overUnder.ft)},
     asianHandicap:{ht:finishMetric(m.asianHandicap.ht),ft:finishMetric(m.asianHandicap.ft)},
     scoreline:{ht:finishScoreline(m.scoreline.ht),ft:finishScoreline(m.scoreline.ft)},
-    calibrationEce:ece(m.calibration),
+    calibrationEce:finishCalibration(m.calibration),
+    calibrationObservationCount:m.calibration.total,
   };
 }
 
@@ -255,6 +261,7 @@ function swapAudit(htGrid,ftGrid,htAway,htHome,ftAway,ftHome){
   return worst;
 }
 function fnv(text){let h=2166136261;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}return(h>>>0).toString(16).padStart(8,'0');}
+function cappedPush(map,k,value,cap){const arr=map.get(k)??[];arr.push(value);if(arr.length>cap)arr.splice(0,arr.length-cap);map.set(k,arr);}
 
 export function runOpponentConditionedCongestionV1(corpus,featureBundle,options={}){
   const baselineLock=options.skipSourceLock===true?{status:'TEST_ONLY_SKIP'}:verifyProductionBaselineLock(options.baselineLockOptions ?? {});
@@ -267,11 +274,13 @@ export function runOpponentConditionedCongestionV1(corpus,featureBundle,options=
   const htCap=Number(options.htDeltaCap ?? OPPONENT_CONDITIONED_CONGESTION_V1.htDeltaCap),ftCap=Number(options.ftDeltaCap ?? OPPONENT_CONDITIONED_CONGESTION_V1.ftDeltaCap);
   const confidenceFloor=Number(options.lowConfidenceAbstain ?? OPPONENT_CONDITIONED_CONGESTION_V1.lowConfidenceAbstain);
   const evalStart=String(options.evaluationStart ?? OPPONENT_CONDITIONED_CONGESTION_V1.evaluationStart),evalEnd=String(options.evaluationEnd ?? OPPONENT_CONDITIONED_CONGESTION_V1.evaluationEnd);
+  const calibrationBins=Math.max(2,Math.floor(options.calibrationBins ?? OPPONENT_CONDITIONED_CONGESTION_V1.calibrationBins));
+  const swapAuditMax=Math.max(1,Math.floor(options.swapAuditMax ?? OPPONENT_CONDITIONED_CONGESTION_V1.swapAuditMax));
   const teamPrior=new Map(),h2hPrior=new Map(),lastDate=new Map();
   const htModel=new RecursiveRidge(3,ridge),ftModel=new RecursiveRidge(3,ridge);
-  const metrics={productionBaseline:initMetrics(),matchedControl:initMetrics(),challenger:initMetrics()};
+  const metrics={productionBaseline:initMetrics(calibrationBins),matchedControl:initMetrics(calibrationBins),challenger:initMetrics(calibrationBins)};
   const segments=new Map();
-  let priorMissing=0,featureMissing=0,abstain=0,maturitySkipped=0,eligible=0,clipped=0,coherenceFailures=0,swapWorst=0;
+  let priorMissing=0,featureMissing=0,abstain=0,maturitySkipped=0,eligible=0,clipped=0,coherenceFailures=0,swapWorst=0,swapAudited=0;
 
   for(let start=0;start<rows.length;){
     const date=rows[start].matchDate;let end=start+1;while(end<rows.length&&rows[end].matchDate===date)end++;
@@ -305,13 +314,13 @@ export function runOpponentConditionedCongestionV1(corpus,featureBundle,options=
       const rc=recordModel(metrics.matchedControl,{mm:control,htGrid:cHt,ftGrid:cFt,pred:null,target});
       const rq=recordModel(metrics.challenger,{mm:challenger,htGrid:qHt,ftGrid:qFt,pred:null,target});
       segmentAdd(segments,target.competitionSegment,'productionBaseline',rb);segmentAdd(segments,target.competitionSegment,'matchedControl',rc);segmentAdd(segments,target.competitionSegment,'challenger',rq);
-      swapWorst=Math.max(swapWorst,swapAudit(qHt,qFt,adj.htAway,adj.htHome,adj.ftAway,adj.ftHome));
+      if(swapAudited<swapAuditMax){swapWorst=Math.max(swapWorst,swapAudit(qHt,qFt,adj.htAway,adj.htHome,adj.ftAway,adj.ftHome));swapAudited++;}
       eligible++;
     }
     for(const u of updates){htModel.update(u.xh,u.htHome);htModel.update(u.xa,u.htAway);ftModel.update(u.xh,u.ftHome);ftModel.update(u.xa,u.ftAway);}
     for(const f of batch){
-      for(const name of [f.homeTeam,f.awayTeam]){const k=key(name),arr=teamPrior.get(k)??[];arr.push({id:f.id,matchDate:f.matchDate,homeTeam:f.homeTeam,awayTeam:f.awayTeam,ht:f.ht,ft:f.ft});teamPrior.set(k,arr);}
-      const pk=pairKey(f.homeTeam,f.awayTeam),pair= h2hPrior.get(pk)??[];pair.push({id:f.id,matchDate:f.matchDate,homeTeam:f.homeTeam,awayTeam:f.awayTeam,ht:f.ht,ft:f.ft});h2hPrior.set(pk,pair);
+      const compact={id:f.id,matchDate:f.matchDate,homeTeam:f.homeTeam,awayTeam:f.awayTeam,ht:f.ht,ft:f.ft};
+      cappedPush(teamPrior,key(f.homeTeam),compact,historyCap);cappedPush(teamPrior,key(f.awayTeam),compact,historyCap);cappedPush(h2hPrior,pairKey(f.homeTeam,f.awayTeam),compact,historyCap);
       if(f.homeTeamId)lastDate.set(f.homeTeamId,date);if(f.awayTeamId)lastDate.set(f.awayTeamId,date);
     }
     start=end;
@@ -324,19 +333,21 @@ export function runOpponentConditionedCongestionV1(corpus,featureBundle,options=
   if(coherenceFailures)hardBlockers.push('CROSS_MARKET_COHERENCE_FAILURE');
   if(swapWorst>1e-10)hardBlockers.push('DIRECTIONAL_SWAP_SYMMETRY_FAILURE');
   if(!eligible)hardBlockers.push('NO_ELIGIBLE_PAIRED_REPLAY_ROWS');
-  const fingerprint=fnv(JSON.stringify({coverage:{eligible,priorMissing,featureMissing,abstain,maturitySkipped,clipped},learner:{ht:htModel.snapshot(),ft:ftModel.snapshot()},aggregate,segments:finishSegments(segments),swapWorst}));
+  const segmentResult=finishSegments(segments);
+  const fingerprint=fnv(JSON.stringify({coverage:{eligible,priorMissing,featureMissing,abstain,maturitySkipped,clipped},learner:{ht:htModel.snapshot(),ft:ftModel.snapshot()},aggregate,segments:segmentResult,swapWorst,swapAudited}));
   return {
     version:OPPONENT_CONDITIONED_CONGESTION_V1.version,status:'RESEARCH_ONLY',baselineLock,
     baseline:{engine:PRODUCTION_BASELINE_LOCK.engine,runtime:PRODUCTION_BASELINE_LOCK.runtime,primaryContract:PRODUCTION_BASELINE_LOCK.primaryContract,multiMarketVersion:MULTI_MARKET_VERSION,commitSha:PRODUCTION_BASELINE_LOCK.commitSha},
     strictPrior:true,sameDateLeakage:false,futureLeakage:false,noReconstruction:true,decisionUse:false,productionMutationAllowed:false,
-    replayPolicy:{warmupStart:OPPONENT_CONDITIONED_CONGESTION_V1.warmupStart,evaluationStart:evalStart,evaluationEnd:evalEnd,holdoutStart:OPPONENT_CONDITIONED_CONGESTION_V1.holdoutStart,historyCap,minTeamPrior,minOnlineSamples,updatePolicy:'AFTER_COMPLETE_TARGET_DATE_BATCH'},
+    replayPolicy:{warmupStart:OPPONENT_CONDITIONED_CONGESTION_V1.warmupStart,evaluationStart:evalStart,evaluationEnd:evalEnd,holdoutStart:OPPONENT_CONDITIONED_CONGESTION_V1.holdoutStart,historyCap,minTeamPrior,minOnlineSamples,calibrationBins,swapAuditMax,updatePolicy:'AFTER_COMPLETE_TARGET_DATE_BATCH'},
     featurePolicy:{mainStrengthEffect:false,interactionOnlyStrength:true,features:['self_fatigue','self_fatigue_x_opponent_strength','opponent_fatigue_x_self_strength'],strengthClip:OPPONENT_CONDITIONED_CONGESTION_V1.strengthClip,confidenceFloor,onlineLearner:'DATE_BATCHED_RECURSIVE_RIDGE'},
-    coverage:{fixtureCount:rows.length,eligible,priorMissing,featureMissing,abstain,maturitySkipped,clipped,coherenceFailures,segments:finishSegments(segments)},
+    coverage:{fixtureCount:rows.length,eligible,priorMissing,featureMissing,abstain,maturitySkipped,clipped,coherenceFailures,segments:segmentResult},
     learner:{ht:htModel.snapshot(),ft:ftModel.snapshot()},metrics:finished,
     aggregate:{...aggregate,deltaVsProduction:{brier:delta(aggregate.challenger.brier,aggregate.productionBaseline.brier),logLoss:delta(aggregate.challenger.logLoss,aggregate.productionBaseline.logLoss),calibrationEce:delta(aggregate.challenger.calibrationEce,aggregate.productionBaseline.calibrationEce)},deltaVsMatchedControl:{brier:delta(aggregate.challenger.brier,aggregate.matchedControl.brier),logLoss:delta(aggregate.challenger.logLoss,aggregate.matchedControl.logLoss),calibrationEce:delta(aggregate.challenger.calibrationEce,aggregate.matchedControl.calibrationEce)}},
     scorelineComparison:{top1Top3Paired:true,productionBaselineFullGridLogLossAvailable:false,matchedControlFullGridLogLossAvailable:true,challengerFullGridLogLossAvailable:true},
-    directionalSwap:{status:swapWorst<=1e-10?'PASS':'FAIL',maxProbabilityDelta:swapWorst,tolerance:1e-10},
+    directionalSwap:{status:swapWorst<=1e-10?'PASS':'FAIL',maxProbabilityDelta:swapWorst,tolerance:1e-10,auditedRows:swapAudited,maxAuditedRows:swapAuditMax},
     determinism:{status:'FINGERPRINT_EMITTED_REPLAY_TWICE_TO_VERIFY',fingerprint},
+    memoryPolicy:{calibration:'STREAMING_FIXED_BINS',history:'CAPPED_TO_HISTORY_POLICY',unboundedCalibrationRows:false},
     crossMarketCoherence:{status:coherenceFailures?'FAIL':'PASS',version:'CFI_CROSS_MARKET_COHERENCE_GATE_V1',failures:coherenceFailures},
     boardImpact:{status:'BLOCKED_NO_SYNCHRONIZED_HISTORICAL_ODDS',decisionUse:false},hardBlockers,
     shadowEligible:false,promotionDecision:'HOLD',productionEligible:false,
