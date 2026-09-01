@@ -67,6 +67,7 @@ jobs:
           if(x.scoreGridEvaluation?.pairedBaseline!==true||x.scoreGridEvaluation?.noReconstruction!==true) process.exit(11);
           if(x.baselineMetrics?.scoreline?.ht?.fullGridAvailable!==true||x.baselineMetrics?.scoreline?.ft?.fullGridAvailable!==true) process.exit(12);
           if(marketAudit?.researchOnly!==true||marketAudit?.decisionUse!==false||marketAudit?.productionMutationAllowed!==false||marketAudit?.canonicalWriteAllowed!==false) process.exit(16);
+          if(marketAudit?.marketComparisonReadiness?.productionEligible!==false||marketAudit?.marketComparisonReadiness?.strictPriorRequired!==true||marketAudit?.marketComparisonReadiness?.preKickoffSnapshotRequired!==true) process.exit(17);
           const summary={};
           for(const [name,c] of Object.entries(x.challengers??{})){
             if(c.decisionUse!==false||c.productionMutationAllowed!==false||c.shadowEligible!==false||c.promotionDecision!=='HOLD'||c.productionEligible!==false) process.exit(9);
@@ -98,7 +99,7 @@ jobs:
             coverage:x.coverage,
             groupAVerdict:x.groupAVerdict,
             determinism:x.determinism,
-            forwardMarketLinkage:{input:marketAudit.input,linkage:marketAudit.linkage},
+            forwardMarketLinkage:{input:marketAudit.input,linkage:marketAudit.linkage,marketComparisonReadiness:marketAudit.marketComparisonReadiness},
             challengers:summary,
           },null,2));
           NODE
