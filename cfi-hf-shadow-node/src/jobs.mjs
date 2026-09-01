@@ -7,6 +7,7 @@ import { MULTI_MARKET_HISTORICAL_V2 } from '../../research/multi-market-historic
 import { runR0Bulk } from '../../research/run-r0-bulk.mjs';
 import { HF_SHADOW_PREDICTION_CONTRACT, SIX_PRIMARY_TARGETS, shadowStamp } from './contracts.mjs';
 import { loadPinnedArtifact } from './data-source.mjs';
+import { settleLockedShadow } from './settlement.mjs';
 import { assertStrictPrior } from './strict-prior.mjs';
 
 function fixtureIdentity(snapshot) {
@@ -153,6 +154,21 @@ export async function runShadowPredictionJob(spec) {
   };
 }
 
+export async function runShadowSettlementJob(spec) {
+  const dataset = await loadPinnedArtifact(spec.dataset);
+  const input = dataset.payload;
+  const lockedShadow = input?.locked_shadow ?? input?.lockedShadow;
+  const result = input?.result;
+  const settlement = settleLockedShadow({ lockedShadow, result });
+  return {
+    kind: 'shadow_settlement',
+    dataset,
+    modelVersion: String(lockedShadow?.modelVersion ?? 'UNKNOWN'),
+    strictPriorAudit: settlement.strict_prior,
+    output: settlement,
+  };
+}
+
 export async function runLockedOosGateJob(spec) {
   const dataset = await loadPinnedArtifact(spec.dataset);
   const rows = Array.isArray(dataset.payload) ? dataset.payload : dataset.payload?.rows;
@@ -171,6 +187,7 @@ export async function runJob(spec) {
   const kind = String(spec?.kind ?? '');
   if (kind === 'historical') return runHistoricalJob(spec);
   if (kind === 'shadow_prediction') return runShadowPredictionJob(spec);
+  if (kind === 'shadow_settlement') return runShadowSettlementJob(spec);
   if (kind === 'locked_oos_gate') return runLockedOosGateJob(spec);
   throw new Error('UNSUPPORTED_HF_SHADOW_JOB');
 }
