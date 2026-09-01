@@ -73,7 +73,7 @@ test('production-host direct predict returns compact GPT contract while preservi
     assert.equal(body.status,'SUCCESS');
     assert.equal(body.responseMeta?.contract,'CFI_GPT_PREDICT_COMPACT_V1');
     assert.equal(body.responseMeta?.mode,'compact');
-    assert.equal(body.presentationContract?.contract,'CFI_2_METHODS_X_6_TARGETS_V1');
+    assert.equal(body.presentationContract?.contract,'CFI_2_METHODS_X_6_TARGETS_V2');
     assert.equal(body.sixTargetMatrix?.verification?.complete,true);
     assert.equal(body.consistencyGuard?.status,'PASS');
     assert.ok(body.multiMarketIntegration);
