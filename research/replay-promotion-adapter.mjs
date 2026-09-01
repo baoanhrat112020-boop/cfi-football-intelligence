@@ -1,44 +1,72 @@
-import { deriveTemporalStability, evaluateRun } from './promotion-gate.mjs';
+import {
+  evaluateMultiMarketPromotion,
+  MULTIMARKET_RESEARCH_CONTRACT_VERSION,
+} from './multimarket-promotion-gate-v2.mjs';
 
-export const CFI_REPLAY_MARKETS = Object.freeze(['3+ HT', '7+ FT', 'Other HT', 'Other FT']);
-
-function top3FromAudit(audit, prefix) {
-  if (!audit || audit.status !== 'MODELED') return [];
-  return Array.from({ length: 3 }, (_, i) => i + 1 === audit.rankOfHit ? '__ACTUAL__' : `${prefix}_${i+1}`);
-}
-
-function toPromotionRow(evaluation) {
+function failClosed(modelType, reason, sampleCount = 0) {
   return {
-    targetTimestamp: evaluation.targetTimestamp,
-    maxEvidenceTimestamp: evaluation.maxEvidenceTimestamp,
-    probabilities: evaluation.probabilities,
-    actual: evaluation.outcomes,
-    top3HT: top3FromAudit(evaluation.top3HT, 'HT'),
-    top3FT: top3FromAudit(evaluation.top3FT, 'FT'),
-    actualScore: { ht: '__ACTUAL__', ft: '__ACTUAL__' },
-    reconstructed: false,
+    modelType,
+    sampleCount,
+    contractVersion: MULTIMARKET_RESEARCH_CONTRACT_VERSION,
+    status: 'FAIL_HARD_GATE',
+    score: 0,
+    productionEligible: false,
+    shadowEligible: false,
+    decisionUse: false,
+    researchOnly: true,
+    hardFailures: [reason],
   };
 }
 
-export function scoreReplayModel(replay, modelType, options = {}) {
+function verifyReplayStrictPrior(replay) {
   if (!replay?.strictPrior || replay?.sameDateLeakage !== false || replay?.temporalProvenanceComplete !== true) {
-    return { modelType, sampleCount: 0, score: 0, status: 'FAIL_HARD_GATE', productionEligible: false, shadowEligible: false, hardFailures: ['REPLAY_STRICT_PRIOR_FAILURE'] };
+    return false;
   }
-  const evaluations = (replay.evaluations ?? []).filter(r => r.modelType === modelType && r.evidenceCount > 0 && r.maxEvidenceTimestamp);
+  for (const row of replay.evaluations ?? []) {
+    if (!row?.targetTimestamp || !row?.maxEvidenceTimestamp || !(Date.parse(row.maxEvidenceTimestamp) < Date.parse(row.targetTimestamp))) {
+      return false;
+    }
+    if (row.reconstructed === true || row.replayedPredictionHistory === true) return false;
+  }
+  return true;
+}
+
+export function scoreReplayModel(replay, modelType, options = {}) {
+  if (!verifyReplayStrictPrior(replay)) {
+    return failClosed(modelType, 'REPLAY_STRICT_PRIOR_FAILURE');
+  }
+
+  const evaluations = (replay.evaluations ?? []).filter(
+    row => row.modelType === modelType && row.evidenceCount > 0 && row.maxEvidenceTimestamp,
+  );
   if (!evaluations.length) {
-    return { modelType, sampleCount: 0, score: 0, status: 'FAIL_HARD_GATE', productionEligible: false, shadowEligible: false, hardFailures: ['INSUFFICIENT_REAL_EVIDENCE'] };
+    return failClosed(modelType, 'INSUFFICIENT_REAL_EVIDENCE');
   }
-  const rows = evaluations.map(toPromotionRow);
-  const markets = options.markets ?? CFI_REPLAY_MARKETS;
-  const stabilityAudit = options.stability === undefined
-    ? deriveTemporalStability(rows, markets, options.stabilityOptions ?? {})
-    : { score: options.stability, windows: [], reason: 'CALLER_SUPPLIED' };
-  const scoreOptions = { ...options, markets, stability: stabilityAudit.score };
-  const result = evaluateRun(rows, scoreOptions);
-  return { modelType, sampleCount: evaluations.length, stabilityAudit, ...result };
+
+  const inputByModel = options.multiMarketPromotionInputs ?? {};
+  const input = inputByModel[modelType] ?? options.multiMarketPromotionInput;
+  if (!input || typeof input !== 'object') {
+    return failClosed(modelType, 'MULTIMARKET_EVALUATION_REQUIRED', evaluations.length);
+  }
+
+  const result = evaluateMultiMarketPromotion({
+    ...input,
+    contractVersion: MULTIMARKET_RESEARCH_CONTRACT_VERSION,
+    decisionUse: false,
+    productionMutationAllowed: false,
+  });
+
+  return {
+    modelType,
+    sampleCount: evaluations.length,
+    ...result,
+    decisionUse: false,
+    researchOnly: true,
+    productionEligible: false,
+  };
 }
 
 export function scoreReplayAllModels(replay, options = {}) {
-  const types = [...new Set((replay?.evaluations ?? []).map(r => r.modelType))];
+  const types = [...new Set((replay?.evaluations ?? []).map(row => row.modelType))];
   return Object.fromEntries(types.map(type => [type, scoreReplayModel(replay, type, options)]));
 }
