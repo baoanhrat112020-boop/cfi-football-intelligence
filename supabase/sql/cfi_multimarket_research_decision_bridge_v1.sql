@@ -51,19 +51,8 @@ begin
   end if;
   if vf.kickoff_at <> k then raise exception 'CFI_MARKET_VERIFIED_FIXTURE_KICKOFF_MISMATCH'; end if;
 
-  -- Exactly one decision sample per DISTINCT verified fixture. Historical duplicate
-  -- rows stay immutable, but no new row may inflate fixture-level N.
-  if exists (
-    select 1
-    from public.cfi_decision_snapshots d
-    join public.cfi_market_snapshots m on m.market_snapshot_id=d.market_snapshot_id
-    where m.verified_fixture_id=m_verified
-  ) then
-    raise exception 'CFI_VERIFIED_FIXTURE_DECISION_ALREADY_EXISTS';
-  end if;
-
   if new.research_prediction_snapshot_id is not null then
-    select fixture_id,kickoff_at,status,strict_prior,created_at,max_evidence_date,target_date
+    select fixture_id,kickoff_at,status,strict_prior,created_at,max_evidence_date,target_date,model_name,model_fingerprint
       into r from public.cfi_research_prematch_snapshots
       where snapshot_id=new.research_prediction_snapshot_id;
     if not found or r.status <> 'DATA_READY' or r.strict_prior is not true then
@@ -75,7 +64,36 @@ begin
     if r.fixture_id <> m_verified or r.kickoff_at <> k then
       raise exception 'CFI_DECISION_FIXTURE_MISMATCH';
     end if;
+    if r.model_fingerprint is null or btrim(r.model_fingerprint)='' then
+      raise exception 'CFI_RESEARCH_MODEL_FINGERPRINT_REQUIRED';
+    end if;
+
+    -- Paired research evaluation may place multiple frozen challengers on the
+    -- same verified fixture. Sample inflation is still forbidden: a model
+    -- fingerprint can contribute at most one decision per verified fixture.
+    if exists (
+      select 1
+      from public.cfi_decision_snapshots d
+      join public.cfi_market_snapshots m on m.market_snapshot_id=d.market_snapshot_id
+      join public.cfi_research_prematch_snapshots rp on rp.snapshot_id=d.research_prediction_snapshot_id
+      where m.verified_fixture_id=m_verified
+        and rp.model_fingerprint=r.model_fingerprint
+    ) then
+      raise exception 'CFI_VERIFIED_FIXTURE_MODEL_DECISION_ALREADY_EXISTS';
+    end if;
   else
+    -- Legacy/production prediction lineage keeps the original one-decision-per-
+    -- verified-fixture rule. Research challengers never loosen this path.
+    if exists (
+      select 1
+      from public.cfi_decision_snapshots d
+      join public.cfi_market_snapshots m on m.market_snapshot_id=d.market_snapshot_id
+      where m.verified_fixture_id=m_verified
+        and d.prediction_snapshot_id is not null
+    ) then
+      raise exception 'CFI_VERIFIED_FIXTURE_DECISION_ALREADY_EXISTS';
+    end if;
+
     select target_date,home_team,away_team,strict_prior,created_at
       into p from public.cfi_prediction_snapshots
       where snapshot_id=new.prediction_snapshot_id;
