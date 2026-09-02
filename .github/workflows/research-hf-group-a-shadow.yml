@@ -14,6 +14,7 @@ jobs:
       CFI_SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
       CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      CFI_GROUP_A_PROSPECTIVE_MAX_FIXTURES: '20'
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +64,8 @@ jobs:
             runtime:'CFI_PRIMARY_TOP1_RUNTIME_V2',
             primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',
             multiMarketVersion:'CFI_MULTI_MARKET_V1',
+            frozenProspectiveStateVersion:'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1',
+            frozenProspectiveTrainedThrough:'2026-08-19',
             strictPrior:true,
             decisionUse:false,
             productionMutationAllowed:false,
@@ -117,23 +120,55 @@ jobs:
           if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) throw new Error('HF_GROUP_A_PRIOR_GUARD_FAIL');
           if(x.decisionUse!==false||x.productionMutationAllowed!==false||x.productionWritePath!==null) throw new Error('HF_GROUP_A_PRODUCTION_ISOLATION_FAIL');
           if(x.evaluationContract?.top3GateUse!==false) throw new Error('HF_GROUP_A_TOP3_GATE_FAIL');
+          if(x.frozenStateVersion!=='CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1'||x.trainedThrough!=='2026-08-19') throw new Error('HF_GROUP_A_FROZEN_STATE_DRIFT');
           if(JSON.stringify(x.selectedCandidates)!==JSON.stringify(selected)) throw new Error('HF_GROUP_A_CANDIDATE_SET_DRIFT');
           for(const name of selected){
-            const c=x.challengers?.[name];
+            const c=x.challengers?.[name],l=x.frozenLearners?.[name];
             if(!c) throw new Error(`HF_GROUP_A_MISSING_${name}`);
             if(c.decisionUse!==false||c.productionMutationAllowed!==false) throw new Error(`HF_GROUP_A_ISOLATION_${name}`);
             if(c.primaryRegressionCount!==0||c.multiMarketRegressionCount!==0||c.segmentRegressionCount!==0) throw new Error(`HF_GROUP_A_REGRESSION_${name}`);
+            if(l?.stateVersion!=='CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1'||l?.trainedThrough!=='2026-08-19') throw new Error(`HF_GROUP_A_FROZEN_LEARNER_${name}`);
           }
           fs.writeFileSync(outPath,JSON.stringify(x,null,2)+'\n');
-          console.log(JSON.stringify({status:'PASS',jobId:x.jobId,cpuCores:x.cpuCores,memory:x.memory,coverage:x.coverage,challengers:Object.fromEntries(selected.map(n=>[n,{eligible:x.challengers[n].eligible,delta:x.challengers[n].aggregate?.deltaVsProduction,hardBlockers:x.challengers[n].hardBlockers}]))},null,2));
+          console.log(JSON.stringify({status:'PASS',jobId:x.jobId,cpuCores:x.cpuCores,memory:x.memory,coverage:x.coverage,frozenStateVersion:x.frozenStateVersion,trainedThrough:x.trainedThrough,challengers:Object.fromEntries(selected.map(n=>[n,{eligible:x.challengers[n].eligible,delta:x.challengers[n].aggregate?.deltaVsProduction,hardBlockers:x.challengers[n].hardBlockers}]))},null,2));
           NODE
 
-      - name: Upload sanitized HF evidence
+      - name: Capture future Group A prospective cohort
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="$RUNNER_TEMP/cfi-hf-group-a-shadow"
+          node --experimental-strip-types research/group-a-prospective-runner-v1.mjs \
+            "$BUNDLE/data/r0.json" \
+            "$BUNDLE/data/group-a.json" \
+            "$RUNNER_TEMP/hf-group-a-summary.json" \
+            "$RUNNER_TEMP/group-a-prospective-capture-result.json" \
+            --write
+
+      - name: Verify prospective capture isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - "$RUNNER_TEMP/group-a-prospective-capture-result.json" <<'NODE'
+          import fs from 'node:fs';
+          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          if(x.version!=='CFI_GROUP_A_PROSPECTIVE_RUNNER_V1') throw new Error('GROUP_A_PROSPECTIVE_VERSION_DRIFT');
+          if(x.mode!=='WRITE_RESEARCH_ONLY') throw new Error('GROUP_A_PROSPECTIVE_WRITE_MODE_REQUIRED');
+          if(x.researchOnly!==true||x.decisionUse!==false||x.productionMutationAllowed!==false||x.productionEligible!==false||x.noReconstruction!==true) throw new Error('GROUP_A_PROSPECTIVE_ISOLATION_FAIL');
+          if(x.settlementWriterIncluded!==false||x.settlementPath!=='EXISTING_APPEND_ONLY_CFI_MARKET_DECISION_SETTLEMENTS') throw new Error('GROUP_A_PROSPECTIVE_SETTLEMENT_PATH_DRIFT');
+          for(const row of x.results??[]){
+            if(row.researchOnly!==true||row.decisionUse!==false||row.productionMutationAllowed!==false||row.productionEligible!==false||row.noReconstruction!==true) throw new Error(`GROUP_A_PROSPECTIVE_ROW_ISOLATION:${row.fixtureId}:${row.modelName}`);
+          }
+          console.log(JSON.stringify({status:'PASS',consideredFixtures:x.consideredFixtures,capturedDecisions:x.capturedDecisions,blocked:x.blocked?.length??0},null,2));
+          NODE
+
+      - name: Upload sanitized HF and prospective evidence
         uses: actions/upload-artifact@v4
         with:
           name: hf-group-a-shadow-evidence
           path: |
             ${{ runner.temp }}/hf-group-a-summary.json
+            ${{ runner.temp }}/group-a-prospective-capture-result.json
             ${{ runner.temp }}/cfi-hf-group-a-shadow/manifest.json
             ${{ runner.temp }}/cfi-hf-group-a-shadow/manifest.sha256
           if-no-files-found: error
