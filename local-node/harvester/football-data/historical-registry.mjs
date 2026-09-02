@@ -1,59 +1,61 @@
-﻿const SEASONS = [
-  { id: "2021", label: "2020/21" },
-  { id: "2122", label: "2021/22" },
-  { id: "2223", label: "2022/23" },
-  { id: "2324", label: "2023/24" },
-  { id: "2425", label: "2024/25" },
-  { id: "2526", label: "2025/26" }
+const SEASONS = [
+  '2526',
+  '2425',
+  '2324',
+  '2223',
+  '2122',
+  '2021',
+  '1920',
+  '1819',
+  '1718',
+  '1617',
+  '1516',
 ];
 
-const DIVISIONS = [
-  ["E0",  "England Premier League"],
-  ["E1",  "England Championship"],
-  ["E2",  "England League One"],
-  ["E3",  "England League Two"],
-  ["EC",  "England National League"],
+export const FOOTBALL_DATA_DIVISIONS = Object.freeze([
+  ['E0', 'England Premier League', 'England'],
+  ['E1', 'England Championship', 'England'],
+  ['E2', 'England League One', 'England'],
+  ['E3', 'England League Two', 'England'],
+  ['EC', 'England National League', 'England'],
+  ['SC0', 'Scotland Premiership', 'Scotland'],
+  ['SC1', 'Scotland Championship', 'Scotland'],
+  ['SC2', 'Scotland League One', 'Scotland'],
+  ['SC3', 'Scotland League Two', 'Scotland'],
+  ['D1', 'Germany Bundesliga', 'Germany'],
+  ['D2', 'Germany 2 Bundesliga', 'Germany'],
+  ['I1', 'Italy Serie A', 'Italy'],
+  ['I2', 'Italy Serie B', 'Italy'],
+  ['SP1', 'Spain La Liga', 'Spain'],
+  ['SP2', 'Spain Segunda Division', 'Spain'],
+  ['F1', 'France Ligue 1', 'France'],
+  ['F2', 'France Ligue 2', 'France'],
+  ['N1', 'Netherlands Eredivisie', 'Netherlands'],
+  ['B1', 'Belgium First Division A', 'Belgium'],
+  ['P1', 'Portugal Primeira Liga', 'Portugal'],
+  ['T1', 'Turkey Super Lig', 'Turkey'],
+  ['G1', 'Greece Super League', 'Greece'],
+].map(([competition, league, country]) => Object.freeze({
+  competition,
+  league,
+  country,
+  canonicalCompetitionKey: `${country.toLowerCase()}:${competition.toLowerCase()}`,
+})));
 
-  ["SC0", "Scotland Premiership"],
-  ["SC1", "Scotland Championship"],
-  ["SC2", "Scotland League One"],
-  ["SC3", "Scotland League Two"],
-
-  ["D1",  "Germany Bundesliga"],
-  ["D2",  "Germany 2. Bundesliga"],
-
-  ["I1",  "Italy Serie A"],
-  ["I2",  "Italy Serie B"],
-
-  ["SP1", "Spain La Liga"],
-  ["SP2", "Spain Segunda Division"],
-
-  ["F1",  "France Ligue 1"],
-  ["F2",  "France Ligue 2"],
-
-  ["N1",  "Netherlands Eredivisie"],
-  ["B1",  "Belgium First Division A"],
-  ["P1",  "Portugal Primeira Liga"],
-  ["T1",  "Turkey Super Lig"],
-  ["G1",  "Greece Super League"]
-];
-
-export const HISTORICAL_SOURCES = SEASONS.flatMap(
-  season =>
-    DIVISIONS.map(([competition, league]) => ({
-      id: `football-data-${season.id}-${competition}`,
-      season: season.label,
-      seasonCode: season.id,
-      competition,
-      league,
-      evidenceClass: "HT_FT_PRIMARY",
-      url:
-        `https://www.football-data.co.uk/mmz4281/${season.id}/${competition}.csv`
-    }))
+export const HISTORICAL_SOURCES = FOOTBALL_DATA_DIVISIONS.flatMap(({ competition, league }) =>
+  SEASONS.map((season) => ({
+    league,
+    season,
+    competition,
+    url: `https://www.football-data.co.uk/mmz4281/${season}/${competition}.csv`,
+  })),
 );
 
-if (HISTORICAL_SOURCES.length !== 132) {
-  throw new Error(
-    `HISTORICAL_REGISTRY_COUNT_MISMATCH_${HISTORICAL_SOURCES.length}`
-  );
+export function resolveFootballDataDivision(competition) {
+  const key = String(competition ?? '').trim().toUpperCase();
+  return FOOTBALL_DATA_DIVISIONS.find((row) => row.competition === key) ?? null;
+}
+
+if (HISTORICAL_SOURCES.length !== 242) {
+  throw new Error(`HISTORICAL_REGISTRY_COUNT_MISMATCH:${HISTORICAL_SOURCES.length}`);
 }
