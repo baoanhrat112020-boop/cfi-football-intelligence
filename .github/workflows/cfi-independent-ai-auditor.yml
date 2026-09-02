@@ -1,0 +1,190 @@
+name: CFI Independent AI Auditor V1
+
+on:
+  workflow_run:
+    workflows: ["CFI Tests"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cfi-independent-ai-auditor.yml'
+      - '.github/cfi-independent-ai-review.md'
+      - 'tools/cfi-independent-ai-auditor.mjs'
+      - 'tools/cfi-publish-ai-audit-status.mjs'
+      - 'tools/cfi-resolve-associated-pr.mjs'
+      - 'research/independent-ai-promotion-gate.mjs'
+
+concurrency:
+  group: cfi-independent-ai-auditor-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  independent-ai-review:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.pull_requests[0].number != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Checkout trusted auditor from default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download deterministic audit from upstream CFI Tests run
+        uses: actions/download-artifact@v4
+        with:
+          name: cfi-deterministic-audit-${{ github.event.workflow_run.id }}
+          path: audit-reports/deterministic
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Run read-only independent AI review
+        id: independent_ai
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CFI_AI_AUDIT_MODEL: "@cf/zai-org/glm-4.7-flash"
+        run: >-
+          node tools/cfi-independent-ai-auditor.mjs
+          --repo "${{ github.repository }}"
+          --pr "${{ github.event.workflow_run.pull_requests[0].number }}"
+          --head-sha "${{ github.event.workflow_run.head_sha }}"
+          --output-dir audit-reports/independent-ai
+
+      - name: Publish AI verdict on audited PR head
+        if: always()
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/cfi-publish-ai-audit-status.mjs
+          --repo "${{ github.repository }}"
+          --head-sha "${{ github.event.workflow_run.head_sha }}"
+          --report audit-reports/independent-ai/latest.json
+          --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Publish independent AI audit summary
+        if: always()
+        run: |
+          if [ -f audit-reports/independent-ai/latest.md ]; then
+            cat audit-reports/independent-ai/latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload independent AI audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-independent-ai-audit-${{ github.event.workflow_run.id }}
+          path: audit-reports/independent-ai/
+          if-no-files-found: warn
+
+      - name: Enforce independent AI verdict
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const p = 'audit-reports/independent-ai/latest.json';
+          if (!fs.existsSync(p)) process.exit(2);
+          const report = JSON.parse(fs.readFileSync(p, 'utf8'));
+          console.log(`FINAL_AI_VERDICT=${report.verdict ?? 'MISSING'}`);
+          process.exit(report.verdict === 'PASS' ? 0 : 1);
+          NODE
+
+  bootstrap-provider-e2e:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Checkout trusted merged auditor
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Re-run zero-AI deterministic gate on trusted main
+        run: node tools/cfi-audit.mjs --full --no-cache
+
+      - name: Resolve pull request associated with merged main commit
+        id: merged_pr
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/cfi-resolve-associated-pr.mjs
+          --repo "${{ github.repository }}"
+          --commit-sha "${{ github.sha }}"
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Run bootstrap Workers AI review against merged PR diff
+        id: bootstrap_ai
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CFI_AI_AUDIT_MODEL: "@cf/zai-org/glm-4.7-flash"
+        run: >-
+          node tools/cfi-independent-ai-auditor.mjs
+          --repo "${{ github.repository }}"
+          --pr "${{ steps.merged_pr.outputs.pr_number }}"
+          --head-sha "${{ steps.merged_pr.outputs.pr_head_sha }}"
+          --output-dir audit-reports/independent-ai
+
+      - name: Publish bootstrap verdict on merged PR head
+        if: always()
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/cfi-publish-ai-audit-status.mjs
+          --repo "${{ github.repository }}"
+          --head-sha "${{ steps.merged_pr.outputs.pr_head_sha }}"
+          --report audit-reports/independent-ai/latest.json
+          --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Upload bootstrap independent AI audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-independent-ai-bootstrap-${{ github.run_id }}
+          path: audit-reports/independent-ai/
+          if-no-files-found: warn
+
+      - name: Enforce bootstrap AI verdict
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const p = 'audit-reports/independent-ai/latest.json';
+          if (!fs.existsSync(p)) process.exit(2);
+          const report = JSON.parse(fs.readFileSync(p, 'utf8'));
+          console.log(`BOOTSTRAP_AI_VERDICT=${report.verdict ?? 'MISSING'}`);
+          process.exit(report.verdict === 'PASS' ? 0 : 1);
+          NODE
