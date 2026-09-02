@@ -2,7 +2,7 @@ import { buildFutureSixScorelines } from './future-six-scoreline.ts';
 import { calibrateMarketProbability, predictiveConfidence, sampleConfidence } from './probability-calibration.ts';
 import { calibrateScoreDistribution } from './score-distribution-calibration.ts';
 import { buildMultiMarketFromScoreGrids } from './multi-market-v1.ts';
-import { buildMultiMarketChampionFusion, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE } from './multi-market-champion-fusion.ts';
+import { buildMultiMarketChampionFusion, buildMultiMarketChampionFusionV2Challenger, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE, CHAMPION_FUSION_CHALLENGER_VERSION, CHAMPION_FUSION_CHALLENGER_LINEAGE } from './multi-market-champion-fusion.ts';
 
 export const FINAL_VERSION = "CFI_FINAL_V5.3.1";
 export const PRIMARY_CONTRACT = "CFI_2_METHODS_X_6_TARGETS_V2";
@@ -130,11 +130,18 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
  }));
  const multiMarket=buildMultiMarketFromScoreGrids({ht:htFinal,ft:ftFinal});
  const maxEvidenceDate=evidence.unique.reduce((m,r)=>r.matchDate>m?r.matchDate:m,'');
+ const fusionArgs={targetDate:args.targetDate??null,maxEvidenceDate:maxEvidenceDate||null,ht:{incumbent:htFinal,futureSix:htB,historical:htA},ft:{incumbent:ftFinal,futureSix:ftB,historical:ftA},context:{evidenceCount:evidence.unique.length,h2hCount:evidence.streams.h2h.length,volatility:futureSix.factors.volatility,extremeScorePressure:futureSix.factors.extremeScorePressure,dominance:futureSix.factors.dominance,goalTempo:futureSix.factors.goalTempo}};
  let championFusion:any;
  try{
-   championFusion=buildMultiMarketChampionFusion({targetDate:args.targetDate??null,maxEvidenceDate:maxEvidenceDate||null,ht:{incumbent:htFinal,futureSix:htB,historical:htA},ft:{incumbent:ftFinal,futureSix:ftB,historical:ftA},context:{evidenceCount:evidence.unique.length,h2hCount:evidence.streams.h2h.length,volatility:futureSix.factors.volatility,extremeScorePressure:futureSix.factors.extremeScorePressure,dominance:futureSix.factors.dominance,goalTempo:futureSix.factors.goalTempo}});
+   championFusion=buildMultiMarketChampionFusion(fusionArgs);
  }catch(error){
    championFusion={version:CHAMPION_FUSION_VERSION,lineage:CHAMPION_FUSION_LINEAGE,status:'SHADOW_UNAVAILABLE',researchOnly:true,decisionUse:false,productionEligible:false,promotionRequired:true,championMutation:false,reason:error instanceof Error?error.message:'CHAMPION_FUSION_RUNTIME_ERROR',audit:{incumbentUnmodified:true,isolatedFailure:true}};
+ }
+ let championFusionChallenger:any;
+ try{
+   championFusionChallenger=buildMultiMarketChampionFusionV2Challenger(fusionArgs);
+ }catch(error){
+   championFusionChallenger={version:CHAMPION_FUSION_CHALLENGER_VERSION,lineage:CHAMPION_FUSION_CHALLENGER_LINEAGE,status:'CHALLENGER_UNAVAILABLE',researchOnly:true,decisionUse:false,productionEligible:false,promotionRequired:true,championMutation:false,reason:error instanceof Error?error.message:'CHAMPION_FUSION_CHALLENGER_RUNTIME_ERROR',researchProtocol:{developmentOnly:true,sameCohortPromotionAllowed:false,prospectiveResetRequired:true},audit:{incumbentUnmodified:true,v1Unmodified:true,isolatedFailure:true,prospectiveEvaluationRequired:true}};
  }
  const warnings:string[]=[];
  if(ftRecon.audit.direction!=='BALANCED'&&ftRecon.audit.directionalStrength>=.35&&ftRecon.audit.top3AlignedCount===0)warnings.push('FINAL_FT_DIRECTION_MISMATCH');
@@ -145,7 +152,7 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
  const ranking=Object.entries(markets).map(([market,v]:any)=>({target:market,probability:v.final,confidence:v.predictiveConfidence,sampleConfidence:v.sampleConfidence})).sort((a,b)=>b.probability-a.probability);
  const scorelineTargets={'Top-1 HT':{methodA:primaryTop1.ht.methodA,methodB:primaryTop1.ht.methodB,final:primaryTop1.ht.final,probability:primaryTop1.ht.final?.probability??null,rankingClass:'EXACT_SCORE_TOP1'},'Top-1 FT':{methodA:primaryTop1.ft.methodA,methodB:primaryTop1.ft.methodB,final:primaryTop1.ft.final,probability:primaryTop1.ft.final?.probability??null,rankingClass:'EXACT_SCORE_TOP1'}};
  const max=ranking[0]?.probability??0,verdict=max>=.6?'STRONG_SIGNAL':'NO_STRONG_SIGNAL';
- return{status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA',engine:FINAL_VERSION,contract:PRIMARY_CONTRACT,language,target:{home:args.home,away:args.away,date:args.targetDate??null},evidence:{...evidence.counts,strictPrior:Boolean(args.targetDate)},teamTrendingDNA:{home:teamDna(args.home,evidence.unique),away:teamDna(args.away,evidence.unique)},context:{standings:'unavailable',opponentStrength:'unavailable',restFatigue:'unavailable',lineupInjuries:'unavailable',tacticalTempo:'unavailable',liveMomentum:'unavailable',randomnessAllowance:.025},markets,multiMarket,championFusion,scoreline,primaryTargets:{contract:PRIMARY_CONTRACT,count:6,codes:[...PRIMARY_TARGETS],scorelineTargets},ranking,rankingPolicy:{thresholdMarkets:'RANK_BY_CALIBRATED_FINAL_SCORE_DISTRIBUTION_EVENT_MASS',scorelineTargets:'REPORT_TOP1_EXACT_SCORE_PROBABILITY',crossTypeRanking:false},verdict,localized:{verdict,probabilityUnit:'0..1',unavailable:language==='vi'?'không có dữ liệu':'unavailable'}};
+ return{status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA',engine:FINAL_VERSION,contract:PRIMARY_CONTRACT,language,target:{home:args.home,away:args.away,date:args.targetDate??null},evidence:{...evidence.counts,strictPrior:Boolean(args.targetDate)},teamTrendingDNA:{home:teamDna(args.home,evidence.unique),away:teamDna(args.away,evidence.unique)},context:{standings:'unavailable',opponentStrength:'unavailable',restFatigue:'unavailable',lineupInjuries:'unavailable',tacticalTempo:'unavailable',liveMomentum:'unavailable',randomnessAllowance:.025},markets,multiMarket,championFusion,championFusionChallenger,scoreline,primaryTargets:{contract:PRIMARY_CONTRACT,count:6,codes:[...PRIMARY_TARGETS],scorelineTargets},ranking,rankingPolicy:{thresholdMarkets:'RANK_BY_CALIBRATED_FINAL_SCORE_DISTRIBUTION_EVENT_MASS',scorelineTargets:'REPORT_TOP1_EXACT_SCORE_PROBABILITY',crossTypeRanking:false},verdict,localized:{verdict,probabilityUnit:'0..1',unavailable:language==='vi'?'không có dữ liệu':'unavailable'}};
 }
 
 export function walkForwardBacktest(fixtures:CanonicalFixture[]){
