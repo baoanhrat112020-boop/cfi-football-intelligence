@@ -9,7 +9,9 @@ import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 const TARGET_DATE='2026-08-22';
 const PROD_HOST='cfi-football-intelligence.baoanhrat112020.workers.dev';
 const bundleDir=mkdtempSync(join(tmpdir(),'cfi-gpt-core-v4-'));
-const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
+const build=process.platform==='win32'
+  ? spawnSync('cmd.exe',['/d','/s','/c','npx','wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'})
+  : spawnSync('npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
 assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
 function jsFiles(dir:string):string[]{const out:string[]=[];for(const entry of readdirSync(dir,{withFileTypes:true})){const path=join(dir,entry.name);if(entry.isDirectory())out.push(...jsFiles(path));else if(/\.(?:m?js)$/.test(entry.name))out.push(path);}return out;}
 const candidates=jsFiles(bundleDir).sort((a,b)=>statSync(b).size-statSync(a).size);
@@ -34,7 +36,7 @@ function bigDbBody(home:string,away:string){
   });
   return{
     status:'OK',
-    version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',
+    version:'CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE',
     targetDate:TARGET_DATE,
     identity:{homeTeamId:`id-${home}`,awayTeamId:`id-${away}`,homeCanonical:home,awayCanonical:away},
     exactTeam:{home:{retrieved:22},away:{retrieved:22},h2h:{retrieved:0}},
@@ -55,7 +57,7 @@ async function withMockFetch<T>(run:(calls:{discoveryFeed:number})=>Promise<T>){
     const url=typeof input==='string'?input:String(input?.url??input);
     const bodyText=typeof init?.body==='string'?init.body:typeof input?.body==='string'?input.body:null;
     let parsed:any={};try{parsed=bodyText?JSON.parse(bodyText):{}}catch{}
-    if(url.includes('cfi-discovery-feed')){calls.discoveryFeed++;throw new Error('SUPPLIED_MODE_MUST_NOT_CALL_DISCOVERY_FEED');}
+    if(url.includes('cfi-discovery-feed')){calls.discoveryFeed++;return Response.json({status:'OK',rows:[]}) as any;}
     if(url.includes('cfi-bigdb-retrieval'))return Response.json(bigDbBody(String(parsed?.home??'Home'),String(parsed?.away??'Away'))) as any;
     if(url.includes('cfi-prediction-audit'))return Response.json({status:'RECORDED'}) as any;
     return Response.json({status:'OK',runtime:{},bigDbRetrieval:{}}) as any;
@@ -73,7 +75,7 @@ test('production-host direct predict returns compact GPT contract while preservi
     assert.equal(body.status,'SUCCESS');
     assert.equal(body.responseMeta?.contract,'CFI_GPT_PREDICT_COMPACT_V1');
     assert.equal(body.responseMeta?.mode,'compact');
-    assert.equal(body.presentationContract?.contract,'CFI_2_METHODS_X_6_TARGETS_V1');
+    assert.equal(body.presentationContract?.contract,'CFI_2_METHODS_X_6_TARGETS_V2');
     assert.equal(body.sixTargetMatrix?.verification?.complete,true);
     assert.equal(body.consistencyGuard?.status,'PASS');
     assert.ok(body.multiMarketIntegration);
@@ -85,7 +87,7 @@ test('production-host direct predict returns compact GPT contract while preservi
   });
 });
 
-test('supplied fixture discovery never calls discovery feed or adds fixtures outside input',async()=>{
+test('supplied fixture discovery merges canonical feed and preserves single fallback owner',async()=>{
   await withMockFetch(async calls=>{
     const supplied=[
       {provider:'GPT_WEB_SEARCH',providerId:'supplied-a',home:'Supplied Home A',away:'Supplied Away A',competition:'Test',country:'Test',kickoffIso:'2026-08-22T12:00:00Z',status:'scheduled',sourceUrls:['https://example.com/a'],discoveredAt:'2026-08-22T00:00:00Z'},
@@ -96,12 +98,12 @@ test('supplied fixture discovery never calls discovery feed or adds fixtures out
     }),env,ctx);
     assert.equal(response.status,200);
     const body:any=await response.json();
-    assert.equal(calls.discoveryFeed,0);
-    assert.equal(body.search?.mode,'SUPPLIED_FIXTURE_ONLY');
-    assert.equal(body.search?.suppliedFixtureOnly,true);
-    assert.equal(body.search?.canonicalFeedMerged,false);
+    assert.ok(calls.discoveryFeed>=1,'canonical discovery feed must be consulted');
+    assert.equal(body.search?.mode,'GPT_SEARCH_FIRST');
+    assert.equal(body.search?.providerFallbackTriggered,true);
+    assert.equal(body.search?.canonicalFeedOwnsProviderFallback,true);
     assert.equal(body.search?.workerProviderFallbackAllowed,false);
-    assert.equal(body.rules?.providerFallbackOnShortfall,false);
+    assert.equal(body.rules?.providerFallbackOnShortfall,true);
     assert.equal(body.counts?.databaseFixtures,0);
     assert.equal(body.counts?.publicProviderFixtures,0);
     assert.ok(Number(body.counts?.fixturesDiscovered)<=supplied.length);

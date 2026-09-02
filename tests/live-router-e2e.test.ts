@@ -10,7 +10,9 @@ const TARGET_DATE='2026-08-22';
 const HOME='Cardiff';
 const AWAY='Plymouth';
 const bundleDir=mkdtempSync(join(tmpdir(),'cfi-live-router-e2e-'));
-const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
+const build=process.platform==='win32'
+  ? spawnSync('cmd.exe',['/d','/s','/c','npx','wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'})
+  : spawnSync('npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
 assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
 function jsFiles(dir:string):string[]{
   const out:string[]=[];
@@ -42,7 +44,7 @@ function temporalAudit(overrides:any={}){
 function bigDbBody(overrides:any={}){
   const rows=historicalRows();
   return {
-    status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',targetDate:TARGET_DATE,
+    status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE',targetDate:TARGET_DATE,
     exactTeam:{home:{retrieved:21},away:{retrieved:21},h2h:{retrieved:2}},
     fixtures:{home:rows.slice(0,21),away:rows.slice(21,42),h2h:rows.slice(42)},
     globalPrior:{fixtureCount:100,markets:{}},
@@ -62,7 +64,7 @@ test('E2E live router preserves release contract, strict-prior isolation and det
     const first=await router.fetch(liveRequest(),env,ctx),second=await router.fetch(liveRequest(),env,ctx);
     assert.equal(first.status,200);assert.equal(second.status,200);
     const a:any=await first.json(),b:any=await second.json();
-    assert.deepEqual(a,b);assert.equal(a.status,'SUCCESS');assert.equal(a.engine,'CFI_LIVE_V1');assert.equal(a.runtime.version,'CFI_LIVE_RUNTIME_V1');assert.equal(a.runtime.predictionPath,'PREMATCH_V5_2_5_PRIOR_PLUS_LIVE_STATE_V1');assert.equal(a.runtime.prematchEngine,'CFI_FINAL_V5.2.5');assert.equal(a.strictPrior.verified,true);assert.equal(a.temporalEvidenceAudit.futureEvidenceCount,0);assert.equal(a.temporalEvidenceAudit.sameDateEvidenceCount,0);assert.equal(a.bigDbRetrieval.version,'CFI_BIG_DB_RETRIEVAL_V2.1.2');assert.equal(a.isolation.prematchFrozen,true);assert.equal(a.isolation.prematchSnapshotWrite,false);assert.equal(a.isolation.liveSnapshotWrite,false);assert.equal(a.isolation.liveEvidenceSeparated,true);assert.deepEqual(a.scoreline.ht.final,[{score:'0-1',probability:1}]);
+    assert.deepEqual(a,b);assert.equal(a.status,'SUCCESS');assert.equal(a.engine,'CFI_LIVE_V1');assert.equal(a.runtime.version,'CFI_LIVE_RUNTIME_V1');assert.equal(a.runtime.predictionPath,'PREMATCH_V5_3_TOP1_PRIOR_PLUS_LIVE_STATE_V1');assert.equal(a.runtime.prematchEngine,'CFI_FINAL_V5.3.0');assert.equal(a.strictPrior.verified,true);assert.equal(a.temporalEvidenceAudit.futureEvidenceCount,0);assert.equal(a.temporalEvidenceAudit.sameDateEvidenceCount,0);assert.equal(a.bigDbRetrieval.version,'CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE');assert.equal(a.isolation.prematchFrozen,true);assert.equal(a.isolation.prematchSnapshotWrite,false);assert.equal(a.isolation.liveSnapshotWrite,false);assert.equal(a.isolation.liveEvidenceSeparated,true);assert.deepEqual(a.scoreline.ht.final,[{score:'0-1',probability:1}]);
   });
 });
 test('E2E live router fails closed when BigDB temporal audit contains future evidence',async()=>{

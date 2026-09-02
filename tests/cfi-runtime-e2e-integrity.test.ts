@@ -10,7 +10,9 @@ const TARGET_DATE='2026-08-22';
 const HOME='Cardiff';
 const AWAY='Plymouth';
 const bundleDir=mkdtempSync(join(tmpdir(),'cfi-integrity-e2e-'));
-const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
+const build=process.platform==='win32'
+  ? spawnSync('cmd.exe',['/d','/s','/c','npx','wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'})
+  : spawnSync('npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
 assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
 
 function jsFiles(dir:string):string[]{
@@ -42,7 +44,7 @@ function bigDbBody({temporalAudit,scored=true,exactHome=22,exactAway=22}:{tempor
   const rows=historicalRows(scored);
   return {
     status:'OK',
-    version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',
+    version:'CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE',
     targetDate:TARGET_DATE,
     exactTeam:{home:{retrieved:exactHome},away:{retrieved:exactAway},h2h:{retrieved:0}},
     fixtures:{home:rows.slice(0,22),away:rows.slice(22),h2h:[]},

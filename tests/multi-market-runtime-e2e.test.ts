@@ -10,7 +10,9 @@ const TARGET_DATE='2026-08-22';
 const HOME='Cardiff';
 const AWAY='Plymouth';
 const bundleDir=mkdtempSync(join(tmpdir(),'cfi-multimarket-runtime-e2e-'));
-const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
+const build=process.platform==='win32'
+  ? spawnSync('cmd.exe',['/d','/s','/c','npx','wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'})
+  : spawnSync('npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
 assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
 function jsFiles(dir:string):string[]{const out:string[]=[];for(const entry of readdirSync(dir,{withFileTypes:true})){const path=join(dir,entry.name);if(entry.isDirectory())out.push(...jsFiles(path));else if(/\.(?:m?js)$/.test(entry.name))out.push(path);}return out;}
 const candidates=jsFiles(bundleDir).sort((a,b)=>statSync(b).size-statSync(a).size);
@@ -20,7 +22,7 @@ process.on('exit',()=>{try{rmSync(bundleDir,{recursive:true,force:true});}catch{
 
 function bigDbBody(){
   const rows=Array.from({length:44},(_,index)=>({id:`mm-${index}`,matchDate:`2026-07-${String((index%28)+1).padStart(2,'0')}`,homeTeam:index<22?HOME:`Opponent ${index}`,awayTeam:index<22?`Opponent ${index}`:AWAY,ht:index%3===0?'1-1':'1-0',ft:index%4===0?'3-2':'2-1'}));
-  return {status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',targetDate:TARGET_DATE,exactTeam:{home:{retrieved:22},away:{retrieved:22},h2h:{retrieved:0}},fixtures:{home:rows.slice(0,22),away:rows.slice(22),h2h:[]},globalPrior:{fixtureCount:100,markets:{}},temporalAudit:{targetDate:TARGET_DATE,verified:true,observable:true,maxEvidenceDate:'2026-07-28',exactTeamMaxEvidenceDate:'2026-07-28',globalPriorMaxEvidenceDate:'2026-07-28',futureEvidenceCount:0,sameDateEvidenceCount:0}};
+  return {status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE',targetDate:TARGET_DATE,exactTeam:{home:{retrieved:22},away:{retrieved:22},h2h:{retrieved:0}},fixtures:{home:rows.slice(0,22),away:rows.slice(22),h2h:[]},globalPrior:{fixtureCount:100,markets:{}},temporalAudit:{targetDate:TARGET_DATE,verified:true,observable:true,maxEvidenceDate:'2026-07-28',exactTeamMaxEvidenceDate:'2026-07-28',globalPriorMaxEvidenceDate:'2026-07-28',futureEvidenceCount:0,sameDateEvidenceCount:0}};
 }
 const ctx={waitUntil(){},passThroughOnException(){}} as ExecutionContext;
 const env={CFI_DB_BASE_URL:'https://example.test/functions/v1/cfi-db',CFI_DB_KEY:'test-key'};
@@ -38,9 +40,9 @@ test('production bundle exposes single-core multi-market shadow without mutating
     assert.equal(response.status,200);
     const body:any=await response.json();
     assert.equal(body.status,'SUCCESS');
-    assert.equal(body.engine,'CFI_FINAL_V5.2.5');
-    assert.equal(body.runtime.version,'CFI_SIX_TARGET_RUNTIME_V1.4');
-    assert.equal(body.runtime.predictionPath,'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2');
+    assert.equal(body.engine,'CFI_FINAL_V5.3.0');
+    assert.equal(body.runtime.version,'CFI_PRIMARY_TOP1_RUNTIME_V2');
+    assert.equal(body.runtime.predictionPath,'NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_3_1_SHARED_IDENTITY');
     assert.equal(body.primaryTargets?.count??body.sixTargetMatrix?.primaryTargets?.count??6,6);
     assert.ok(body.markets?.['3+ HT']);assert.ok(body.markets?.['7+ FT']);assert.ok(body.markets?.['Other HT']);assert.ok(body.markets?.['Other FT']);
     assert.ok(body.scoreline?.ht?.final);assert.ok(body.scoreline?.ft?.final);

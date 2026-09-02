@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { bridgeProviderTeamName } from "../_shared/cfi-provider-team-bridge.ts";
 
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json','access-control-allow-origin':'*','access-control-allow-headers':'content-type,x-cfi-key'}});
 const clean=(v:any)=>String(v??'').trim();
@@ -11,20 +12,109 @@ type Resolved={team_id:string;canonical_name:string;resolution:string};
 type Candidate={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoffIso:string;status:string;sourceUrl:string|null;canonicalHomeId?:string|null;canonicalAwayId?:string|null};
 type Catalog={teamById:Map<string,string>;folded:Map<string,Map<string,Resolved>>;club:Map<string,Map<string,Resolved>>};
 const fold=(value:string)=>clean(value).normalize('NFKD').replace(/\p{M}+/gu,'').toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
-const providerCanonicalAliases=new Map<string,string>([
- ['Manchester City','Man City'],['Manchester United','Man United'],['Birmingham City','Birmingham'],['AC Milan','Milan'],
- ['FC Bayern München','Bayern Munich'],['Bayern München','Bayern Munich'],['Paris Saint Germain','Paris Saint-Germain'],['PSG','Paris Saint-Germain'],
- ['Deportivo Alaves','Alaves'],['Deportivo Alavés','Alaves'],['Nottingham Forest',"Nott'm Forest"],['Wolverhampton Wanderers','Wolves'],
- ['Tottenham Hotspur','Tottenham'],['Newcastle United','Newcastle'],['West Ham United','West Ham'],['West Bromwich Albion','West Brom'],
- ['Brighton & Hove Albion','Brighton'],['Brighton and Hove Albion','Brighton']
-].map(([alias,canonical])=>[fold(alias),canonical]));
-const bridgeName=(name:string)=>providerCanonicalAliases.get(fold(name))??name;
 const clubKey=(value:string)=>fold(value).split(' ').filter(token=>token&&!clubDesignators.has(token)).join(' ');
 const add=(map:Map<string,Map<string,Resolved>>,key:string,value:Resolved)=>{if(!key||key.length<2)return;const bucket=map.get(key)||new Map<string,Resolved>();bucket.set(value.team_id,value);map.set(key,bucket);};
 const unique=(bucket:Map<string,Resolved>|undefined)=>{const xs=bucket?[...bucket.values()]:[];return xs.length===1?xs[0]:null;};
 async function fetchAll(db:any,table:string,columns:string){const out:any[]=[];for(let from=0;from<20000;from+=1000){let data:any=null,error:any=null;for(let attempt=0;attempt<3;attempt++){const result=await db.from(table).select(columns).range(from,from+999);data=result.data;error=result.error;if(!error)break;if(attempt<2)await new Promise(r=>setTimeout(r,150*(attempt+1)));}if(error)throw new Error(`${table.toUpperCase()}_CATALOG_FAILED:${error.message}`);const rows=Array.isArray(data)?data:[];out.push(...rows);if(rows.length<1000)break;}return out;}
 async function loadCatalog(db:any):Promise<Catalog>{const [teams,aliases]=await Promise.all([fetchAll(db,'teams','team_id,canonical_name'),fetchAll(db,'team_aliases','team_id,alias_display')]);const teamById=new Map<string,string>();for(const r of teams){const id=clean(r?.team_id),name=clean(r?.canonical_name);if(id&&name)teamById.set(id,name);}const folded=new Map<string,Map<string,Resolved>>(),club=new Map<string,Map<string,Resolved>>();const index=(label:string,id:string,resolution:string)=>{const canonical=teamById.get(id);if(!canonical)return;const value={team_id:id,canonical_name:canonical,resolution};add(folded,fold(label),value);const ck=clubKey(label);if(ck.length>=3)add(club,ck,value);};for(const [id,name] of teamById)index(name,id,'CANONICAL_FOLDED_EXACT');for(const r of aliases){const id=clean(r?.team_id),label=clean(r?.alias_display);if(id&&label)index(label,id,'ALIAS_FOLDED_EXACT');}return{teamById,folded,club};}
-async function resolve(db:any,catalog:Catalog,name:string):Promise<Resolved|null>{const bridged=bridgeName(name);const {data,error}=await db.rpc('cfi_resolve_team_name',{p_name:bridged});if(!error&&data?.status==='RESOLVED'&&data?.team_id&&data?.canonical_name)return{team_id:String(data.team_id),canonical_name:String(data.canonical_name),resolution:bridged===name?String(data.resolution??'RPC_EXACT'):'PROVIDER_ALIAS_TO_RPC_EXACT'};const exactBucket=catalog.folded.get(fold(bridged)),exact=unique(exactBucket);if(exact)return bridged===name?exact:{...exact,resolution:'PROVIDER_ALIAS_FOLDED_EXACT'};if(exactBucket&&exactBucket.size>1)return null;const ck=clubKey(bridged),club=unique(ck.length>=3?catalog.club.get(ck):undefined);return club?{...club,resolution:bridged===name?'CANONICAL_CLUB_KEY_EXACT':'PROVIDER_ALIAS_CLUB_KEY_EXACT'}:null;}
+const AUTO_ALIAS_DECORATOR_TOKENS=new Set(['town','city','united','utd']);
+
+const autoAliasClass=(value:string)=>{
+  const tokens=fold(value).split(' ').filter(Boolean);
+  const youth=tokens.find(t=>/^u(?:17|18|19|20|21|23)$/.test(t));
+  if(youth)return youth.toUpperCase();
+  if(tokens.some(t=>['women','woman','ladies','lady','feminine','feminin','femenino','femenina'].includes(t)))return 'WOMEN';
+  const last=tokens[tokens.length-1]??'';
+  if(tokens.includes('reserve')||tokens.includes('reserves')||last==='ii'||last==='b')return 'RESERVE';
+  return 'SENIOR';
+};
+
+const autoAliasKey=(value:string)=>
+  clubKey(value)
+    .split(' ')
+    .filter(t=>t&&!AUTO_ALIAS_DECORATOR_TOKENS.has(t))
+    .join(' ');
+
+const uniqueAutoAlias=(catalog:Catalog,name:string):Resolved|null=>{
+  const key=autoAliasKey(name);
+  if(key.length<3)return null;
+
+  const klass=autoAliasClass(name);
+  let hit:Resolved|null=null;
+  let count=0;
+
+  for(const [id,canonical] of catalog.teamById){
+    if(autoAliasClass(canonical)!==klass)continue;
+    if(autoAliasKey(canonical)!==key)continue;
+
+    count++;
+    if(count>1)return null;
+
+    hit={
+      team_id:id,
+      canonical_name:canonical,
+      resolution:'AUTO_ALIAS_UNIQUE_DECORATOR_EXACT'
+    };
+  }
+
+  return count===1?hit:null;
+};
+
+async function resolve(db:any,catalog:Catalog,name:string):Promise<Resolved|null>{
+  const bridged=bridgeProviderTeamName(name);
+
+  const {data,error}=await db.rpc(
+    'cfi_resolve_team_name',
+    {p_name:bridged}
+  );
+
+  if(!error&&data?.status==='RESOLVED'&&data?.team_id&&data?.canonical_name){
+    return{
+      team_id:String(data.team_id),
+      canonical_name:String(data.canonical_name),
+      resolution:bridged===name
+        ? String(data.resolution??'RPC_EXACT')
+        : 'PROVIDER_ALIAS_TO_RPC_EXACT'
+    };
+  }
+
+  const exactBucket=catalog.folded.get(fold(bridged));
+  const exact=unique(exactBucket);
+
+  if(exact){
+    return bridged===name
+      ? exact
+      : {...exact,resolution:'PROVIDER_ALIAS_FOLDED_EXACT'};
+  }
+
+  if(exactBucket&&exactBucket.size>1)return null;
+
+  const ck=clubKey(bridged);
+  const clubBucket=ck.length>=3
+    ? catalog.club.get(ck)
+    : undefined;
+
+  const club=unique(clubBucket);
+
+  if(club){
+    return{
+      ...club,
+      resolution:bridged===name
+        ? 'CANONICAL_CLUB_KEY_EXACT'
+        : 'PROVIDER_ALIAS_CLUB_KEY_EXACT'
+    };
+  }
+
+  if(clubBucket&&clubBucket.size>1)return null;
+
+  const auto=uniqueAutoAlias(catalog,bridged);
+
+  if(!auto)return null;
+
+  return bridged===name
+    ? auto
+    : {...auto,resolution:'PROVIDER_ALIAS_TO_AUTO_ALIAS_EXACT'};
+}
 function localParts(iso:string,tz:string){const p=new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso));const g=(t:string)=>p.find(x=>x.type===t)?.value??'';return{date:`${g('year')}-${g('month')}-${g('day')}`,time:`${g('hour')}:${g('minute')}`};}
 function queryDates(targetDate:string){const base=Date.parse(`${targetDate}T00:00:00Z`);return Number.isFinite(base)?[-1,0,1].map(d=>new Date(base+d*86400000).toISOString().slice(0,10)):[targetDate];}
 function futureOnTarget(iso:string,targetDate:string,tz:string){const ms=Date.parse(iso);if(!Number.isFinite(ms))return false;const lp=localParts(iso,tz);if(lp.date!==targetDate)return false;const localNow=localParts(new Date().toISOString(),tz).date;return !(targetDate===localNow&&ms<=Date.now());}

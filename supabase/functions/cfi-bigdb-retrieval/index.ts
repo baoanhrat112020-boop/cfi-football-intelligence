@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { bridgeProviderTeamName } from "../_shared/cfi-provider-team-bridge.ts";
 
 const json=(x:unknown,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{"content-type":"application/json","access-control-allow-origin":"*","access-control-allow-headers":"authorization, x-client-info, apikey, content-type, x-cfi-key"}});
 const isScreenshot=(s:string)=>/screenshot|image|session/i.test(s||"");
@@ -59,17 +60,114 @@ const uniqueCandidate=(bucket:Map<string,IdentityCandidate>|undefined)=>{
   return values.length===1?values[0]:null;
 };
 
+const AUTO_ALIAS_DECORATOR_TOKENS=new Set(['town','city','united','utd']);
+
+const autoAliasClass=(value:string)=>{
+  const tokens=foldName(value).split(' ').filter(Boolean);
+  const youth=tokens.find(t=>/^u(?:17|18|19|20|21|23)$/.test(t));
+  if(youth)return youth.toUpperCase();
+  if(tokens.some(t=>['women','woman','ladies','lady','feminine','feminin','femenino','femenina'].includes(t)))return 'WOMEN';
+  const last=tokens[tokens.length-1]??'';
+  if(tokens.includes('reserve')||tokens.includes('reserves')||last==='ii'||last==='b')return 'RESERVE';
+  return 'SENIOR';
+};
+
+const autoAliasKey=(value:string)=>
+  clubIdentityKey(value)
+    .split(' ')
+    .filter(t=>t&&!AUTO_ALIAS_DECORATOR_TOKENS.has(t))
+    .join(' ');
+
 async function deterministicFallback(db:any,name:string){
   const catalog=await loadIdentityCatalog(db);
-  const foldedKey=foldName(name),foldedBucket=catalog.folded.get(foldedKey);
+
+  const foldedKey=foldName(name);
+  const foldedBucket=catalog.folded.get(foldedKey);
   const folded=uniqueCandidate(foldedBucket);
-  if(folded)return{status:'RESOLVED',team_id:folded.team_id,canonical_name:folded.canonical_name,resolution:'CANONICAL_FOLDED_EXACT',confidence:1};
-  if(foldedBucket&&foldedBucket.size>1)return{status:'UNRESOLVED',resolution:'AMBIGUOUS_EXACT_IDENTITY_KEY',input:name};
-  const clubKey=clubIdentityKey(name),clubBucket=clubKey.length>=3?catalog.club.get(clubKey):undefined;
+
+  if(folded){
+    return{
+      status:'RESOLVED',
+      team_id:folded.team_id,
+      canonical_name:folded.canonical_name,
+      resolution:'CANONICAL_FOLDED_EXACT',
+      confidence:1
+    };
+  }
+
+  if(foldedBucket&&foldedBucket.size>1){
+    return{
+      status:'UNRESOLVED',
+      resolution:'AMBIGUOUS_EXACT_IDENTITY_KEY',
+      input:name
+    };
+  }
+
+  const clubKey=clubIdentityKey(name);
+  const clubBucket=clubKey.length>=3
+    ? catalog.club.get(clubKey)
+    : undefined;
+
   const club=uniqueCandidate(clubBucket);
-  if(club)return{status:'RESOLVED',team_id:club.team_id,canonical_name:club.canonical_name,resolution:'CANONICAL_CLUB_KEY_EXACT',confidence:1};
-  if(clubBucket&&clubBucket.size>1)return{status:'UNRESOLVED',resolution:'AMBIGUOUS_EXACT_IDENTITY_KEY',input:name};
-  return{status:'UNRESOLVED',resolution:'NO_EXACT_IDENTITY_KEY',input:name};
+
+  if(club){
+    return{
+      status:'RESOLVED',
+      team_id:club.team_id,
+      canonical_name:club.canonical_name,
+      resolution:'CANONICAL_CLUB_KEY_EXACT',
+      confidence:1
+    };
+  }
+
+  if(clubBucket&&clubBucket.size>1){
+    return{
+      status:'UNRESOLVED',
+      resolution:'AMBIGUOUS_EXACT_IDENTITY_KEY',
+      input:name
+    };
+  }
+
+  const key=autoAliasKey(name);
+  const klass=autoAliasClass(name);
+  const hits=new Map<string,IdentityCandidate>();
+
+  if(key.length>=3){
+    for(const [label,bucket] of catalog.folded){
+      if(autoAliasClass(label)!==klass)continue;
+      if(autoAliasKey(label)!==key)continue;
+
+      for(const candidate of bucket.values()){
+        hits.set(candidate.team_id,candidate);
+      }
+    }
+  }
+
+  if(hits.size===1){
+    const candidate=[...hits.values()][0];
+
+    return{
+      status:'RESOLVED',
+      team_id:candidate.team_id,
+      canonical_name:candidate.canonical_name,
+      resolution:'AUTO_ALIAS_UNIQUE_DECORATOR_EXACT',
+      confidence:1
+    };
+  }
+
+  if(hits.size>1){
+    return{
+      status:'UNRESOLVED',
+      resolution:'AMBIGUOUS_AUTO_ALIAS_KEY',
+      input:name
+    };
+  }
+
+  return{
+    status:'UNRESOLVED',
+    resolution:'NO_EXACT_IDENTITY_KEY',
+    input:name
+  };
 }
 
 Deno.serve(async(req)=>{
@@ -91,10 +189,11 @@ Deno.serve(async(req)=>{
   if(!targetDate)return json({error:'TARGET_DATE_REQUIRED'},400);
 
   const resolve=async(name:string)=>{
-    const {data,error}=await db.rpc('cfi_resolve_team_name',{p_name:name});
-    if(!error&&data?.status==='RESOLVED')return data;
-    const fallback=await deterministicFallback(db,name);
-    if(fallback?.status==='RESOLVED')return fallback;
+    const bridged=bridgeProviderTeamName(name);
+    const {data,error}=await db.rpc('cfi_resolve_team_name',{p_name:bridged});
+    if(!error&&data?.status==='RESOLVED')return bridged===name?data:{...data,resolution:'PROVIDER_ALIAS_TO_RPC_EXACT',providerInput:name,bridgedInput:bridged};
+    const fallback=await deterministicFallback(db,bridged);
+    if(fallback?.status==='RESOLVED')return bridged===name?fallback:{...fallback,resolution:'PROVIDER_ALIAS_TO_DETERMINISTIC_EXACT',providerInput:name,bridgedInput:bridged};
     if(error)return{...fallback,rpcError:`${error.code||''}:${error.message}`};
     return{...fallback,rpcResolution:data?.resolution??data?.status??null};
   };
@@ -165,7 +264,7 @@ Deno.serve(async(req)=>{
   const temporalAudit={targetDate,maxEvidenceDate,exactTeamMaxEvidenceDate:maxExact,globalPriorMaxEvidenceDate:maxGlobalDate,futureEvidenceCount:futureExact,sameDateEvidenceCount:sameExact,observable:maxEvidenceDate!==null,verified:maxEvidenceDate!==null&&maxEvidenceDate<targetDate&&futureExact===0&&sameExact===0,rule:'fixtureDate < targetDate'};
 
   return json({
-    status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.3.0_IDENTITY_KEY_EXACT',targetDate,
+    status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE',targetDate,
     identity:{homeFound:!!hr,awayFound:!!ar,homeTeamId:hr?.team_id??null,awayTeamId:ar?.team_id??null,homeInput:home,awayInput:away,homeCanonical:hr?.canonical_name??null,awayCanonical:ar?.canonical_name??null,homeResolution:homeResolution?.resolution??null,awayResolution:awayResolution?.resolution??null},
     hydration:{teamNames:true,hydratedTeamCount:teamNameById.size},
     currentSessionProvenance:'NOT_OBSERVABLE_WITHOUT_SESSION_ID_OR_IMAGE_HASHES',
