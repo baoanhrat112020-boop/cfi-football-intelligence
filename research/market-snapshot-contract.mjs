@@ -6,11 +6,12 @@ const DECISIONS=new Set(['BET_SIMULATED','WATCH','PASS','SHADOW']);
 const odd=x=>Number.isFinite(Number(x))&&Number(x)>1;
 const prob=x=>Number.isFinite(Number(x))&&Number(x)>=0&&Number(x)<=1;
 const iso=x=>Number.isFinite(Date.parse(String(x??'')));
+const nn=(...xs)=>xs.filter(x=>x!==null&&x!==undefined&&String(x).trim()!=='').length;
 export function fairTwoWayProbabilities(a,b){if(!odd(a)||!odd(b))throw new Error('INVALID_TWO_WAY_ODDS');const ia=1/Number(a),ib=1/Number(b),z=ia+ib;return {a:ia/z,b:ib/z,vig:z-1};}
 export function fairThreeWayProbabilities(home,draw,away){if(!odd(home)||!odd(draw)||!odd(away))throw new Error('INVALID_THREE_WAY_ODDS');const ih=1/Number(home),id=1/Number(draw),ia=1/Number(away),z=ih+id+ia;return {home:ih/z,draw:id/z,away:ia/z,vig:z-1};}
 export function validateMarketSnapshot(s={}){
   const errors=[];
-  if(!s.fixture_id)errors.push('FIXTURE_ID_REQUIRED');
+  if(nn(s.fixture_id,s.verified_fixture_id)!==1)errors.push('EXACTLY_ONE_FIXTURE_REFERENCE_REQUIRED');
   if(!iso(s.captured_at)||!iso(s.kickoff_at))errors.push('VALID_TIMESTAMPS_REQUIRED');
   else if(Date.parse(s.captured_at)>=Date.parse(s.kickoff_at))errors.push('CAPTURE_MUST_PRECEDE_KICKOFF');
   if(!String(s.bookmaker??'').trim())errors.push('BOOKMAKER_REQUIRED');
@@ -26,19 +27,19 @@ export function validateDecisionSnapshot(d={},marketSnapshot={}){
   const errors=[];
   const marketAudit=validateMarketSnapshot(marketSnapshot);if(!marketAudit.valid)errors.push('MARKET_SNAPSHOT_INVALID');
   if(marketSnapshot?.is_closing===true)errors.push('CLOSING_PRICE_NOT_ALLOWED_FOR_PREMATCH_DECISION');
-  if(!d.prediction_snapshot_id)errors.push('PREDICTION_SNAPSHOT_ID_REQUIRED');
+  if(nn(d.prediction_snapshot_id,d.research_prediction_snapshot_id)!==1)errors.push('EXACTLY_ONE_PREDICTION_REFERENCE_REQUIRED');
   if(!d.market_snapshot_id)errors.push('MARKET_SNAPSHOT_ID_REQUIRED');
   if(!prob(d.cfi_probability)||!prob(d.market_probability))errors.push('VALID_PROBABILITIES_REQUIRED');
   if(!iso(d.decision_timestamp))errors.push('DECISION_TIMESTAMP_REQUIRED');
   else if(iso(marketSnapshot?.kickoff_at)&&Date.parse(d.decision_timestamp)>=Date.parse(marketSnapshot.kickoff_at))errors.push('DECISION_MUST_PRECEDE_KICKOFF');
   if(!DECISIONS.has(d.decision))errors.push('DECISION_INVALID');
-  if(d.decisionUse===true)errors.push('DECISION_USE_MUST_BE_FALSE');
+  if(d.decisionUse===true||d.decision_use===true)errors.push('DECISION_USE_MUST_BE_FALSE');
   const stake=Number(d.stake_simulated??0);if(!Number.isFinite(stake)||stake<0)errors.push('SIMULATED_STAKE_INVALID');
   if(stake>0&&d.decision!=='BET_SIMULATED')errors.push('STAKE_ONLY_ALLOWED_FOR_SIMULATED_BET');
   return {version:DECISION_SNAPSHOT_VERSION,valid:errors.length===0,errors,researchOnly:true,decisionUse:false};
 }
 export function buildDecisionSnapshot(input,marketSnapshot){
-  const row={...input,edge:Number(input?.cfi_probability)-Number(input?.market_probability),decisionUse:false,research_only:true};
+  const row={...input,edge:Number(input?.cfi_probability)-Number(input?.market_probability),decisionUse:false,decision_use:false,research_only:true};
   const audit=validateDecisionSnapshot(row,marketSnapshot);if(!audit.valid)throw new Error(audit.errors.join('|'));
   return {...row,version:DECISION_SNAPSHOT_VERSION};
 }
