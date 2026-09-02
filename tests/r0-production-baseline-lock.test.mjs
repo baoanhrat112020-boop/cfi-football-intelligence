@@ -17,6 +17,10 @@ test('R0 baseline is pinned to reproducible V5.3.1 Top-1 V2 Multi-Market V2.2 li
   assert.equal(result.status, 'PASS');
   assert.equal(PRODUCTION_BASELINE_LOCK.commitSha, '8ca9a3634f536f2f838135df062f5bbbf7da0d9a');
   assert.equal(PRODUCTION_BASELINE_LOCK.engine, 'CFI_FINAL_V5.3.1');
+  assert.equal(PRODUCTION_BASELINE_LOCK.numericalCoreEngine, 'CFI_FINAL_V5.3.1');
+  assert.equal(PRODUCTION_BASELINE_LOCK.productionRuntimeReportedEngine, 'CFI_FINAL_V5.3.0');
+  assert.equal(PRODUCTION_BASELINE_LOCK.runtimeTelemetryMatchesNumericalCore, false);
+  assert.equal(PRODUCTION_BASELINE_LOCK.runtimeTelemetryStatus, 'LABEL_LAGS_NUMERICAL_CORE');
   assert.equal(PRODUCTION_BASELINE_LOCK.runtime, 'CFI_PRIMARY_TOP1_RUNTIME_V2');
   assert.equal(PRODUCTION_BASELINE_LOCK.primaryContract, 'CFI_2_METHODS_X_6_TARGETS_V2');
   assert.equal(PRODUCTION_BASELINE_LOCK.multiMarketVersion, 'CFI_MULTI_MARKET_V1');
@@ -26,9 +30,21 @@ test('R0 baseline is pinned to reproducible V5.3.1 Top-1 V2 Multi-Market V2.2 li
   assert.equal(PRODUCTION_BASELINE_LOCK.productionMutationAllowed, false);
   assert.equal(R0_DATASET_CONTRACT.baselineCommitSha, PRODUCTION_BASELINE_LOCK.commitSha);
   assert.equal(R0_DATASET_CONTRACT.productionChampion, PRODUCTION_BASELINE_LOCK.engine);
+  assert.equal(R0_DATASET_CONTRACT.numericalCoreEngine, PRODUCTION_BASELINE_LOCK.numericalCoreEngine);
+  assert.equal(R0_DATASET_CONTRACT.productionRuntimeReportedEngine, PRODUCTION_BASELINE_LOCK.productionRuntimeReportedEngine);
+  assert.equal(R0_DATASET_CONTRACT.runtimeTelemetryMatchesNumericalCore, false);
   assert.equal(R0_DATASET_CONTRACT.productionRuntime, PRODUCTION_BASELINE_LOCK.runtime);
   assert.equal(R0_DATASET_CONTRACT.primaryContract, PRODUCTION_BASELINE_LOCK.primaryContract);
   assert.equal(R0_DATASET_CONTRACT.multiMarketVersion, PRODUCTION_BASELINE_LOCK.multiMarketVersion);
+});
+
+test('baseline source lock explicitly proves numerical V5.3.1 with production telemetry label still V5.3.0', () => {
+  const numerical = readRepoSource('src/prediction/final-engine.ts').toString('utf8');
+  const prematch = readRepoSource('cloudflare-worker/src/index-v55.ts').toString('utf8');
+  const live = readRepoSource('cloudflare-worker/src/index-live-router.ts').toString('utf8');
+  assert.match(numerical, /FINAL_VERSION = "CFI_FINAL_V5\.3\.1"/);
+  assert.match(prematch, /const ENGINE_VERSION='CFI_FINAL_V5\.3\.0'/);
+  assert.match(live, /const PREMATCH_ENGINE='CFI_FINAL_V5\.3\.0'/);
 });
 
 test('R0 baseline guard fails closed if any pinned production source drifts', () => {
