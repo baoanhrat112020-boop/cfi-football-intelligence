@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   CONTRACT,
   DEFAULT_MODEL,
@@ -10,6 +11,8 @@ import {
   countDiffFiles,
   buildCloudflareAuditPrompt,
 } from '../tools/cfi-independent-ai-auditor.mjs';
+
+const auditorSource=fs.readFileSync('tools/cfi-independent-ai-auditor.mjs','utf8');
 
 const passBlock=`
 Review summary.
@@ -86,6 +89,15 @@ test('Cloudflare response extractor supports native and OpenAI-compatible shapes
   assert.equal(extractCloudflareResponseText({choices:[{message:{content:'compat'}}]}),'compat');
   assert.equal(extractCloudflareResponseText({result:{}}),'');
   assert.equal(DEFAULT_MODEL,'@cf/zai-org/glm-4.7-flash');
+});
+
+test('Workers AI adapter uses OpenAI-compatible chat completions with bounded reasoning output',()=>{
+  assert.match(auditorSource,/\/ai\/v1\/chat\/completions/);
+  assert.doesNotMatch(auditorSource,/\/ai\/run\/\$\{model\}/);
+  assert.match(auditorSource,/model,\s*\n\s*messages,/);
+  assert.match(auditorSource,/max_completion_tokens:\s*4096/);
+  assert.match(auditorSource,/reasoning_effort:\s*'low'/);
+  assert.match(auditorSource,/AbortSignal\.timeout\(180_000\)/);
 });
 
 test('diff completeness helper counts changed-file boundaries',()=>{
