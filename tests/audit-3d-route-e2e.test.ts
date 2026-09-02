@@ -7,7 +7,9 @@ import { join } from 'node:path';
 import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 
 const bundleDir=mkdtempSync(join(tmpdir(),'cfi-audit3d-route-e2e-'));
-const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
+const build=process.platform==='win32'
+  ? spawnSync('cmd.exe',['/d','/s','/c','npx','wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'})
+  : spawnSync('npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
 assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
 function jsFiles(dir:string):string[]{const out:string[]=[];for(const entry of readdirSync(dir,{withFileTypes:true})){const path=join(dir,entry.name);if(entry.isDirectory())out.push(...jsFiles(path));else if(/\.(?:m?js)$/.test(entry.name))out.push(path);}return out;}
 const candidates=jsFiles(bundleDir).sort((a,b)=>statSync(b).size-statSync(a).size);

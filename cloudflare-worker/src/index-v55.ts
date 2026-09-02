@@ -8,7 +8,7 @@ import { attachCfiBettingBoard } from '../../src/presentation/cfi-betting-board.
 
 const ENGINE_VERSION='CFI_FINAL_V5.3.0';
 const RUNTIME_VERSION='CFI_PRIMARY_TOP1_RUNTIME_V2';
-const BIGDB_VERSION='CFI_BIG_DB_RETRIEVAL_V2.1.2';
+const BIGDB_VERSION='CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE';
 const DIVERSITY_GUARD_VERSION='CFI_MATCH_DIVERSITY_GUARD_V1';
 const PRODUCTION_ENTRYPOINT='index-live-router.ts';
 const PREMATCH_HANDLER='index-v55.ts';
@@ -156,7 +156,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     attachCfiOutputV2(body,input?.odds?.values??input?.odds??{});
     attachCfiOutputV3(body,input);
     attachCfiBettingBoard(body);
-    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_1_2',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
+    body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_3_1_SHARED_IDENTITY',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
     if(body?.status==='DATA_READY'){
       body.upstreamStatus='DATA_READY';
       body.status='SUCCESS';

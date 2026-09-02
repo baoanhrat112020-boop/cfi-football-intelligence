@@ -359,9 +359,6 @@ export default{
     const url=new URL(request.url);
     if(url.pathname==='/api/discover'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
-      if(Array.isArray(input?.fixture_candidates)&&input.fixture_candidates.length>0){
-        return suppliedDiscovery(request,input,env,ctx);
-      }
       return core.fetch(request,env,ctx);
     }
     if(url.pathname==='/api/predict'&&request.method==='POST'){

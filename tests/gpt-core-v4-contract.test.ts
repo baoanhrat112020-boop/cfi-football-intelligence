@@ -9,7 +9,9 @@ import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 const TARGET_DATE='2026-08-22';
 const PROD_HOST='cfi-football-intelligence.baoanhrat112020.workers.dev';
 const bundleDir=mkdtempSync(join(tmpdir(),'cfi-gpt-core-v4-'));
-const build=spawnSync(process.platform==='win32'?'npx.cmd':'npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
+const build=process.platform==='win32'
+  ? spawnSync('cmd.exe',['/d','/s','/c','npx','wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'})
+  : spawnSync('npx',['wrangler','deploy','--dry-run','--outdir',bundleDir],{encoding:'utf8'});
 assert.equal(build.status,0,`Wrangler bundle failed:\n${build.stdout}\n${build.stderr}`);
 function jsFiles(dir:string):string[]{const out:string[]=[];for(const entry of readdirSync(dir,{withFileTypes:true})){const path=join(dir,entry.name);if(entry.isDirectory())out.push(...jsFiles(path));else if(/\.(?:m?js)$/.test(entry.name))out.push(path);}return out;}
 const candidates=jsFiles(bundleDir).sort((a,b)=>statSync(b).size-statSync(a).size);
@@ -38,10 +40,10 @@ test('production-host direct predict returns compact GPT contract while preservi
   });
 });
 
-test('supplied fixture discovery never calls discovery feed or adds fixtures outside input',async()=>{
+test('supplied fixture discovery merges canonical feed and preserves single fallback owner',async()=>{
   await withMockFetch(async calls=>{
     const supplied=[{provider:'GPT_WEB_SEARCH',providerId:'supplied-a',home:'Supplied Home A',away:'Supplied Away A',competition:'Test',country:'Test',kickoffIso:'2026-08-22T12:00:00Z',status:'scheduled',sourceUrls:['https://example.com/a'],discoveredAt:'2026-08-22T00:00:00Z'},{provider:'GPT_WEB_SEARCH',providerId:'supplied-b',home:'Supplied Home B',away:'Supplied Away B',competition:'Test',country:'Test',kickoffIso:'2026-08-22T14:00:00Z',status:'scheduled',sourceUrls:['https://example.com/b'],discoveredAt:'2026-08-22T00:00:00Z'}];
     const response=await router.fetch(new Request('https://worker.test/api/discover',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({target_date:TARGET_DATE,timezone:'Asia/Ho_Chi_Minh',response_mode:'compact',max_matches:5,internal_provider_diagnostics:false,fixture_candidates:supplied})}),env,ctx);
-    assert.equal(response.status,200);const body:any=await response.json();assert.equal(calls.discoveryFeed,0);assert.equal(body.search?.mode,'SUPPLIED_FIXTURE_ONLY');assert.equal(body.search?.suppliedFixtureOnly,true);assert.equal(body.search?.canonicalFeedMerged,false);assert.equal(body.search?.workerProviderFallbackAllowed,false);assert.equal(body.rules?.providerFallbackOnShortfall,false);assert.equal(body.counts?.databaseFixtures,0);assert.equal(body.counts?.publicProviderFixtures,0);assert.ok(Number(body.counts?.fixturesDiscovered)<=supplied.length);assert.ok(Number(body.counts?.predictionAttempts)<=supplied.length);const allowed=new Set(supplied.map(row=>`${row.home} vs ${row.away}`));for(const row of body.board??[])assert.ok(allowed.has(row.match),`unexpected fixture added: ${row.match}`);
+    assert.equal(response.status,200);const body:any=await response.json();assert.ok(calls.discoveryFeed>=1,'canonical discovery feed must be consulted');assert.equal(body.search?.mode,'GPT_SEARCH_FIRST');assert.equal(body.search?.providerFallbackTriggered,true);assert.equal(body.search?.canonicalFeedOwnsProviderFallback,true);assert.equal(body.search?.workerProviderFallbackAllowed,false);assert.equal(body.rules?.providerFallbackOnShortfall,true);assert.equal(body.counts?.databaseFixtures,0);assert.equal(body.counts?.publicProviderFixtures,0);assert.ok(Number(body.counts?.fixturesDiscovered)<=supplied.length);assert.ok(Number(body.counts?.predictionAttempts)<=supplied.length);const allowed=new Set(supplied.map(row=>`${row.home} vs ${row.away}`));for(const row of body.board??[])assert.ok(allowed.has(row.match),`unexpected fixture added: ${row.match}`);
   });
 });

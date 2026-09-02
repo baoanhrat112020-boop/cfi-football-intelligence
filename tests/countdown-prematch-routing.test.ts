@@ -27,7 +27,7 @@ test('COUNTDOWN sent to live endpoint is executed through prematch with resolved
   let seen:any=null;
   const fakePrematch=async(request:Request)=>{
     seen={url:new URL(request.url),body:await request.json()};
-    return Response.json({status:'SUCCESS',runtime:{predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_1_2'}});
+    return Response.json({status:'SUCCESS',runtime:{predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_V2_3_1_SHARED_IDENTITY'}});
   };
   const request=new Request('https://example.test/api/predict-live',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({home:'CSKA Moscow Reserves',away:'Lokomotiv Moscow Youth',status:'COUNTDOWN',clientLocalDate:'2026-08-22'})});
   const input=await request.clone().json();

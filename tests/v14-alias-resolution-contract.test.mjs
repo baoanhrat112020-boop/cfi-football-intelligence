@@ -59,12 +59,12 @@ test('BigDB resolution stays exact and bridges provider club-name formatting wit
   const runtime=read('cloudflare-worker/src/index-v50.ts');
   assert.match(migration,/where alias_normalized = public\.cfi_normalize_team_name\(v_input\)/);
   assert.doesNotMatch(migration,/similarity\s*\(/i);
-  assert.ok(override.indexOf('from public.team_aliases')<override.indexOf('from public.teams\n  where lower'));
+  const aliasPos=override.indexOf('from public.team_aliases');const canonicalPos=override.indexOf('from public.teams',aliasPos+1);assert.ok(aliasPos>=0&&canonicalPos>aliasPos,'curated alias lookup must precede canonical exact lookup');
   assert.match(retrieval,/db\.rpc\('cfi_resolve_team_name'/);
   assert.match(retrieval,/CANONICAL_FOLDED_EXACT/);
   assert.match(retrieval,/CANONICAL_CLUB_KEY_EXACT/);
   assert.match(retrieval,/AMBIGUOUS_EXACT_IDENTITY_KEY/);
-  assert.match(retrieval,/CFI_BIG_DB_RETRIEVAL_V2\.3\.0_IDENTITY_KEY_EXACT/);
+  assert.ok(retrieval.includes('CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE'));
   assert.doesNotMatch(retrieval,/similarity\s*\(/i);
   assert.match(retrieval,/homeResolution\?\.status==='RESOLVED'/);
   assert.match(runtime,/predictionHome=String\(big\?\.identity\?\.homeCanonical\|\|home\)/);

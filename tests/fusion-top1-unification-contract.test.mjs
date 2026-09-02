@@ -26,7 +26,7 @@ test('active production and Fusion paths expose only Top-1 exact-score targets',
   assert.match(v50,/Top-1 HT/);
   assert.match(v50,/Top-1 FT/);
   const v55=read('cloudflare-worker/src/index-v55.ts');
-  assert.match(v55,/NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_1_2/);
+  assert.match(v55,/NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_3_1_SHARED_IDENTITY/);
 });
 
 test('legacy Top-3 compatibility is isolated to immutable settlement reader only',()=>{

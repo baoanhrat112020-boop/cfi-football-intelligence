@@ -23,7 +23,9 @@
     "cfi:canonical:merge": "node local-node/canonical/canonical-merge.mjs",
     "cfi:bigdb:dry-run": "node local-node/canonical/bigdb-dry-run.mjs",
     "cfi:node:once": "node local-node/index.mjs --once",
-    "cfi:node:deep": "node local-node/index.mjs --once --deep"
+    "cfi:node:deep": "node local-node/index.mjs --once --deep",
+    "cfi:audit": "node tools/cfi-audit.mjs",
+    "cfi:audit:full": "node tools/cfi-audit.mjs --full"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
