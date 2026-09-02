@@ -13,19 +13,40 @@ The AI reviewer is not the CFI prediction engine and has no production mutation 
 
 ## Default provider
 
-V1 uses **GitHub Copilot Code Review** as the independent reviewer. The workflow requests `copilot-pull-request-reviewer[bot]` after the deterministic gate passes, waits for review evidence tied to the current PR head, parses the required structured verdict, and fails closed when the verdict is absent or malformed.
+V1 uses **Cloudflare Workers AI** with `@cf/zai-org/glm-4.7-flash` as the independent reviewer. The provider is outside the CFI prediction runtime and is invoked only after the deterministic `CFI Tests` workflow succeeds.
 
-The parser and promotion gate are provider-neutral. A later provider can be substituted by producing the same `CFI_AI_AUDIT_V1` structured footer and the same report contract; promotion logic does not need to change.
+The parser and promotion gate remain provider-neutral: any future independent reviewer must produce the same `CFI_AI_AUDIT_V1` structured footer and report contract.
+
+## Trusted execution boundary
+
+The PR workflow is intentionally secret-free. It runs CFI code and the zero-AI auditor, then uploads the deterministic report.
+
+The AI workflow is a separate trusted `workflow_run` workflow stored on the default branch. It:
+
+- starts only after `CFI Tests` completes successfully for a pull request;
+- checks out the auditor from the default branch, never the untrusted PR head;
+- downloads the deterministic audit artifact from the completed upstream run;
+- fetches PR metadata and the unified diff as read-only evidence;
+- treats all PR diff text as untrusted data and ignores instructions embedded in it;
+- calls Workers AI using repository secrets available only to the trusted workflow;
+- has GitHub permissions limited to `actions: read`, `contents: read`, and `pull-requests: read`;
+- never executes PR code with the Cloudflare API token;
+- never deploys Cloudflare, Supabase, or production CFI resources.
+
+This boundary is required. Do not move `CLOUDFLARE_API_TOKEN` into a workflow that executes code from a PR head.
 
 ## Pipeline
 
 ```text
 PR / code change
-  -> CFI zero-AI deterministic auditor
-  -> independent AI reviewer
-  -> structured verdict parser
-  -> PASS | FIX_REQUIRED | BLOCK_PROMOTION
-  -> report artifact
+  -> CFI Tests (no AI secrets)
+     -> zero-AI deterministic auditor
+     -> deterministic audit artifact
+  -> trusted workflow_run on default branch
+     -> Cloudflare Workers AI independent review
+     -> structured verdict parser
+     -> PASS | FIX_REQUIRED | BLOCK_PROMOTION
+     -> report artifact
   -> human-controlled merge / promotion decision
 ```
 
@@ -48,7 +69,7 @@ TEST_EVIDENCE: PASS|FAIL|UNKNOWN
 END_CFI_AI_AUDIT_V1
 ```
 
-Missing, incomplete, malformed, or stale-head evidence is not approval.
+Missing, incomplete, malformed, stale-head, empty-diff, provider-error, or over-limit evidence is not approval.
 
 ## Fail-closed normalization
 
@@ -60,7 +81,10 @@ The deterministic parser can make an AI verdict stricter but never weaker:
 - SHADOW_ISOLATION != PASS => `BLOCK_PROMOTION`.
 - P2 => at least `FIX_REQUIRED`.
 - MULTI_MARKET / ARCHITECTURE / TEST_EVIDENCE != PASS => at least `FIX_REQUIRED`.
-- Missing structured evidence => `BLOCK_PROMOTION`.
+- Missing or malformed structured evidence => `BLOCK_PROMOTION`.
+- PR head mismatch => `BLOCK_PROMOTION`.
+- PR diff larger than the single-review budget => `BLOCK_PROMOTION`; never silently truncate the diff.
+- Workers AI HTTP/auth/model failure => `BLOCK_PROMOTION`.
 
 ## Promotion contract
 
@@ -99,9 +123,10 @@ Workflow artifacts are written under:
 ```text
 audit-reports/independent-ai/latest.json
 audit-reports/independent-ai/latest.md
+audit-reports/independent-ai/review.txt
 ```
 
-The JSON report is machine-readable and the Markdown report is added to the GitHub Actions job summary.
+`review.txt` contains the external model's review text. Reports must never contain Cloudflare or GitHub tokens.
 
 ## Safety boundary
 
