@@ -151,6 +151,7 @@ function compactPrediction(body:any){
       championFusion:output.championFusion??null
     }:null,
     championFusion:compactFusion(body?.championFusion),
+    championFusionChallenger:compactFusion(body?.championFusionChallenger),
     responseMeta:{mode:'compact',contract:COMPACT_CONTRACT}
   };
   const size=JSON.stringify(compact).length;
