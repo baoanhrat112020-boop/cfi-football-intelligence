@@ -27,7 +27,7 @@ export const R0_DATASET_CONTRACT = Object.freeze({
   numericalCore: 'src/prediction/final-engine.ts::buildPrediction',
   decisionUse: false,
   productionMutationAllowed: false,
-  parityBasis: 'Exact source blobs are pinned to production main commit; R0 and challengers must use CFI_FINAL_V5.3.0 + Top-1 V2 + CFI_MULTI_MARKET_V1. Any locked core drift fails closed before replay.',
+  parityBasis: 'Exact source blobs are pinned to V2.2 baseline commit; R0 and challengers must use CFI_FINAL_V5.3.1 + Top-1 V2 + CFI_MULTI_MARKET_V1 + CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.2. Any locked core drift fails closed before replay.',
 });
 
 function dateOf(row) {
