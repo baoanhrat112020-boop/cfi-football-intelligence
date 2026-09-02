@@ -67,8 +67,11 @@ test('BigDB resolution stays exact and bridges provider club-name formatting wit
   assert.ok(retrieval.includes('CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE'));
   assert.doesNotMatch(retrieval,/similarity\s*\(/i);
   assert.match(retrieval,/homeResolution\?\.status==='RESOLVED'/);
-  assert.match(runtime,/predictionHome=String\(big\?\.identity\?\.homeCanonical\|\|home\)/);
-  assert.match(runtime,/prediction\.target=\{home,away,date:targetDate\}/);
+  const identityPos=runtime.indexOf('const identity=fixtureIdentityAudit(big)');
+  const exactPos=runtime.indexOf('const exact=exactTeamEvidenceAudit(big)');
+  assert.ok(identityPos>=0&&exactPos>identityPos,'canonical identity audit must precede exact-team evidence gate');
+  assert.match(runtime,/const predictionHome=identity\.homeCanonical!,predictionAway=identity\.awayCanonical!/);
+  assert.match(runtime,/prediction\.target=\{home,away,date:targetDate,canonicalHome:predictionHome,canonicalAway:predictionAway\}/);
 });
 
 test('Supabase production deploy includes BigDB retrieval and a real native discovery gate',()=>{

@@ -45,6 +45,26 @@ test('provider bridge preserves entity scope unless explicitly curated', () => {
   }
 });
 
+test('IMAGE_ANALYSIS exact aliases rescue Gintra/Sturm Women without fuzzy scope collapse', () => {
+  assert.equal(
+    bridgeProviderTeamName('Gintra Universitetas W'),
+    'Gintra Universitetas Women'
+  );
+  assert.equal(
+    bridgeProviderTeamName('Sturm Graz / Stattegg W'),
+    'Sturm Graz/Stattegg Women'
+  );
+
+  for (const value of [
+    'Gintra Universitetas U19',
+    'Gintra Universitetas Reserves',
+    'Sturm Graz / Stattegg U19',
+    'Sturm Graz / Stattegg Reserves'
+  ]) {
+    assert.equal(bridgeProviderTeamName(value), value);
+  }
+});
+
 test('provider bridge is idempotent across curated identities', () => {
   const values = [
     'Manchester City',
@@ -60,7 +80,9 @@ test('provider bridge is idempotent across curated identities', () => {
     'Athletico-PR',
     'Flora Tallinn',
     'Leeds United',
-    'Leeds United AFC'
+    'Leeds United AFC',
+    'Gintra Universitetas W',
+    'Sturm Graz / Stattegg W'
   ];
 
   for (const input of values) {

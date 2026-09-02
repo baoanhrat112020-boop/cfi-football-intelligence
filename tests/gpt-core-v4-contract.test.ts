@@ -24,7 +24,7 @@ const env={CFI_DB_BASE_URL:'https://example.test/functions/v1/cfi-db',CFI_DB_KEY
 
 function bigDbBody(home:string,away:string){
   const rows=Array.from({length:44},(_,i)=>{const homeSide=i<22;return{id:`gpt-v4-${i}`,matchDate:`2026-07-${String((i%28)+1).padStart(2,'0')}`,homeTeam:homeSide?home:`Opp ${i}`,awayTeam:homeSide?`Opp ${i}`:away,ht:i%3===0?'2-1':i%3===1?'1-0':'0-1',ft:i%4===0?'4-2':i%4===1?'2-1':i%4===2?'1-2':'3-2'};});
-  return{status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',targetDate:TARGET_DATE,identity:{homeTeamId:`id-${home}`,awayTeamId:`id-${away}`,homeCanonical:home,awayCanonical:away},exactTeam:{home:{retrieved:22},away:{retrieved:22},h2h:{retrieved:0}},fixtures:{home:rows.slice(0,22),away:rows.slice(22),h2h:[]},globalPrior:{fixtureCount:100,markets:{}},temporalAudit:{targetDate:TARGET_DATE,verified:true,observable:true,maxEvidenceDate:'2026-07-28',exactTeamMaxEvidenceDate:'2026-07-28',globalPriorMaxEvidenceDate:'2026-07-28',futureEvidenceCount:0,sameDateEvidenceCount:0}};
+  return{status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',targetDate:TARGET_DATE,identity:{homeFound:true,awayFound:true,homeTeamId:`id-${home}`,awayTeamId:`id-${away}`,homeCanonical:home,awayCanonical:away,homeResolution:'TEST_CANONICAL',awayResolution:'TEST_CANONICAL'},exactTeam:{home:{retrieved:22},away:{retrieved:22},h2h:{retrieved:0}},fixtures:{home:rows.slice(0,22),away:rows.slice(22),h2h:[]},globalPrior:{fixtureCount:100,markets:{}},temporalAudit:{targetDate:TARGET_DATE,verified:true,observable:true,maxEvidenceDate:'2026-07-28',exactTeamMaxEvidenceDate:'2026-07-28',globalPriorMaxEvidenceDate:'2026-07-28',futureEvidenceCount:0,sameDateEvidenceCount:0}};
 }
 
 async function withMockFetch<T>(run:(calls:{discoveryFeed:number})=>Promise<T>){

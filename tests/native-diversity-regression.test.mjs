@@ -35,5 +35,8 @@ test('diversity fix remains strict about persistent BigDB retrieval',()=>{
   assert.match(worker,/source:'PERSISTENT_DB'/);
   assert.match(worker,/BIG_DB_V2_FAILED/);
   assert.match(worker,/buildPrediction\(\{home:predictionHome,away:predictionAway,targetDate/);
-  assert.match(worker,/prediction\.target=\{home,away,date:targetDate\}/);
+  assert.match(worker,/prediction\.target=\{home,away,date:targetDate,canonicalHome:predictionHome,canonicalAway:predictionAway\}/);
+  assert.match(worker,/const identity=fixtureIdentityAudit\(big\)/);
+  assert.match(worker,/const exact=exactTeamEvidenceAudit\(big\)/);
+  assert.ok(worker.indexOf('const identity=fixtureIdentityAudit(big)')<worker.indexOf('const exact=exactTeamEvidenceAudit(big)'));
 });

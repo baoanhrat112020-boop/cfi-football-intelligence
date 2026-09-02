@@ -19,7 +19,35 @@ async function fetchBigDb(env:Env,input:any){
   return body;
 }
 
-function exactTeamEvidenceAudit(big:any){
+export function fixtureIdentityAudit(big:any){
+  const identity=big?.identity??{};
+  const homeFound=identity?.homeFound===true;
+  const awayFound=identity?.awayFound===true;
+  const homeCanonical=String(identity?.homeCanonical??'').trim();
+  const awayCanonical=String(identity?.awayCanonical??'').trim();
+  const homeTeamId=String(identity?.homeTeamId??'').trim();
+  const awayTeamId=String(identity?.awayTeamId??'').trim();
+  const selfMatch=Boolean(
+    (homeTeamId&&awayTeamId&&homeTeamId===awayTeamId)||
+    (homeCanonical&&awayCanonical&&homeCanonical===awayCanonical)
+  );
+  const verified=homeFound&&awayFound&&Boolean(homeCanonical)&&Boolean(awayCanonical)&&Boolean(homeTeamId)&&Boolean(awayTeamId)&&!selfMatch;
+  return {
+    verified,
+    reason:verified?null:selfMatch?'CANONICAL_SELF_MATCH_REJECTED':'CANONICAL_IDENTITY_UNRESOLVED',
+    source:'SHARED_IDENTITY_BRIDGE',
+    homeFound,
+    awayFound,
+    homeTeamId:homeTeamId||null,
+    awayTeamId:awayTeamId||null,
+    homeCanonical:homeCanonical||null,
+    awayCanonical:awayCanonical||null,
+    homeResolution:identity?.homeResolution??null,
+    awayResolution:identity?.awayResolution??null,
+  };
+}
+
+export function exactTeamEvidenceAudit(big:any){
   const home=Number(big?.exactTeam?.home?.retrieved);
   const away=Number(big?.exactTeam?.away?.retrieved);
   const h2h=Number(big?.exactTeam?.h2h?.retrieved);
@@ -128,22 +156,53 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   if(!targetDate||!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return Response.json({status:'STRICT_PRIOR_GATE_ERROR',error:'TARGET_DATE_REQUIRED',strictPrior:{required:true,verified:false,failClosed:true}},{status:400});
   try{
     const big=await fetchBigDb(env,{home,away,target_date:targetDate});
+
+    // CANONICAL-FIRST HARD GATE:
+    // ZERO_EXACT_TEAM_EVIDENCE is forbidden until the shared identity bridge
+    // has resolved both sides to distinct canonical entities.
+    const identity=fixtureIdentityAudit(big);
+    if(!identity.verified){
+      return Response.json({
+        status:'INSUFFICIENT_DATA',
+        error:identity.reason,
+        predictionStatus:'PREDICTION_NOT_EXECUTED',
+        target:{home,away,date:targetDate},
+        fixtureIdentityVerified:false,
+        fixtureIdentity:identity,
+        strictPrior:{required:true,verified:false,targetDate,failClosed:true},
+        audit:{status:'SKIPPED',reason:'PREDICTION_NOT_ELIGIBLE'}
+      },{status:422});
+    }
+
     const exact=exactTeamEvidenceAudit(big);
     if(!exact.verified){
-      return Response.json({status:'INSUFFICIENT_DATA',error:'ZERO_EXACT_TEAM_EVIDENCE',target:{home,away,date:targetDate},exactTeam:exact,strictPrior:{required:true,verified:false,targetDate,failClosed:true},audit:{status:'SKIPPED',reason:'PREDICTION_NOT_ELIGIBLE'}},{status:422});
+      return Response.json({
+        status:'INSUFFICIENT_DATA',
+        error:'ZERO_EXACT_TEAM_EVIDENCE',
+        predictionStatus:'PREDICTION_NOT_EXECUTED',
+        target:{home,away,date:targetDate},
+        exactTeam:exact,
+        fixtureIdentityVerified:true,
+        fixtureIdentity:identity,
+        canonicalFixture:{home:identity.homeCanonical,away:identity.awayCanonical},
+        strictPrior:{required:true,verified:false,targetDate,failClosed:true},
+        audit:{status:'SKIPPED',reason:'PREDICTION_NOT_ELIGIBLE'}
+      },{status:422});
     }
     const temporal=temporalEvidenceAudit(big,targetDate);
     if(!temporal.verified){
-      return Response.json({status:'STRICT_PRIOR_GATE_ERROR',error:temporal.error,strictPrior:{required:true,verified:false,targetDate,failClosed:true},temporalEvidenceAudit:temporal,audit:{status:'SKIPPED',reason:'STRICT_PRIOR_NOT_VERIFIED'}},{status:500});
+      return Response.json({status:'STRICT_PRIOR_GATE_ERROR',error:temporal.error,fixtureIdentityVerified:true,fixtureIdentity:identity,strictPrior:{required:true,verified:false,targetDate,failClosed:true},temporalEvidenceAudit:temporal,audit:{status:'SKIPPED',reason:'STRICT_PRIOR_NOT_VERIFIED'}},{status:500});
     }
 
-    const predictionHome=String(big?.identity?.homeCanonical||home),predictionAway=String(big?.identity?.awayCanonical||away);
+    const predictionHome=identity.homeCanonical!,predictionAway=identity.awayCanonical!;
     const homePayload={fixtures:big?.fixtures?.home??[]},awayPayload={fixtures:big?.fixtures?.away??[]},h2hPayload={fixtures:big?.fixtures?.h2h??[]};
     const prediction:any=buildPrediction({home:predictionHome,away:predictionAway,targetDate,language:String(input?.language||'vi'),homePayload,awayPayload,h2hPayload});
-    prediction.target={home,away,date:targetDate};
+    prediction.target={home,away,date:targetDate,canonicalHome:predictionHome,canonicalAway:predictionAway};
+    prediction.fixtureIdentityVerified=true;
+    prediction.fixtureIdentity=identity;
     const evidenceCounts=prediction?.evidence?.counts??prediction?.evidence??{};
     if(prediction?.status!=='DATA_READY'||Number(evidenceCounts?.htCoverage??0)<=0||Number(evidenceCounts?.ftCoverage??0)<=0){
-      return Response.json({status:'INSUFFICIENT_DATA',error:'SCORE_EVIDENCE_REQUIRED',target:prediction?.target??{home,away,date:targetDate},evidence:prediction?.evidence??null,strictPrior:{required:true,verified:true,targetDate,failClosed:true},temporalEvidenceAudit:temporal,audit:{status:'SKIPPED',reason:'PREDICTION_NOT_ELIGIBLE'}},{status:422});
+      return Response.json({status:'INSUFFICIENT_DATA',error:'SCORE_EVIDENCE_REQUIRED',target:prediction?.target??{home,away,date:targetDate},evidence:prediction?.evidence??null,fixtureIdentityVerified:true,fixtureIdentity:identity,strictPrior:{required:true,verified:true,targetDate,failClosed:true},temporalEvidenceAudit:temporal,audit:{status:'SKIPPED',reason:'PREDICTION_NOT_ELIGIBLE'}},{status:422});
     }
 
     prediction.baseEngine=FINAL_VERSION;
@@ -151,7 +210,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     prediction.temporalEvidenceAudit=temporal;
     prediction.strictPriorAudit={required:true,verified:true,targetDate,telemetryVersion:'CFI_TEMPORAL_AUDIT_V1.1',evidence:temporal};
     const globalPrior=attachGlobalPriorTelemetry(prediction,big);
-    const retrieval={version:BIG_DB_RETRIEVAL_VERSION,required:true,source:'PERSISTENT_DB',targetDate,currentSessionProvenance:big?.currentSessionProvenance??'NOT_OBSERVABLE',exactTeam:big?.exactTeam??null,bigDbOnlyAdded:Number(big?.bigDbOnlyAdded??0),globalPrior,predictionInput:{homeFixtures:(big?.fixtures?.home??[]).length,awayFixtures:(big?.fixtures?.away??[]).length,h2hFixtures:(big?.fixtures?.h2h??[]).length,globalPriorApplied:true},temporalAudit:temporal,note:'Global priors are context telemetry only; match-specific outputs are never directly shrunk.'};
+    const retrieval={version:BIG_DB_RETRIEVAL_VERSION,required:true,source:'PERSISTENT_DB',targetDate,currentSessionProvenance:big?.currentSessionProvenance??'NOT_OBSERVABLE',identity:{...(big?.identity??{}),verified:true,source:'SHARED_IDENTITY_BRIDGE',reason:null},exactTeam:big?.exactTeam??null,bigDbOnlyAdded:Number(big?.bigDbOnlyAdded??0),globalPrior,predictionInput:{homeFixtures:(big?.fixtures?.home??[]).length,awayFixtures:(big?.fixtures?.away??[]).length,h2hFixtures:(big?.fixtures?.h2h??[]).length,globalPriorApplied:true},temporalAudit:temporal,note:'Canonical identity is verified before exact-team evidence gating. Global priors are context telemetry only; match-specific outputs are never directly shrunk.'};
     const matrix=sixTargetMatrix(prediction);
     if(!matrix.verification.complete)return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,status:'RUNTIME_CONTRACT_ERROR',error:'INCOMPLETE_2_METHODS_X_6_TARGETS',audit:{status:'SKIPPED',reason:'RUNTIME_CONTRACT_ERROR'}},{status:500});
 
