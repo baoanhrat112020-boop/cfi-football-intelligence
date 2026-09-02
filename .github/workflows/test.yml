@@ -37,7 +37,7 @@ jobs:
     needs: test
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
@@ -57,8 +57,8 @@ jobs:
           --pr "${{ github.event.pull_request.number }}"
           --head-sha "${{ github.event.pull_request.head.sha }}"
           --output-dir audit-reports/independent-ai
-          --wait-seconds 600
-          --poll-seconds 20
+          --wait-seconds 90
+          --poll-seconds 10
       - name: Publish independent AI audit summary
         if: always()
         run: |
