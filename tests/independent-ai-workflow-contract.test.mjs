@@ -70,3 +70,26 @@ test('independent review policy locks CFI integrity and structured verdict field
   ]) assert.match(policy,new RegExp(token));
   assert.match(policy,/reconstruct historical predictions/i);
 });
+
+test('trusted auditor runtime attestation separates reviewer from prediction engine and locks fail-closed provider semantics',()=>{
+  assert.match(policy,/Trusted auditor runtime attestation/i);
+  assert.match(policy,/AUDITOR_ROLE/);
+  assert.match(policy,/read-only code\/policy reviewer/i);
+  assert.match(policy,/AI_PROVIDER.*Cloudflare Workers AI/is);
+  assert.match(policy,/@cf\/openai\/gpt-oss-20b/);
+  assert.match(policy,/CLOUDFLARE_WORKERS_AI_API_TOKEN/);
+  assert.match(policy,/production\/deployment `CLOUDFLARE_API_TOKEN` secret is not supplied/i);
+  assert.match(policy,/no alternate-model or alternate-provider fallback path/i);
+  assert.match(policy,/provider\/auth HTTP errors, timeouts, missing response text, malformed structured verdicts/i);
+  assert.match(policy,/LIVE_INVOCATION_EVIDENCE/);
+  assert.match(policy,/provider authentication, endpoint reachability, and model execution have succeeded for this invocation/i);
+});
+
+test('policy evaluates Multi-Market impact by component scope without calibrating the reviewer model',()=>{
+  assert.match(policy,/auditor model itself.*calibrated against football markets/is);
+  assert.match(policy,/code-review control plane, not a football forecasting model/i);
+  assert.match(policy,/when the reviewed change can alter prediction\/research model behavior or market outputs/i);
+  assert.match(policy,/do not demand football calibration of the reviewer model/i);
+  assert.match(policy,/successful.*current live independent-auditor invocation.*runtime reachability evidence/is);
+  assert.match(policy,/do not require a second redundant provider smoke call inside the same review/i);
+});
