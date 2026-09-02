@@ -4,7 +4,7 @@ import { calibrateScoreDistribution } from './score-distribution-calibration.ts'
 import { buildMultiMarketFromScoreGrids } from './multi-market-v1.ts';
 import { buildMultiMarketChampionFusion, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE } from './multi-market-champion-fusion.ts';
 
-export const FINAL_VERSION = "CFI_FINAL_V5.3.0";
+export const FINAL_VERSION = "CFI_FINAL_V5.3.1";
 export const PRIMARY_CONTRACT = "CFI_2_METHODS_X_6_TARGETS_V2";
 export const MARKET_CODES = ["3+ HT", "7+ FT", "Other HT", "Other FT"] as const;
 export const PRIMARY_TARGETS = [...MARKET_CODES, "Top-1 HT", "Top-1 FT"] as const;
@@ -45,10 +45,17 @@ export function normalizeFixture(input:unknown):CanonicalFixture|null{
  return {id:String(r.fixture_id??r.fixtureId??r.id??identity),matchDate,homeTeam,awayTeam,ht,ft};
 }
 export function normalizeFixtures(payload:unknown){return unwrapRows(payload).map(normalizeFixture).filter((x):x is CanonicalFixture=>x!==null);}
+function invariantFixtureOrder(a:CanonicalFixture,b:CanonicalFixture){
+ const date=a.matchDate.localeCompare(b.matchDate);if(date)return date;
+ const pairKey=(x:CanonicalFixture)=>[x.homeTeam.toLowerCase(),x.awayTeam.toLowerCase()].sort().join('|');
+ const pair=pairKey(a).localeCompare(pairKey(b));if(pair)return pair;
+ const scoreKey=(x:CanonicalFixture)=>`${x.ht?.home??''}-${x.ht?.away??''}|${x.ft?.home??''}-${x.ft?.away??''}`;
+ return scoreKey(a).localeCompare(scoreKey(b));
+}
 export function strictPriorEvidence(homePayload:unknown,awayPayload:unknown,h2hPayload:unknown,targetDate?:string){
  const prior=(xs:CanonicalFixture[])=>xs.filter(x=>!targetDate||x.matchDate<targetDate);
  const home=prior(normalizeFixtures(homePayload)),away=prior(normalizeFixtures(awayPayload)),h2h=prior(normalizeFixtures(h2hPayload));
- const unique=[...new Map([...home,...away,...h2h].map(x=>[`${x.matchDate}|${x.homeTeam.toLowerCase()}|${x.awayTeam.toLowerCase()}`,x])).values()];
+ const unique=[...new Map([...home,...away,...h2h].map(x=>[`${x.matchDate}|${x.homeTeam.toLowerCase()}|${x.awayTeam.toLowerCase()}`,x])).values()].sort(invariantFixtureOrder);
  return {streams:{home,away,h2h},unique,counts:{homeFixtures:home.length,awayFixtures:away.length,h2hFixtures:h2h.length,uniqueCanonical:unique.length,htCoverage:unique.filter(x=>x.ht).length,ftCoverage:unique.filter(x=>x.ft).length}};
 }
 export function marketHit(f:CanonicalFixture,m:typeof MARKET_CODES[number]){

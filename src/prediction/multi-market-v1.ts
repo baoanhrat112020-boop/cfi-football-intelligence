@@ -1,6 +1,7 @@
 export const MULTI_MARKET_VERSION = 'CFI_MULTI_MARKET_V1';
 export const MULTI_MARKET_STATUS = 'SHADOW_RESEARCH';
 export const CROSS_MARKET_COHERENCE_VERSION = 'CFI_CROSS_MARKET_COHERENCE_GATE_V1';
+export const MULTI_MARKET_RESEARCH_GRID_SYMBOL = Symbol.for('CFI_MULTI_MARKET_RESEARCH_SCORE_GRIDS_V1');
 
 type ScoreCell = { home:number; away:number; total:number; probability:number };
 type ScoreGridInput = { score?:string; home?:number; away?:number; total?:number; probability:number };
@@ -109,12 +110,14 @@ function buildFromGrids(htGrid:ScoreCell[],ftGrid:ScoreCell[],model:any){
   const lines=[-2,-1.75,-1.5,-1.25,-1,-.75,-.5,-.25,0,.25,.5,.75,1,1.25,1.5,1.75,2];
   const htAh=asianHandicap(htGrid,lines),ftAh=asianHandicap(ftGrid,lines);
   const guard=consistency(one,htTotals,ftTotals,htAh,ftAh);
-  return {
+  const result={
     version:MULTI_MARKET_VERSION,status:MULTI_MARKET_STATUS,decisionUse:false,promotionRequired:true,model,
     oneXTwo:one,overUnder:{ht:htTotals,ft:ftTotals},asianHandicap:{ht:htAh,ft:ftAh},
     derivedChecks:{ftOver6_5:(ftTotals['6.5'] as any).over.fullWin,htOver2_5:(htTotals['2.5'] as any).over.fullWin},
     consistencyGuard:guard,
   };
+  Object.defineProperty(result,MULTI_MARKET_RESEARCH_GRID_SYMBOL,{value:Object.freeze({ht:htGrid,ft:ftGrid}),enumerable:false,writable:false,configurable:false});
+  return result;
 }
 
 export function buildMultiMarketV1(input:{htHome:number;htAway:number;ftHome:number;ftAway:number}){
