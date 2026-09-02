@@ -41,7 +41,8 @@ test('secret-bearing AI job uses dedicated Workers AI token and cannot write con
   assert.match(aiWorkflow,/CLOUDFLARE_API_TOKEN:\s*\$\{\{ secrets\.CLOUDFLARE_WORKERS_AI_API_TOKEN \}\}/);
   assert.doesNotMatch(aiWorkflow,/CLOUDFLARE_API_TOKEN:\s*\$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.match(aiWorkflow,/CLOUDFLARE_ACCOUNT_ID/);
-  assert.match(aiWorkflow,/@cf\/zai-org\/glm-4\.7-flash/);
+  assert.match(aiWorkflow,/@cf\/openai\/gpt-oss-20b/);
+  assert.doesNotMatch(aiWorkflow,/@cf\/zai-org\/glm-4\.7-flash/);
   assert.match(aiWorkflow,/cfi-publish-ai-audit-status\.mjs/);
   assert.doesNotMatch(aiWorkflow,/wrangler\s+deploy/);
   assert.doesNotMatch(aiWorkflow,/supabase\s+(db|functions)\s+(push|deploy)/);
