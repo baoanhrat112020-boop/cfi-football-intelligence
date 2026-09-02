@@ -40,7 +40,7 @@ function frozenCorpus(days=24){
 
 function frozenFeatures(){
   return {
-    baselineCommitSha:'518dfb57aafc8428e09b3ec84e440146c839a19e',
+    baselineCommitSha:'8ca9a3634f536f2f838135df062f5bbbf7da0d9a',
     strengths:[
       {team_id:'a',as_of_date:'2026-08-19',strict_prior:true,attack_index:.7,defense_index:-.2,net_strength:.5,confidence:.9,competition_key:'england:e1',segment_v2:'M|SENIOR|MID_PRO'},
       {team_id:'b',as_of_date:'2026-08-19',strict_prior:true,attack_index:.2,defense_index:.1,net_strength:-.1,confidence:.85,competition_key:'england:e1',segment_v2:'M|SENIOR|MID_PRO'},
@@ -105,6 +105,7 @@ test('frozen context uses canonical team ids and never crosses the Aug-20 holdou
   assert.equal(context.awayStrength.as_of_date,'2026-08-19');
   assert.equal(context.competition.competitionSegment,'MID_PRO');
   assert.ok(Object.values(context.baseExpectedGoals).every(Number.isFinite));
+  assert.equal(context.baselineFingerprint,'CFI_FINAL_V5.3.1');
   assert.equal(context.researchOnly,true);
   assert.equal(context.decisionUse,false);
   assert.equal(context.productionMutationAllowed,false);
