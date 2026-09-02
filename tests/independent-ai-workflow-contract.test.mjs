@@ -45,15 +45,18 @@ test('secret-bearing AI job cannot write contents or PRs and only writes a commi
   assert.doesNotMatch(aiWorkflow,/supabase\s+(db|functions)\s+(push|deploy)/);
 });
 
-test('bootstrap provider E2E is trusted-main only and automatically resolves the merged PR',()=>{
+test('bootstrap provider E2E is trusted-main only and uses the tested associated-PR resolver',()=>{
   assert.match(aiWorkflow,/push:/);
   assert.match(aiWorkflow,/branches:\s*\[main\]/);
   assert.match(aiWorkflow,/bootstrap-provider-e2e:/);
   assert.match(aiWorkflow,/github\.event_name == 'push'/);
   assert.match(aiWorkflow,/Re-run zero-AI deterministic gate on trusted main/);
-  assert.match(aiWorkflow,/commits\/\$\{sha\}\/pulls/);
-  assert.match(aiWorkflow,/ASSOCIATED_MERGED_PR_NOT_FOUND/);
+  assert.match(aiWorkflow,/tools\/cfi-resolve-associated-pr\.mjs/);
+  assert.match(aiWorkflow,/--commit-sha/);
+  assert.match(aiWorkflow,/--github-output/);
+  assert.match(aiWorkflow,/tools\/cfi-resolve-associated-pr\.mjs'/);
   assert.match(aiWorkflow,/Enforce bootstrap AI verdict/);
+  assert.doesNotMatch(aiWorkflow,/node - <<'NODE'[\s\S]*commits\/\$\{sha\}\/pulls/);
 });
 
 test('independent review policy locks CFI integrity and structured verdict fields',()=>{
