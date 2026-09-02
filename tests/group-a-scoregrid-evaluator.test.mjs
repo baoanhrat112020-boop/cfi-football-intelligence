@@ -107,7 +107,7 @@ function groupAFixtureSet() {
   }
   return {
     corpus,
-    features: { baselineCommitSha: '518dfb57aafc8428e09b3ec84e440146c839a19e', strengths },
+    features: { baselineCommitSha: '8ca9a3634f536f2f838135df062f5bbbf7da0d9a', strengths },
   };
 }
 
