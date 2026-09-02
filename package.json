@@ -23,7 +23,8 @@
     "cfi:canonical:merge": "node local-node/canonical/canonical-merge.mjs",
     "cfi:bigdb:dry-run": "node local-node/canonical/bigdb-dry-run.mjs",
     "cfi:node:once": "node local-node/index.mjs --once",
-    "cfi:node:deep": "node local-node/index.mjs --once --deep"
+    "cfi:node:deep": "node local-node/index.mjs --once --deep",
+    "cfi:research:group-a:auto": "node --experimental-strip-types research/group-a-e2e-autopilot-v1.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
