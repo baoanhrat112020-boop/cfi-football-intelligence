@@ -17,7 +17,7 @@ function buildData(){
       strengths.push({team_id:id,team_name:name,as_of_date:date,net_strength:id==='a'?1.2:id==='b'?.3:id==='c'?-.4:-1,confidence:1,strict_prior:true,competition_key:'test:l1',segment_v2:'M|SENIOR|TEST',feature_version:'TEST'});
     }
   }
-  return {corpus:{fixtures},features:{baselineCommitSha:'518dfb57aafc8428e09b3ec84e440146c839a19e',strengths}};
+  return {corpus:{fixtures},features:{baselineCommitSha:'8ca9a3634f536f2f838135df062f5bbbf7da0d9a',strengths}};
 }
 const OPTIONS={skipSourceLock:true,minTeamPrior:1,minOnlineSamples:0,historyCap:5,lowConfidenceAbstain:0,evaluationStart:'2026-01-01',evaluationEnd:'2026-01-31'};
 
