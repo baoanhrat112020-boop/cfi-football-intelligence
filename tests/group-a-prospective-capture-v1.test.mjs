@@ -60,6 +60,7 @@ test('snapshot plan binds immutable fixture identity, frozen model lineage and p
   assert.equal(plan.max_evidence_date,'2026-08-19');
   assert.equal(plan.prediction.prospectiveContext.competitionKey,'england:e1');
   assert.equal(plan.prediction.prospectiveContext.competitionSegment,'MID_PRO');
+  assert.equal(plan.prediction.prospectiveContext.baselineCommitSha,'518dfb57aafc8428e09b3ec84e440146c839a19e');
   assert.equal(plan.prediction_hash.length,64);
   assert.equal(plan.model_fingerprint.length,64);
 });
@@ -91,6 +92,17 @@ test('existing snapshot hash mismatch fails closed instead of revising immutable
   const reader={async readAll(path){if(path.startsWith('cfi_research_prematch_snapshots?'))return [{snapshot_id:'existing',fixture_id:'vf-1',model_fingerprint:plan.model_fingerprint,prediction_hash:'different',status:'DATA_READY',strict_prior:true}];return [];}};
   const writer=createGroupAProspectiveResearchWriter({baseUrl:'https://example.supabase.co',key:'sb_secret_test_only',fetchImpl:async()=>{throw new Error('WRITE_SHOULD_NOT_RUN')},reader});
   await assert.rejects(()=>writer.persistSnapshot(plan),/EXISTING_SNAPSHOT_MISMATCH/);
+});
+
+test('first immutable decision wins even if a rerun sees a newer market snapshot',async()=>{
+  const existing={decision_snapshot_id:'d-first',research_prediction_snapshot_id:'rp-1',market_snapshot_id:'m-early',cfi_probability:.60,market_probability:.50,edge:.10,decision:'SHADOW',stake_simulated:0,decision_timestamp:'2026-09-02T15:30:00Z',decision_use:false,research_only:true,selection:'HOME'};
+  const reader={async readAll(path){if(path.startsWith('cfi_decision_snapshots?'))return [existing];return [];}};
+  const writer=createGroupAProspectiveResearchWriter({baseUrl:'https://example.supabase.co',key:'sb_secret_test_only',fetchImpl:async()=>{throw new Error('WRITE_SHOULD_NOT_RUN')},reader});
+  const newer=buildProspectiveDecisionPlan({snapshotId:'rp-1',marketSnapshot:marketLate,candidate,decisionTimestamp:'2026-09-02T16:30:00Z'});
+  const out=await writer.persistDecision(newer);
+  assert.equal(out.decision_snapshot_id,'d-first');
+  assert.equal(out.market_snapshot_id,'m-early');
+  assert.equal(out.idempotent,true);
 });
 
 test('end-to-end persistence remains candidate-specific and does not settle results',async()=>{
