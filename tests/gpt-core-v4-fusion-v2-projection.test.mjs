@@ -16,6 +16,9 @@ test('compact trimming must not drop top-level Fusion V2 challenger',()=>{
 test('V2 compact projection reuses fail-closed Fusion projection semantics',()=>{
   assert.match(src,/decisionUse:value\.decisionUse===true/);
   assert.match(src,/productionEligible:value\.productionEligible===true/);
+  assert.match(src,/promotionRequired:value\.promotionRequired===true/);
+  assert.match(src,/scorelineContract:value\.scorelineContract\?\?null/);
+  assert.match(src,/researchProtocol:value\.researchProtocol\?\?null/);
   assert.match(src,/strictPrior:value\.strictPrior\?\?value\.strictPriorAudit\?\?null/);
   assert.match(src,/coherence:value\.coherence\?\?value\?\.multiMarket\?\.consistencyGuard\?\?null/);
 });
