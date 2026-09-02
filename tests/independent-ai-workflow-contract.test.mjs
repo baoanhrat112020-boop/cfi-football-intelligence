@@ -18,6 +18,7 @@ test('PR workflow is secret-free and runs zero-AI deterministic CFI gate',()=>{
   assert.match(testWorkflow,/Zero-AI deterministic CFI gate/);
   assert.match(testWorkflow,/node tools\/cfi-audit\.mjs --full --no-cache/);
   assert.doesNotMatch(testWorkflow,/CLOUDFLARE_API_TOKEN/);
+  assert.doesNotMatch(testWorkflow,/CLOUDFLARE_WORKERS_AI_API_TOKEN/);
   assert.doesNotMatch(testWorkflow,/independent-ai-review:/);
 });
 
@@ -31,13 +32,14 @@ test('independent AI review is downstream of successful CFI Tests and checks out
   assert.match(aiWorkflow,/actions\/download-artifact@v4/);
 });
 
-test('secret-bearing AI job cannot write contents or PRs and only writes a commit status',()=>{
+test('secret-bearing AI job uses dedicated Workers AI token and cannot write contents or PRs',()=>{
   assert.match(aiWorkflow,/contents:\s*read/);
   assert.match(aiWorkflow,/pull-requests:\s*read/);
   assert.match(aiWorkflow,/statuses:\s*write/);
   assert.doesNotMatch(aiWorkflow,/contents:\s*write/);
   assert.doesNotMatch(aiWorkflow,/pull-requests:\s*write/);
-  assert.match(aiWorkflow,/CLOUDFLARE_API_TOKEN/);
+  assert.match(aiWorkflow,/CLOUDFLARE_API_TOKEN:\s*\$\{\{ secrets\.CLOUDFLARE_WORKERS_AI_API_TOKEN \}\}/);
+  assert.doesNotMatch(aiWorkflow,/CLOUDFLARE_API_TOKEN:\s*\$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.match(aiWorkflow,/CLOUDFLARE_ACCOUNT_ID/);
   assert.match(aiWorkflow,/@cf\/zai-org\/glm-4\.7-flash/);
   assert.match(aiWorkflow,/cfi-publish-ai-audit-status\.mjs/);
