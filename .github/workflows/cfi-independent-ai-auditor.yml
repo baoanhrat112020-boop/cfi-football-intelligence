@@ -139,24 +139,29 @@ jobs:
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
-          const repo = process.env.GITHUB_REPOSITORY;
-          const sha = process.env.MERGE_SHA;
-          const response = await fetch(`https://api.github.com/repos/${repo}/commits/${sha}/pulls`, {
-            headers: {
-              Accept: 'application/vnd.github+json',
-              Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-              'X-GitHub-Api-Version': '2022-11-28',
-            },
+          (async()=>{
+            const repo = process.env.GITHUB_REPOSITORY;
+            const sha = process.env.MERGE_SHA;
+            const response = await fetch(`https://api.github.com/repos/${repo}/commits/${sha}/pulls`, {
+              headers: {
+                Accept: 'application/vnd.github+json',
+                Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                'X-GitHub-Api-Version': '2022-11-28',
+              },
+            });
+            if (!response.ok) throw new Error(`ASSOCIATED_PR_HTTP_${response.status}`);
+            const prs = await response.json();
+            const pr = prs.find(item => item.merged_at) ?? prs[0];
+            if (!pr?.number || !/^[0-9a-f]{40}$/i.test(String(pr?.head?.sha ?? ''))) {
+              throw new Error('ASSOCIATED_MERGED_PR_NOT_FOUND');
+            }
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `pr_number=${pr.number}\npr_head_sha=${pr.head.sha}\n`);
+            console.log(`BOOTSTRAP_PR=${pr.number}`);
+            console.log(`BOOTSTRAP_PR_HEAD=${pr.head.sha}`);
+          })().catch(error=>{
+            console.error(error);
+            process.exit(2);
           });
-          if (!response.ok) throw new Error(`ASSOCIATED_PR_HTTP_${response.status}`);
-          const prs = await response.json();
-          const pr = prs.find(item => item.merged_at) ?? prs[0];
-          if (!pr?.number || !/^[0-9a-f]{40}$/i.test(String(pr?.head?.sha ?? ''))) {
-            throw new Error('ASSOCIATED_MERGED_PR_NOT_FOUND');
-          }
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `pr_number=${pr.number}\npr_head_sha=${pr.head.sha}\n`);
-          console.log(`BOOTSTRAP_PR=${pr.number}`);
-          console.log(`BOOTSTRAP_PR_HEAD=${pr.head.sha}`);
           NODE
 
       - name: Run bootstrap Workers AI review against merged PR diff
