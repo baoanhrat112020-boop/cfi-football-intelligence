@@ -23,6 +23,7 @@ export const GROUP_A_E2E_AUTOPILOT_V1=Object.freeze({
   settlementWriterIncluded:false,
   settlementRpc:'cfi_settle_forward_market_ready_v3_research',
   settlementVersion:'CFI_FORWARD_MARKET_SETTLEMENT_V3_RESEARCH',
+  preKickoffSettlementPolicy:'DEFER_TO_POST_KICKOFF_EXISTING_RPC',
 });
 
 const text=x=>String(x??'').trim();
@@ -127,50 +128,69 @@ async function auditCaptureSettlements({reader,capture}={}){
   return out;
 }
 
-export async function runGroupAE2EAutopilot({corpus,featureBundle,hfSummary,reader,writer=null,settlementRpc=null,maxFixtures,write=false,nowFn=()=>new Date().toISOString()}={}){
+export async function runGroupAE2EAutopilot({corpus,featureBundle,hfSummary,reader,writer=null,settlementRpc=null,maxFixtures,write=false,settle=false,nowFn=()=>new Date().toISOString()}={}){
   if(!reader?.readAll)throw new Error('GROUP_A_E2E_READER_REQUIRED');
   const preflightNow=nowFn();
   const preflight=await runGroupAProspectiveCapture({corpus,featureBundle,hfSummary,reader,writer:null,nowIso:preflightNow,maxFixtures,write:false});
   if(preflight.researchOnly!==true||preflight.decisionUse!==false||preflight.productionMutationAllowed!==false||preflight.noReconstruction!==true)throw new Error('GROUP_A_E2E_PREFLIGHT_ISOLATION_FAIL');
   if(!write){
-    return {version:GROUP_A_E2E_AUTOPILOT_V1.version,mode:'DRY_RUN',preflight,capture:null,immutableAudit:[],settlement:{status:'NOT_RUN_DRY_RUN'},settlementAudit:[],...GROUP_A_E2E_AUTOPILOT_V1};
+    return {version:GROUP_A_E2E_AUTOPILOT_V1.version,mode:'DRY_RUN',preflight,capture:null,immutableAudit:[],settlementRequested:false,settlement:{status:'NOT_RUN_DRY_RUN'},settlementAudit:[],...GROUP_A_E2E_AUTOPILOT_V1};
   }
   if(!writer?.persistSnapshot||!writer?.persistDecision)throw new Error('GROUP_A_E2E_WRITER_REQUIRED');
-  if(typeof settlementRpc!=='function')throw new Error('GROUP_A_E2E_SETTLEMENT_RPC_REQUIRED');
+  if(settle&&typeof settlementRpc!=='function')throw new Error('GROUP_A_E2E_SETTLEMENT_RPC_REQUIRED');
 
   // Fresh wall-clock timestamp is mandatory here: never reuse a stale preflight timestamp for writes.
   const captureNow=nowFn();
   if(!iso(captureNow)||Date.parse(captureNow)<Date.parse(preflightNow))throw new Error('GROUP_A_E2E_CLOCK_INVALID');
   const capture=await runGroupAProspectiveCapture({corpus,featureBundle,hfSummary,reader,writer,nowIso:captureNow,maxFixtures,write:true});
   const immutableAudit=await auditCapturedRows({reader,capture});
-  const settlement=validateResearchSettlementResponse(await settlementRpc());
-  const settlementAudit=await auditCaptureSettlements({reader,capture});
+
+  // The capture workflow is pre-kickoff by contract. Do not call the broad research
+  // settlement RPC here: it scans unrelated past research decisions and cannot settle
+  // the just-captured future cohort. Settlement is explicitly deferred to the existing
+  // post-kickoff research settlement path unless a caller separately opts in.
+  let settlement={
+    status:'NOT_RUN_PREKICKOFF_CAPTURE',
+    version:GROUP_A_E2E_AUTOPILOT_V1.settlementVersion,
+    researchOnly:true,
+    decisionUse:false,
+    productionMutation:false,
+  };
+  let settlementAudit=[];
+  if(settle){
+    settlement=validateResearchSettlementResponse(await settlementRpc());
+    settlementAudit=await auditCaptureSettlements({reader,capture});
+  }
 
   return {
     version:GROUP_A_E2E_AUTOPILOT_V1.version,mode:'WRITE_RESEARCH_ONLY',preflight,capture,
-    immutableAudit,settlement,settlementAudit,
+    immutableAudit,settlementRequested:Boolean(settle),settlement,settlementAudit,
     capturedDecisions:capture.capturedDecisions,
     immutableAuditPassed:immutableAudit.length===capture.capturedDecisions,
-    settledFromThisCapture:settlementAudit.filter(x=>x.status==='SETTLED').length,
-    pendingFromThisCapture:settlementAudit.filter(x=>x.status==='PENDING_RESULT').length,
+    settledFromThisCapture:settle?settlementAudit.filter(x=>x.status==='SETTLED').length:0,
+    pendingFromThisCapture:settle?settlementAudit.filter(x=>x.status==='PENDING_RESULT').length:0,
+    settlementDeferredDecisions:settle?0:capture.capturedDecisions,
     researchOnly:true,decisionUse:false,productionMutationAllowed:false,productionEligible:false,noReconstruction:true,
     settlementWriterIncluded:false,settlementRpc:GROUP_A_E2E_AUTOPILOT_V1.settlementRpc,
+    preKickoffSettlementPolicy:GROUP_A_E2E_AUTOPILOT_V1.preKickoffSettlementPolicy,
   };
 }
 
 async function main(){
-  const [corpusPath,featurePath,hfSummaryPath,outputPath='group-a-e2e-autopilot-result.json',mode='--dry-run']=process.argv.slice(2);
-  if(!corpusPath||!featurePath||!hfSummaryPath)throw new Error('USAGE: node research/group-a-e2e-autopilot-v1.mjs <r0.json> <group-a.json> <hf-summary.json> [output.json] [--dry-run|--write]');
+  const [corpusPath,featurePath,hfSummaryPath,outputPath='group-a-e2e-autopilot-result.json',mode='--dry-run',settlementMode='--no-settle']=process.argv.slice(2);
+  if(!corpusPath||!featurePath||!hfSummaryPath)throw new Error('USAGE: node research/group-a-e2e-autopilot-v1.mjs <r0.json> <group-a.json> <hf-summary.json> [output.json] [--dry-run|--write] [--no-settle|--settle]');
   if(!['--dry-run','--write'].includes(mode))throw new Error('GROUP_A_E2E_MODE_INVALID');
+  if(!['--no-settle','--settle'].includes(settlementMode))throw new Error('GROUP_A_E2E_SETTLEMENT_MODE_INVALID');
   const [corpus,featureBundle,hfSummary]=await Promise.all([corpusPath,featurePath,hfSummaryPath].map(async p=>JSON.parse(await fs.readFile(p,'utf8'))));
   const {baseUrl,key}=resolveResearchCredentials(process.env);
   const reader=createResearchSupabaseReader({baseUrl,key});
   const write=mode==='--write';
+  const settle=write&&settlementMode==='--settle';
   const writer=write?createGroupAProspectiveResearchWriter({baseUrl,key,reader}):null;
-  const settlementRpc=write?createResearchSettlementRpcClient({baseUrl,key}):null;
-  const result=await runGroupAE2EAutopilot({corpus,featureBundle,hfSummary,reader,writer,settlementRpc,maxFixtures:process.env.CFI_GROUP_A_PROSPECTIVE_MAX_FIXTURES,write});
+  const settlementRpc=settle?createResearchSettlementRpcClient({baseUrl,key}):null;
+  const result=await runGroupAE2EAutopilot({corpus,featureBundle,hfSummary,reader,writer,settlementRpc,maxFixtures:process.env.CFI_GROUP_A_PROSPECTIVE_MAX_FIXTURES,write,settle});
   await fs.writeFile(outputPath,`${JSON.stringify(result,null,2)}\n`);
-  process.stdout.write(`${JSON.stringify({outputPath,version:result.version,mode:result.mode,preflightReady:result.preflight?.dryRunReady??0,capturedDecisions:result.capturedDecisions??0,immutableAuditPassed:result.immutableAuditPassed??null,settlement:result.settlement,pendingFromThisCapture:result.pendingFromThisCapture??0,researchOnly:true,decisionUse:false,productionMutationAllowed:false})}\n`);
+  process.stdout.write(`${JSON.stringify({outputPath,version:result.version,mode:result.mode,preflightReady:result.preflight?.dryRunReady??0,capturedDecisions:result.capturedDecisions??0,immutableAuditPassed:result.immutableAuditPassed??null,settlementRequested:result.settlementRequested,settlement:result.settlement,settlementDeferredDecisions:result.settlementDeferredDecisions??0,researchOnly:true,decisionUse:false,productionMutationAllowed:false})}\n`);
 }
 
 if(import.meta.url===`file://${process.argv[1]}`)main().catch(error=>{console.error(error?.stack??String(error));process.exitCode=1});
