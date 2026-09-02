@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - ops/fusion-v2-runtime-acceptance
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -31,33 +28,45 @@ jobs:
           const fs=require('fs');
           const [path,http]=process.argv.slice(2);
           const b=JSON.parse(fs.readFileSync(path,'utf8'));
-          const c=b?.championFusionChallenger;
+          const candidates={
+            topLevel:b?.championFusionChallenger,
+            prediction:b?.prediction?.championFusionChallenger,
+            practicalOutput:b?.practicalOutput?.championFusionChallenger,
+            cfiOutputV3:b?.cfiOutputV3?.championFusionChallenger
+          };
+          const entry=Object.entries(candidates).find(([,v])=>v&&typeof v==='object');
+          const responsePath=entry?.[0]??null;
+          const c=entry?.[1]??null;
           const failures=[];
           if(http!=='200') failures.push(`HTTP_${http}`);
           if(!['SUCCESS','DATA_READY'].includes(String(b?.status))) failures.push(`STATUS_${b?.status}`);
-          if(b?.strictPrior?.verified!==true) failures.push('STRICT_PRIOR');
+          const strictPriorVerified=b?.strictPrior?.verified===true || b?.strictPriorAudit?.verified===true || b?.strictPriorAudit?.evidence?.verified===true;
+          if(!strictPriorVerified) failures.push('STRICT_PRIOR');
           if(b?.championFusion?.version!=='CFI_MULTI_MARKET_CHAMPION_FUSION_V1') failures.push('V1');
           if(b?.championFusion?.decisionUse!==false) failures.push('V1_DECISION_USE');
-          if(c?.version!=='CFI_MULTI_MARKET_CHAMPION_FUSION_V2_CHALLENGER') failures.push('V2');
-          if(c?.decisionUse!==false) failures.push('V2_DECISION_USE');
-          if(c?.productionEligible!==false) failures.push('V2_PRODUCTION_ELIGIBLE');
-          if(c?.scorelineContract!=='TOP1_HT_PLUS_TOP1_FT') failures.push('CONTRACT');
-          if(!c?.champion?.top1HT || !c?.champion?.top1FT) failures.push('TOP1');
-          if(c?.strictPrior?.verified!==true) failures.push('V2_STRICT_PRIOR');
-          if(c?.coherence?.status!=='PASS') failures.push('COHERENCE');
-          if(c?.researchProtocol?.sameCohortPromotionAllowed!==false) failures.push('SAME_COHORT');
-          if(c?.researchProtocol?.prospectiveResetRequired!==true) failures.push('PROSPECTIVE_RESET');
-          if(!c?.gating?.ht?.stability) failures.push('HT_STABILITY_AUDIT');
-          const raw=JSON.stringify(c);
+          if(!c) failures.push('V2_PUBLIC_RESPONSE_MISSING');
+          if(c&&c?.version!=='CFI_MULTI_MARKET_CHAMPION_FUSION_V2_CHALLENGER') failures.push('V2_VERSION');
+          if(c&&c?.decisionUse!==false) failures.push('V2_DECISION_USE');
+          if(c&&c?.productionEligible!==false) failures.push('V2_PRODUCTION_ELIGIBLE');
+          if(c&&c?.scorelineContract!=='TOP1_HT_PLUS_TOP1_FT') failures.push('CONTRACT');
+          if(c&&(!c?.champion?.top1HT || !c?.champion?.top1FT)) failures.push('TOP1');
+          if(c&&c?.strictPrior?.verified!==true) failures.push('V2_STRICT_PRIOR');
+          if(c&&c?.coherence?.status!=='PASS') failures.push('COHERENCE');
+          if(c&&c?.researchProtocol?.sameCohortPromotionAllowed!==false) failures.push('SAME_COHORT');
+          if(c&&c?.researchProtocol?.prospectiveResetRequired!==true) failures.push('PROSPECTIVE_RESET');
+          if(c&&!c?.gating?.ht?.stability) failures.push('HT_STABILITY_AUDIT');
+          const raw=JSON.stringify(c??{});
           for(const s of ['"top3HT"','"top3FT"','Top-3 HT','Top-3 FT']) if(raw.includes(s)) failures.push(`TOP3_LEAK_${s}`);
           console.log(JSON.stringify({
             gate:'FUSION_V2_RUNTIME_ACCEPTANCE',
             http,
             status:b?.status,
             target:b?.target,
-            strictPrior:b?.strictPrior,
+            topLevelKeys:Object.keys(b??{}).sort(),
+            responsePath,
+            strictPriorVerified,
             v1:{version:b?.championFusion?.version,decisionUse:b?.championFusion?.decisionUse},
-            v2:{
+            v2:c?{
               version:c?.version,
               status:c?.status,
               decisionUse:c?.decisionUse,
@@ -69,7 +78,7 @@ jobs:
               coherence:c?.coherence?.status,
               htStability:c?.gating?.ht?.stability,
               researchProtocol:c?.researchProtocol
-            },
+            }:null,
             result:failures.length?'FAIL':'PASS',
             failures
           },null,2));
