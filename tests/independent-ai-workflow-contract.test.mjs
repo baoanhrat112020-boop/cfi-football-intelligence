@@ -2,17 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const workflow=fs.readFileSync('.github/workflows/cfi-independent-ai-auditor.yml','utf8');
+const workflow=fs.readFileSync('.github/workflows/test.yml','utf8');
 const instructions=fs.readFileSync('.github/copilot-instructions.md','utf8');
 
-test('independent AI workflow runs only after zero-AI deterministic gate',()=>{
-  assert.match(workflow,/Zero-AI deterministic auditor/);
+test('independent AI review runs only after zero-AI deterministic CFI gate',()=>{
+  assert.match(workflow,/Zero-AI deterministic CFI gate/);
   assert.match(workflow,/node tools\/cfi-audit\.mjs --full --no-cache/);
-  assert.match(workflow,/needs: deterministic-gate/);
+  assert.match(workflow,/independent-ai-review:/);
+  assert.match(workflow,/needs: test/);
   assert.match(workflow,/tools\/cfi-independent-ai-auditor\.mjs/);
 });
 
-test('independent AI workflow has no production-content write or deploy step',()=>{
+test('independent AI job has no production-content write or deploy step',()=>{
   assert.doesNotMatch(workflow,/contents:\s*write/);
   assert.doesNotMatch(workflow,/wrangler\s+deploy(?!\s+--dry-run)/);
   assert.doesNotMatch(workflow,/supabase\s+(db|functions)\s+(push|deploy)/);
