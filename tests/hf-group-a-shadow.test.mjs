@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { summarizeHfGroupAShadow, CFI_HF_GROUP_A_SHADOW } from '../research/hf-group-a-shadow.mjs';
 
+function learner(name){
+  if(name==='OPPONENT_STRENGTH_ARM_V1')return {stateVersion:'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1',trainedThrough:'2026-08-19',ht:{n:1000,beta:[0,0,0,0]},ft:{n:1000,beta:[0,0,0,0]}};
+  return {stateVersion:'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1',trainedThrough:'2026-08-19',globalHt:{n:1000,h:0,a:0},globalFt:{n:1000,h:0,a:0},segmentHt:{MID_PRO:{n:100,h:0,a:0}},segmentFt:{MID_PRO:{n:100,h:0,a:0}},segmentPriorWeight:500};
+}
 function fixture() {
   const candidate = name => ({
     status: 'RESEARCH_ONLY',
@@ -21,6 +25,7 @@ function fixture() {
     productionMutationAllowed: false,
     evaluationContract: { top3GateUse: false },
     version: name,
+    learner: learner(name),
   });
   return {
     baseline: {
@@ -47,7 +52,7 @@ function fixture() {
   };
 }
 
-test('HF Group A shadow summary pins production baseline and cannot mutate production', () => {
+test('HF Group A shadow summary pins production baseline and exports frozen learners without production writes', () => {
   const out = summarizeHfGroupAShadow(fixture(), { JOB_ID: 'job-1', CPU_CORES: '2', MEMORY: '16Gi', ACCELERATOR: 'none' });
   assert.equal(out.version, 'CFI_HF_GROUP_A_SHADOW_V1');
   assert.equal(out.executionPlatform, 'HUGGING_FACE_JOBS');
@@ -56,7 +61,11 @@ test('HF Group A shadow summary pins production baseline and cannot mutate produ
   assert.equal(out.productionMutationAllowed, false);
   assert.equal(out.productionWritePath, null);
   assert.equal(out.evaluationContract.top3GateUse, false);
+  assert.equal(out.frozenStateVersion,'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1');
+  assert.equal(out.trainedThrough,'2026-08-19');
   assert.deepEqual(out.selectedCandidates, ['OPPONENT_STRENGTH_ARM_V1','HIERARCHICAL_LEAGUE_SEGMENT_CALIBRATION_V1']);
+  assert.deepEqual(out.frozenLearners.OPPONENT_STRENGTH_ARM_V1,learner('OPPONENT_STRENGTH_ARM_V1'));
+  assert.deepEqual(out.frozenLearners.HIERARCHICAL_LEAGUE_SEGMENT_CALIBRATION_V1,learner('HIERARCHICAL_LEAGUE_SEGMENT_CALIBRATION_V1'));
 });
 
 test('HF Group A shadow fails closed on baseline drift', () => {
@@ -75,4 +84,10 @@ test('HF Group A shadow fails closed on any candidate production mutation', () =
   const x = fixture();
   x.challengers.OPPONENT_STRENGTH_ARM_V1.productionMutationAllowed = true;
   assert.throws(() => summarizeHfGroupAShadow(x), /HF_GROUP_A_CANDIDATE_PRODUCTION_MUTATION_FORBIDDEN/);
+});
+
+test('HF Group A shadow fails closed if prospective learner boundary changes',()=>{
+  const x=fixture();
+  x.challengers.OPPONENT_STRENGTH_ARM_V1.learner.trainedThrough='2026-08-20';
+  assert.throws(()=>summarizeHfGroupAShadow(x),/HF_GROUP_A_TRAINING_BOUNDARY_DRIFT/);
 });
