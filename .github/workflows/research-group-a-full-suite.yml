@@ -78,7 +78,7 @@ jobs:
           if(JSON.stringify(x.evaluationContract?.primaryTargets)!==JSON.stringify(primary)) fail('PRIMARY_TARGET_DRIFT');
           if(JSON.stringify(x.evaluationContract?.auxiliaryDiagnostics)!==JSON.stringify(aux)||x.evaluationContract?.top3GateUse!==false) fail('TOP3_GATE_DRIFT');
           if(x.evaluationContract?.pairedBaseline!==true||x.evaluationContract?.fullScoreGridLogLoss!==true||x.evaluationContract?.noReconstruction!==true) fail('SCOREGRID_CONTRACT_FAIL');
-          if(x.baseline?.engine!=='CFI_FINAL_V5.3.0'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2'||x.baseline?.primaryContract!=='CFI_2_METHODS_X_6_TARGETS_V2'||x.baseline?.multiMarketVersion!=='CFI_MULTI_MARKET_V1') fail('BASELINE_DRIFT');
+          if(x.baseline?.engine!=='CFI_FINAL_V5.3.1'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2'||x.baseline?.primaryContract!=='CFI_2_METHODS_X_6_TARGETS_V2'||x.baseline?.multiMarketVersion!=='CFI_MULTI_MARKET_V1') fail('BASELINE_DRIFT');
           if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) fail('STRICT_PRIOR_FAIL');
           if(x.decisionUse!==false||x.productionMutationAllowed!==false) fail('PRODUCTION_ISOLATION_FAIL');
           if(x.scoreGridEvaluation?.pairedBaseline!==true||x.scoreGridEvaluation?.noReconstruction!==true) fail('SCOREGRID_PROVENANCE_FAIL');
