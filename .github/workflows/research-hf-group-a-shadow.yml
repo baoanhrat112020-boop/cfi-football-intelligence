@@ -134,7 +134,7 @@ jobs:
           console.log(JSON.stringify({status:'PASS',jobId:x.jobId,cpuCores:x.cpuCores,memory:x.memory,coverage:x.coverage,frozenStateVersion:x.frozenStateVersion,trainedThrough:x.trainedThrough,challengers:Object.fromEntries(selected.map(n=>[n,{eligible:x.challengers[n].eligible,delta:x.challengers[n].aggregate?.deltaVsProduction,hardBlockers:x.challengers[n].hardBlockers}]))},null,2));
           NODE
 
-      - name: Run Group A E2E autopilot
+      - name: Run Group A pre-kickoff capture and immutable audit
         shell: bash
         run: |
           set -euo pipefail
@@ -144,9 +144,10 @@ jobs:
             "$BUNDLE/data/group-a.json" \
             "$RUNNER_TEMP/hf-group-a-summary.json" \
             "$RUNNER_TEMP/group-a-e2e-autopilot-result.json" \
-            --write
+            --write \
+            --no-settle
 
-      - name: Verify Group A E2E isolation
+      - name: Verify Group A pre-kickoff isolation
         shell: bash
         run: |
           set -euo pipefail
@@ -156,9 +157,11 @@ jobs:
           if(x.version!=='CFI_GROUP_A_E2E_AUTOPILOT_V1'||x.mode!=='WRITE_RESEARCH_ONLY') throw new Error('GROUP_A_E2E_VERSION_OR_MODE_DRIFT');
           if(x.researchOnly!==true||x.decisionUse!==false||x.productionMutationAllowed!==false||x.productionEligible!==false||x.noReconstruction!==true) throw new Error('GROUP_A_E2E_ISOLATION_FAIL');
           if(x.settlementWriterIncluded!==false||x.settlementRpc!=='cfi_settle_forward_market_ready_v3_research') throw new Error('GROUP_A_E2E_SETTLEMENT_PATH_DRIFT');
+          if(x.preKickoffSettlementPolicy!=='DEFER_TO_POST_KICKOFF_EXISTING_RPC'||x.settlementRequested!==false) throw new Error('GROUP_A_E2E_PREKICKOFF_SETTLEMENT_POLICY_FAIL');
           if(x.immutableAuditPassed!==true) throw new Error('GROUP_A_E2E_IMMUTABLE_AUDIT_FAIL');
-          if(x.settlement?.version!=='CFI_FORWARD_MARKET_SETTLEMENT_V3_RESEARCH'||x.settlement?.researchOnly!==true||x.settlement?.decisionUse!==false||x.settlement?.productionMutation!==false) throw new Error('GROUP_A_E2E_SETTLEMENT_CONTRACT_FAIL');
-          console.log(JSON.stringify({status:'PASS',preflightReady:x.preflight?.dryRunReady??0,capturedDecisions:x.capturedDecisions??0,settledFromThisCapture:x.settledFromThisCapture??0,pendingFromThisCapture:x.pendingFromThisCapture??0,settlement:x.settlement},null,2));
+          if(x.settlement?.status!=='NOT_RUN_PREKICKOFF_CAPTURE'||x.settlement?.version!=='CFI_FORWARD_MARKET_SETTLEMENT_V3_RESEARCH'||x.settlement?.researchOnly!==true||x.settlement?.decisionUse!==false||x.settlement?.productionMutation!==false) throw new Error('GROUP_A_E2E_SETTLEMENT_DEFER_CONTRACT_FAIL');
+          if(Number(x.settlementDeferredDecisions??-1)!==Number(x.capturedDecisions??0)) throw new Error('GROUP_A_E2E_SETTLEMENT_DEFER_COUNT_FAIL');
+          console.log(JSON.stringify({status:'PASS',preflightReady:x.preflight?.dryRunReady??0,capturedDecisions:x.capturedDecisions??0,settlementDeferredDecisions:x.settlementDeferredDecisions??0,settlement:x.settlement},null,2));
           NODE
 
       - name: Upload sanitized HF and E2E evidence
