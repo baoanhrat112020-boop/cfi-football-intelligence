@@ -4,6 +4,8 @@ import { PRODUCTION_BASELINE_LOCK } from './production-baseline-lock.mjs';
 
 export const CFI_HF_GROUP_A_SHADOW = Object.freeze({
   version: 'CFI_HF_GROUP_A_SHADOW_V1',
+  frozenStateVersion: 'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1',
+  trainedThrough: '2026-08-19',
   status: 'SHADOW_RESEARCH',
   decisionUse: false,
   productionMutationAllowed: false,
@@ -34,12 +36,16 @@ export function summarizeHfGroupAShadow(result, env = process.env) {
   assert(result?.evaluationContract?.top3GateUse === false, 'HF_GROUP_A_TOP3_GATE_FORBIDDEN');
 
   const challengers = {};
+  const frozenLearners = {};
   for (const name of CFI_HF_GROUP_A_SHADOW.selectedCandidates) {
     const candidate = result?.challengers?.[name];
     assert(candidate, `HF_GROUP_A_CANDIDATE_MISSING:${name}`);
     assert(candidate.decisionUse === false, `HF_GROUP_A_CANDIDATE_DECISION_USE_FORBIDDEN:${name}`);
     assert(candidate.productionMutationAllowed === false, `HF_GROUP_A_CANDIDATE_PRODUCTION_MUTATION_FORBIDDEN:${name}`);
     assert(candidate.evaluationContract?.top3GateUse === false, `HF_GROUP_A_CANDIDATE_TOP3_GATE_FORBIDDEN:${name}`);
+    assert(candidate?.learner?.stateVersion === CFI_HF_GROUP_A_SHADOW.frozenStateVersion, `HF_GROUP_A_FROZEN_STATE_REQUIRED:${name}`);
+    assert(candidate?.learner?.trainedThrough === CFI_HF_GROUP_A_SHADOW.trainedThrough, `HF_GROUP_A_TRAINING_BOUNDARY_DRIFT:${name}`);
+    frozenLearners[name] = candidate.learner;
     challengers[name] = {
       status: candidate.status,
       eligible: candidate.coverage?.eligible ?? 0,
@@ -63,6 +69,8 @@ export function summarizeHfGroupAShadow(result, env = process.env) {
 
   return {
     version: CFI_HF_GROUP_A_SHADOW.version,
+    frozenStateVersion: CFI_HF_GROUP_A_SHADOW.frozenStateVersion,
+    trainedThrough: CFI_HF_GROUP_A_SHADOW.trainedThrough,
     status: CFI_HF_GROUP_A_SHADOW.status,
     executionPlatform: 'HUGGING_FACE_JOBS',
     jobId: env.JOB_ID ?? null,
@@ -81,6 +89,7 @@ export function summarizeHfGroupAShadow(result, env = process.env) {
     selectedCandidates: [...CFI_HF_GROUP_A_SHADOW.selectedCandidates],
     coverage: result.coverage,
     determinism: result.determinism,
+    frozenLearners,
     challengers,
     universalBlockers: [
       'BASELINE_FULL_SCORE_GRID_NOT_EXPOSED_FOR_PAIRED_SCORELINE_LOGLOSS',
