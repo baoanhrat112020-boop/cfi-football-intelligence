@@ -22,16 +22,16 @@ test('R0 corpus contract freezes prospective holdout', () => {
   assert.equal(R0_DATASET_CONTRACT.prospectiveHoldoutStart, '2026-08-20');
 });
 
-test('R0 contract is pinned to current production release and actual replay prior gate', () => {
-  assert.equal(R0_DATASET_CONTRACT.baselineCommitSha, '518dfb57aafc8428e09b3ec84e440146c839a19e');
-  assert.equal(R0_DATASET_CONTRACT.productionChampion, 'CFI_FINAL_V5.3.0');
+test('R0 contract is pinned to reproducible V2.2 release and actual replay prior gate', () => {
+  assert.equal(R0_DATASET_CONTRACT.baselineCommitSha, '8ca9a3634f536f2f838135df062f5bbbf7da0d9a');
+  assert.equal(R0_DATASET_CONTRACT.productionChampion, 'CFI_FINAL_V5.3.1');
   assert.equal(R0_DATASET_CONTRACT.productionEntrypoint, 'cloudflare-worker/src/index-live-router.ts');
   assert.equal(R0_DATASET_CONTRACT.prematchEntrypoint, 'cloudflare-worker/src/index-v55.ts');
   assert.equal(R0_DATASET_CONTRACT.productionRuntime, 'CFI_PRIMARY_TOP1_RUNTIME_V2');
   assert.equal(R0_DATASET_CONTRACT.primaryContract, 'CFI_2_METHODS_X_6_TARGETS_V2');
   assert.equal(R0_DATASET_CONTRACT.multiMarketVersion, 'CFI_MULTI_MARKET_V1');
   assert.equal(R0_DATASET_CONTRACT.crossMarketCoherence, 'CFI_CROSS_MARKET_COHERENCE_GATE_V1');
-  assert.equal(R0_DATASET_CONTRACT.historicalEvaluator, 'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.1');
+  assert.equal(R0_DATASET_CONTRACT.historicalEvaluator, 'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.2');
   assert.equal(R0_DATASET_CONTRACT.bigDbRetrieval, 'CFI_BIG_DB_RETRIEVAL_V2.1.2');
   assert.equal(R0_DATASET_CONTRACT.minGlobalPriorFixtures, 8);
   assert.equal(R0_DATASET_CONTRACT.decisionUse, false);
@@ -59,8 +59,8 @@ test('R0 bulk runner is research-only, strict-prior, and scores research window 
   assert.equal(result.replay.sameDateLeakage, false);
   assert.equal(result.productionMutationAllowed, false);
   assert.equal(result.decisionUse, false);
-  assert.equal(result.productionParity.baselineCommitSha, '518dfb57aafc8428e09b3ec84e440146c839a19e');
-  assert.equal(result.productionParity.releaseEngine, 'CFI_FINAL_V5.3.0');
+  assert.equal(result.productionParity.baselineCommitSha, '8ca9a3634f536f2f838135df062f5bbbf7da0d9a');
+  assert.equal(result.productionParity.releaseEngine, 'CFI_FINAL_V5.3.1');
   assert.equal(result.productionParity.runtime, 'CFI_PRIMARY_TOP1_RUNTIME_V2');
   assert.equal(result.productionParity.primaryContract, 'CFI_2_METHODS_X_6_TARGETS_V2');
   assert.equal(result.productionParity.multiMarketVersion, 'CFI_MULTI_MARKET_V1');
