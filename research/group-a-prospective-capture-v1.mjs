@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { classifyResearchKey, createResearchSupabaseReader } from './supabase-read-adapter.mjs';
 import { buildForwardDecision, deriveFairMarketProbability } from './forward-market-evidence-pipeline.mjs';
+import { PRODUCTION_BASELINE_LOCK } from './production-baseline-lock.mjs';
 
 export const GROUP_A_PROSPECTIVE_CAPTURE_V1=Object.freeze({
   version:'CFI_GROUP_A_PROSPECTIVE_CAPTURE_V1',
@@ -27,6 +28,8 @@ export function buildGroupAModelFingerprint({modelName,learner}={}){
   }
   return stableHash({
     contract:'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1',
+    modelAdapterVersion:'CFI_GROUP_A_PROSPECTIVE_MODEL_V1',
+    baselineCommitSha:PRODUCTION_BASELINE_LOCK.commitSha,
     modelName:text(modelName),
     trainedThrough:'2026-08-19',
     learner,
@@ -81,6 +84,7 @@ export function buildProspectiveSnapshotPlan({fixture,context,candidate,learner}
       competitionKey:context?.competition?.competitionKey??null,
       competitionSegment:context?.competition?.competitionSegment??null,
       baselineFingerprint:context?.baselineFingerprint??null,
+      baselineCommitSha:PRODUCTION_BASELINE_LOCK.commitSha,
       fixtureSourceDivision:context?.competition?.sourceDivision??null,
     },
   };
@@ -180,20 +184,27 @@ export function createGroupAProspectiveResearchWriter({baseUrl,key,fetchImpl=fet
     const q=`cfi_decision_snapshots?select=decision_snapshot_id,research_prediction_snapshot_id,market_snapshot_id,cfi_probability,market_probability,edge,decision,stake_simulated,decision_timestamp,decision_use,research_only,selection&research_prediction_snapshot_id=eq.${enc(snapshotId)}`;
     return read.readAll(q,{critical:false,label:'group_a_existing_decision'});
   }
+  function acceptExistingDecision(x,expectedSnapshotId){
+    return text(x?.research_prediction_snapshot_id)===text(expectedSnapshotId)
+      && x?.decision==='SHADOW'
+      && x?.decision_use===false
+      && x?.research_only===true
+      && text(x?.decision_snapshot_id)
+      && text(x?.market_snapshot_id)
+      && ['HOME','DRAW','AWAY'].includes(x?.selection);
+  }
   async function persistDecision(plan){
     const existing=await findDecision(plan.research_prediction_snapshot_id);
     if(existing.length>1)throw new Error('GROUP_A_PROSPECTIVE_DUPLICATE_MODEL_DECISION');
     if(existing.length===1){
-      const x=existing[0];
-      const same=x.market_snapshot_id===plan.market_snapshot_id&&x.selection===plan.selection&&x.decision==='SHADOW'&&x.decision_use===false&&x.research_only===true;
-      if(!same)throw new Error('GROUP_A_PROSPECTIVE_EXISTING_DECISION_MISMATCH');
-      return {...x,idempotent:true};
+      if(!acceptExistingDecision(existing[0],plan.research_prediction_snapshot_id))throw new Error('GROUP_A_PROSPECTIVE_EXISTING_DECISION_INVALID');
+      return {...existing[0],idempotent:true};
     }
     try{return {...await insertOnly('cfi_decision_snapshots',plan),idempotent:false};}
     catch(error){
       if(error?.status!==409)throw error;
       const raced=await findDecision(plan.research_prediction_snapshot_id);
-      if(raced.length!==1)throw new Error('GROUP_A_PROSPECTIVE_DECISION_RACE_MISMATCH');
+      if(raced.length!==1||!acceptExistingDecision(raced[0],plan.research_prediction_snapshot_id))throw new Error('GROUP_A_PROSPECTIVE_DECISION_RACE_MISMATCH');
       return {...raced[0],idempotent:true};
     }
   }
@@ -213,7 +224,7 @@ export async function persistGroupAProspectiveCandidate({writer,fixture,context,
     version:GROUP_A_PROSPECTIVE_CAPTURE_V1.version,
     modelName:candidate.modelName,
     fixtureId:fixture.fixture_id,
-    marketSnapshotId:market.market_snapshot_id,
+    marketSnapshotId:decision.market_snapshot_id,
     snapshotId:snapshot.snapshot_id,
     decisionSnapshotId:decision.decision_snapshot_id,
     selection:decision.selection,
