@@ -22,7 +22,7 @@ jobs:
             -o "$BODY" -w '%{http_code}' \
             -X POST 'https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/predict' \
             -H 'content-type: application/json' \
-            --data '{"home":"Toulouse","away":"Lille","target_date":"2026-09-03","language":"en"}')
+            --data '{"home":"Sociedad","away":"Celta","target_date":"2026-09-03","language":"en"}')
           echo "HTTP=$HTTP"
           node - "$BODY" "$HTTP" <<'NODE'
           const fs=require('fs');
