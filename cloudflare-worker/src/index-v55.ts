@@ -52,8 +52,8 @@ function fusionReportLines(body:any){
   return[
     `CHAMPION FUSION V1: ${f.status??'—'} | decisionUse=${f.decisionUse===true?'true':'false'} | coherence=${f?.coherence?.status??mm?.consistencyGuard?.status??'—'} | uncertainty=${f?.uncertainty?.level??'—'} | confidence=${pct(f?.uncertainty?.confidence)} | abstain=${f?.uncertainty?.abstain===true?'YES':'NO'}`,
     `Fusion Champion: 3+ HT ${pct(c['3+ HT'])} | 7+ FT ${pct(c['7+ FT'])} | Other HT ${pct(c['Other HT'])} | Other FT ${pct(c['Other FT'])}`,
-    `Fusion Top-1 HT: ${exact(top1From(f?.champion?.top3HT))}`,
-    `Fusion Top-1 FT: ${exact(top1From(f?.champion?.top3FT))}`,
+    `Fusion Top-1 HT: ${exact(f?.champion?.top1HT??f?.champion?.['Top-1 HT'])}`,
+    `Fusion Top-1 FT: ${exact(f?.champion?.top1FT??f?.champion?.['Top-1 FT'])}`,
     `Fusion FT 1X2: H ${pct(mm?.oneXTwo?.ft?.home)} | X ${pct(mm?.oneXTwo?.ft?.draw)} | A ${pct(mm?.oneXTwo?.ft?.away)} | FT O2.5 ${pct(mm?.overUnder?.ft?.['2.5']?.over?.fullWin)} | FT O6.5 ${pct(mm?.overUnder?.ft?.['6.5']?.over?.fullWin)}`,
     `Fusion FT weights: INC ${pct(w.INCUMBENT_FINAL)} | HIST ${pct(w.HISTORICAL)} | FUTURE_SIX ${pct(w.FUTURE_SIX)} | RECENT ${pct(w.RECENT_FORM)} | DIR ${pct(w.DIRECTIONAL_RECONCILIATION)}`,
     'Fusion policy: SHADOW_RESEARCH only; paired prospective settlement + full Multi-Market promotion gate required.'

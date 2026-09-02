@@ -8,13 +8,19 @@ import {
   ftJointFromOddsRatio,
 } from '../research/multi-market-historical-learning-v2.mjs';
 
-test('V2 contract covers full Multi-Market evaluation groups', () => {
-  for (const group of ['CHAMPION','SCORELINE','1X2_HT','1X2_FT','OU_HT','OU_FT','AH_HT','AH_FT','COHERENCE']) {
-    assert.ok(MULTI_MARKET_HISTORICAL_V2.groups.includes(group));
+test('V2.2 contract covers authoritative Multi-Market evaluation groups', () => {
+  for (const group of ['CHAMPION_6','SCORELINE_HT','SCORELINE_FT','1X2_HT','1X2_FT','OU_HT','OU_FT','AH_HT','AH_FT','CALIBRATION_UNCERTAINTY_ABSTENTION','COHERENCE','DIRECTIONAL_SWAP','DETERMINISM','SEGMENT_ROBUSTNESS']) {
+    assert.ok(MULTI_MARKET_HISTORICAL_V2.groups.includes(group), group);
   }
+  assert.equal(MULTI_MARKET_HISTORICAL_V2.version, 'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.2');
+  assert.equal(MULTI_MARKET_HISTORICAL_V2.researchContract, 'CFI_MULTI_MARKET_RESEARCH_CONTRACT_V2_2');
   assert.equal(MULTI_MARKET_HISTORICAL_V2.strictPrior, true);
   assert.equal(MULTI_MARKET_HISTORICAL_V2.decisionUse, false);
+  assert.equal(MULTI_MARKET_HISTORICAL_V2.productionMutationAllowed, false);
+  assert.equal(MULTI_MARKET_HISTORICAL_V2.canonicalDbMutationAllowed, false);
   assert.deepEqual(MULTI_MARKET_HISTORICAL_V2.models, ['R0','FUTURE_SIX','F5','F10P']);
+  assert.ok(!MULTI_MARKET_HISTORICAL_V2.groups.includes('TOP3_HT'));
+  assert.ok(!MULTI_MARKET_HISTORICAL_V2.groups.includes('TOP3_FT'));
 });
 
 test('closed-form projection preserves all four Champion marginals to machine precision', () => {

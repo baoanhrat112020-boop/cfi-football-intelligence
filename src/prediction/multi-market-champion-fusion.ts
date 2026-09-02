@@ -1,7 +1,8 @@
 import { buildMultiMarketFromScoreGrids } from './multi-market-v1.ts';
 
 export const CHAMPION_FUSION_VERSION='CFI_MULTI_MARKET_CHAMPION_FUSION_V1';
-export const CHAMPION_FUSION_LINEAGE='CFI_FUSION_RESEARCH_V1.2';
+export const CHAMPION_FUSION_LINEAGE='CFI_FUSION_RESEARCH_V1.3_TOP1';
+export const CHAMPION_FUSION_SCORELINE_CONTRACT='TOP1_HT_PLUS_TOP1_FT';
 
 type GridInput={score:string;probability:number;total?:number;home?:number;away?:number};
 type Cell={score:string;home:number;away:number;total:number;probability:number};
@@ -44,7 +45,7 @@ function pool(experts:Record<string,Cell[]>,weights:Record<string,number>,temper
   const z=logits.reduce((s,r)=>s+r.x,0)||1;
   return logits.map(r=>{const s=parseScore(r.score);return{score:r.score,home:s.home,away:s.away,total:s.home+s.away,probability:r.x/z};});
 }
-function top3(g:Cell[]){return [...g].sort((a,b)=>b.probability-a.probability||a.total-b.total||a.score.localeCompare(b.score)).slice(0,3).map(r=>({score:r.score,probability:round(r.probability)}));}
+function top1(g:Cell[]){const r=[...g].sort((a,b)=>b.probability-a.probability||a.total-b.total||a.score.localeCompare(b.score))[0];return r?{score:r.score,probability:round(r.probability)}:null;}
 function mass(g:Cell[],f:(r:Cell)=>boolean){return round(g.filter(f).reduce((s,r)=>s+r.probability,0));}
 function periodFusion(period:'ht'|'ft',input:PeriodExperts,context:Context){
   const experts:Record<string,Cell[]>={INCUMBENT_FINAL:normalize(input.incumbent),HISTORICAL:normalize(input.historical),FUTURE_SIX:normalize(input.futureSix)};
@@ -64,8 +65,8 @@ export function buildMultiMarketChampionFusion(args:{targetDate?:string|null;max
   const multiMarket:any=buildMultiMarketFromScoreGrids({ht:ht.grid,ft:ft.grid});
   multiMarket.model={family:'CFI_CHAMPION_FUSION_SCORE_GRID_V1',source:'CONTEXT_GATED_MULTI_EXPERT_DISTRIBUTION_FUSION',singleCore:true,experts:Object.keys(ht.weights)};
   const thresholds={'3+ HT':mass(ht.grid,r=>r.total>=3),'7+ FT':mass(ft.grid,r=>r.total>=7),'Other HT':mass(ht.grid,r=>r.home>=4||r.away>=4),'Other FT':mass(ft.grid,r=>r.home>=5||r.away>=5)};
-  const top3HT=top3(ht.grid),top3FT=top3(ft.grid);
-  const champion:any={...thresholds,'Top-3 HT':top3HT,'Top-3 FT':top3FT,thresholds,top3HT,top3FT};
+  const top1HT=top1(ht.grid),top1FT=top1(ft.grid);
+  const champion:any={...thresholds,'Top-1 HT':top1HT,'Top-1 FT':top1FT,thresholds,top1HT,top1FT,scorelineContract:CHAMPION_FUSION_SCORELINE_CONTRACT};
   const coverage=clamp(Number(args.context.evidenceCount||0)/40),avgDisagreement=(ht.disagreement+ft.disagreement)/2;
   const reasons:string[]=[];
   if(!strictPrior)reasons.push('STRICT_PRIOR_PROVENANCE_REQUIRED');
@@ -75,7 +76,7 @@ export function buildMultiMarketChampionFusion(args:{targetDate?:string|null;max
   const severe=reasons.includes('STRICT_PRIOR_PROVENANCE_REQUIRED')||reasons.includes('CROSS_MARKET_COHERENCE_FAIL');
   const confidence=round(clamp(.18+.54*coverage+.20*(1-clamp(avgDisagreement/.40))+.08*(1-(ht.normalizedEntropy+ft.normalizedEntropy)/2)),6),level=confidence>=.72?'HIGH':confidence>=.52?'MEDIUM':'LOW';
   return{
-    version:CHAMPION_FUSION_VERSION,lineage:CHAMPION_FUSION_LINEAGE,status:severe?'SHADOW_BLOCKED':'SHADOW_READY',researchOnly:true,decisionUse:false,productionEligible:false,promotionRequired:true,championMutation:false,
+    version:CHAMPION_FUSION_VERSION,lineage:CHAMPION_FUSION_LINEAGE,scorelineContract:CHAMPION_FUSION_SCORELINE_CONTRACT,status:severe?'SHADOW_BLOCKED':'SHADOW_READY',researchOnly:true,decisionUse:false,productionEligible:false,promotionRequired:true,championMutation:false,
     architecture:'MULTI_EXPERT -> CONTEXT_GATE -> TEMPERED_DISTRIBUTION_FUSION -> SINGLE_MULTI_MARKET_CORE',
     activeExperts:Object.keys(ht.weights),
     candidateExperts:{F10P:'HISTORICAL_V2_INCOMPLETE',F5:'HISTORICAL_V2_INCOMPLETE',K048:'JOINT_TRAJECTORY_SHADOW_SEPARATE',K034:'REAL_MARKET_SNAPSHOT_SPECIALIST',NEGATIVE_BINOMIAL:'EMBEDDED_IN_FUTURE_SIX_TAIL'},
@@ -83,6 +84,6 @@ export function buildMultiMarketChampionFusion(args:{targetDate?:string|null;max
     fusion:{method:'TEMPERED_LOG_OPINION_POOL',singleLatentDistribution:true,deriveAllMarketsFromFusedDistribution:true},
     uncertainty:{level,confidence,abstain:reasons.length>0,reasons},coherence:{status:multiMarket.consistencyGuard.status,guard:multiMarket.consistencyGuard},
     strictPrior:{verified:strictPrior,targetDate:targetDate||null,maxEvidenceDate:maxEvidenceDate||null},champion,multiMarket,
-    audit:{noOutcomeKnowledge:true,noMarketOddsRequired:true,immutableShadowRequired:true,incumbentUnmodified:true,coherenceStatus:multiMarket.consistencyGuard.status},
+    audit:{noOutcomeKnowledge:true,noMarketOddsRequired:true,immutableShadowRequired:true,incumbentUnmodified:true,coherenceStatus:multiMarket.consistencyGuard.status,scorelineContract:CHAMPION_FUSION_SCORELINE_CONTRACT},
   };
 }

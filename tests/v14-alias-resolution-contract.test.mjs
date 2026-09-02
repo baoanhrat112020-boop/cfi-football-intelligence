@@ -30,9 +30,7 @@ test('native discovery fails closed with a truthful terminal reason before any p
     [{fixturesDiscovered:2,predictionAttempts:2,predictionSuccess:0,insufficient:2},'INSUFFICIENT_EVIDENCE'],
     [{fixturesDiscovered:2,predictionAttempts:2,predictionSuccess:0,insufficient:1},'PREDICTION_NOT_EXECUTED'],
   ];
-  for(const [counts,expected] of cases){
-    assert.equal(discoveryFinal({action:'CFI_DISCOVERY',counts,final:'NO_BET'}),expected);
-  }
+  for(const [counts,expected] of cases){assert.equal(discoveryFinal({action:'CFI_DISCOVERY',counts,final:'NO_BET'}),expected);}
   assert.equal(discoveryFinal({action:'CFI_DISCOVERY',counts:{fixturesDiscovered:1,predictionAttempts:1,predictionSuccess:1,insufficient:0},final:'NO_BET'}),'NO_BET');
 });
 
@@ -97,25 +95,26 @@ test('final production E2E follows GPT Core V4 supplied-fixture contract without
   assert.match(workflow,/PROVIDER_MISMATCH_/);
   assert.match(workflow,/EXTERNAL_SUPPLIED/);
   assert.doesNotMatch(workflow,/internal_provider_diagnostics\\":true/);
-  for(const fixture of ['Bradford City','Newcastle United','Tottenham Hotspur','Preston North End','Real Sociedad']){
-    assert.doesNotMatch(workflow,new RegExp(fixture));
-  }
+  for(const fixture of ['Bradford City','Newcastle United','Tottenham Hotspur','Preston North End','Real Sociedad']){assert.doesNotMatch(workflow,new RegExp(fixture));}
 });
 
 test('production discovery has one provider fallback owner and no duplicate worker crawler by default',()=>{
   const router=read('cloudflare-worker/src/index-p0-router.ts');
-  assert.match(router,/const providerFallbackTriggered=verifiedBeforeProviders\.length<requestedRows/);
-  assert.match(router,/const workerProviderFallbackAllowed=explicitProviderDiagnostics/);
-  assert.match(router,/const usePublicProviders=workerProviderFallbackAllowed/);
+  assert.match(router,/const providerFallbackTriggered=rows\.length<requestedRows/);
+  assert.match(router,/workerProviderFallbackAllowed:false/);
   assert.match(router,/providerFallbackReason:providerFallbackTriggered\?'CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK':null/);
   assert.match(router,/canonicalFeedOwnsProviderFallback:true/);
-  assert.match(router,/noDuplicateWorkerProviderCrawler:f\.search\?\.workerProviderFallbackAllowed===false/);
+  assert.match(router,/providerDiagnosticsPriority:'AFTER_BIGDB_PREFLIGHT_AND_PREDICTION'/);
+  assert.match(router,/noDuplicateWorkerProviderCrawler:true/);
+  const feedStart=router.indexOf('async function feed('),deferredStart=router.indexOf('async function runDeferredProviderDiagnostics');
+  assert.ok(feedStart>=0&&deferredStart>feedStart);
+  assert.doesNotMatch(router.slice(feedStart,deferredStart),/discoverFixtures\s*\(/);
 });
 
 test('discovery predicts only evidence-ready candidates and keeps filling after failures',()=>{
   const router=read('cloudflare-worker/src/index-p0-router.ts');
   assert.match(router,/homeN>0&&awayN>0&&temporal/);
-  assert.match(router,/const evidenceReady=preflight\s*\.filter\(x=>x\.ready\)/);
+  assert.match(router,/const evidenceReady=preflight\.filter\(x=>x\.ready\)/);
   assert.match(router,/for\(const rejected of evidenceRejected\)diagnostics\.push\(preflightDiagnostic\(rejected\)\)/);
   assert.doesNotMatch(router,/canonicalRows=\[\.\.\.evidenceReady,\.\.\.evidenceUnknown\]/);
   assert.match(router,/evaluated\.length<maxMatches/);

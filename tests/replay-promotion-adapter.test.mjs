@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { replayDualHistorical } from '../src/learning/dual-historical-replay.ts';
-import { CFI_REPLAY_MARKETS, scoreReplayAllModels } from '../research/replay-promotion-adapter.mjs';
+import { scoreReplayAllModels } from '../research/replay-promotion-adapter.mjs';
+import { MULTIMARKET_RESEARCH_CONTRACT_VERSION, REQUIRED_OUTPUT_GROUPS } from '../research/multimarket-promotion-gate-v2.mjs';
 
 const fixtures = Array.from({ length: 24 }, (_, i) => ({
   id:`rf${i+1}`,
@@ -11,6 +12,13 @@ const fixtures = Array.from({ length: 24 }, (_, i) => ({
   ht:{home:i%3===0?2:1,away:i%5===0?1:0},
   ft:{home:i%4===0?5:2,away:i%6===0?2:1},
 }));
+
+const components={accuracyBrier:90,calibrationEce:90,rankingDiscrimination:90,crossMarketCoherence:100,temporalOotRobustness:90,segmentRegimeRobustness:85,determinismSwapDiversity:100,decisionUtilityMarketComparison:80};
+const gates={strictPrior:true,temporalLeakage:true,validProbability:true,calibrationFloor:true,forecastCollapse:true,determinism:true,swap:true,crossMarketCoherence:true,noReconstruction:true,noHoldoutTuning:true,uncertaintyAbstention:true};
+const outputCoverage=Object.fromEntries(REQUIRED_OUTPUT_GROUPS.map(group=>[group,true]));
+const perGroup=Object.fromEntries(REQUIRED_OUTPUT_GROUPS.map(group=>[group,{evaluated:true,unacceptableRegression:false}]));
+const baselineComparison={paired:true,baselineReproducible:true,aggregateNetImprovementOrPreservation:true,noUnacceptableRegression:true,requiredGroups:REQUIRED_OUTPUT_GROUPS,perGroup,aggregateBrierDelta:-0.001,aggregateLogLossDelta:-0.001};
+const fullInput={components,gates,sampleSupport:300,contractVersion:MULTIMARKET_RESEARCH_CONTRACT_VERSION,outputCoverage,baselineComparison};
 
 test('replay exports real date-bounded temporal provenance', () => {
   const replay = replayDualHistorical(fixtures,{minPrior:8});
@@ -25,31 +33,37 @@ test('replay exports real date-bounded temporal provenance', () => {
   }
 });
 
-test('promotion adapter scores all replay models using canonical CFI market keys', () => {
+test('legacy replay evidence cannot self-promote without full Multi-Market V2.2 evaluation', () => {
   const replay = replayDualHistorical(fixtures,{minPrior:8});
-  const scored = scoreReplayAllModels(replay,{stability:.9,robustness:1});
-  assert.deepEqual([...CFI_REPLAY_MARKETS], ['3+ HT','7+ FT','Other HT','Other FT']);
+  const scored = scoreReplayAllModels(replay);
   for (const type of ['HISTORICAL_PRODUCTION','FUTURE_SIX_FACTORS','FINAL_CFI']) {
     assert.ok(scored[type]);
     assert.ok(scored[type].sampleCount>0);
+    assert.equal(scored[type].status,'FAIL_HARD_GATE');
+    assert.equal(scored[type].shadowEligible,false);
     assert.equal(scored[type].productionEligible,false);
-    assert.ok(Number.isFinite(scored[type].score));
-    assert.ok(Number.isFinite(scored[type].metrics.meanBrier), `${type} meanBrier must use real replay markets`);
-    assert.ok(Number.isFinite(scored[type].metrics.meanEce), `${type} meanEce must use real replay markets`);
-    assert.ok(Number.isFinite(scored[type].metrics.auc), `${type} auc must use real replay markets`);
-    for (const market of CFI_REPLAY_MARKETS) {
-      assert.ok(Object.hasOwn(scored[type].metrics.collapse.spread, market), `${type} collapse audit missing ${market}`);
-    }
-    assert.ok(!scored[type].hardFailures.includes('STRICT_PRIOR_FAILURE'));
+    assert.deepEqual(scored[type].hardFailures,['MULTIMARKET_EVALUATION_REQUIRED']);
+  }
+});
+
+test('replay can only reach shadow status through the authoritative V2.2 gate', () => {
+  const replay = replayDualHistorical(fixtures,{minPrior:8});
+  const scored = scoreReplayAllModels(replay,{multiMarketPromotionInput:fullInput});
+  for (const type of ['HISTORICAL_PRODUCTION','FUTURE_SIX_FACTORS','FINAL_CFI']) {
+    assert.equal(scored[type].contractVersion,MULTIMARKET_RESEARCH_CONTRACT_VERSION);
+    assert.equal(scored[type].shadowEligible,true);
+    assert.equal(scored[type].productionEligible,false);
+    assert.equal(scored[type].decisionUse,false);
   }
 });
 
 test('adapter fails closed when temporal provenance is not verified', () => {
   const replay = replayDualHistorical(fixtures,{minPrior:8});
   replay.temporalProvenanceComplete=false;
-  const scored = scoreReplayAllModels(replay);
+  const scored = scoreReplayAllModels(replay,{multiMarketPromotionInput:fullInput});
   for (const result of Object.values(scored)) {
     assert.equal(result.status,'FAIL_HARD_GATE');
     assert.equal(result.shadowEligible,false);
+    assert.deepEqual(result.hardFailures,['REPLAY_STRICT_PRIOR_FAILURE']);
   }
 });

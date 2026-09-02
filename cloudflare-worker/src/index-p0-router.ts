@@ -51,26 +51,19 @@ async function feed(input:any,env:Env){
   const ai=normalizeAiFixtureCandidates(input?.fixture_candidates??[],window);
   const database=await databaseFeed(input,env).catch(()=>null);
   const canonicalFeedRows=(database?.rows??[]) as FeedRow[];
-  const verifiedBeforeProviders=mergeDiscoveryRows<FeedRow>([ai.rows as FeedRow[],canonicalFeedRows],scanLimit);
-  const explicitProviderDiagnostics=input?.internal_provider_diagnostics===true;
-  const providerFallbackTriggered=verifiedBeforeProviders.length<requestedRows;
-  const workerProviderFallbackAllowed=explicitProviderDiagnostics;
-  const usePublicProviders=workerProviderFallbackAllowed;
-  const publicProviders=usePublicProviders
-    ?await discoverFixtures(window).catch(error=>({provider:'ERROR',providers:[],rows:[],sourceUrl:null,attempts:[{provider:'MULTI_SOURCE',ok:false,error:String(error)}],search:null}))
-    :{provider:'DISABLED_CANONICAL_FEED_OWNS_FALLBACK',providers:[],rows:[],sourceUrl:null,attempts:[],search:null};
-  const rows=mergeDiscoveryRows<FeedRow>([verifiedBeforeProviders,(publicProviders?.rows??[]) as FeedRow[]],scanLimit);
+  const rows=mergeDiscoveryRows<FeedRow>([ai.rows as FeedRow[],canonicalFeedRows],scanLimit);
   const providers=[...new Set(rows.map(row=>row.provider))];
   const canonicalFeedLocalRows=canonicalFeedRows.filter(row=>CANONICAL_FEED_LOCAL_PROVIDERS.has(String(row.provider).toUpperCase()));
   const canonicalFeedProviderRows=canonicalFeedRows.filter(row=>!CANONICAL_FEED_LOCAL_PROVIDERS.has(String(row.provider).toUpperCase()));
-  const workerProviderRows=(publicProviders?.rows??[]) as FeedRow[];
+  const explicitProviderDiagnostics=input?.internal_provider_diagnostics===true;
+  const providerFallbackTriggered=rows.length<requestedRows;
   return{
     status:'OK',
-    source:providers.length>1?'AI_PLUS_BIGDB':providers[0]??String(publicProviders?.provider??'NONE'),
+    source:providers.length>1?'AI_PLUS_BIGDB':providers[0]??'NONE',
     providers,
     rows,
-    sourceUrl:publicProviders?.sourceUrl??null,
-    attempts:publicProviders?.attempts??[],
+    sourceUrl:null,
+    attempts:[],
     search:{
       mode:'GPT_SEARCH_FIRST',
       requestedRows,
@@ -80,17 +73,31 @@ async function feed(input:any,env:Env){
       aiCandidatesAccepted:ai.rows.length,
       aiCandidatesRejected:ai.rejected,
       internalProviderDiagnostics:explicitProviderDiagnostics,
+      internalProviderDiagnosticsDeferred:explicitProviderDiagnostics,
+      providerDiagnosticsPriority:'AFTER_BIGDB_PREFLIGHT_AND_PREDICTION',
       providerFallbackTriggered,
-      workerProviderFallbackAllowed,
+      workerProviderFallbackAllowed:false,
       providerFallbackReason:providerFallbackTriggered?'CANONICAL_DATABASE_FEED_OWNS_PROVIDER_FALLBACK':null,
-      verifiedRowsBeforeProviderFallback:verifiedBeforeProviders.length,
+      verifiedRowsBeforeProviderFallback:rows.length,
       canonicalFeedOwnsProviderFallback:true,
-      internalProviderSearch:publicProviders?.search??null
+      internalProviderSearch:null
     },
     databaseRows:canonicalFeedLocalRows.length,
     aiRows:ai.rows.length,
-    publicRows:canonicalFeedProviderRows.length+workerProviderRows.length
+    publicRows:canonicalFeedProviderRows.length
   };
+}
+
+async function runDeferredProviderDiagnostics(input:any,targetDate:string,timeZone:string){
+  if(input?.internal_provider_diagnostics!==true)return null;
+  const requestedRows=Math.max(1,Math.min(100,Number(input?.max_matches??5)||5));
+  const scanLimit=Math.max(requestedRows,Math.min(20,Number(input?.scan_limit??requestedRows*2)||requestedRows*2));
+  const window={targetDate,timeZone,startTime:input?.start_time??null,endTime:input?.end_time??null,minimumRows:Math.min(scanLimit,requestedRows)};
+  try{
+    return await discoverFixtures(window);
+  }catch(error:any){
+    return{provider:'ERROR',providers:[],rows:[],sourceUrl:null,attempts:[{provider:'MULTI_SOURCE',ok:false,error:String(error?.message||error)}],search:null};
+  }
 }
 
 function fixtureOdds(row:FeedRow,input:any){
@@ -144,14 +151,9 @@ async function evidencePreflight(row:FeedRow,env:Env){
   const url=env.CFI_DB_BASE_URL.replace(/\/cfi-db\/?$/,'/cfi-bigdb-retrieval');
   const body=JSON.stringify({home:row.home,away:row.away,target_date:row.targetDate});
   let lastError:any=null;
-
   for(let attempt=0;attempt<2;attempt++){
     try{
-      const r=await fetch(url,{
-        method:'POST',
-        headers:{'content-type':'application/json','x-cfi-key':env.CFI_DB_KEY},
-        body
-      });
+      const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json','x-cfi-key':env.CFI_DB_KEY},body});
       const b:any=await readJson(r);
       const homeId=b?.identity?.homeTeamId??null;
       const awayId=b?.identity?.awayTeamId??null;
@@ -159,33 +161,14 @@ async function evidencePreflight(row:FeedRow,env:Env){
       const awayN=Number(b?.exactTeam?.away?.retrieved??0);
       const temporal=b?.temporalAudit?.verified===true;
       const ready=r.ok&&b?.status==='OK'&&Boolean(homeId)&&Boolean(awayId)&&homeN>0&&awayN>0&&temporal;
-      const enriched:FeedRow=ready
-        ?{...row,home:String(b?.identity?.homeCanonical??row.home),away:String(b?.identity?.awayCanonical??row.away),canonicalExact:true,canonicalHomeTeamId:String(homeId),canonicalAwayTeamId:String(awayId)}
-        :row;
-      return{
-        ready,
-        row:enriched,
-        reason:ready?'EVIDENCE_READY':!homeId||!awayId?'NO_EXACT_IDENTITY':homeN<=0||awayN<=0?'ZERO_EXACT_TEAM_EVIDENCE':!temporal?'STRICT_PRIOR_PREFLIGHT_FAIL':'BIGDB_PREFLIGHT_FAIL',
-        retrieval:b,
-        homeHistory:homeN,
-        awayHistory:awayN,
-        preflightAttempts:attempt+1
-      };
+      const enriched:FeedRow=ready?{...row,home:String(b?.identity?.homeCanonical??row.home),away:String(b?.identity?.awayCanonical??row.away),canonicalExact:true,canonicalHomeTeamId:String(homeId),canonicalAwayTeamId:String(awayId)}:row;
+      return{ready,row:enriched,reason:ready?'EVIDENCE_READY':!homeId||!awayId?'NO_EXACT_IDENTITY':homeN<=0||awayN<=0?'ZERO_EXACT_TEAM_EVIDENCE':!temporal?'STRICT_PRIOR_PREFLIGHT_FAIL':'BIGDB_PREFLIGHT_FAIL',retrieval:b,homeHistory:homeN,awayHistory:awayN,preflightAttempts:attempt+1};
     }catch(error:any){
       lastError=error;
       if(attempt===0)await new Promise(resolve=>setTimeout(resolve,250));
     }
   }
-
-  return{
-    ready:false,
-    row,
-    reason:'BIGDB_PREFLIGHT_EXCEPTION',
-    retrieval:{message:String(lastError?.message||lastError||'UNKNOWN_PREFLIGHT_EXCEPTION')},
-    homeHistory:0,
-    awayHistory:0,
-    preflightAttempts:2
-  };
+  return{ready:false,row,reason:'BIGDB_PREFLIGHT_EXCEPTION',retrieval:{message:String(lastError?.message||lastError||'UNKNOWN_PREFLIGHT_EXCEPTION')},homeHistory:0,awayHistory:0,preflightAttempts:2};
 }
 
 function preflightDiagnostic(x:any){
@@ -209,39 +192,17 @@ function preflightDiagnostic(x:any){
 
 function diagnose(row:FeedRow,p:{res:Response;body:any}|null,score:any){
   const identity=canonicalIdentity(row);
-  if(!identity.verified){
-    return{match:`${row.home} vs ${row.away}`,predictionHttpStatus:null,predictionStatus:'NOT_ATTEMPTED',predictionError:null,predictionMessage:null,strictPrior:false,failureLayer:'CANONICAL_IDENTITY',reasonCode:'CANONICAL_IDENTITY_FAIL',canonicalIdentity:identity,exactTeam:null,evidence:null,temporalEvidenceAudit:null};
-  }
+  if(!identity.verified)return{match:`${row.home} vs ${row.away}`,predictionHttpStatus:null,predictionStatus:'NOT_ATTEMPTED',predictionError:null,predictionMessage:null,strictPrior:false,failureLayer:'CANONICAL_IDENTITY',reasonCode:'CANONICAL_IDENTITY_FAIL',canonicalIdentity:identity,exactTeam:null,evidence:null,temporalEvidenceAudit:null};
   const predictionStatus=String(p?.body?.status??'UNKNOWN');
   const strictPrior=p?.body?.strictPrior?.verified===true||p?.body?.strictPriorAudit?.evidence?.verified===true;
   let failureLayer:string|null=null,reasonCode:string|null=null;
-  if(predictionStatus==='INSUFFICIENT_DATA'){
-    failureLayer='PREDICTION';reasonCode='INSUFFICIENT_DATA';
-  }else if(!p?.res?.ok){
-    failureLayer='PREDICT_HTTP';reasonCode='PREDICT_HTTP_FAIL';
-  }else if(predictionStatus!=='SUCCESS'&&predictionStatus!=='DATA_READY'){
-    failureLayer='PREDICTION';reasonCode='PREDICTION_NOT_SUCCESS';
-  }else if(!strictPrior){
-    failureLayer='STRICT_PRIOR';reasonCode='STRICT_PRIOR_NOT_VERIFIED';
-  }else if(p?.body?.consistencyGuard?.status&&p.body.consistencyGuard.status!=='PASS'){
-    failureLayer='CONSISTENCY';reasonCode='CONSISTENCY_FAIL';
-  }else if(!score?.eligible){
-    failureLayer='RANKING';reasonCode=score?.reason??'NO_RANKING';
-  }
-  return{
-    match:`${row.home} vs ${row.away}`,
-    predictionHttpStatus:p?.res?.status??null,
-    predictionStatus,
-    predictionError:p?.body?.error??null,
-    predictionMessage:p?.body?.message??null,
-    strictPrior,
-    failureLayer,
-    reasonCode,
-    canonicalIdentity:identity,
-    exactTeam:p?.body?.exactTeam??p?.body?.bigDbRetrieval?.exactTeam??null,
-    evidence:p?.body?.evidence??null,
-    temporalEvidenceAudit:p?.body?.temporalEvidenceAudit??p?.body?.strictPriorAudit?.evidence??null
-  };
+  if(predictionStatus==='INSUFFICIENT_DATA'){failureLayer='PREDICTION';reasonCode='INSUFFICIENT_DATA';}
+  else if(!p?.res?.ok){failureLayer='PREDICT_HTTP';reasonCode='PREDICT_HTTP_FAIL';}
+  else if(predictionStatus!=='SUCCESS'&&predictionStatus!=='DATA_READY'){failureLayer='PREDICTION';reasonCode='PREDICTION_NOT_SUCCESS';}
+  else if(!strictPrior){failureLayer='STRICT_PRIOR';reasonCode='STRICT_PRIOR_NOT_VERIFIED';}
+  else if(p?.body?.consistencyGuard?.status&&p.body.consistencyGuard.status!=='PASS'){failureLayer='CONSISTENCY';reasonCode='CONSISTENCY_FAIL';}
+  else if(!score?.eligible){failureLayer='RANKING';reasonCode=score?.reason??'NO_RANKING';}
+  return{match:`${row.home} vs ${row.away}`,predictionHttpStatus:p?.res?.status??null,predictionStatus,predictionError:p?.body?.error??null,predictionMessage:p?.body?.message??null,strictPrior,failureLayer,reasonCode,canonicalIdentity:identity,exactTeam:p?.body?.exactTeam??p?.body?.bigDbRetrieval?.exactTeam??null,evidence:p?.body?.evidence??null,temporalEvidenceAudit:p?.body?.temporalEvidenceAudit??p?.body?.strictPriorAudit?.evidence??null};
 }
 
 async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
@@ -250,30 +211,20 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
   const timeZone=String(input?.timezone??'Asia/Ho_Chi_Minh');
   const targetDate=String(input?.target_date??'').slice(0,10);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return null;
-
   const f=await feed({...input,target_date:targetDate,timezone:timeZone},env);
   if(!f)return null;
   const rows=f.rows as FeedRow[];
   const maxMatches=Math.max(1,Math.min(10,Number(input?.max_matches??5)||5));
-  const evaluated:any[]=[];
-  const diagnostics:any[]=[];
+  const evaluated:any[]=[],diagnostics:any[]=[];
   let predictionAttempts=0,predictionSuccess=0;
-
-  const identityRows=rows.filter(row=>{
-    if(canonicalIdentity(row).verified)return true;
-    diagnostics.push(diagnose(row,null,null));
-    return false;
-  });
+  const identityRows=rows.filter(row=>{if(canonicalIdentity(row).verified)return true;diagnostics.push(diagnose(row,null,null));return false;});
 
   const preflight:any[]=[];
   for(let offset=0;offset<identityRows.length;offset+=5){
     const batch=identityRows.slice(offset,offset+5);
     preflight.push(...await Promise.all(batch.map(row=>evidencePreflight(row,env))));
   }
-
-  const evidenceReady=preflight
-    .filter(x=>x.ready)
-    .sort((a,b)=>Math.min(Number(b.homeHistory||0),Number(b.awayHistory||0))-Math.min(Number(a.homeHistory||0),Number(a.awayHistory||0)));
+  const evidenceReady=preflight.filter(x=>x.ready).sort((a,b)=>Math.min(Number(b.homeHistory||0),Number(b.awayHistory||0))-Math.min(Number(a.homeHistory||0),Number(a.awayHistory||0)));
   const evidenceRejected=preflight.filter(x=>!x.ready);
   for(const rejected of evidenceRejected)diagnostics.push(preflightDiagnostic(rejected));
 
@@ -284,8 +235,7 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
     predictionAttempts+=batch.length;
     const results=await Promise.all(batch.map(async x=>({row:x.row as FeedRow,p:await predict(x.row as FeedRow,input,env,ctx)})));
     for(const {row,p} of results){
-      const score=scorePrediction(p.body);
-      const diag=diagnose(row,p,score);
+      const score=scorePrediction(p.body),diag=diagnose(row,p,score);
       const engineSucceeded=p.res.ok&&(p.body?.status==='SUCCESS'||p.body?.status==='DATA_READY');
       const strictPrior=diag.strictPrior===true;
       if(engineSucceeded)predictionSuccess++;
@@ -297,132 +247,32 @@ async function discoveryFromFeed(request:Request,env:Env,ctx:ExecutionContext){
   evaluated.sort((a,b)=>Number(b.score.score)-Number(a.score.score));
   const priority:Record<string,number>={BET:3,LEAN:2,WATCH:1};
   const board=evaluated.map(({row,body,score})=>{
-    const practical=body?.outputV3;
-    const primary=practical?.primary;
+    const practical=body?.outputV3,primary=practical?.primary;
     const status=practical?.final==='BET'?'BET':practical?.final==='LEAN'?'LEAN':'WATCH';
-    return{
-      match:`${row.home} vs ${row.away}`,
-      home:row.home,
-      away:row.away,
-      competition:row.competition,
-      country:row.country,
-      kickoff:row.kickoffIso,
-      kickoffLocal:row.kickoffLocal,
-      provider:row.provider,
-      fixtureProvenance:row.sourceUrls??null,
-      discoveredAt:row.discoveredAt??null,
-      canonicalIdentity:canonicalIdentity(row),
-      inputMode:'DISCOVER_TOP_MATCHES',
-      cohort:fixtureCohort(row),
-      bestMarket:primary?.market??score.best?.market??null,
-      modelProbability:primary?.probability??score.best?.probability??null,
-      fairOdds:primary?.fairOdds??score.best?.fairOdds??null,
-      marketOdds:primary?.marketOdds??null,
-      edge:primary?.edge??null,
-      expectedValue:primary?.expectedValue??null,
-      selectionScore:score.score,
-      confidence:primary?.confidence??score.best?.confidence??null,
-      status,
-      valueStatus:status==='BET'||status==='LEAN'?'VERIFIED_MARKET_VALUE':practical?.gates?.verifiedOdds?'NO_QUALIFIED_VALUE':'NOT_ASSESSED_NO_VERIFIED_BOOKMAKER_ODDS',
-      strictPrior:body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true,
-      consistency:body?.consistencyGuard?.status??null,
-      multiMarketStatus:body?.multiMarketIntegration?.status??body?.multiMarket?.mode??null,
-      multiMarketDecisionUse:practical?.multiMarket?.policy?.decisionUse===true,
-      marketSummary:practical?.marketSummary??null,
-      practicalOutput:practical,
-      prediction:body
-    };
+    return{match:`${row.home} vs ${row.away}`,home:row.home,away:row.away,competition:row.competition,country:row.country,kickoff:row.kickoffIso,kickoffLocal:row.kickoffLocal,provider:row.provider,fixtureProvenance:row.sourceUrls??null,discoveredAt:row.discoveredAt??null,canonicalIdentity:canonicalIdentity(row),inputMode:'DISCOVER_TOP_MATCHES',cohort:fixtureCohort(row),bestMarket:primary?.market??score.best?.market??null,modelProbability:primary?.probability??score.best?.probability??null,fairOdds:primary?.fairOdds??score.best?.fairOdds??null,marketOdds:primary?.marketOdds??null,edge:primary?.edge??null,expectedValue:primary?.expectedValue??null,selectionScore:score.score,confidence:primary?.confidence??score.best?.confidence??null,status,valueStatus:status==='BET'||status==='LEAN'?'VERIFIED_MARKET_VALUE':practical?.gates?.verifiedOdds?'NO_QUALIFIED_VALUE':'NOT_ASSESSED_NO_VERIFIED_BOOKMAKER_ODDS',strictPrior:body?.strictPrior?.verified===true||body?.strictPriorAudit?.evidence?.verified===true,consistency:body?.consistencyGuard?.status??null,multiMarketStatus:body?.multiMarketIntegration?.status??body?.multiMarket?.mode??null,multiMarketDecisionUse:practical?.multiMarket?.policy?.decisionUse===true,marketSummary:practical?.marketSummary??null,practicalOutput:practical,prediction:body};
   }).sort((a,b)=>(priority[b.status]??0)-(priority[a.status]??0)||Number(b.expectedValue??-9)-Number(a.expectedValue??-9)||Number(b.selectionScore)-Number(a.selectionScore)).slice(0,maxMatches);
+
+  // Diagnostics are deliberately last. They can never consume subrequest budget before
+  // canonical identity, BigDB strict-prior preflight, or production prediction execution.
+  const deferredProviderDiagnostics=await runDeferredProviderDiagnostics(input,targetDate,timeZone);
 
   const actionable=board.filter(r=>r.status==='BET');
   const insufficient=diagnostics.filter(d=>d.reasonCode==='INSUFFICIENT_DATA'||d.reasonCode==='ZERO_EXACT_TEAM_EVIDENCE').length;
   const blocked=diagnostics.filter(d=>d.reasonCode&&d.reasonCode!=='INSUFFICIENT_DATA'&&d.reasonCode!=='ZERO_EXACT_TEAM_EVIDENCE').length;
   const canonicalized=preflight.filter(x=>Boolean(x.retrieval?.identity?.homeTeamId)&&Boolean(x.retrieval?.identity?.awayTeamId)).length;
-  const search={
-    ...f.search,
-    combinedDistinctFixtures:rows.length,
-    combinedTargetSatisfied:rows.length>=maxMatches,
-    predictionExecutionMode:'EVIDENCE_READY_SUCCESS_FILL_BATCHES',
-    predictionBatchSize:'REMAINING_SUCCESS_SLOTS',
-    evidencePreflightAttempted:preflight.length,
-    evidenceReadyCandidates:evidenceReady.length,
-    evidenceInsufficientCandidates:evidenceRejected.length,
-    evidencePreflightReasons:Object.fromEntries([...new Set(preflight.map(x=>x.reason))].map(reason=>[reason,preflight.filter(x=>x.reason===reason).length])),
-    successfulCandidates:evaluated.length,
-    candidatePoolExhausted:evaluated.length<maxMatches&&predictionAttempts>=evidenceReady.length
-  };
-
+  const search={...f.search,internalProviderSearch:deferredProviderDiagnostics?.search??null,diagnosticProviderRows:Array.isArray(deferredProviderDiagnostics?.rows)?deferredProviderDiagnostics.rows.length:0,providerDiagnosticsExecutedAfterPrediction:Boolean(deferredProviderDiagnostics),combinedDistinctFixtures:rows.length,combinedTargetSatisfied:rows.length>=maxMatches,predictionExecutionMode:'EVIDENCE_READY_SUCCESS_FILL_BATCHES',predictionBatchSize:'REMAINING_SUCCESS_SLOTS',evidencePreflightAttempted:preflight.length,evidenceReadyCandidates:evidenceReady.length,evidenceInsufficientCandidates:evidenceRejected.length,evidencePreflightReasons:Object.fromEntries([...new Set(preflight.map(x=>x.reason))].map(reason=>[reason,preflight.filter(x=>x.reason===reason).length])),successfulCandidates:evaluated.length,candidatePoolExhausted:evaluated.length<maxMatches&&predictionAttempts>=evidenceReady.length};
   const responseMode=input?.response_mode==='compact'?'compact':'full';
   const responseBoard=responseMode==='compact'?board.map(compactDiscoveryRow):board;
   const responseDiagnostics=responseMode==='compact'?diagnostics.slice(0,20):diagnostics;
-  const responseProviderAttempts=responseMode==='compact'?[]:f.attempts??[];
+  const responseProviderAttempts=responseMode==='compact'?[]:deferredProviderDiagnostics?.attempts??[];
 
   return Response.json({
-    status:'OK',
-    action:'CFI_DISCOVERY',
-    version:CFI_DISCOVERY_VERSION,
-    responseMode,
-    targetDate,
-    timeZone,
-    provider:String(f.source??'CFI_VERIFIED_FIXTURE_FEED'),
-    sourceUrl:f.sourceUrl??null,
-    counts:{
-      fixturesDiscovered:f.rows.length,
-      aiDiscoveredFixtures:Number(f.aiRows??0),
-      databaseFixtures:Number(f.databaseRows??0),
-      publicProviderFixtures:Number(f.publicRows??0),
-      canonicalized,
-      distinctFixtures:rows.length,
-      duplicatesRemoved:Math.max(0,Number(f.aiRows??0)+Number(f.databaseRows??0)+Number(f.publicRows??0)-rows.length),
-      scanned:rows.length,
-      evidencePreflightAttempted:preflight.length,
-      evidenceReady:evidenceReady.length,
-      predictionAttempts,
-      predictionSuccess,
-      fullPredictionsExecuted:predictionSuccess,
-      successfulMatches:evaluated.length,
-      eligible:evaluated.length,
-      insufficient,
-      blocked,
-      recommended:actionable.length,
-      actionable:actionable.length,
-      leans:board.filter(r=>r.status==='LEAN').length,
-      watch:board.filter(r=>r.status==='WATCH').length,
-      shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length
-    },
-    search,
-    diagnostics:responseDiagnostics,
-    providerAttempts:responseProviderAttempts,
-    rules:{
-      strictPriorRequired:true,
-      gptSearchFirstRequired:true,
-      evidenceFirstSelection:true,
-      exactTeamHistoryRequired:true,
-      temporalPreflightRequired:true,
-      predictEvidenceReadyOnly:true,
-      internalProviderCrawlerDefault:false,
-      providerFallbackOnShortfall:true,
-      sameDayDiscoveryOnly:true,
-      continueAfterCandidateFailure:true,
-      stopAtSuccessfulMaxMatches:true,
-      continueUntilRequestedPoolOrSourcesExhausted:true,
-      noLeagueCohortExclusion:true,
-      includeWomenYouthReserveAmateur:true,
-      noForcedBet:true,
-      noForcedFive:true,
-      verifiedFreshBookmakerOddsRequiredForBet:true,
-      bookmakerOddsRequiredForValueClaim:true,
-      shadowDecisionUse:false
-    },
-    board:responseBoard,
-    topPicks:responseBoard.filter(r=>r.status==='BET').slice(0,3),
-    final:actionable.length?'PRACTICAL_BETS_READY':board.length?'WATCHLIST_READY':'NO_BET',
-    provenance:{
-      fixtureSource:String(f.source??'GPT_SEARCH_THEN_BIGDB'),
-      discoveryStrategy:'CANONICAL_FEED_PROVIDER_FALLBACK_THEN_BIGDB_PREFLIGHT_THEN_EXACT_IDS_THEN_EXACT_HISTORY_THEN_STRICT_PRIOR_THEN_EVIDENCE_READY_FIRST_THEN_SUCCESS_FILL',
-      noDuplicatePredictionEngine:true,
-      noDuplicateWorkerProviderCrawler:f.search?.workerProviderFallbackAllowed===false
-    }
+    status:'OK',action:'CFI_DISCOVERY',version:CFI_DISCOVERY_VERSION,responseMode,targetDate,timeZone,provider:String(f.source??'CFI_VERIFIED_FIXTURE_FEED'),sourceUrl:f.sourceUrl??null,
+    counts:{fixturesDiscovered:f.rows.length,aiDiscoveredFixtures:Number(f.aiRows??0),databaseFixtures:Number(f.databaseRows??0),publicProviderFixtures:Number(f.publicRows??0),canonicalized,distinctFixtures:rows.length,duplicatesRemoved:Math.max(0,Number(f.aiRows??0)+Number(f.databaseRows??0)+Number(f.publicRows??0)-rows.length),scanned:rows.length,evidencePreflightAttempted:preflight.length,evidenceReady:evidenceReady.length,predictionAttempts,predictionSuccess,fullPredictionsExecuted:predictionSuccess,successfulMatches:evaluated.length,eligible:evaluated.length,insufficient,blocked,recommended:actionable.length,actionable:actionable.length,leans:board.filter(r=>r.status==='LEAN').length,watch:board.filter(r=>r.status==='WATCH').length,shadowMarkets:board.filter(r=>r.multiMarketDecisionUse===false).length},
+    search,diagnostics:responseDiagnostics,providerAttempts:responseProviderAttempts,
+    rules:{strictPriorRequired:true,gptSearchFirstRequired:true,evidenceFirstSelection:true,exactTeamHistoryRequired:true,temporalPreflightRequired:true,predictEvidenceReadyOnly:true,bigDbPreflightPriority:true,providerDiagnosticsInBandBeforePreflight:false,internalProviderCrawlerDefault:false,providerFallbackOnShortfall:true,sameDayDiscoveryOnly:true,continueAfterCandidateFailure:true,stopAtSuccessfulMaxMatches:true,continueUntilRequestedPoolOrSourcesExhausted:true,noLeagueCohortExclusion:true,includeWomenYouthReserveAmateur:true,noForcedBet:true,noForcedFive:true,verifiedFreshBookmakerOddsRequiredForBet:true,bookmakerOddsRequiredForValueClaim:true,shadowDecisionUse:false},
+    board:responseBoard,topPicks:responseBoard.filter(r=>r.status==='BET').slice(0,3),final:actionable.length?'PRACTICAL_BETS_READY':board.length?'WATCHLIST_READY':'NO_BET',
+    provenance:{fixtureSource:String(f.source??'GPT_SEARCH_THEN_BIGDB'),discoveryStrategy:'CANONICAL_FEED_THEN_BIGDB_PREFLIGHT_THEN_EXACT_IDS_THEN_EXACT_HISTORY_THEN_STRICT_PRIOR_THEN_EVIDENCE_READY_FIRST_THEN_SUCCESS_FILL_THEN_OPTIONAL_PROVIDER_DIAGNOSTICS',noDuplicatePredictionEngine:true,noDuplicateWorkerProviderCrawler:true}
   });
 }
 
@@ -437,24 +287,14 @@ async function failClosedDiscovery(response:Response){
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const u=new URL(request.url);
-    if(u.pathname==='/openapi-gpt.yaml'&&request.method==='GET'){
-      return new Response(CFI_GPT_OPENAPI,{status:200,headers:{'content-type':'application/yaml; charset=utf-8','cache-control':'public, max-age=300','access-control-allow-origin':'*'}});
-    }
+    if(u.pathname==='/openapi-gpt.yaml'&&request.method==='GET')return new Response(CFI_GPT_OPENAPI,{status:200,headers:{'content-type':'application/yaml; charset=utf-8','cache-control':'public, max-age=300','access-control-allow-origin':'*'}});
     if(u.pathname==='/api/bets')return betLedger(request,env);
     if(u.pathname==='/api/discover'&&request.method==='POST'){
       try{
         const fromFeed=await discoveryFromFeed(request,env,ctx);
         if(fromFeed)return failClosedDiscovery(fromFeed);
       }catch(error:any){
-        return Response.json({
-          status:'ERROR',
-          action:'CFI_DISCOVERY',
-          error:'DISCOVERY_INTERNAL_EXCEPTION',
-          message:String(error?.message||error),
-          counts:{fixturesDiscovered:0,canonicalized:0,predictionAttempts:0,predictionSuccess:0,fullPredictionsExecuted:0},
-          board:[],
-          diagnostics:[]
-        },{status:500});
+        return Response.json({status:'ERROR',action:'CFI_DISCOVERY',error:'DISCOVERY_INTERNAL_EXCEPTION',message:String(error?.message||error),counts:{fixturesDiscovered:0,canonicalized:0,predictionAttempts:0,predictionSuccess:0,fullPredictionsExecuted:0},board:[],diagnostics:[]},{status:500});
       }
     }
     return base.fetch(request,env,ctx);

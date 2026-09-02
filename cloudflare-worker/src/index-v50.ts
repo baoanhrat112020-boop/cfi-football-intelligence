@@ -1,5 +1,5 @@
 import base from './index-v49.ts';
-import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS } from '../../src/prediction/final-engine.ts';
+import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS, PRIMARY_CONTRACT } from '../../src/prediction/final-engine.ts';
 import { CHAMPION_FUSION_VERSION } from '../../src/prediction/multi-market-champion-fusion.ts';
 
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.2.1';
@@ -43,7 +43,7 @@ function temporalEvidenceAudit(big:any,targetDate:string){
 }
 
 // CRITICAL DIVERSITY FIX: global DB statistics are telemetry/context only.
-// They MUST NOT overwrite/shrink match-specific Method A, Method B, FINAL or Top-3.
+// They MUST NOT overwrite/shrink match-specific Method A, Method B, FINAL or primary exact-score outputs.
 function attachGlobalPriorTelemetry(prediction:any,big:any){
   const threshold:any={};
   for(const market of MARKET_CODES){
@@ -57,49 +57,50 @@ function attachGlobalPriorTelemetry(prediction:any,big:any){
   return {fixtureCount:Number(big?.globalPrior?.fixtureCount??0),applied:true,directOutputShrinkage:false,threshold,scoreline:{mode:'NO_DIRECT_GLOBAL_SCORELINE_SHRINKAGE',directOutputShrinkage:false}};
 }
 
+const top1From=(x:any)=>Array.isArray(x)?x[0]??null:x??null;
 function sixTargetMatrix(prediction:any){
   const threshold=Object.fromEntries(MARKET_CODES.map((market)=>{
     const r=prediction?.markets?.[market]??{};
-    return[market,{methodA:r.methodA??null,methodB:r.methodB??null,final:r.final??null,confidence:r.confidence??null,hits:r.hits??null,eligible:r.eligible??null}];
+    return[market,{methodA:r.methodA??null,methodB:r.methodB??null,final:r.final??null,confidence:r.predictiveConfidence??r.confidence??null,hits:r.hits??null,eligible:r.eligible??null}];
   }));
-  const scoreline={
-    'Top-3 HT':{methodA:prediction?.scoreline?.ht?.methodA??null,methodB:prediction?.scoreline?.ht?.methodB??null,final:prediction?.scoreline?.ht?.final??null},
-    'Top-3 FT':{methodA:prediction?.scoreline?.ft?.methodA??null,methodB:prediction?.scoreline?.ft?.methodB??null,final:prediction?.scoreline?.ft?.final??null}
+  const exactScore={
+    'Top-1 HT':{methodA:top1From(prediction?.scoreline?.ht?.methodA),methodB:top1From(prediction?.scoreline?.ht?.methodB),final:top1From(prediction?.scoreline?.ht?.final)},
+    'Top-1 FT':{methodA:top1From(prediction?.scoreline?.ft?.methodA),methodB:top1From(prediction?.scoreline?.ft?.methodB),final:top1From(prediction?.scoreline?.ft?.final)}
   };
-  const validTop=(x:any)=>Array.isArray(x)&&x.length===3&&x.every((r:any)=>typeof r?.score==='string'&&Number.isFinite(Number(r?.probability)));
+  const validExact=(x:any)=>x&&typeof x?.score==='string'&&Number.isFinite(Number(x?.probability));
   const thresholdComplete=MARKET_CODES.every(m=>['methodA','methodB','final'].every(k=>Number.isFinite(Number((threshold as any)[m]?.[k]))));
-  const scorelineComplete=['Top-3 HT','Top-3 FT'].every(t=>['methodA','methodB','final'].every(k=>validTop((scoreline as any)[t]?.[k])));
-  return{contract:'CFI_2_METHODS_X_6_TARGETS_V1',primaryTargets:[...PRIMARY_TARGETS],methods:['Method A','Method B','FINAL'],threshold,scoreline,verification:{thresholdComplete,scorelineComplete,complete:thresholdComplete&&scorelineComplete}};
+  const scorelineComplete=['Top-1 HT','Top-1 FT'].every(t=>['methodA','methodB','final'].every(k=>validExact((exactScore as any)[t]?.[k])));
+  return{contract:PRIMARY_CONTRACT,primary:true,targetCount:6,primaryTargets:[...PRIMARY_TARGETS],methods:['Method A','Method B','FINAL'],threshold,scoreline:exactScore,exactScore,verification:{thresholdComplete,scorelineComplete,complete:thresholdComplete&&scorelineComplete}};
 }
 
 function renderedReport(prediction:any,matrix:any){
   const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
-  const list=(rows:any)=>Array.isArray(rows)?rows.map((r:any,i:number)=>`${i+1}) ${r.score} ${pct(r.probability)}`).join(' · '):'—';
-  const t=matrix.threshold,s=matrix.scoreline,f=prediction?.championFusion,fw=f?.gating?.ft?.weights??{},fmm=f?.multiMarket;
+  const exact=(row:any)=>row&&typeof row==='object'&&row.score?`${row.score} ${pct(row.probability)}`:'—';
+  const t=matrix.threshold,s=matrix.exactScore,f=prediction?.championFusion,fw=f?.gating?.ft?.weights??{},fmm=f?.multiMarket;
   return [
-    `CFI 2 METHODS × 6 TARGETS — ${matrix.contract}`,
+    `CFI 4 THRESHOLDS + TOP-1 HT + TOP-1 FT — ${matrix.contract}`,
     `MATCH: ${prediction?.target?.home??'—'} vs ${prediction?.target?.away??'—'} | ${prediction?.target?.date??'—'} | ENGINE ${prediction?.engine??ENGINE_VERSION}`,
     '',
     'THRESHOLD TARGETS — METHOD A | METHOD B | FINAL',
     ...MARKET_CODES.map(m=>`${m}: A ${pct(t[m]?.methodA)} | B ${pct(t[m]?.methodB)} | FINAL ${pct(t[m]?.final)} | ${t[m]?.confidence??'—'}`),
     '',
-    'TOP-3 HT — PRIMARY TARGET',
-    `Method A: ${list(s['Top-3 HT']?.methodA)}`,
-    `Method B: ${list(s['Top-3 HT']?.methodB)}`,
-    `FINAL: ${list(s['Top-3 HT']?.final)}`,
+    'TOP-1 HT — PRIMARY TARGET',
+    `Method A: ${exact(s['Top-1 HT']?.methodA)}`,
+    `Method B: ${exact(s['Top-1 HT']?.methodB)}`,
+    `FINAL: ${exact(s['Top-1 HT']?.final)}`,
     '',
-    'TOP-3 FT — PRIMARY TARGET',
-    `Method A: ${list(s['Top-3 FT']?.methodA)}`,
-    `Method B: ${list(s['Top-3 FT']?.methodB)}`,
-    `FINAL: ${list(s['Top-3 FT']?.final)}`,
+    'TOP-1 FT — PRIMARY TARGET',
+    `Method A: ${exact(s['Top-1 FT']?.methodA)}`,
+    `Method B: ${exact(s['Top-1 FT']?.methodB)}`,
+    `FINAL: ${exact(s['Top-1 FT']?.final)}`,
     '',
     `VERDICT: ${prediction?.verdict??'—'} | UNCERTAINTY: ${prediction?.scoreline?.uncertainty??'—'}`,
     `CONTRACT COMPLETE: ${matrix.verification.complete?'YES':'NO'}`,
     '',
     `CHAMPION FUSION V1: ${f?.status??'UNAVAILABLE'} | decisionUse=${f?.decisionUse===true?'true':'false'} | coherence=${f?.coherence?.status??'—'} | uncertainty=${f?.uncertainty?.level??'—'} | abstain=${f?.uncertainty?.abstain===true?'YES':'NO'}`,
     `Fusion Champion: 3+ HT ${pct(f?.champion?.thresholds?.['3+ HT'])} | 7+ FT ${pct(f?.champion?.thresholds?.['7+ FT'])} | Other HT ${pct(f?.champion?.thresholds?.['Other HT'])} | Other FT ${pct(f?.champion?.thresholds?.['Other FT'])}`,
-    `Fusion Top-3 HT: ${list(f?.champion?.top3HT)}`,
-    `Fusion Top-3 FT: ${list(f?.champion?.top3FT)}`,
+    `Fusion Top-1 HT: ${exact(f?.champion?.top1HT??f?.champion?.['Top-1 HT'])}`,
+    `Fusion Top-1 FT: ${exact(f?.champion?.top1FT??f?.champion?.['Top-1 FT'])}`,
     `Fusion FT 1X2: H ${pct(fmm?.oneXTwo?.ft?.home)} | X ${pct(fmm?.oneXTwo?.ft?.draw)} | A ${pct(fmm?.oneXTwo?.ft?.away)} | FT O2.5 ${pct(fmm?.overUnder?.ft?.['2.5']?.over?.fullWin)} | FT O6.5 ${pct(fmm?.overUnder?.ft?.['6.5']?.over?.fullWin)}`,
     `Fusion FT weights: INC ${pct(fw.INCUMBENT_FINAL)} | HIST ${pct(fw.HISTORICAL)} | RECENT ${pct(fw.RECENT_FORM)} | FUTURE_SIX ${pct(fw.FUTURE_SIX)} | DIR ${pct(fw.DIRECTIONAL_RECONCILIATION)}`,
     `Fusion policy: SHADOW_RESEARCH only; prospective paired settlement required before promotion.`
@@ -136,9 +137,6 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
       return Response.json({status:'STRICT_PRIOR_GATE_ERROR',error:temporal.error,strictPrior:{required:true,verified:false,targetDate,failClosed:true},temporalEvidenceAudit:temporal,audit:{status:'SKIPPED',reason:'STRICT_PRIOR_NOT_VERIFIED'}},{status:500});
     }
 
-    // Exact alias resolution happens inside BigDB. Use the resolved canonical names
-    // for team-specific feature extraction while preserving the submitted fixture
-    // names in the public target/audit contract.
     const predictionHome=String(big?.identity?.homeCanonical||home),predictionAway=String(big?.identity?.awayCanonical||away);
     const homePayload={fixtures:big?.fixtures?.home??[]},awayPayload={fixtures:big?.fixtures?.away??[]},h2hPayload={fixtures:big?.fixtures?.h2h??[]};
     const prediction:any=buildPrediction({home:predictionHome,away:predictionAway,targetDate,language:String(input?.language||'vi'),homePayload,awayPayload,h2hPayload});
@@ -158,10 +156,8 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     if(!matrix.verification.complete)return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,status:'RUNTIME_CONTRACT_ERROR',error:'INCOMPLETE_2_METHODS_X_6_TARGETS',audit:{status:'SKIPPED',reason:'RUNTIME_CONTRACT_ERROR'}},{status:500});
 
     const report=renderedReport(prediction,matrix);
-    // Snapshot only after exact-team, strict-prior, score-evidence and six-target gates pass.
-    // championFusion is produced inside buildPrediction before this call, so the shadow challenger is immutable and prospectively settleable.
-    const audit=await recordAudit(env,input,{...prediction,bigDbRetrieval:retrieval});
-    return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract},runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,baseEngine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_DIVERSITY_FIX_PLUS_CHAMPION_FUSION_V1_SHADOW',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION,championFusion:CHAMPION_FUSION_VERSION},diversityGuard:{active:true,native:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false},audit});
+    const audit=await recordAudit(env,input,{...prediction,bigDbRetrieval:retrieval,primaryTargetMatrix:{contract:matrix.contract,targetCount:6,threshold:matrix.threshold,exactScore:matrix.exactScore,verification:matrix.verification},sixTargetMatrix:matrix,presentationContract:{contract:matrix.contract,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:matrix.verification.complete}});
+    return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,primaryTargetMatrix:{contract:matrix.contract,targetCount:6,threshold:matrix.threshold,exactScore:matrix.exactScore,verification:matrix.verification},renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:matrix.verification.complete},runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,baseEngine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_DIVERSITY_FIX_PLUS_CHAMPION_FUSION_V1_SHADOW_TOP1',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION,championFusion:CHAMPION_FUSION_VERSION},diversityGuard:{active:true,native:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false},audit});
   }catch(e:any){
     return Response.json({status:'ERROR',error:'BIG_DB_V2_PREDICTION_FAILURE',message:String(e?.message||e),runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:500});
   }
