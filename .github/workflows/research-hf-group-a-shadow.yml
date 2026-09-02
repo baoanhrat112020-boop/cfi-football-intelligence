@@ -59,11 +59,12 @@ jobs:
             source:'GITHUB_ACTIONS_SANITIZED_EXPORT',
             githubRunId:process.env.GITHUB_RUN_ID,
             githubSha:process.env.GITHUB_SHA,
-            baselineCommitSha:'518dfb57aafc8428e09b3ec84e440146c839a19e',
-            engine:'CFI_FINAL_V5.3.0',
+            baselineCommitSha:'8ca9a3634f536f2f838135df062f5bbbf7da0d9a',
+            engine:'CFI_FINAL_V5.3.1',
             runtime:'CFI_PRIMARY_TOP1_RUNTIME_V2',
             primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',
             multiMarketVersion:'CFI_MULTI_MARKET_V1',
+            historicalEvaluator:'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.2',
             frozenProspectiveStateVersion:'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1',
             frozenProspectiveTrainedThrough:'2026-08-19',
             strictPrior:true,
@@ -115,7 +116,7 @@ jobs:
           const selected=['OPPONENT_STRENGTH_ARM_V1','HIERARCHICAL_LEAGUE_SEGMENT_CALIBRATION_V1'];
           if(x.version!=='CFI_HF_GROUP_A_SHADOW_V1') throw new Error('HF_GROUP_A_VERSION_DRIFT');
           if(x.executionPlatform!=='HUGGING_FACE_JOBS') throw new Error('HF_GROUP_A_PLATFORM_MISMATCH');
-          if(x.baseline?.engine!=='CFI_FINAL_V5.3.0'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2') throw new Error('HF_GROUP_A_BASELINE_DRIFT');
+          if(x.baseline?.engine!=='CFI_FINAL_V5.3.1'||x.baseline?.runtime!=='CFI_PRIMARY_TOP1_RUNTIME_V2') throw new Error('HF_GROUP_A_BASELINE_DRIFT');
           if(x.baseline?.primaryContract!=='CFI_2_METHODS_X_6_TARGETS_V2'||x.baseline?.multiMarketVersion!=='CFI_MULTI_MARKET_V1') throw new Error('HF_GROUP_A_CONTRACT_DRIFT');
           if(x.strictPrior!==true||x.sameDateLeakage!==false||x.futureLeakage!==false||x.noReconstruction!==true) throw new Error('HF_GROUP_A_PRIOR_GUARD_FAIL');
           if(x.decisionUse!==false||x.productionMutationAllowed!==false||x.productionWritePath!==null) throw new Error('HF_GROUP_A_PRODUCTION_ISOLATION_FAIL');
