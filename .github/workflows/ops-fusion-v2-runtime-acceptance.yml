@@ -1,0 +1,77 @@
+name: Ops Fusion V2 Runtime Acceptance
+
+on:
+  push:
+    branches:
+      - ops/fusion-v2-runtime-acceptance
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call production prediction
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=$(mktemp)
+          HTTP=$(curl --silent --show-error --retry 2 --retry-delay 2 --max-time 180 \
+            -o "$BODY" -w '%{http_code}' \
+            -X POST 'https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/predict' \
+            -H 'content-type: application/json' \
+            --data '{"home":"Toulouse","away":"Lille","target_date":"2026-09-03","language":"en"}')
+          echo "HTTP=$HTTP"
+          node - "$BODY" "$HTTP" <<'NODE'
+          const fs=require('fs');
+          const [path,http]=process.argv.slice(2);
+          const b=JSON.parse(fs.readFileSync(path,'utf8'));
+          const c=b?.championFusionChallenger;
+          const failures=[];
+          if(http!=='200') failures.push(`HTTP_${http}`);
+          if(!['SUCCESS','DATA_READY'].includes(String(b?.status))) failures.push(`STATUS_${b?.status}`);
+          if(b?.strictPrior?.verified!==true) failures.push('STRICT_PRIOR');
+          if(b?.championFusion?.version!=='CFI_MULTI_MARKET_CHAMPION_FUSION_V1') failures.push('V1');
+          if(b?.championFusion?.decisionUse!==false) failures.push('V1_DECISION_USE');
+          if(c?.version!=='CFI_MULTI_MARKET_CHAMPION_FUSION_V2_CHALLENGER') failures.push('V2');
+          if(c?.decisionUse!==false) failures.push('V2_DECISION_USE');
+          if(c?.productionEligible!==false) failures.push('V2_PRODUCTION_ELIGIBLE');
+          if(c?.scorelineContract!=='TOP1_HT_PLUS_TOP1_FT') failures.push('CONTRACT');
+          if(!c?.champion?.top1HT || !c?.champion?.top1FT) failures.push('TOP1');
+          if(c?.strictPrior?.verified!==true) failures.push('V2_STRICT_PRIOR');
+          if(c?.coherence?.status!=='PASS') failures.push('COHERENCE');
+          if(c?.researchProtocol?.sameCohortPromotionAllowed!==false) failures.push('SAME_COHORT');
+          if(c?.researchProtocol?.prospectiveResetRequired!==true) failures.push('PROSPECTIVE_RESET');
+          if(!c?.gating?.ht?.stability) failures.push('HT_STABILITY_AUDIT');
+          const raw=JSON.stringify(c);
+          for(const s of ['"top3HT"','"top3FT"','Top-3 HT','Top-3 FT']) if(raw.includes(s)) failures.push(`TOP3_LEAK_${s}`);
+          console.log(JSON.stringify({
+            gate:'FUSION_V2_RUNTIME_ACCEPTANCE',
+            http,
+            status:b?.status,
+            target:b?.target,
+            strictPrior:b?.strictPrior,
+            v1:{version:b?.championFusion?.version,decisionUse:b?.championFusion?.decisionUse},
+            v2:{
+              version:c?.version,
+              status:c?.status,
+              decisionUse:c?.decisionUse,
+              productionEligible:c?.productionEligible,
+              scorelineContract:c?.scorelineContract,
+              top1HT:c?.champion?.top1HT,
+              top1FT:c?.champion?.top1FT,
+              strictPrior:c?.strictPrior,
+              coherence:c?.coherence?.status,
+              htStability:c?.gating?.ht?.stability,
+              researchProtocol:c?.researchProtocol
+            },
+            result:failures.length?'FAIL':'PASS',
+            failures
+          },null,2));
+          if(failures.length) process.exit(1);
+          NODE
