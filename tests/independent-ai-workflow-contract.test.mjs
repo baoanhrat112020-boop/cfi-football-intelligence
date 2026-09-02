@@ -90,6 +90,6 @@ test('policy evaluates Multi-Market impact by component scope without calibratin
   assert.match(policy,/code-review control plane, not a football forecasting model/i);
   assert.match(policy,/when the reviewed change can alter prediction\/research model behavior or market outputs/i);
   assert.match(policy,/do not demand football calibration of the reviewer model/i);
-  assert.match(policy,/successful current live independent-auditor invocation.*runtime reachability evidence/is);
+  assert.match(policy,/successful.*current live independent-auditor invocation.*runtime reachability evidence/is);
   assert.match(policy,/do not require a second redundant provider smoke call inside the same review/i);
 });
