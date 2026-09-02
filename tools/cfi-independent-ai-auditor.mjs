@@ -32,18 +32,19 @@ function stricterVerdict(a, b) {
 
 export function parseStructuredAudit(text) {
   const source = String(text ?? '');
-  const start = source.lastIndexOf(REVIEW_MARKER);
-  if (start < 0) {
+  const starts = [...source.matchAll(/(?:^|\r?\n)CFI_AI_AUDIT_V1[ \t]*(?:\r?\n)/g)];
+  const start = starts.at(-1);
+  if (!start) {
     return { valid: false, reason: 'STRUCTURED_VERDICT_MISSING', fields: {} };
   }
 
-  const afterStart = source.slice(start + REVIEW_MARKER.length);
-  const end = afterStart.indexOf(REVIEW_END_MARKER);
-  if (end < 0) {
+  const afterStart = source.slice((start.index ?? 0) + start[0].length);
+  const end = /(?:^|\r?\n)END_CFI_AI_AUDIT_V1[ \t]*(?=\r?\n|$)/.exec(afterStart);
+  if (!end) {
     return { valid: false, reason: 'STRUCTURED_VERDICT_UNTERMINATED', fields: {} };
   }
 
-  const block = afterStart.slice(0, end);
+  const block = afterStart.slice(0, end.index);
   const fields = {};
   for (const rawLine of block.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -292,7 +293,7 @@ async function main() {
   if (!prRes.ok) throw new Error(`PR_API_${prRes.status}`);
   const headSha = args['head-sha'] || prRes.body?.head?.sha || null;
 
-  let requestResult = await githubRequest(token, `/repos/${repo}/pulls/${prNumber}/requested_reviewers`, {
+  const requestResult = await githubRequest(token, `/repos/${repo}/pulls/${prNumber}/requested_reviewers`, {
     method: 'POST',
     body: JSON.stringify({ reviewers: [COPILOT_REVIEWER] }),
   });
