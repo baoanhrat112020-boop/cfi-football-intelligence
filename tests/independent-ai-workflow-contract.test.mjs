@@ -1,10 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import YAML from 'yaml';
 
 const testWorkflow=fs.readFileSync('.github/workflows/test.yml','utf8');
 const aiWorkflow=fs.readFileSync('.github/workflows/cfi-independent-ai-auditor.yml','utf8');
 const policy=fs.readFileSync('.github/cfi-independent-ai-review.md','utf8');
+
+test('independent AI workflow is valid YAML with both trusted jobs',()=>{
+  const parsed=YAML.parse(aiWorkflow);
+  assert.equal(parsed?.name,'CFI Independent AI Auditor V1');
+  assert.ok(parsed?.jobs?.['independent-ai-review']);
+  assert.ok(parsed?.jobs?.['bootstrap-provider-e2e']);
+});
 
 test('PR workflow is secret-free and runs zero-AI deterministic CFI gate',()=>{
   assert.match(testWorkflow,/Zero-AI deterministic CFI gate/);
