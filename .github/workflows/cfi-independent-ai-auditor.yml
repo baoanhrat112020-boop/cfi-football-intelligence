@@ -1,0 +1,75 @@
+name: CFI Independent AI Auditor V1
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: cfi-independent-ai-auditor-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-gate:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Zero-AI deterministic auditor
+        run: node tools/cfi-audit.mjs --full --no-cache
+      - name: Upload deterministic audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-deterministic-audit-${{ github.event.pull_request.number }}
+          path: audit-reports/
+          if-no-files-found: ignore
+
+  independent-ai-review:
+    needs: deterministic-gate
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Request independent Copilot review and enforce structured verdict
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/cfi-independent-ai-auditor.mjs
+          --repo "${{ github.repository }}"
+          --pr "${{ github.event.pull_request.number }}"
+          --head-sha "${{ github.event.pull_request.head.sha }}"
+          --output-dir audit-reports/independent-ai
+          --wait-seconds 600
+          --poll-seconds 20
+      - name: Publish AI audit summary
+        if: always()
+        run: |
+          if [ -f audit-reports/independent-ai/latest.md ]; then
+            cat audit-reports/independent-ai/latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload independent AI audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-independent-ai-audit-${{ github.event.pull_request.number }}
+          path: audit-reports/independent-ai/
+          if-no-files-found: warn
