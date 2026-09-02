@@ -37,6 +37,7 @@ jobs:
           node research/export-group-a-features.mjs "$GA" > "$RUNNER_TEMP/group-a-summary.json"
           node --input-type=module - "$R0" "$GA" <<'NODE'
           import fs from 'node:fs';
+          import { PRODUCTION_BASELINE_LOCK } from './research/production-baseline-lock.mjs';
           const r0=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
           const ga=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
           if(r0.manifestVersion!=='CFI_TIME_MACHINE_V2') throw new Error(`UNEXPECTED_MANIFEST:${r0.manifestVersion}`);
@@ -46,13 +47,13 @@ jobs:
           if(r0.fixtures.some(r=>String(r.match_date)>='2026-08-20')) throw new Error('R0_HOLDOUT_LEAKAGE');
           if(ga.strictPrior!==true||ga.strengths.some(r=>r.strict_prior!==true)) throw new Error('GROUP_A_STRICT_PRIOR_NOT_PROVEN');
           if(ga.strengths.some(r=>String(r.as_of_date)>='2026-08-20')) throw new Error('GROUP_A_HOLDOUT_LEAKAGE');
-          if(ga.baselineCommitSha!=='518dfb57aafc8428e09b3ec84e440146c839a19e') throw new Error('GROUP_A_BASELINE_LINEAGE_DRIFT');
+          if(ga.baselineCommitSha!==PRODUCTION_BASELINE_LOCK.commitSha) throw new Error('GROUP_A_BASELINE_LINEAGE_DRIFT');
           console.log(JSON.stringify({
             status:'PASS',
-            baseline:'CFI_FINAL_V5.3.0 + CFI_PRIMARY_TOP1_RUNTIME_V2 + CFI_MULTI_MARKET_V1',
+            baseline:`${PRODUCTION_BASELINE_LOCK.engine} + ${PRODUCTION_BASELINE_LOCK.runtime} + ${PRODUCTION_BASELINE_LOCK.multiMarketVersion}`,
             baselineCommitSha:ga.baselineCommitSha,
-            primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',
-            historicalEvaluator:'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.1',
+            primaryContract:PRODUCTION_BASELINE_LOCK.primaryContract,
+            historicalEvaluator:PRODUCTION_BASELINE_LOCK.historicalEvaluator,
             fixtureCount:r0.fixtureCount,
             metadataCoverage:r0.metadataCoverage,
             strengthRowCount:ga.strengthRowCount,
