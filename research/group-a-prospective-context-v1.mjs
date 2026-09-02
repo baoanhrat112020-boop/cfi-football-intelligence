@@ -68,9 +68,13 @@ function latestFrozenStrength(featureBundle, teamId) {
 
 export function resolveProspectiveCompetition({ fixture, competitionProfiles = [] } = {}) {
   const provenance = fixture?.source_provenance ?? {};
-  if (text(fixture?.source_name).toLowerCase() !== 'football-data' && text(provenance?.provider).toLowerCase() !== 'football-data') {
-    throw new Error('GROUP_A_PROSPECTIVE_FOOTBALL_DATA_FIXTURE_REQUIRED');
-  }
+  const sourceName = text(fixture?.source_name).toLowerCase();
+  const sourceCode = text(provenance?.source).toUpperCase();
+  const provider = text(provenance?.provider).toLowerCase();
+  const isFootballData = sourceName.startsWith('football-data')
+    || sourceCode === 'FOOTBALL_DATA_FIXTURES_CSV'
+    || provider === 'football-data';
+  if (!isFootballData) throw new Error('GROUP_A_PROSPECTIVE_FOOTBALL_DATA_FIXTURE_REQUIRED');
   const sourceDivision = text(provenance?.sourceDivision ?? provenance?.division ?? fixture?.competition).toUpperCase();
   const registry = resolveFootballDataDivision(sourceDivision);
   if (!registry) throw new Error(`GROUP_A_PROSPECTIVE_DIVISION_UNRESOLVED:${sourceDivision || 'EMPTY'}`);
