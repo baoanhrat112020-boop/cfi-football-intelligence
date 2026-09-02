@@ -58,7 +58,7 @@ test('P1 severity overrides PASS into BLOCK_PROMOTION',()=>{
 });
 
 test('non-critical unknown evidence requires fixes but does not silently pass',()=>{
-  const result=normalizeAudit(parseStructuredAudit(passBlock.replace('ARCHITECTURE: PASS','ARCHITECTURE: UNKNOWN'));
+  const result=normalizeAudit(parseStructuredAudit(passBlock.replace('ARCHITECTURE: PASS','ARCHITECTURE: UNKNOWN')));
   assert.equal(result.verdict,'FIX_REQUIRED');
   assert.equal(result.promotionAllowed,false);
 });
