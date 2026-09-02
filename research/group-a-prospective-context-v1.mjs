@@ -152,7 +152,7 @@ export function buildFrozenBaselineContext({ corpus, featureBundle, fixture, com
     homeStrength,
     awayStrength,
     baseExpectedGoals,
-    baselineFingerprint:text(baseline?.engineVersion ?? baseline?.version ?? 'CFI_FINAL_V5.3.0'),
+    baselineFingerprint:text(baseline?.engineVersion ?? baseline?.version ?? 'CFI_FINAL_V5.3.1'),
     researchOnly:true,decisionUse:false,productionMutationAllowed:false,noReconstruction:true,
   };
 }
