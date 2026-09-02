@@ -91,6 +91,11 @@ function normalizeReleaseTelemetry(body:any){
   body.release={...(body.release??{}),engine:ENGINE_VERSION,runtime:RUNTIME_VERSION,primaryContract:PRIMARY_CONTRACT,bigDbRetrieval:BIGDB_VERSION,productionEntrypoint:PRODUCTION_ENTRYPOINT,prematchHandler:PREMATCH_HANDLER,championFusion:body?.championFusion?.version??null};
   body.diversityGuard={version:DIVERSITY_GUARD_VERSION,active:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false,policy:'MATCH_SPECIFIC_SIGNAL_MUST_DOMINATE_GLOBAL_PRIOR'};
 }
+function fixtureIdentityState(body:any){
+  const identity=body?.fixtureIdentity??body?.bigDbRetrieval?.identity??null;
+  const verified=body?.fixtureIdentityVerified===true||identity?.verified===true;
+  return {verified,identity};
+}
 const nonNegativeCount=(v:any)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
 function zeroEvidenceGuard(body:any){
   const exactTeam=body?.bigDbRetrieval?.exactTeam;
@@ -100,8 +105,9 @@ function zeroEvidenceGuard(body:any){
   const away=nonNegativeCount(exactTeam?.away?.retrieved)??nonNegativeCount(input?.awayFixtures)??nonNegativeCount(counts?.awayFixtures);
   const h2h=nonNegativeCount(exactTeam?.h2h?.retrieved)??nonNegativeCount(input?.h2hFixtures)??nonNegativeCount(counts?.h2hFixtures);
   const observed=home!==null||away!==null||h2h!==null;
-  const blocked=observed&&((home??0)<=0||(away??0)<=0);
-  return {blocked,home,away,h2h,reason:blocked?'ZERO_EXACT_TEAM_EVIDENCE':null};
+  const fixtureIdentityVerified=fixtureIdentityState(body).verified;
+  const blocked=fixtureIdentityVerified&&observed&&((home??0)<=0||(away??0)<=0);
+  return {blocked,home,away,h2h,fixtureIdentityVerified,reason:blocked?'ZERO_EXACT_TEAM_EVIDENCE':null};
 }
 
 export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
@@ -154,6 +160,20 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     }
     attachMultiMarketShadow(body);
     attachCfiOutputV2(body,input?.odds?.values??input?.odds??{});
+
+    // Propagate canonical verification into practical IMAGE_ANALYSIS gates.
+    // Runtime identity is authoritative; raw OCR names remain provenance only.
+    const fixtureIdentity=fixtureIdentityState(body);
+    if(fixtureIdentity.verified){
+      body.fixtureIdentityVerified=true;
+      input.fixture_identity={
+        ...(input?.fixture_identity??{}),
+        verified:true,
+        source:'SHARED_IDENTITY_BRIDGE',
+        canonicalHome:fixtureIdentity.identity?.homeCanonical??body?.target?.canonicalHome??null,
+        canonicalAway:fixtureIdentity.identity?.awayCanonical??body?.target?.canonicalAway??null,
+      };
+    }
     attachCfiOutputV3(body,input);
     attachCfiBettingBoard(body);
     body.runtime={...(body.runtime??{}),predictionPath:'NATIVE_V5_3_TOP1_STRICT_PRIOR_BIGDB_V2_3_1_SHARED_IDENTITY',diversityGuard:DIVERSITY_GUARD_VERSION,championFusion:body?.championFusion?.version??null};
@@ -163,6 +183,8 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     }
   } else if(body?.error==='TARGET_DATE_REQUIRED'||body?.status==='STRICT_PRIOR_GATE_ERROR') {
     body.runtime={...(body.runtime??{}),predictionPath:'STRICT_PRIOR_FAIL_CLOSED'};
+  } else if(body?.error==='CANONICAL_IDENTITY_UNRESOLVED'||body?.error==='CANONICAL_SELF_MATCH_REJECTED') {
+    body.runtime={...(body.runtime??{}),predictionPath:'CANONICAL_IDENTITY_FAIL_CLOSED'};
   }
   return Response.json(body,{status:response.status});
 }} satisfies ExportedHandler<Env>;
