@@ -26,7 +26,8 @@ export function normalizeForwardMarketCapture(raw={}){
   const sourceProvenance=provenance(raw.source_provenance);if(!sourceProvenance)errors.push('SOURCE_PROVENANCE_REQUIRED');
   if(!iso(raw.captured_at)||!iso(raw.kickoff_at))errors.push('VALID_TIMESTAMPS_REQUIRED');
   const row={
-    fixture_id:raw.fixture_id,
+    fixture_id:raw.fixture_id??null,
+    verified_fixture_id:raw.verified_fixture_id??null,
     captured_at:raw.captured_at,
     kickoff_at:raw.kickoff_at,
     bookmaker:raw.bookmaker,
@@ -75,9 +76,9 @@ export function deriveFairMarketProbability(snapshot,selection){
 }
 
 export function buildForwardDecision(args={}){
-  const {snapshot,selection,cfi_probability,prediction_snapshot_id,market_snapshot_id,decision_timestamp,uncertainty=null,stake_simulated=0,decision='SHADOW'}=args;
+  const {snapshot,selection,cfi_probability,prediction_snapshot_id=null,research_prediction_snapshot_id=null,market_snapshot_id,decision_timestamp,uncertainty={},stake_simulated=0,decision='SHADOW'}=args;
   const market=deriveFairMarketProbability(snapshot,selection);
-  const row=buildDecisionSnapshot({prediction_snapshot_id,market_snapshot_id,cfi_probability,market_probability:market.probability,uncertainty,decision,stake_simulated,decision_timestamp,selection},snapshot);
+  const row=buildDecisionSnapshot({prediction_snapshot_id,research_prediction_snapshot_id,market_snapshot_id,cfi_probability,market_probability:market.probability,uncertainty:uncertainty??{},decision,stake_simulated,decision_timestamp,selection},snapshot);
   return {...row,vig:market.vig,productionEligible:false};
 }
 
