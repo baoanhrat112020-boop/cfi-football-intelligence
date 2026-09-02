@@ -74,7 +74,7 @@ test('Multi-Market family regression remains blocking independently of primary t
 test('suite gate exposes exact primary/auxiliary semantics and stays research-only',()=>{
   const base=metrics();
   const raw={
-    baseline:{engine:'CFI_FINAL_V5.3.0',primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',commitSha:'518dfb57aafc8428e09b3ec84e440146c839a19e'},
+    baseline:{engine:'CFI_FINAL_V5.3.1',primaryContract:'CFI_2_METHODS_X_6_TARGETS_V2',commitSha:'8ca9a3634f536f2f838135df062f5bbbf7da0d9a'},
     baselineMetrics:base,
     challengers:{X:candidate(base)},
     decisionUse:false,
