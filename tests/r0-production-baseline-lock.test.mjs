@@ -12,16 +12,16 @@ function readRepoSource(file) {
   return readFileSync(new URL(`../${file}`, import.meta.url));
 }
 
-test('R0 baseline is pinned to current production V5.3 Top-1 V2 Multi-Market V1', () => {
+test('R0 baseline is pinned to reproducible V5.3.1 Top-1 V2 Multi-Market V2.2 lineage', () => {
   const result = verifyProductionBaselineLock();
   assert.equal(result.status, 'PASS');
-  assert.equal(PRODUCTION_BASELINE_LOCK.commitSha, '518dfb57aafc8428e09b3ec84e440146c839a19e');
-  assert.equal(PRODUCTION_BASELINE_LOCK.engine, 'CFI_FINAL_V5.3.0');
+  assert.equal(PRODUCTION_BASELINE_LOCK.commitSha, '8ca9a3634f536f2f838135df062f5bbbf7da0d9a');
+  assert.equal(PRODUCTION_BASELINE_LOCK.engine, 'CFI_FINAL_V5.3.1');
   assert.equal(PRODUCTION_BASELINE_LOCK.runtime, 'CFI_PRIMARY_TOP1_RUNTIME_V2');
   assert.equal(PRODUCTION_BASELINE_LOCK.primaryContract, 'CFI_2_METHODS_X_6_TARGETS_V2');
   assert.equal(PRODUCTION_BASELINE_LOCK.multiMarketVersion, 'CFI_MULTI_MARKET_V1');
   assert.equal(PRODUCTION_BASELINE_LOCK.crossMarketCoherence, 'CFI_CROSS_MARKET_COHERENCE_GATE_V1');
-  assert.equal(PRODUCTION_BASELINE_LOCK.historicalEvaluator, 'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.1');
+  assert.equal(PRODUCTION_BASELINE_LOCK.historicalEvaluator, 'CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.2');
   assert.equal(PRODUCTION_BASELINE_LOCK.decisionUse, false);
   assert.equal(PRODUCTION_BASELINE_LOCK.productionMutationAllowed, false);
   assert.equal(R0_DATASET_CONTRACT.baselineCommitSha, PRODUCTION_BASELINE_LOCK.commitSha);
