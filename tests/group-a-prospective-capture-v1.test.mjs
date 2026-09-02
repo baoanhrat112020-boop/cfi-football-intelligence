@@ -12,7 +12,7 @@ import {
 } from '../research/group-a-prospective-capture-v1.mjs';
 
 const fixture={fixture_id:'vf-1',target_date:'2026-09-02',kickoff_at:'2026-09-02T18:45:00Z',home_team:'Alpha',away_team:'Beta',canonical_home_team_id:'home-id',canonical_away_team_id:'away-id',verification_status:'VERIFIED'};
-const context={version:'CFI_GROUP_A_PROSPECTIVE_CONTEXT_V1',maxEvidenceDate:'2026-08-19',historySupport:{home:40,away:40,h2h:5},competition:{competitionKey:'england:e1',competitionSegment:'MID_PRO',sourceDivision:'E1'},baselineFingerprint:'CFI_FINAL_V5.3.0'};
+const context={version:'CFI_GROUP_A_PROSPECTIVE_CONTEXT_V1',maxEvidenceDate:'2026-08-19',historySupport:{home:40,away:40,h2h:5},competition:{competitionKey:'england:e1',competitionSegment:'MID_PRO',sourceDivision:'E1'},baselineFingerprint:'CFI_FINAL_V5.3.1'};
 const learner={stateVersion:'CFI_GROUP_A_FROZEN_PROSPECTIVE_STATE_V1',trainedThrough:'2026-08-19',ht:{n:1000,beta:[.1,0,0,0]},ft:{n:1000,beta:[.2,0,0,0]}};
 const candidate={status:'READY',modelName:'OPPONENT_STRENGTH_ARM_V1',prediction:{model:'OPPONENT_STRENGTH_ARM_V1',multiMarket:{oneXTwo:{ft:{home:.62,draw:.22,away:.16}}}}};
 const marketEarly={market_snapshot_id:'m-early',fixture_id:null,verified_fixture_id:'vf-1',captured_at:'2026-09-02T15:00:00Z',kickoff_at:fixture.kickoff_at,bookmaker:'BOOK',market_family:'1X2',period:'FT',odds_home:2.20,odds_draw:3.30,odds_away:3.60,source_name:'verified-feed',is_closing:false,research_only:true};
@@ -60,7 +60,7 @@ test('snapshot plan binds immutable fixture identity, frozen model lineage and p
   assert.equal(plan.max_evidence_date,'2026-08-19');
   assert.equal(plan.prediction.prospectiveContext.competitionKey,'england:e1');
   assert.equal(plan.prediction.prospectiveContext.competitionSegment,'MID_PRO');
-  assert.equal(plan.prediction.prospectiveContext.baselineCommitSha,'518dfb57aafc8428e09b3ec84e440146c839a19e');
+  assert.equal(plan.prediction.prospectiveContext.baselineCommitSha,'8ca9a3634f536f2f838135df062f5bbbf7da0d9a');
   assert.equal(plan.prediction_hash.length,64);
   assert.equal(plan.model_fingerprint.length,64);
 });
