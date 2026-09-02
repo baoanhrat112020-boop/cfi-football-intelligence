@@ -29,11 +29,11 @@ function fixture() {
   });
   return {
     baseline: {
-      engine: 'CFI_FINAL_V5.3.0',
+      engine: 'CFI_FINAL_V5.3.1',
       runtime: 'CFI_PRIMARY_TOP1_RUNTIME_V2',
       primaryContract: 'CFI_2_METHODS_X_6_TARGETS_V2',
       multiMarketVersion: 'CFI_MULTI_MARKET_V1',
-      commitSha: '518dfb57aafc8428e09b3ec84e440146c839a19e',
+      commitSha: '8ca9a3634f536f2f838135df062f5bbbf7da0d9a',
     },
     evaluationContract: {
       primaryTargets: ['3+ HT','7+ FT','Other HT','Other FT','Top-1 HT','Top-1 FT'],
