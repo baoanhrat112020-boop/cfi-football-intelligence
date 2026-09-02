@@ -11,17 +11,21 @@ test('pipeline is research-only and forbids synthetic/reconstructed captures',()
   assert.equal(normalizeForwardMarketCapture({...base,reconstructed:true}).status,'BLOCKED');
 });
 
-test('valid 1X2 capture normalizes and de-vigs to a coherent probability simplex',()=>{
+test('valid 1X2 capture normalizes both canonical and verified-fixture lineages',()=>{
   const n=normalizeForwardMarketCapture(base);assert.equal(n.status,'READY');
+  const v=normalizeForwardMarketCapture({...base,fixture_id:null,verified_fixture_id:'vf-1'});assert.equal(v.status,'READY');
   const h=deriveFairMarketProbability(n.row,'HOME'),d=deriveFairMarketProbability(n.row,'DRAW'),a=deriveFairMarketProbability(n.row,'AWAY');
   assert.ok(Math.abs(h.probability+d.probability+a.probability-1)<1e-12);
   assert.ok(h.vig>0);
 });
 
-test('forward decision uses fair market probability, stays simulated-only and precedes kickoff',()=>{
+test('forward decision reuses fair market probability for production and research prediction lineages',()=>{
   const snapshot=normalizeForwardMarketCapture(base).row;
   const d=buildForwardDecision({snapshot,selection:'HOME',cfi_probability:.55,prediction_snapshot_id:'p1',market_snapshot_id:'m1',decision_timestamp:'2026-08-23T10:05:00Z',decision:'SHADOW'});
   assert.equal(d.decisionUse,false);assert.equal(d.productionEligible,false);assert.ok(d.edge>0);
+  const researchSnapshot=normalizeForwardMarketCapture({...base,fixture_id:null,verified_fixture_id:'vf-1'}).row;
+  const r=buildForwardDecision({snapshot:researchSnapshot,selection:'AWAY',cfi_probability:.42,research_prediction_snapshot_id:'rp1',market_snapshot_id:'m2',decision_timestamp:'2026-08-23T10:06:00Z',decision:'SHADOW'});
+  assert.equal(r.research_prediction_snapshot_id,'rp1');assert.equal(r.prediction_snapshot_id,null);assert.equal(r.decision_use,false);assert.equal(r.research_only,true);
   assert.throws(()=>buildForwardDecision({snapshot,selection:'HOME',cfi_probability:.55,prediction_snapshot_id:'p1',market_snapshot_id:'m1',decision_timestamp:'2026-08-23T12:05:00Z',decision:'SHADOW'}));
 });
 
