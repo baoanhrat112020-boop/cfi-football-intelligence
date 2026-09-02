@@ -45,6 +45,9 @@ jobs:
       - name: Audit forward market canonical linkage
         run: node research/export-forward-market-canonical-links.mjs "$RUNNER_TEMP/forward-market-canonical-link-audit.json"
 
+      - name: Audit Group A candidate-specific prospective support
+        run: node research/group-a-prospective-support-gate.mjs "$RUNNER_TEMP/group-a-prospective-support.json"
+
       - name: Export Football-Data historical market evidence
         run: node research/export-football-data-historical-market-evidence.mjs "$RUNNER_TEMP/football-data-historical-market-evidence.json"
 
@@ -62,13 +65,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --input-type=module - "$RUNNER_TEMP/group-a-full-suite-result.json" "$RUNNER_TEMP/forward-market-canonical-link-audit.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json" <<'NODE'
+          node --input-type=module - "$RUNNER_TEMP/group-a-full-suite-result.json" "$RUNNER_TEMP/forward-market-canonical-link-audit.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json" "$RUNNER_TEMP/group-a-prospective-support.json" <<'NODE'
           import fs from 'node:fs';
           const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
           const marketAudit=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
           const historicalMarket=JSON.parse(fs.readFileSync(process.argv[4],'utf8'));
+          const prospective=JSON.parse(fs.readFileSync(process.argv[5],'utf8'));
           const primary=['3+ HT','7+ FT','Other HT','Other FT','Top-1 HT','Top-1 FT'];
           const aux=['Top-3 HT','Top-3 FT'];
+          const groupACandidates=['OPPONENT_STRENGTH_ARM_V1','HIERARCHICAL_LEAGUE_SEGMENT_CALIBRATION_V1','PROMOTION_RELEGATION_STRENGTH_BRIDGE_V1','ADAPTIVE_SCORE_DISPERSION_V1'];
           const fail=(code)=>{throw new Error(code)};
           if(JSON.stringify(x.evaluationContract?.primaryTargets)!==JSON.stringify(primary)) fail('PRIMARY_TARGET_DRIFT');
           if(JSON.stringify(x.evaluationContract?.auxiliaryDiagnostics)!==JSON.stringify(aux)||x.evaluationContract?.top3GateUse!==false) fail('TOP3_GATE_DRIFT');
@@ -82,6 +87,14 @@ jobs:
           if(x.marketBoardMemoryPolicy?.retainedRows>x.marketBoardMemoryPolicy?.linkedFixtureIds*5) fail('MEMORY_BOUND_FAIL');
           if(marketAudit?.researchOnly!==true||marketAudit?.decisionUse!==false||marketAudit?.productionMutationAllowed!==false||marketAudit?.canonicalWriteAllowed!==false) fail('FORWARD_LINK_ISOLATION_FAIL');
           if(historicalMarket?.researchOnly!==true||historicalMarket?.decisionUse!==false||historicalMarket?.productionMutationAllowed!==false||historicalMarket?.canonicalWriteAllowed!==false||historicalMarket?.reconstructed!==false||historicalMarket?.capturedAtFabricated!==false) fail('HISTORICAL_MARKET_PROVENANCE_FAIL');
+          if(prospective?.version!=='CFI_GROUP_A_PROSPECTIVE_SUPPORT_GATE_V1'||prospective?.researchOnly!==true||prospective?.decisionUse!==false||prospective?.productionMutationAllowed!==false||prospective?.productionEligible!==false||prospective?.noReconstruction!==true) fail('GROUP_A_PROSPECTIVE_ISOLATION_FAIL');
+          if(JSON.stringify(prospective?.candidateNames)!==JSON.stringify(groupACandidates)) fail('GROUP_A_PROSPECTIVE_CANDIDATE_DRIFT');
+          if(prospective?.requiredMinSamples!==30||prospective?.promotionDecision!=='HOLD'||prospective?.shadowEligible!==false) fail('GROUP_A_PROSPECTIVE_GATE_DRIFT');
+          for(const name of groupACandidates){
+            const p=prospective?.candidates?.[name];
+            if(!p||p.productionEligible!==false||p.decisionUse!==false||p.productionMutationAllowed!==false||p.promotionDecision!=='HOLD') fail(`GROUP_A_PROSPECTIVE_CANDIDATE_ISOLATION_${name}`);
+            if(p.sampleReady===true&&p.performanceEvaluationRequired!==true) fail(`GROUP_A_PROSPECTIVE_PERFORMANCE_GATE_${name}`);
+          }
           if(x.historicalMarketBoardEvaluation?.decisionUse!==false||x.historicalMarketBoardEvaluation?.productionMutationAllowed!==false||x.historicalMarketBoardEvaluation?.noReconstruction!==true) fail('BOARD_GATE_ISOLATION_FAIL');
           const summary={};
           for(const [name,c] of Object.entries(x.challengers??{})){
@@ -95,9 +108,9 @@ jobs:
               if(ready===oddsBlock) fail(`ODDS_BLOCKER_STATE_${name}`);
               if(ready&&(c.historicalMarketBoard?.challenger?.pairedExecutableFixtures??0)<30) fail(`ODDS_SAMPLE_${name}`);
             }
-            summary[name]={eligible:c.coverage?.eligible??0,scoreGridLogLossEvaluation:c.scoreGridLogLossEvaluation,historicalMarketBoard:c.historicalMarketBoard,regressions:c.regressions,hardBlockers:c.hardBlockers,promotionDecision:c.promotionDecision};
+            summary[name]={eligible:c.coverage?.eligible??0,scoreGridLogLossEvaluation:c.scoreGridLogLossEvaluation,historicalMarketBoard:c.historicalMarketBoard,prospectiveSupport:prospective.candidates?.[name],regressions:c.regressions,hardBlockers:c.hardBlockers,promotionDecision:c.promotionDecision};
           }
-          console.log(JSON.stringify({status:'PASS',groupAVerdict:x.groupAVerdict,coverage:x.coverage,memoryPolicy:x.marketBoardMemoryPolicy,scoreGridEvaluation:x.scoreGridEvaluation,historicalMarketBoardEvaluation:x.historicalMarketBoardEvaluation,forwardMarketLinkage:marketAudit.marketComparisonReadiness,historicalMarketEvidence:historicalMarket.coverage,challengers:summary},null,2));
+          console.log(JSON.stringify({status:'PASS',groupAVerdict:x.groupAVerdict,coverage:x.coverage,memoryPolicy:x.marketBoardMemoryPolicy,scoreGridEvaluation:x.scoreGridEvaluation,historicalMarketBoardEvaluation:x.historicalMarketBoardEvaluation,forwardMarketLinkage:marketAudit.marketComparisonReadiness,groupAProspectiveSupport:{status:prospective.status,blocker:prospective.blocker,sampleReady:prospective.sampleReady,candidates:prospective.candidates},historicalMarketEvidence:historicalMarket.coverage,challengers:summary},null,2));
           NODE
 
       - name: Upload Group A result
@@ -116,6 +129,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload Group A prospective support audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: group-a-prospective-support-audit
+          path: ${{ runner.temp }}/group-a-prospective-support.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload historical market evidence
         uses: actions/upload-artifact@v4
         with:
@@ -127,4 +148,4 @@ jobs:
       - name: Remove privileged input exports
         if: always()
         shell: bash
-        run: rm -f "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json" "$RUNNER_TEMP/forward-market-canonical-link-audit.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json"
+        run: rm -f "$RUNNER_TEMP/r0.json" "$RUNNER_TEMP/group-a.json" "$RUNNER_TEMP/forward-market-canonical-link-audit.json" "$RUNNER_TEMP/group-a-prospective-support.json" "$RUNNER_TEMP/football-data-historical-market-evidence.json"
