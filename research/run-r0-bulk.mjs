@@ -15,6 +15,10 @@ export const R0_DATASET_CONTRACT = Object.freeze({
   baselineLockVersion: PRODUCTION_BASELINE_LOCK.version,
   baselineCommitSha: PRODUCTION_BASELINE_LOCK.commitSha,
   productionChampion: PRODUCTION_BASELINE_LOCK.engine,
+  numericalCoreEngine: PRODUCTION_BASELINE_LOCK.numericalCoreEngine,
+  productionRuntimeReportedEngine: PRODUCTION_BASELINE_LOCK.productionRuntimeReportedEngine,
+  runtimeTelemetryMatchesNumericalCore: PRODUCTION_BASELINE_LOCK.runtimeTelemetryMatchesNumericalCore,
+  runtimeTelemetryStatus: PRODUCTION_BASELINE_LOCK.runtimeTelemetryStatus,
   productionRuntime: PRODUCTION_BASELINE_LOCK.runtime,
   primaryContract: PRODUCTION_BASELINE_LOCK.primaryContract,
   multiMarketVersion: PRODUCTION_BASELINE_LOCK.multiMarketVersion,
@@ -27,7 +31,7 @@ export const R0_DATASET_CONTRACT = Object.freeze({
   numericalCore: 'src/prediction/final-engine.ts::buildPrediction',
   decisionUse: false,
   productionMutationAllowed: false,
-  parityBasis: 'Exact source blobs are pinned to V2.2 baseline commit; R0 and challengers must use CFI_FINAL_V5.3.1 + Top-1 V2 + CFI_MULTI_MARKET_V1 + CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.2. Any locked core drift fails closed before replay.',
+  parityBasis: 'Exact source blobs are pinned to V2.2 baseline commit. Numerical core is CFI_FINAL_V5.3.1 while the pinned production Worker telemetry still reports CFI_FINAL_V5.3.0; this label lag is explicitly preserved and must not be confused with numerical-core drift. R0 and challengers use the pinned numerical core + Top-1 V2 + CFI_MULTI_MARKET_V1 + CFI_MULTI_MARKET_HISTORICAL_LEARNING_V2.2. Any locked source drift fails closed before replay.',
 });
 
 function dateOf(row) {
@@ -77,6 +81,10 @@ export function runR0Bulk(input, options = {}) {
     productionParity: {
       baselineCommitSha: R0_DATASET_CONTRACT.baselineCommitSha,
       releaseEngine: R0_DATASET_CONTRACT.productionChampion,
+      numericalCoreEngine: R0_DATASET_CONTRACT.numericalCoreEngine,
+      productionRuntimeReportedEngine: R0_DATASET_CONTRACT.productionRuntimeReportedEngine,
+      runtimeTelemetryMatchesNumericalCore: R0_DATASET_CONTRACT.runtimeTelemetryMatchesNumericalCore,
+      runtimeTelemetryStatus: R0_DATASET_CONTRACT.runtimeTelemetryStatus,
       runtime: R0_DATASET_CONTRACT.productionRuntime,
       primaryContract: R0_DATASET_CONTRACT.primaryContract,
       multiMarketVersion: R0_DATASET_CONTRACT.multiMarketVersion,
