@@ -74,11 +74,14 @@ test('autopilot RPC client posts only to existing V3 research RPC using privileg
   assert.equal(seen.init.headers.apikey,'sb_secret_test');
 });
 
-test('autopilot contract has no settlement writer and source contains no research settlement insert',async()=>{
+test('autopilot contract has no settlement writer and pre-kickoff capture defers broad settlement RPC',async()=>{
   assert.equal(GROUP_A_E2E_AUTOPILOT_V1.settlementWriterIncluded,false);
   assert.equal(GROUP_A_E2E_AUTOPILOT_V1.settlementRpc,'cfi_settle_forward_market_ready_v3_research');
+  assert.equal(GROUP_A_E2E_AUTOPILOT_V1.preKickoffSettlementPolicy,'DEFER_TO_POST_KICKOFF_EXISTING_RPC');
   assert.equal(GROUP_A_E2E_AUTOPILOT_V1.productionMutationAllowed,false);
   const source=await fs.readFile(new URL('../research/group-a-e2e-autopilot-v1.mjs',import.meta.url),'utf8');
+  assert.match(source,/settle=false/);
+  assert.match(source,/NOT_RUN_PREKICKOFF_CAPTURE/);
   assert.doesNotMatch(source,/insert\s+into\s+public\.cfi_market_decision_settlements/i);
   assert.doesNotMatch(source,/\.from\(['"]cfi_market_decision_settlements['"]\)\.insert/i);
 });
