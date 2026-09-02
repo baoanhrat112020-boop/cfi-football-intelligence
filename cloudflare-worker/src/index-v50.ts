@@ -1,10 +1,11 @@
 import base from './index-v49.ts';
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS, PRIMARY_CONTRACT } from '../../src/prediction/final-engine.ts';
 import { CHAMPION_FUSION_VERSION } from '../../src/prediction/multi-market-champion-fusion.ts';
+import { buildProspectiveV22AuditPrediction } from './prospective-v22-research-telemetry.ts';
 
-const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.2.1';
+const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.2.2';
 const BIG_DB_RETRIEVAL_VERSION='CFI_BIG_DB_RETRIEVAL_V2_NATIVE_DIVERSITY_FIX';
-const ENGINE_VERSION='CFI_FINAL_V5.2.3_NATIVE_DIVERSITY_FIX';
+const ENGINE_VERSION=FINAL_VERSION;
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 
 async function readJson(res:Response){try{return await res.clone().json()}catch{return null}}
@@ -215,8 +216,10 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     if(!matrix.verification.complete)return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,status:'RUNTIME_CONTRACT_ERROR',error:'INCOMPLETE_2_METHODS_X_6_TARGETS',audit:{status:'SKIPPED',reason:'RUNTIME_CONTRACT_ERROR'}},{status:500});
 
     const report=renderedReport(prediction,matrix);
-    const audit=await recordAudit(env,input,{...prediction,bigDbRetrieval:retrieval,primaryTargetMatrix:{contract:matrix.contract,targetCount:6,threshold:matrix.threshold,exactScore:matrix.exactScore,verification:matrix.verification},sixTargetMatrix:matrix,presentationContract:{contract:matrix.contract,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:matrix.verification.complete}});
-    return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,primaryTargetMatrix:{contract:matrix.contract,targetCount:6,threshold:matrix.threshold,exactScore:matrix.exactScore,verification:matrix.verification},renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:matrix.verification.complete},runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,baseEngine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR_BIGDB_DIVERSITY_FIX_PLUS_CHAMPION_FUSION_V1_SHADOW_TOP1',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION,championFusion:CHAMPION_FUSION_VERSION},diversityGuard:{active:true,native:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false},audit});
+    const auditBase={...prediction,bigDbRetrieval:retrieval,primaryTargetMatrix:{contract:matrix.contract,targetCount:6,threshold:matrix.threshold,exactScore:matrix.exactScore,verification:matrix.verification},sixTargetMatrix:matrix,presentationContract:{contract:matrix.contract,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:matrix.verification.complete}};
+    const auditPrediction=await buildProspectiveV22AuditPrediction(auditBase);
+    const audit=await recordAudit(env,input,auditPrediction);
+    return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,primaryTargetMatrix:{contract:matrix.contract,targetCount:6,threshold:matrix.threshold,exactScore:matrix.exactScore,verification:matrix.verification},renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract,targetCount:6,scorelineOutput:'TOP1_HT_PLUS_TOP1_FT',complete:matrix.verification.complete},runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,baseEngine:FINAL_VERSION,predictionPath:'NATIVE_V5_3_STRICT_PRIOR_BIGDB_DIVERSITY_FIX_PLUS_CHAMPION_FUSION_V1_V2_SHADOW_TOP1',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION,championFusion:CHAMPION_FUSION_VERSION},diversityGuard:{active:true,native:true,thresholdGlobalPriorDirectShrinkage:false,scorelineGlobalPriorDirectShrinkage:false},audit});
   }catch(e:any){
     return Response.json({status:'ERROR',error:'BIG_DB_V2_PREDICTION_FAILURE',message:String(e?.message||e),runtime:{version:RUNTIME_VERSION,engine:ENGINE_VERSION,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:500});
   }
