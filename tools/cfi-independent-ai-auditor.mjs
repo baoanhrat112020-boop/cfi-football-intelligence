@@ -220,21 +220,24 @@ function readPolicy() {
 }
 
 function cloudflareErrorReason(status, body) {
-  const code = body?.errors?.[0]?.code ?? body?.result?.errors?.[0]?.code ?? null;
+  const code = body?.errors?.[0]?.code ?? body?.result?.errors?.[0]?.code ?? body?.error?.code ?? null;
   return `CLOUDFLARE_AI_HTTP_${status}${code !== null ? `_CODE_${String(code).replace(/[^A-Za-z0-9_.-]/g, '_')}` : ''}`;
 }
 
 async function runCloudflareAi({ accountId, apiToken, model, messages }) {
-  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiToken}`,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(180_000),
     body: JSON.stringify({
+      model,
       messages,
       temperature: 0,
-      max_completion_tokens: 2200,
+      max_completion_tokens: 4096,
+      reasoning_effort: 'low',
       stream: false,
     }),
   });
@@ -242,7 +245,7 @@ async function runCloudflareAi({ accountId, apiToken, model, messages }) {
   let body = null;
   try { body = text ? JSON.parse(text) : null; }
   catch { body = { raw: text.slice(0, 1000) }; }
-  if (!response.ok || body?.success === false) {
+  if (!response.ok || body?.success === false || body?.error) {
     const error = new Error(cloudflareErrorReason(response.status, body));
     error.httpStatus = response.status;
     error.body = body;
