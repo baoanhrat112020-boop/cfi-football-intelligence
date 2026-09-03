@@ -91,7 +91,7 @@ test('pre-merge failure/error cannot authorize deploy',()=>{
   }
 });
 
-test('non-main, direct identity mismatch and incomplete PR identity fail closed',()=>{
+test('non-main, merge identity mismatch and incomplete PR identity fail closed',()=>{
   assert.equal(evaluateDeploymentGate({ref:'refs/heads/dev',mergeSha,pr:pr(),diffSha256,statuses:[status()]}).reason,'PRODUCTION_DEPLOY_REF_NOT_MAIN');
   assert.equal(evaluateDeploymentGate({ref:MAIN_REF,mergeSha,pr:pr({merge_commit_sha:'f'.repeat(40)}),diffSha256,statuses:[status()]}).reason,'MERGE_COMMIT_SHA_MISMATCH');
   assert.equal(evaluateDeploymentGate({ref:MAIN_REF,mergeSha,pr:pr({head:{sha:null}}),diffSha256,statuses:[status()]}).reason,'ASSOCIATED_PR_IDENTITY_INCOMPLETE');
@@ -107,12 +107,16 @@ test('deployment workflows gate production secrets and do not self-trigger redep
   assert.equal(cloud?.jobs?.deploy?.needs,'ai-deploy-gate');
   assert.ok(supa?.jobs?.['ai-deploy-gate']);
   assert.deepEqual(supa?.jobs?.deploy?.needs,['verify','ai-deploy-gate']);
+  assert.deepEqual(supa?.jobs?.['native-production-gate']?.needs,['verify','ai-deploy-gate','deploy']);
 
-  for(const workflow of [cloudflare,supabase]){
+  for(const [workflow,parsed] of [[cloudflare,cloud],[supabase,supa]]){
     assert.match(workflow,/cfi-production-ai-deploy-gate\.mjs/);
     assert.match(workflow,/pull-requests:\s*read/);
     assert.match(workflow,/statuses:\s*read/);
-    assert.doesNotMatch(workflow,/ai-deploy-gate:[\s\S]*CLOUDFLARE_API_TOKEN/);
+    const gate=JSON.stringify(parsed?.jobs?.['ai-deploy-gate'] ?? {});
+    assert.doesNotMatch(gate,/CLOUDFLARE_API_TOKEN/);
+    assert.doesNotMatch(gate,/SUPABASE_ACCESS_TOKEN/);
+    assert.doesNotMatch(gate,/secrets\./);
   }
   assert.doesNotMatch(cloudflare,/\.github\/workflows\/deploy-cloudflare\.yml'\s*$/m);
   assert.doesNotMatch(supabase,/\.github\/workflows\/deploy-supabase-gpt-control\.yml'\s*$/m);
