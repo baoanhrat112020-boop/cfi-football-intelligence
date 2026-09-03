@@ -9,19 +9,45 @@ function cleanDescription(value) {
   return String(value ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 140);
 }
 
+function validSha(value, length) {
+  return new RegExp(`^[0-9a-f]{${length}}$`, 'i').test(String(value ?? ''));
+}
+
+export function auditAttestationFromReport(report) {
+  const baseSha = String(report?.baseSha ?? '').toLowerCase();
+  const diffSha256 = String(report?.diffSha256 ?? '').toLowerCase();
+  if (!validSha(baseSha, 40) || !validSha(diffSha256, 64)) return null;
+  return { baseSha, diffSha256 };
+}
+
 export function statusPayloadFromReport(report, targetUrl = null) {
   const verdict = String(report?.verdict ?? 'MISSING').toUpperCase();
   const reason = String(report?.reason ?? 'AI_AUDIT_REPORT_MISSING');
-  const state = verdict === 'PASS' ? 'success' : (verdict === 'MISSING' ? 'error' : 'failure');
-  const description = cleanDescription(
-    verdict === 'PASS'
-      ? 'Independent AI audit PASS'
-      : `Independent AI audit ${verdict}: ${reason}`,
-  );
+  const attestation = auditAttestationFromReport(report);
+
+  let state;
+  let description;
+  if (verdict === 'PASS' && attestation) {
+    state = 'success';
+    description = `PASS base=${attestation.baseSha} diff=${attestation.diffSha256}`;
+  } else if (verdict === 'PASS') {
+    state = 'error';
+    description = 'PASS_ATTESTATION_INVALID';
+  } else if (verdict === 'MISSING') {
+    state = 'error';
+    description = `Independent AI audit MISSING: ${reason}`;
+  } else {
+    state = 'failure';
+    const attested = attestation
+      ? `${verdict} base=${attestation.baseSha} diff=${attestation.diffSha256}`
+      : `Independent AI audit ${verdict}`;
+    description = `${attested}: ${reason}`;
+  }
+
   return {
     state,
     context: STATUS_CONTEXT,
-    description,
+    description: cleanDescription(description),
     ...(targetUrl ? { target_url: targetUrl } : {}),
   };
 }
