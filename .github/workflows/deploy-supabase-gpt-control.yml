@@ -13,13 +13,39 @@ on:
       - 'supabase/functions/cfi-current-refresh/**'
       - 'supabase/functions/cfi-result-collector/**'
       - 'supabase/functions/cfi-multimarket-settlement-eval/**'
-      - '.github/workflows/deploy-supabase-gpt-control.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
 
 concurrency:
   group: cfi-supabase-production-deploy
   cancel-in-progress: true
 
 jobs:
+  ai-deploy-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact production revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Require exact pre-merge Independent AI PASS
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/cfi-production-ai-deploy-gate.mjs
+          --repo "${{ github.repository }}"
+          --merge-sha "${{ github.sha }}"
+          --ref "${{ github.ref }}"
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -49,7 +75,7 @@ jobs:
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
+    needs: [verify, ai-deploy-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -73,7 +99,7 @@ jobs:
 
   native-production-gate:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [verify, deploy]
+    needs: [verify, ai-deploy-gate, deploy]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
