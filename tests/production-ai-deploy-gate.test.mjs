@@ -93,7 +93,8 @@ test('GitHub reads use bounded retry and timeout without fail-open fallback',()=
   assert.match(gateSource,/for \(let attempt = 0; attempt < 3; attempt \+= 1\)/);
   assert.match(gateSource,/response\.status === 429 \|\| response\.status >= 500/);
   assert.match(gateSource,/AbortSignal\.timeout\(20_000\)/);
-  assert.doesNotMatch(gateSource,/return \{[^}]*ok:\s*true[^}]*\}.*GITHUB_HTTP/s);
+  assert.match(gateSource,/throw lastError \?\? new Error\('GITHUB_REQUEST_FAILED'\)/);
+  assert.match(gateSource,/main\(\)\.catch\(error => \{[\s\S]*fail\(`GATE_RUNTIME_ERROR:/);
 });
 
 test('post-merge bootstrap PASS cannot launder a bypassed merge',()=>{
