@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
       - name: Require exact pre-merge Independent AI PASS
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
       - run: npm ci
       # Production deploys are gated by the full current contract suite.
