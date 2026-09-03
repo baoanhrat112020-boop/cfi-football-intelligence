@@ -15,6 +15,7 @@ on:
       - 'supabase/functions/cfi-multimarket-settlement-eval/**'
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
   statuses: read

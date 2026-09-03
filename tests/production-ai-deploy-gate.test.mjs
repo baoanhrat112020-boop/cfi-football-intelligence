@@ -152,10 +152,12 @@ test('deployment workflows gate production secrets and use explicit Node 22 LTS 
 
   for(const [workflow,parsed] of [[cloudflare,cloud],[supabase,supa]]){
     assert.match(workflow,/cfi-production-ai-deploy-gate\.mjs/);
+    assert.match(workflow,/actions:\s*read/);
     assert.match(workflow,/pull-requests:\s*read/);
     assert.match(workflow,/statuses:\s*read/);
     assert.match(workflow,/uses: actions\/setup-node@v4/);
     assert.match(workflow,/node-version:\s*22/);
+    assert.equal(parsed?.permissions?.actions,'read');
     const gate=JSON.stringify(parsed?.jobs?.['ai-deploy-gate'] ?? {});
     assert.doesNotMatch(gate,/CLOUDFLARE_API_TOKEN/);
     assert.doesNotMatch(gate,/SUPABASE_ACCESS_TOKEN/);
