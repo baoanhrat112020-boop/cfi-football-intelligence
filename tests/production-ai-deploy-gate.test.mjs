@@ -113,6 +113,8 @@ test('deployment workflows gate production secrets and do not self-trigger redep
     assert.match(workflow,/cfi-production-ai-deploy-gate\.mjs/);
     assert.match(workflow,/pull-requests:\s*read/);
     assert.match(workflow,/statuses:\s*read/);
+    assert.match(workflow,/uses: actions\/setup-node@v4/);
+    assert.match(workflow,/node-version:\s*24/);
     const gate=JSON.stringify(parsed?.jobs?.['ai-deploy-gate'] ?? {});
     assert.doesNotMatch(gate,/CLOUDFLARE_API_TOKEN/);
     assert.doesNotMatch(gate,/SUPABASE_ACCESS_TOKEN/);
