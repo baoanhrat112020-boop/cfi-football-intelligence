@@ -41,7 +41,8 @@ test('secret-bearing AI job uses dedicated Workers AI token and cannot write con
   assert.match(aiWorkflow,/CLOUDFLARE_API_TOKEN:\s*\$\{\{ secrets\.CLOUDFLARE_WORKERS_AI_API_TOKEN \}\}/);
   assert.doesNotMatch(aiWorkflow,/CLOUDFLARE_API_TOKEN:\s*\$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.match(aiWorkflow,/CLOUDFLARE_ACCOUNT_ID/);
-  assert.match(aiWorkflow,/@cf\/openai\/gpt-oss-20b/);
+  assert.match(aiWorkflow,/@cf\/openai\/gpt-oss-120b/);
+  assert.doesNotMatch(aiWorkflow,/@cf\/openai\/gpt-oss-20b/);
   assert.doesNotMatch(aiWorkflow,/@cf\/zai-org\/glm-4\.7-flash/);
   assert.match(aiWorkflow,/cfi-publish-ai-audit-status\.mjs/);
   assert.doesNotMatch(aiWorkflow,/wrangler\s+deploy/);
@@ -76,13 +77,16 @@ test('trusted auditor runtime attestation separates reviewer from prediction eng
   assert.match(policy,/AUDITOR_ROLE/);
   assert.match(policy,/read-only code\/policy reviewer/i);
   assert.match(policy,/AI_PROVIDER.*Cloudflare Workers AI/is);
-  assert.match(policy,/@cf\/openai\/gpt-oss-20b/);
+  assert.match(policy,/@cf\/openai\/gpt-oss-120b/);
+  assert.doesNotMatch(policy,/@cf\/openai\/gpt-oss-20b/);
   assert.match(policy,/CLOUDFLARE_WORKERS_AI_API_TOKEN/);
   assert.match(policy,/production\/deployment `CLOUDFLARE_API_TOKEN` secret is not supplied/i);
   assert.match(policy,/no alternate-model or alternate-provider fallback path/i);
   assert.match(policy,/provider\/auth HTTP errors, timeouts, missing response text, malformed structured verdicts/i);
   assert.match(policy,/LIVE_INVOCATION_EVIDENCE/);
   assert.match(policy,/provider authentication, endpoint reachability, and model execution have succeeded for this invocation/i);
+  assert.match(policy,/SETUP_NODE_SEMANTICS/);
+  assert.match(policy,/resolves\/downloads the requested Node version/i);
 });
 
 test('policy evaluates Multi-Market impact by component scope without calibrating the reviewer model',()=>{
