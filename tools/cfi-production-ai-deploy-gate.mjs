@@ -6,12 +6,32 @@ import { fileURLToPath } from 'node:url';
 export const AUDIT_CONTEXT = 'CFI Independent AI Auditor V1';
 export const MAIN_REF = 'refs/heads/main';
 export const TRUSTED_STATUS_CREATOR = 'github-actions[bot]';
+export const TRUSTED_AUDIT_WORKFLOW_PATH = '.github/workflows/cfi-independent-ai-auditor.yml';
 export const ATTESTATION_RE = /^PASS base=([0-9a-f]{40}) diff=([0-9a-f]{64})$/i;
 
 export function parseAuditAttestation(description) {
   const match = String(description ?? '').trim().match(ATTESTATION_RE);
   if (!match) return null;
   return { baseSha: match[1].toLowerCase(), diffSha256: match[2].toLowerCase() };
+}
+
+export function parseTrustedRunId(targetUrl, repo) {
+  const escaped = String(repo ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(targetUrl ?? '').match(new RegExp(`^https://github\\.com/${escaped}/actions/runs/(\\d+)$`));
+  if (!match) return null;
+  const runId = Number(match[1]);
+  return Number.isSafeInteger(runId) && runId > 0 ? runId : null;
+}
+
+export function validateTrustedAuditRun(run, { repo }) {
+  if (!run || typeof run !== 'object') return { ok: false, reason: 'AI_AUDIT_RUN_MISSING' };
+  if (run.name !== AUDIT_CONTEXT) return { ok: false, reason: 'AI_AUDIT_RUN_NAME_MISMATCH' };
+  if (run.path !== TRUSTED_AUDIT_WORKFLOW_PATH) return { ok: false, reason: 'AI_AUDIT_RUN_WORKFLOW_PATH_MISMATCH' };
+  if (run.event !== 'workflow_run') return { ok: false, reason: 'AI_AUDIT_RUN_EVENT_MISMATCH' };
+  if (run.conclusion !== 'success') return { ok: false, reason: 'AI_AUDIT_RUN_NOT_SUCCESS' };
+  if (run.head_branch !== 'main') return { ok: false, reason: 'AI_AUDIT_RUN_NOT_TRUSTED_MAIN' };
+  if (run.repository?.full_name !== repo) return { ok: false, reason: 'AI_AUDIT_RUN_REPOSITORY_MISMATCH' };
+  return { ok: true, reason: 'AI_AUDIT_RUN_TRUSTED' };
 }
 
 function statusTime(status) {
@@ -102,17 +122,34 @@ function parseArgs(argv) {
   return out;
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function githubRequest(token, apiPath, { accept = 'application/vnd.github+json' } = {}) {
-  const response = await fetch(`https://api.github.com${apiPath}`, {
-    headers: {
-      Accept: accept,
-      Authorization: `Bearer ${token}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`GITHUB_HTTP_${response.status}`);
-  return { response, text };
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(`https://api.github.com${apiPath}`, {
+        headers: {
+          Accept: accept,
+          Authorization: `Bearer ${token}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+      const text = await response.text();
+      if (response.ok) return { response, text };
+      const retryable = response.status === 429 || response.status >= 500;
+      lastError = new Error(`GITHUB_HTTP_${response.status}`);
+      if (!retryable || attempt === 2) throw lastError;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2) throw error;
+    }
+    await sleep(300 * (2 ** attempt));
+  }
+  throw lastError ?? new Error('GITHUB_REQUEST_FAILED');
 }
 
 function fail(reason, details = {}) {
@@ -195,8 +232,22 @@ async function main() {
     return;
   }
 
+  const auditRunId = parseTrustedRunId(result.status?.target_url, repo);
+  if (!auditRunId) {
+    fail('AI_AUDIT_TARGET_RUN_INVALID', { TARGET_URL: result.status?.target_url ?? null });
+    return;
+  }
+  const auditRunRaw = await githubRequest(token, `/repos/${repo}/actions/runs/${auditRunId}`);
+  const auditRun = JSON.parse(auditRunRaw.text);
+  const trustedRun = validateTrustedAuditRun(auditRun, { repo });
+  if (!trustedRun.ok) {
+    fail(trustedRun.reason, { AUDIT_RUN_ID: auditRunId, TARGET_URL: result.status?.target_url ?? null });
+    return;
+  }
+
   console.log('CFI_PRODUCTION_AI_DEPLOY_GATE=PASS');
   console.log(`ATTESTED_STATUS_CREATED_AT=${result.status?.created_at ?? 'UNKNOWN'}`);
+  console.log(`TRUSTED_AUDIT_RUN_ID=${auditRunId}`);
   process.exitCode = 0;
 }
 
