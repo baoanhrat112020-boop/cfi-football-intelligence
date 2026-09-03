@@ -13,21 +13,48 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tests/v14-alias-resolution-contract.test.mjs'
-      - '.github/workflows/deploy-cloudflare.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
 
 concurrency:
   group: cfi-production-deploy
   cancel-in-progress: true
 
 jobs:
+  ai-deploy-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact production revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require exact pre-merge Independent AI PASS
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/cfi-production-ai-deploy-gate.mjs
+          --repo "${{ github.repository }}"
+          --merge-sha "${{ github.sha }}"
+          --ref "${{ github.ref }}"
+
   deploy:
+    needs: ai-deploy-gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
       - run: npm ci
       # Production deploys are gated by the full current contract suite.
