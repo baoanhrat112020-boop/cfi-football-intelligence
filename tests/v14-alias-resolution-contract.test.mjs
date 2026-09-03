@@ -80,7 +80,7 @@ test('Supabase production deploy includes BigDB retrieval and a real native disc
   assert.match(workflow,/supabase\/functions\/cfi-discovery-feed\/\*\*/);
   assert.match(workflow,/functions deploy cfi-bigdb-retrieval/);
   assert.match(workflow,/functions deploy cfi-discovery-feed/);
-  assert.match(workflow,/needs: \[verify, deploy\]/);
+  assert.match(workflow,/needs: \[verify, ai-deploy-gate, deploy\]/);
   assert.match(workflow,/\$BASE\/api\/discover/);
   assert.match(workflow,/predictionSuccess/);
   assert.match(workflow,/fullPredictionsExecuted/);
