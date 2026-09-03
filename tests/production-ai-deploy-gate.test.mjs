@@ -6,18 +6,23 @@ import {
   AUDIT_CONTEXT,
   MAIN_REF,
   TRUSTED_STATUS_CREATOR,
+  TRUSTED_AUDIT_WORKFLOW_PATH,
   parseAuditAttestation,
+  parseTrustedRunId,
+  validateTrustedAuditRun,
   selectValidPreMergeAuditStatus,
   evaluateDeploymentGate,
 } from '../tools/cfi-production-ai-deploy-gate.mjs';
 
+const gateSource=fs.readFileSync('tools/cfi-production-ai-deploy-gate.mjs','utf8');
 const baseSha='a'.repeat(40);
 const headSha='b'.repeat(40);
 const mergeSha='c'.repeat(40);
 const diffSha256='d'.repeat(64);
 const mergedAt='2026-09-03T01:00:00Z';
-const trustedTarget='https://github.com/baoanhrat112020-boop/cfi-football-intelligence/actions/runs/123';
-const targetPrefix='https://github.com/baoanhrat112020-boop/cfi-football-intelligence/actions/runs/';
+const repo='baoanhrat112020-boop/cfi-football-intelligence';
+const trustedTarget=`https://github.com/${repo}/actions/runs/123`;
+const targetPrefix=`https://github.com/${repo}/actions/runs/`;
 
 function pr(overrides={}){
   return {
@@ -42,6 +47,18 @@ function status(overrides={}){
   };
 }
 
+function auditRun(overrides={}){
+  return {
+    name:AUDIT_CONTEXT,
+    path:TRUSTED_AUDIT_WORKFLOW_PATH,
+    event:'workflow_run',
+    conclusion:'success',
+    head_branch:'main',
+    repository:{full_name:repo},
+    ...overrides,
+  };
+}
+
 test('attestation parser requires full base SHA and diff SHA-256',()=>{
   assert.deepEqual(parseAuditAttestation(`PASS base=${baseSha} diff=${diffSha256}`),{baseSha,diffSha256});
   assert.equal(parseAuditAttestation('Independent AI audit PASS'),null);
@@ -54,6 +71,29 @@ test('exact trusted pre-merge attestation authorizes production deploy',()=>{
   });
   assert.equal(result.ok,true);
   assert.equal(result.reason,'AI_AUDIT_PREMERGE_ATTESTATION_MATCH');
+});
+
+test('trusted status target must resolve to the exact independent AI workflow run',()=>{
+  assert.equal(parseTrustedRunId(trustedTarget,repo),123);
+  assert.equal(parseTrustedRunId(`https://github.com/${repo}/actions/runs/123/attempts/2`,repo),null);
+  assert.equal(parseTrustedRunId('https://example.test/actions/runs/123',repo),null);
+  assert.equal(validateTrustedAuditRun(auditRun(),{repo}).ok,true);
+  const bad=[
+    auditRun({name:'Other Workflow'}),
+    auditRun({path:'.github/workflows/other.yml'}),
+    auditRun({event:'push'}),
+    auditRun({conclusion:'failure'}),
+    auditRun({head_branch:'feature'}),
+    auditRun({repository:{full_name:'other/repo'}}),
+  ];
+  for(const run of bad) assert.equal(validateTrustedAuditRun(run,{repo}).ok,false);
+});
+
+test('GitHub reads use bounded retry and timeout without fail-open fallback',()=>{
+  assert.match(gateSource,/for \(let attempt = 0; attempt < 3; attempt \+= 1\)/);
+  assert.match(gateSource,/response\.status === 429 \|\| response\.status >= 500/);
+  assert.match(gateSource,/AbortSignal\.timeout\(20_000\)/);
+  assert.doesNotMatch(gateSource,/return \{[^}]*ok:\s*true[^}]*\}.*GITHUB_HTTP/s);
 });
 
 test('post-merge bootstrap PASS cannot launder a bypassed merge',()=>{
@@ -97,7 +137,7 @@ test('non-main, merge identity mismatch and incomplete PR identity fail closed',
   assert.equal(evaluateDeploymentGate({ref:MAIN_REF,mergeSha,pr:pr({head:{sha:null}}),diffSha256,statuses:[status()]}).reason,'ASSOCIATED_PR_IDENTITY_INCOMPLETE');
 });
 
-test('deployment workflows gate production secrets and do not self-trigger redeploys',()=>{
+test('deployment workflows gate production secrets and use explicit Node 22 LTS baseline',()=>{
   const cloudflare=fs.readFileSync('.github/workflows/deploy-cloudflare.yml','utf8');
   const supabase=fs.readFileSync('.github/workflows/deploy-supabase-gpt-control.yml','utf8');
   const cloud=YAML.parse(cloudflare);
@@ -114,12 +154,17 @@ test('deployment workflows gate production secrets and do not self-trigger redep
     assert.match(workflow,/pull-requests:\s*read/);
     assert.match(workflow,/statuses:\s*read/);
     assert.match(workflow,/uses: actions\/setup-node@v4/);
-    assert.match(workflow,/node-version:\s*24/);
+    assert.match(workflow,/node-version:\s*22/);
     const gate=JSON.stringify(parsed?.jobs?.['ai-deploy-gate'] ?? {});
     assert.doesNotMatch(gate,/CLOUDFLARE_API_TOKEN/);
     assert.doesNotMatch(gate,/SUPABASE_ACCESS_TOKEN/);
     assert.doesNotMatch(gate,/secrets\./);
   }
+  assert.equal(cloud?.jobs?.['ai-deploy-gate']?.steps?.[1]?.with?.['node-version'],22);
+  assert.equal(cloud?.jobs?.deploy?.steps?.[1]?.with?.['node-version'],22);
+  assert.equal(supa?.jobs?.['ai-deploy-gate']?.steps?.[1]?.with?.['node-version'],22);
+  assert.equal(supa?.jobs?.verify?.steps?.[1]?.with?.['node-version'],22);
+  assert.equal(supa?.jobs?.['native-production-gate']?.steps?.[0]?.with?.['node-version'],22);
   assert.doesNotMatch(cloudflare,/\.github\/workflows\/deploy-cloudflare\.yml'\s*$/m);
   assert.doesNotMatch(supabase,/\.github\/workflows\/deploy-supabase-gpt-control\.yml'\s*$/m);
 });
