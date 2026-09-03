@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export const AUDIT_CONTEXT = 'CFI Independent AI Auditor V1';
 export const MAIN_REF = 'refs/heads/main';
+export const TRUSTED_STATUS_CREATOR = 'github-actions[bot]';
 export const ATTESTATION_RE = /^PASS base=([0-9a-f]{40}) diff=([0-9a-f]{64})$/i;
 
 export function parseAuditAttestation(description) {
@@ -17,7 +18,9 @@ function statusTime(status) {
   return Date.parse(status?.created_at ?? status?.updated_at ?? 0) || 0;
 }
 
-export function selectValidPreMergeAuditStatus({ statuses = [], mergedAt, baseSha, diffSha256 }) {
+export function selectValidPreMergeAuditStatus({
+  statuses = [], mergedAt, baseSha, diffSha256, targetUrlPrefix = null,
+}) {
   const mergedTime = Date.parse(mergedAt ?? 0) || 0;
   const expectedBase = String(baseSha ?? '').toLowerCase();
   const expectedDiff = String(diffSha256 ?? '').toLowerCase();
@@ -39,6 +42,8 @@ export function selectValidPreMergeAuditStatus({ statuses = [], mergedAt, baseSh
 
   for (const status of preMerge) {
     if (String(status?.state ?? '').toLowerCase() !== 'success') continue;
+    if (status?.creator?.login !== TRUSTED_STATUS_CREATOR) continue;
+    if (targetUrlPrefix && !String(status?.target_url ?? '').startsWith(targetUrlPrefix)) continue;
     const attestation = parseAuditAttestation(status?.description);
     if (!attestation) continue;
     if (attestation.baseSha !== expectedBase) continue;
@@ -54,7 +59,9 @@ export function selectValidPreMergeAuditStatus({ statuses = [], mergedAt, baseSh
   return { ok: false, reason: 'AI_AUDIT_PREMERGE_ATTESTATION_MISMATCH', status: newest };
 }
 
-export function evaluateDeploymentGate({ ref, mergeSha, pr, diffSha256, statuses }) {
+export function evaluateDeploymentGate({
+  ref, mergeSha, pr, diffSha256, statuses, targetUrlPrefix = null,
+}) {
   if (ref !== MAIN_REF) return { ok: false, reason: 'PRODUCTION_DEPLOY_REF_NOT_MAIN' };
   if (!/^[0-9a-f]{40}$/i.test(String(mergeSha ?? ''))) return { ok: false, reason: 'MERGE_SHA_INVALID' };
   if (!pr?.merged_at) return { ok: false, reason: 'ASSOCIATED_PR_NOT_MERGED' };
@@ -71,6 +78,7 @@ export function evaluateDeploymentGate({ ref, mergeSha, pr, diffSha256, statuses
     mergedAt: pr.merged_at,
     baseSha,
     diffSha256,
+    targetUrlPrefix,
   });
   return {
     ...selected,
@@ -165,7 +173,10 @@ async function main() {
 
   const statusesRaw = await githubRequest(token, `/repos/${repo}/commits/${headSha}/statuses?per_page=100`);
   const statuses = JSON.parse(statusesRaw.text);
-  const result = evaluateDeploymentGate({ ref, mergeSha, pr, diffSha256, statuses });
+  const targetUrlPrefix = `https://github.com/${repo}/actions/runs/`;
+  const result = evaluateDeploymentGate({
+    ref, mergeSha, pr, diffSha256, statuses, targetUrlPrefix,
+  });
 
   console.log(`PR=${result.prNumber ?? prNumber}`);
   console.log(`PR_HEAD=${result.headSha ?? headSha}`);
