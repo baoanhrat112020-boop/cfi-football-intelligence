@@ -1,0 +1,40 @@
+name: CFI Main Merge Guard
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+
+concurrency:
+  group: cfi-main-merge-guard-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-independent-ai-pass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout merged main
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify merged PR had Independent AI PASS
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/cfi-main-merge-guard.mjs
+          --repo "${{ github.repository }}"
+          --merge-sha "${{ github.sha }}"
+          --attempts 18
+          --interval-ms 10000
