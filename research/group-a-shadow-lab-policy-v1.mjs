@@ -1,3 +1,5 @@
+import { MULTIMARKET_MIN_SAMPLES } from './multimarket-promotion-gate-v2.mjs';
+
 export const GROUP_A_SHADOW_LAB_POLICY_V1=Object.freeze({
   version:'CFI_GROUP_A_SHADOW_LAB_POLICY_V1',
   productionIndependent:true,
@@ -10,7 +12,7 @@ export const GROUP_A_SHADOW_LAB_POLICY_V1=Object.freeze({
   noReconstruction:true,
   missingFrozenStatePolicy:'SKIP_NON_BLOCKING',
   missedKickoffPolicy:'SKIP_NO_RECONSTRUCTION',
-  minPromotionSamples:30,
+  minPromotionSamples:MULTIMARKET_MIN_SAMPLES,
   maxShadowSamples:50,
   fullMultiMarketPassRequired:true,
   explicitProductionPromotionApprovalRequired:true,
@@ -45,7 +47,7 @@ export function evaluateGroupAShadowLabPolicy(input={}){
     return {...common,status:'SKIP',reason:'MISSED_KICKOFF',action:'SKIP_NO_RECONSTRUCTION'};
   }
   if(settledProspective<GROUP_A_SHADOW_LAB_POLICY_V1.minPromotionSamples){
-    return {...common,status:'CONTINUE_SHADOW',reason:'PROSPECTIVE_SUPPORT_BELOW_30',action:'ACCUMULATE_ONLY'};
+    return {...common,status:'CONTINUE_SHADOW',reason:`PROSPECTIVE_SUPPORT_BELOW_${GROUP_A_SHADOW_LAB_POLICY_V1.minPromotionSamples}`,action:'ACCUMULATE_ONLY'};
   }
 
   const fullPass=input.fullMultiMarketPass===true;
