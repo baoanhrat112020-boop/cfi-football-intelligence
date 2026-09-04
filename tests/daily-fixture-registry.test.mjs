@@ -183,7 +183,10 @@ test('terminal observations stop a fixture from entering the prediction queue', 
     })
   ], { targetDate, timeZone, nowMs });
 
-  assert.equal(registry.entries[0].verificationStatus, 'TERMINAL_OBSERVED_FAIL_CLOSED');
+  assert.equal(
+    registry.entries[0].verificationStatus,
+    'TERMINAL_OBSERVED_FAIL_CLOSED'
+  );
   assert.equal(registry.entries[0].hasTerminalObservation, true);
 
   const rolling = selectRollingFixtureWindow(registry, {
@@ -193,4 +196,26 @@ test('terminal observations stop a fixture from entering the prediction queue', 
 
   assert.equal(rolling.fixtures.length, 0);
   assert.equal(rolling.excluded[0].reason, 'TERMINAL_OBSERVED');
+});
+
+test('upstream canonical fail-closed state propagates into the rolling gate', () => {
+  const registry = mergeDailyFixtureRegistry(null, [
+    row({
+      upstreamVerificationStatus: 'IDENTITY_AMBIGUOUS_FAIL_CLOSED'
+    })
+  ], { targetDate, timeZone, nowMs });
+
+  assert.equal(registry.entries.length, 1);
+  assert.equal(registry.entries[0].hasUpstreamFailClosed, true);
+  assert.equal(registry.entries[0].verificationStatus, 'UPSTREAM_FAIL_CLOSED');
+  assert.equal(registry.coverage.upstreamFailClosed, 1);
+
+  const rolling = selectRollingFixtureWindow(registry, {
+    nowMs,
+    horizonMinutes: 90
+  });
+
+  assert.equal(rolling.fixtures.length, 0);
+  assert.equal(rolling.metrics.upstreamFailClosedExcluded, 1);
+  assert.equal(rolling.excluded[0].reason, 'UPSTREAM_FAIL_CLOSED');
 });
