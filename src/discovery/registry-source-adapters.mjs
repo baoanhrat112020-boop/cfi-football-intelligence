@@ -1,4 +1,8 @@
 import { normalizeAiFixtureCandidates } from './cfi-discovery.ts';
+import {
+  annotateFixtureSource,
+  evaluateFixtureSourceCoverage
+} from './fixture-source-policy.mjs';
 
 const clean = value => String(value ?? '').trim();
 
@@ -49,7 +53,7 @@ export function publicDiscoveryToSupplement(
       row?.sourceUrl
     ]);
 
-    rows.push({
+    rows.push(annotateFixtureSource({
       sourceClass: PUBLIC_DISCOVERY_SOURCE_CLASS,
       provider,
       providerId: clean(row?.providerId) || null,
@@ -63,11 +67,13 @@ export function publicDiscoveryToSupplement(
       targetDate: clean(row?.targetDate) || null,
       status: clean(row?.status) || 'scheduled',
       observedAt
-    });
+    }));
   }
 
+  const sourceHealth = evaluateFixtureSourceCoverage(rows);
+
   return {
-    contract: 'CFI_PUBLIC_DISCOVERY_SUPPLEMENT_V1',
+    contract: 'CFI_PUBLIC_DISCOVERY_SUPPLEMENT_V2',
     generatedAt: observedAt,
     sourceClass: PUBLIC_DISCOVERY_SOURCE_CLASS,
     rows,
@@ -76,7 +82,8 @@ export function publicDiscoveryToSupplement(
       providers: Array.isArray(discovery?.providers) ? discovery.providers : [],
       attempts: Array.isArray(discovery?.attempts) ? discovery.attempts : [],
       search: discovery?.search ?? null,
-      rows: rows.length
+      rows: rows.length,
+      sourceHealth
     },
     decisionUse: false,
     bigDbWriteAllowed: false,
@@ -86,7 +93,7 @@ export function publicDiscoveryToSupplement(
 
 export function webSearchCandidatesToSupplement(candidates, window) {
   const normalized = normalizeAiFixtureCandidates(candidates, window);
-  const rows = normalized.rows.map(row => ({
+  const rows = normalized.rows.map(row => annotateFixtureSource({
     sourceClass: WEB_SEARCH_RESCUE_SOURCE_CLASS,
     provider: row.provider,
     providerId: row.providerId,
@@ -104,19 +111,32 @@ export function webSearchCandidatesToSupplement(candidates, window) {
   }));
 
   const generatedAt = new Date(Number(window?.nowMs ?? Date.now())).toISOString();
+  const sourceHealth = evaluateFixtureSourceCoverage(rows);
 
   return {
-    contract: 'CFI_WEB_SEARCH_RESCUE_SUPPLEMENT_V1',
+    contract: 'CFI_WEB_SEARCH_RESCUE_SUPPLEMENT_V2',
     generatedAt,
     sourceClass: WEB_SEARCH_RESCUE_SOURCE_CLASS,
     rows,
     rejected: normalized.rejected,
+    sourceHealth,
     policy: {
       httpsProvenanceRequired: true,
       providerIdRequired: true,
       prematchOnly: true,
       targetDateRequired: true,
       futureKickoffRequiredForCurrentDay: true,
+      prioritySources: [
+        'AISCORE',
+        'BONGDAWAP',
+        'SOFASCORE',
+        'FLASHSCORE',
+        'SOCCERWAY',
+        'FOTMOB',
+        'LIVESCORE',
+        '365SCORES'
+      ],
+      espnCanSatisfyCoverageReadiness: false,
       decisionUse: false,
       bigDbWriteAllowed: false
     },
