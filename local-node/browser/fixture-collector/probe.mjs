@@ -6,6 +6,19 @@ import { BROWSER_FIXTURE_SOURCES } from './source-registry.mjs';
 const OUTPUT = resolve('local-node/cache/browser/source-probe-audit.json');
 const SNAPSHOT_MAX_CHARS = Math.max(30_000, Number(process.env.CFI_BROWSER_SNAPSHOT_MAX_CHARS ?? 500_000));
 const SCROLL_STEPS = Math.max(0, Math.min(20, Number(process.env.CFI_BROWSER_PROBE_SCROLL_STEPS ?? 6)));
+const TIER_FILTER = String(process.env.CFI_BROWSER_PROBE_TIER ?? '').trim().toUpperCase();
+const SOURCE_ID_FILTER = new Set(
+  String(process.env.CFI_BROWSER_PROBE_SOURCE_IDS ?? '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+);
+
+const configuredSources = BROWSER_FIXTURE_SOURCES.filter(source => {
+  if (TIER_FILTER && String(source.source_tier ?? '').toUpperCase() !== TIER_FILTER) return false;
+  if (SOURCE_ID_FILTER.size > 0 && !SOURCE_ID_FILTER.has(source.id)) return false;
+  return true;
+});
 
 async function saveJson(path, value) {
   await mkdir(dirname(path), { recursive: true });
@@ -36,15 +49,20 @@ async function boundedAutoScroll(page, steps) {
   await page.evaluate(() => window.scrollTo(0, 0));
 }
 
+if (configuredSources.length === 0) {
+  throw new Error('NO_BROWSER_SOURCES_MATCH_FILTER');
+}
+
 console.log('CFI BROWSER SOURCE PROBE');
 console.log('MODE: READ_ONLY_BROWSER');
+console.log(JSON.stringify({ tierFilter: TIER_FILTER || null, sourceIds: [...SOURCE_ID_FILTER], sources: configuredSources.map(x => x.id) }));
 console.log('');
 
 const browser = await chromium.launch({ headless: true });
 const results = [];
 
 try {
-  for (const source of BROWSER_FIXTURE_SOURCES) {
+  for (const source of configuredSources) {
     const renderTimezone = source.render_timezone || 'Asia/Ho_Chi_Minh';
     const context = await browser.newContext({
       locale: 'en-GB',
@@ -156,7 +174,11 @@ const audit = {
   status: successful.length > 0
     ? (errors.length === 0 && blocked.length === 0 ? 'PASS' : 'PASS_WITH_SOURCE_FAILURES')
     : 'FAIL',
-  sourcesConfigured: BROWSER_FIXTURE_SOURCES.length,
+  filters: {
+    tier: TIER_FILTER || null,
+    sourceIds: [...SOURCE_ID_FILTER]
+  },
+  sourcesConfigured: configuredSources.length,
   sourcesSuccessful: successful.length,
   sourcesBlocked: blocked.length,
   sourcesErrored: errors.length,
