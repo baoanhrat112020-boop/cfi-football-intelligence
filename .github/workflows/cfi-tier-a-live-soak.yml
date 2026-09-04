@@ -5,8 +5,11 @@ on:
     paths:
       - 'src/discovery/fixture-source-policy.mjs'
       - 'src/discovery/fixture-verification.mjs'
+      - 'src/discovery/rolling-evidence-queues.mjs'
       - 'local-node/browser/fixture-collector/**'
       - 'local-node/registry/tier-a-browser-discovery.mjs'
+      - 'local-node/registry/daily-fixture-registry.mjs'
+      - 'local-node/registry/rolling-evidence-queues.mjs'
       - 'tools/cfi-tier-a-live-soak-report.mjs'
       - 'package.json'
       - '.github/workflows/cfi-tier-a-live-soak.yml'
@@ -27,6 +30,8 @@ jobs:
       CFI_TIME_ZONE: Asia/Ho_Chi_Minh
       CFI_BROWSER_SNAPSHOT_MAX_CHARS: 500000
       CFI_BROWSER_PROBE_SCROLL_STEPS: 6
+      CFI_REGISTRY_SKIP_PC_INPUT: 1
+      CFI_ROLLING_HORIZON_MINUTES: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,6 +64,34 @@ jobs:
         if: always()
         run: node tools/cfi-tier-a-live-soak-report.mjs
 
+      - name: Materialize live 90-minute registry and evidence queues
+        if: always()
+        run: |
+          npm run cfi:registry
+          npm run cfi:queues
+          node - <<'NODE'
+          const fs = require('fs');
+          const rolling = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-fixture-window.json','utf8'));
+          const verified = JSON.parse(fs.readFileSync('local-node/cache/registry/verified-ranking-queue.json','utf8'));
+          const crosscheck = JSON.parse(fs.readFileSync('local-node/cache/registry/crosscheck-required-queue.json','utf8'));
+          const queueAudit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          if (queueAudit.metrics?.accountedFor !== queueAudit.metrics?.rollingFixtures) throw new Error('LIVE_QUEUE_ACCOUNTING_MISMATCH');
+          if (queueAudit.metrics?.droppedByQuota !== 0) throw new Error('LIVE_QUEUE_QUOTA_DROP');
+          if (verified.rows?.some(row => row.rankingInputEligible !== true)) throw new Error('LIVE_VERIFIED_QUEUE_INVALID');
+          if (crosscheck.rows?.some(row => row.rankingInputEligible === true)) throw new Error('LIVE_CROSSCHECK_QUEUE_INVALID');
+          console.log(JSON.stringify({
+            contract:'CFI_TIER_A_LIVE_ROLLING_QUEUE_SOAK_V1',
+            targetDate:rolling.targetDate,
+            horizonMinutes:rolling.horizonMinutes,
+            rollingFixtures:rolling.fixtures?.length ?? 0,
+            verifiedRanking:verified.count ?? 0,
+            crosscheckRequired:crosscheck.count ?? 0,
+            droppedByQuota:queueAudit.metrics?.droppedByQuota ?? null,
+            decisionUse:false,
+            bigDbWriteAllowed:false
+          }));
+          NODE
+
       - name: Verify live soak remains shadow-only and fixture-gated
         if: always()
         run: |
@@ -80,12 +113,16 @@ jobs:
           if ((m.singleSourceFixtures ?? 0) > 0 && (m.trustedDiscoveryOnlyFixtures ?? 0) === 0) {
             throw new Error('SINGLE_SOURCE_FIXTURES_NOT_DISCOVERY_ONLY');
           }
+          const queueAudit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          if (queueAudit.safety?.predictionExecutionAllowed !== false) throw new Error('QUEUE_PREDICTION_EXECUTION_ENABLED');
+          if (queueAudit.safety?.bigDbWriteAllowed !== false) throw new Error('QUEUE_BIGDB_WRITE_ENABLED');
           console.log(JSON.stringify({
             status: report.status,
             metrics: report.metrics,
             providerRows: report.providerRows,
             globalSourceHealth: report.globalSourceHealth,
             perFixtureVerification: report.perFixtureVerification,
+            liveRollingQueues: queueAudit.metrics,
             tierALiveExit: '${{ steps.tier_a_live.outputs.exit_code }}',
             chromiumInstallOutcome: '${{ steps.browser_install.outcome }}'
           }));
@@ -101,6 +138,14 @@ jobs:
             audit-reports/cfi-tier-a-live-soak.md
             local-node/cache/registry/tier-a-browser-discovery.json
             local-node/cache/registry/tier-a-browser-discovery-audit.json
+            local-node/cache/registry/daily-fixture-registry.json
+            local-node/cache/registry/daily-fixture-registry-audit.json
+            local-node/cache/registry/rolling-fixture-window.json
+            local-node/cache/registry/rolling-evidence-queue-set.json
+            local-node/cache/registry/verified-ranking-queue.json
+            local-node/cache/registry/crosscheck-required-queue.json
+            local-node/cache/registry/evidence-request-plan.json
+            local-node/cache/registry/rolling-evidence-queues-audit.json
             local-node/cache/browser/source-probe-audit.json
             local-node/cache/browser/*-adapter-audit.json
             local-node/cache/browser/probes/daily-*.txt
