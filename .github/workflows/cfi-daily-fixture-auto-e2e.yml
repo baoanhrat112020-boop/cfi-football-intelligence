@@ -12,6 +12,7 @@ on:
       - 'tests/registry-source-adapters.test.mjs'
       - 'tests/fixture-source-policy.test.mjs'
       - 'tests/daily-text-parser.test.mjs'
+      - 'tests/tier-a-registry-coverage.test.mjs'
       - 'package.json'
       - '.github/workflows/cfi-daily-fixture-auto-e2e.yml'
   workflow_dispatch:
@@ -48,6 +49,7 @@ jobs:
           tests/registry-source-adapters.test.mjs
           tests/fixture-source-policy.test.mjs
           tests/daily-text-parser.test.mjs
+          tests/tier-a-registry-coverage.test.mjs
 
       - name: Build prioritized source scan plan
         run: npm run cfi:source-plan
