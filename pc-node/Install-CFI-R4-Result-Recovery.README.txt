@@ -1,0 +1,6 @@
+CFI R4 Result Recovery one-click installer
+
+Download the adjacent file:
+Install-CFI-R4-Result-Recovery.cmd
+
+Run it once as normal. It will request Administrator permission itself, install and verify CFI-PC-NODE-R4-RESULT-RECOVERY, and write logs under D:\CFI\PC-Node\data.
