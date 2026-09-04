@@ -11,6 +11,7 @@ on:
       - 'tests/daily-fixture-registry.test.mjs'
       - 'tests/registry-source-adapters.test.mjs'
       - 'tests/fixture-source-policy.test.mjs'
+      - 'tests/fixture-verification.test.mjs'
       - 'tests/daily-text-parser.test.mjs'
       - 'tests/tier-a-registry-coverage.test.mjs'
       - 'package.json'
@@ -44,6 +45,7 @@ jobs:
 
       - name: Syntax check Tier A browser orchestration
         run: |
+          node --check src/discovery/fixture-verification.mjs
           node --check local-node/browser/fixture-collector/probe.mjs
           node --check local-node/browser/fixture-collector/daily-text-parser.mjs
           node --check local-node/browser/fixture-collector/run-daily-source-adapter.mjs
@@ -51,12 +53,13 @@ jobs:
           node --check local-node/registry/daily-fixture-registry.mjs
           node --check local-node/orchestrator.mjs
 
-      - name: Deterministic registry, source-policy and Tier A parser contract tests
+      - name: Deterministic registry, source-policy and per-fixture verification contract tests
         run: >-
           node --experimental-strip-types --test
           tests/daily-fixture-registry.test.mjs
           tests/registry-source-adapters.test.mjs
           tests/fixture-source-policy.test.mjs
+          tests/fixture-verification.test.mjs
           tests/daily-text-parser.test.mjs
           tests/tier-a-registry-coverage.test.mjs
 
