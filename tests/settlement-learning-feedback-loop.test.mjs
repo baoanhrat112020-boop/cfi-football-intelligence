@@ -33,3 +33,12 @@ test('feedback-loop migration schedules settlement retry, daily audit and learne
   assert.match(sql, /37 \* \* \* \*/);
   assert.match(sql, /revoke execute on function public\.cfi_capture_daily_prediction_audit\(date\) from public, anon, authenticated/i);
 });
+
+test('multimarket float metrics have an explicit finite float8 overload', async () => {
+  const sql = await read('supabase/migrations/20260904011325_add_float8_isfinite_compat.sql');
+  assert.match(sql, /function public\.isfinite\(p double precision\)/i);
+  assert.match(sql, /'NaN'::double precision/);
+  assert.match(sql, /'Infinity'::double precision/);
+  assert.match(sql, /'-Infinity'::double precision/);
+  assert.match(sql, /immutable/i);
+});
