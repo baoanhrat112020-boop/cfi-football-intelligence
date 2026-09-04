@@ -1,0 +1,3 @@
+CFI R4 Result Recovery OFFLINE bundle.
+No GitHub/raw downloads are performed by the installer.
+The ZIP contains a one-click CMD plus PowerShell installer and uses the existing R4 worker under D:\CFI\PC-Node\src.
