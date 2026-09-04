@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { evaluateFixtureVerification } from '../src/discovery/fixture-verification.mjs';
 
 const DISCOVERY = resolve(
   process.env.CFI_TIER_A_BROWSER_OUTPUT ||
@@ -69,13 +70,25 @@ for (const row of rows) {
 
   const key = fixtureKey(row);
   const group = fixtureGroups.get(key) ?? {
+    identity: identityKey(row),
     home: row?.home ?? null,
     away: row?.away ?? null,
+    targetDate: row?.targetDate ?? discovery?.targetDate ?? null,
     kickoffIso: row?.kickoffIso ?? null,
     providers: new Set(),
+    sourceObservations: [],
     observations: 0
   };
   group.providers.add(provider);
+  group.sourceObservations.push({
+    sourceClass: row?.sourceClass ?? 'TIER_A_BROWSER_DISCOVERY',
+    provider,
+    providerId: row?.providerId ?? null,
+    sourceUrl: row?.sourceUrl ?? null,
+    kickoffIso: row?.kickoffIso ?? null,
+    status: row?.status ?? 'scheduled',
+    observedAt: row?.observedAt ?? discovery?.generatedAt ?? null
+  });
   group.observations += 1;
   fixtureGroups.set(key, group);
 
@@ -85,13 +98,54 @@ for (const row of rows) {
   identityKickoffs.set(identity, kickoffs);
 }
 
-const uniqueFixtures = [...fixtureGroups.values()];
+const conflictIdentitySet = new Set(
+  [...identityKickoffs.entries()]
+    .filter(([, kickoffs]) => kickoffs.size >= 2)
+    .map(([identity]) => identity)
+);
+
+const uniqueFixtures = [...fixtureGroups.values()].map(group => {
+  const kickoffs = [...(identityKickoffs.get(group.identity) ?? new Set())].sort();
+  const verification = evaluateFixtureVerification({
+    identityKey: group.identity,
+    canonicalHomeId: null,
+    canonicalAwayId: null,
+    sourceObservations: group.sourceObservations,
+    kickoffCandidates: kickoffs.map(kickoffIso => ({ kickoffIso })),
+    hasKickoffConflict: conflictIdentitySet.has(group.identity),
+    hasTerminalObservation: false,
+    hasUpstreamFailClosed: false,
+    distinctProviderCount: group.providers.size
+  });
+
+  return {
+    ...group,
+    kickoffCandidates: kickoffs,
+    verification
+  };
+});
+
 const multiSourceFixtures = uniqueFixtures.filter(item => item.providers.size >= 2);
 const singleSourceFixtures = uniqueFixtures.length - multiSourceFixtures.length;
 const duplicateObservations = Math.max(0, rows.length - uniqueFixtures.length);
 const kickoffConflictIdentities = [...identityKickoffs.entries()]
   .filter(([, kickoffs]) => kickoffs.size >= 2)
   .map(([identity, kickoffs]) => ({ identity, kickoffCandidates: [...kickoffs].sort() }));
+const trustedRankingReadyFixtures = uniqueFixtures.filter(
+  item => item.verification.rankingReady
+);
+const trustedFailClosedFixtures = uniqueFixtures.filter(
+  item => item.verification.status.endsWith('FAIL_CLOSED')
+);
+const trustedDiscoveryOnlyFixtures = uniqueFixtures.filter(
+  item => !item.verification.rankingReady &&
+    !item.verification.status.endsWith('FAIL_CLOSED')
+);
+
+const verificationStatusCounts = {};
+for (const fixture of uniqueFixtures) {
+  increment(verificationStatusCounts, fixture.verification.status);
+}
 
 const probeRows = Array.isArray(probeAudit?.results) ? probeAudit.results : [];
 const sourceProbe = probeRows.map(row => ({
@@ -138,18 +192,33 @@ const status = discoveryAudit?.status?.startsWith('FAIL_')
 
 const generatedAt = new Date().toISOString();
 const report = {
-  contract: 'CFI_TIER_A_LIVE_SOAK_REPORT_V1',
+  contract: 'CFI_TIER_A_LIVE_SOAK_REPORT_V2',
   generatedAt,
   status,
   targetDate: discovery?.targetDate ?? discoveryAudit?.targetDate ?? null,
   timeZone: discovery?.timeZone ?? discoveryAudit?.timeZone ?? 'Asia/Ho_Chi_Minh',
   discoveryStatus: discoveryAudit?.status ?? null,
-  sourceHealth: discovery?.sourceHealth ?? discoveryAudit?.sourceHealth ?? null,
+  globalSourceHealth: discovery?.sourceHealth ?? discoveryAudit?.sourceHealth ?? null,
+  perFixtureVerification: {
+    rankingReadyFixtures: trustedRankingReadyFixtures.length,
+    discoveryOnlyFixtures: trustedDiscoveryOnlyFixtures.length,
+    failClosedFixtures: trustedFailClosedFixtures.length,
+    statusCounts: verificationStatusCounts,
+    policy: {
+      globalSourceCoverageDoesNotVerifyIndividualFixture: true,
+      twoTrustedTierABProvidersSameFixtureKickoffRequired: true,
+      singleSourceHighConfidenceRankingAllowed: false,
+      kickoffConflictFailClosed: true
+    }
+  },
   metrics: {
     rawRows: rows.length,
     uniqueFixtures: uniqueFixtures.length,
     singleSourceFixtures,
     multiSourceFixtures: multiSourceFixtures.length,
+    trustedRankingReadyFixtures: trustedRankingReadyFixtures.length,
+    trustedDiscoveryOnlyFixtures: trustedDiscoveryOnlyFixtures.length,
+    trustedFailClosedFixtures: trustedFailClosedFixtures.length,
     duplicateObservations,
     kickoffConflictIdentities: kickoffConflictIdentities.length,
     successfulProbeSources: successfulProbeSources.length,
@@ -165,7 +234,16 @@ const report = {
     away: item.away,
     kickoffIso: item.kickoffIso,
     providers: [...item.providers].sort(),
-    observations: item.observations
+    observations: item.observations,
+    verificationStatus: item.verification.status,
+    rankingReady: item.verification.rankingReady
+  })),
+  rankingReadyEvidence: trustedRankingReadyFixtures.map(item => ({
+    home: item.home,
+    away: item.away,
+    kickoffIso: item.kickoffIso,
+    providers: [...item.providers].sort(),
+    verificationStatus: item.verification.status
   })),
   kickoffConflicts: kickoffConflictIdentities,
   safety: {
@@ -175,7 +253,8 @@ const report = {
     bigDbWriteAttempted: false,
     productionScheduleActivated: false,
     automaticBetting: false,
-    globalRecallClaimAllowed: false
+    globalRecallClaimAllowed: false,
+    globalSourceCoverageDoesNotVerifyIndividualFixture: true
   }
 };
 
@@ -190,6 +269,9 @@ const md = `# CFI Tier A Live Soak\n\n` +
   `- Raw rows: ${report.metrics.rawRows}\n` +
   `- Unique fixtures: ${report.metrics.uniqueFixtures}\n` +
   `- Multi-source fixtures: ${report.metrics.multiSourceFixtures}\n` +
+  `- Per-fixture ranking ready: ${report.metrics.trustedRankingReadyFixtures}\n` +
+  `- Discovery-only fixtures: ${report.metrics.trustedDiscoveryOnlyFixtures}\n` +
+  `- Fail-closed fixtures: ${report.metrics.trustedFailClosedFixtures}\n` +
   `- Duplicate observations: ${report.metrics.duplicateObservations}\n` +
   `- Kickoff-conflict identities: ${report.metrics.kickoffConflictIdentities}\n` +
   `- Successful Tier A probes: ${report.metrics.successfulProbeSources}\n` +
@@ -197,7 +279,7 @@ const md = `# CFI Tier A Live Soak\n\n` +
   `- Errored sources: ${report.metrics.erroredSources}\n` +
   `- Truncated snapshots: ${report.metrics.truncatedSources}\n\n` +
   `## Rows by provider\n${providerLines}\n\n` +
-  `This is shadow coverage telemetry only. It does not claim global fixture recall and cannot activate prediction or betting decisions.\n`;
+  `Global source health is not fixture verification. Single-source fixtures stay discovery-only and kickoff conflicts stay fail-closed. This is shadow telemetry only and cannot activate betting decisions.\n`;
 
 await mkdir(dirname(OUTPUT_JSON), { recursive: true });
 await Promise.all([
@@ -211,6 +293,7 @@ console.log(JSON.stringify({
   targetDate: report.targetDate,
   ...report.metrics,
   providerRows,
+  globalSourceHealth: report.globalSourceHealth?.status ?? null,
   decisionUse: false,
   bigDbWriteAllowed: false
 }));
