@@ -64,17 +64,22 @@ const supplement = publicDiscoveryToSupplement(discovery, { observedAt });
 const attempts = Array.isArray(discovery?.attempts) ? discovery.attempts : [];
 const successfulAttempts = attempts.filter(attempt => attempt?.ok === true).length;
 const failedAttempts = attempts.filter(attempt => attempt?.ok !== true).length;
+const sourceHealth = supplement.telemetry?.sourceHealth ?? null;
 
 const status = thrown
   ? 'FAIL_SOURCE_EXCEPTION'
   : attempts.length > 0 && successfulAttempts === 0
     ? 'FAIL_ALL_PROVIDERS'
-    : supplement.rows.length > 0
-      ? 'PASS'
-      : 'PASS_EMPTY';
+    : supplement.rows.length === 0
+      ? 'PASS_EMPTY'
+      : sourceHealth?.status === 'FALLBACK_ONLY'
+        ? 'PASS_FALLBACK_ONLY'
+        : sourceHealth?.status === 'SECONDARY_ONLY'
+          ? 'PASS_SECONDARY_ONLY'
+          : 'PASS';
 
 const audit = {
-  contract: 'CFI_PUBLIC_DISCOVERY_AUDIT_V1',
+  contract: 'CFI_PUBLIC_DISCOVERY_AUDIT_V2',
   generatedAt: observedAt,
   status,
   targetDate,
@@ -85,7 +90,14 @@ const audit = {
   successfulAttempts,
   failedAttempts,
   search: supplement.telemetry.search,
+  sourceHealth,
   error: thrown,
+  coveragePolicy: {
+    primaryTierRequiredForRankingReadiness: true,
+    espnCanSatisfyCoverageReadiness: false,
+    theSportsDbCanSatisfyCoverageReadiness: false,
+    globalRecallClaimAllowed: false
+  },
   safety: {
     shadowOnly: true,
     decisionUse: false,
@@ -105,6 +117,7 @@ console.log(JSON.stringify({
   targetDate,
   rows: supplement.rows.length,
   providers: supplement.telemetry.providers,
+  sourceHealth,
   successfulAttempts,
   failedAttempts,
   decisionUse: false,
