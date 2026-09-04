@@ -6,7 +6,9 @@ import {
 } from '../../src/discovery/daily-fixture-registry.mjs';
 
 const TIME_ZONE = process.env.CFI_TIME_ZONE || 'Asia/Ho_Chi_Minh';
-const HORIZON_MINUTES = Number(process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90);
+const HORIZON_MINUTES = Number(
+  process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90
+);
 
 const FILES = {
   canonical: resolve('local-node/cache/canonical/prospective-fixtures.json'),
@@ -66,7 +68,8 @@ function canonicalObservations(canonical, observedAt) {
       : [{
           source_id: 'LOCAL_CANONICAL',
           provider_id: fixture?.canonical_fixture_id ?? null,
-          source_url: null
+          source_url: null,
+          kickoff_utc: fixture?.kickoff_utc
         }];
 
     for (const source of sources) {
@@ -87,11 +90,13 @@ function canonicalObservations(canonical, observedAt) {
         canonicalAwayId: fixture?.canonical_away_key,
         competition: fixture?.competition ?? null,
         country: fixture?.country ?? null,
-        kickoffIso: fixture?.kickoff_utc,
-        status:
-          fixture?.verification_status === 'CONFLICT_FAIL_CLOSED'
-            ? 'scheduled'
-            : 'scheduled',
+        kickoffIso:
+          clean(source?.kickoff_utc) ||
+          clean(source?.kickoffIso) ||
+          fixture?.kickoff_utc,
+        status: 'scheduled',
+        upstreamVerificationStatus:
+          fixture?.verification_status ?? null,
         observedAt
       });
     }
@@ -124,7 +129,9 @@ function supplementObservations(supplement, observedAt) {
 
 const nowMs = Date.now();
 const observedAt = new Date(nowMs).toISOString();
-const targetDate = clean(process.env.CFI_TARGET_DATE) || localDate(nowMs, TIME_ZONE);
+const targetDate =
+  clean(process.env.CFI_TARGET_DATE) ||
+  localDate(nowMs, TIME_ZONE);
 
 if (!Number.isFinite(HORIZON_MINUTES) || HORIZON_MINUTES <= 0) {
   throw new Error('CFI_ROLLING_HORIZON_MINUTES_INVALID');
@@ -165,6 +172,7 @@ const audit = {
   generatedAt: observedAt,
   status:
     registry.coverage.kickoffConflicts > 0 ||
+    registry.coverage.upstreamFailClosed > 0 ||
     registry.coverage.terminalObserved > 0
       ? 'PASS_WITH_FAIL_CLOSED_ITEMS'
       : 'PASS',
@@ -183,6 +191,7 @@ const audit = {
     pcNodeIsGatekeeper: false,
     sourceFailureDeletesFixture: false,
     conflictPolicy: 'FAIL_CLOSED',
+    upstreamFailClosedPropagates: true,
     automaticKickoffCorrection: false,
     decisionUse: false,
     bigDbWriteAllowed: false,
@@ -196,18 +205,18 @@ await Promise.all([
   saveJson(FILES.audit, audit)
 ]);
 
-console.log(
-  JSON.stringify({
-    status: audit.status,
-    contract: audit.contract,
-    targetDate,
-    registryFixtures: registry.coverage.registryFixtures,
-    seenInCurrentCycle: registry.coverage.seenInCurrentCycle,
-    rescuedWithoutPcNode: registry.coverage.rescuedWithoutPcNode,
-    rollingSelected: rolling.metrics.selected,
-    conflictsExcluded: rolling.metrics.conflictsExcluded,
-    decisionUse: false,
-    bigDbWriteAllowed: false,
-    bigDbWriteAttempted: false
-  })
-);
+console.log(JSON.stringify({
+  status: audit.status,
+  contract: audit.contract,
+  targetDate,
+  registryFixtures: registry.coverage.registryFixtures,
+  seenInCurrentCycle: registry.coverage.seenInCurrentCycle,
+  rescuedWithoutPcNode: registry.coverage.rescuedWithoutPcNode,
+  upstreamFailClosed: registry.coverage.upstreamFailClosed,
+  rollingSelected: rolling.metrics.selected,
+  conflictsExcluded: rolling.metrics.conflictsExcluded,
+  upstreamFailClosedExcluded: rolling.metrics.upstreamFailClosedExcluded,
+  decisionUse: false,
+  bigDbWriteAllowed: false,
+  bigDbWriteAttempted: false
+}));
