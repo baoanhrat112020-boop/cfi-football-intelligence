@@ -29,6 +29,7 @@
     "cfi:registry": "node local-node/registry/daily-fixture-registry.mjs",
     "cfi:orchestrator": "node local-node/orchestrator.mjs",
     "cfi:orchestrator:once": "node local-node/orchestrator.mjs --once",
+    "cfi:auto-e2e": "node --experimental-strip-types tools/cfi-daily-fixture-auto-e2e.mjs",
     "cfi:audit": "node tools/cfi-audit.mjs",
     "cfi:audit:full": "node tools/cfi-audit.mjs --full"
   },
