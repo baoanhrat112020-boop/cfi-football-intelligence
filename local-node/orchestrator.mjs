@@ -2,11 +2,9 @@ import { spawn } from 'node:child_process';
 
 const ONCE = process.argv.includes('--once');
 const rawInterval = Number(process.env.CFI_ORCHESTRATOR_INTERVAL_MINUTES ?? 15);
-const INTERVAL_MINUTES =
-  Number.isFinite(rawInterval) && rawInterval >= 1
-    ? rawInterval
-    : 15;
+const INTERVAL_MINUTES = Number.isFinite(rawInterval) && rawInterval >= 1 ? rawInterval : 15;
 const INTERVAL_MS = INTERVAL_MINUTES * 60_000;
+const TIER_A_SUPPLEMENT = 'local-node/cache/registry/tier-a-browser-discovery.json';
 
 let stopping = false;
 
@@ -17,16 +15,11 @@ function iso() {
 function runNode(label, script, args = [], envPatch = {}) {
   return new Promise((resolve, reject) => {
     console.log(`[${iso()}] ORCHESTRATOR START ${label}`);
-
     const child = spawn(process.execPath, [script, ...args], {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-        ...envPatch
-      },
+      env: { ...process.env, ...envPatch },
       stdio: 'inherit'
     });
-
     child.on('error', reject);
     child.on('exit', code => {
       if (code === 0) {
@@ -34,15 +27,14 @@ function runNode(label, script, args = [], envPatch = {}) {
         resolve({ label, ok: true, error: null });
         return;
       }
-
       reject(new Error(`${label}_FAILED_EXIT_${code}`));
     });
   });
 }
 
-async function isolatedSource(label, script, args = []) {
+async function isolatedSource(label, script, args = [], envPatch = {}) {
   try {
-    await runNode(label, script, args);
+    await runNode(label, script, args, envPatch);
     return { label, ok: true, error: null };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -54,84 +46,67 @@ async function isolatedSource(label, script, args = []) {
 async function runCycle() {
   const startedAt = iso();
 
-  const [pcNode, publicDiscovery, webSearchRescue] = await Promise.all([
-    isolatedSource(
-      'PC_NODE_DISCOVERY_CYCLE',
-      'local-node/index.mjs',
-      ['--once']
-    ),
-    isolatedSource(
-      'PUBLIC_DISCOVERY',
-      'local-node/registry/public-discovery.mjs'
-    ),
-    isolatedSource(
-      'WEB_SEARCH_RESCUE_INGEST',
-      'local-node/registry/web-search-rescue.mjs'
-    )
+  const [pcNode, tierABrowser, publicDiscovery, webSearchRescue] = await Promise.all([
+    isolatedSource('PC_NODE_DISCOVERY_CYCLE', 'local-node/index.mjs', ['--once']),
+    isolatedSource('TIER_A_BROWSER_DISCOVERY', 'local-node/registry/tier-a-browser-discovery.mjs'),
+    isolatedSource('PUBLIC_DISCOVERY', 'local-node/registry/public-discovery.mjs'),
+    isolatedSource('WEB_SEARCH_RESCUE_INGEST', 'local-node/registry/web-search-rescue.mjs')
   ]);
 
-  const sourceStates = [pcNode, publicDiscovery, webSearchRescue];
+  const sourceStates = [pcNode, tierABrowser, publicDiscovery, webSearchRescue];
   const sourceFailures = sourceStates.filter(source => !source.ok);
 
   try {
+    const registryEnv = {
+      ...(pcNode.ok ? {} : { CFI_REGISTRY_SKIP_PC_INPUT: '1' }),
+      ...(tierABrowser.ok ? { CFI_DISCOVERY_SUPPLEMENT_FILE: TIER_A_SUPPLEMENT } : {})
+    };
+
     await runNode(
       'DAILY_FIXTURE_REGISTRY',
       'local-node/registry/daily-fixture-registry.mjs',
       [],
-      pcNode.ok
-        ? {}
-        : { CFI_REGISTRY_SKIP_PC_INPUT: '1' }
+      registryEnv
     );
 
-    const status = sourceFailures.length === 0
-      ? 'PASS'
-      : 'PASS_WITH_SOURCE_FAILURES';
+    const status = sourceFailures.length === 0 ? 'PASS' : 'PASS_WITH_SOURCE_FAILURES';
 
     console.log(JSON.stringify({
-      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V2',
+      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V3',
       status,
       startedAt,
       completedAt: iso(),
       intervalMinutes: INTERVAL_MINUTES,
-      rollingHorizonMinutes: Number(
-        process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90
-      ),
-      sources: {
-        pcNode,
-        publicDiscovery,
-        webSearchRescue
-      },
+      rollingHorizonMinutes: Number(process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90),
+      sources: { pcNode, tierABrowser, publicDiscovery, webSearchRescue },
       sourceFailures,
       pcNodeIsGatekeeper: false,
+      tierABrowserIsGatekeeper: false,
       publicDiscoveryIsGatekeeper: false,
       webSearchRescueIsGatekeeper: false,
+      tierABrowserSupplementInjected: tierABrowser.ok,
       registryStillRunsWithSourceFailures: true,
       decisionUse: false,
       bigDbWriteAllowed: false
     }));
-
     return true;
   } catch (error) {
     console.error(JSON.stringify({
-      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V2',
+      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V3',
       status: 'FAIL_REGISTRY',
       startedAt,
       completedAt: iso(),
-      sources: {
-        pcNode,
-        publicDiscovery,
-        webSearchRescue
-      },
+      sources: { pcNode, tierABrowser, publicDiscovery, webSearchRescue },
       sourceFailures,
       error: error instanceof Error ? error.message : String(error),
       note: 'Existing daily registry remains on disk; failed cycles never delete prior fixtures.',
       pcNodeIsGatekeeper: false,
+      tierABrowserIsGatekeeper: false,
       publicDiscoveryIsGatekeeper: false,
       webSearchRescueIsGatekeeper: false,
       decisionUse: false,
       bigDbWriteAllowed: false
     }));
-
     return false;
   }
 }
@@ -141,9 +116,7 @@ function sleep(ms) {
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
-    stopping = true;
-  });
+  process.on(signal, () => { stopping = true; });
 }
 
 if (ONCE) {
