@@ -76,14 +76,17 @@ await import("./src/cfi-result-recovery-worker.mjs");
   if (-not (($Smoke -join "`n") -match 'CFI RESULT RECOVERY DONE')) { throw 'DIRECT_SMOKE_MISSING_DONE_MARKER' }
   Write-Step 'DIRECT_SMOKE=PASS'
 
-  & schtasks.exe /Delete /TN $LegacyTaskName /F *> $null
-  & schtasks.exe /Delete /TN $TaskName /F *> $null
+  Unregister-ScheduledTask -TaskName $LegacyTaskName -Confirm:$false -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
   $StartBoundary = (Get-Date).AddMinutes(1).ToString('yyyy-MM-ddTHH:mm:ss')
   $CmdExe = Join-Path $env:SystemRoot 'System32\cmd.exe'
+  $UserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  if (-not $UserSid) { throw 'CURRENT_USER_SID_UNAVAILABLE' }
   $EscRoot = [Security.SecurityElement]::Escape($NodeRoot)
   $EscCmd = [Security.SecurityElement]::Escape($CmdExe)
   $EscArgs = [Security.SecurityElement]::Escape('/d /s /c "' + $CmdWrapper + '"')
+  $EscUserSid = [Security.SecurityElement]::Escape($UserSid)
 
   $Xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
@@ -104,6 +107,7 @@ await import("./src/cfi-result-recovery-worker.mjs");
   </Triggers>
   <Principals>
     <Principal id="Author">
+      <UserId>$EscUserSid</UserId>
       <LogonType>InteractiveToken</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>
