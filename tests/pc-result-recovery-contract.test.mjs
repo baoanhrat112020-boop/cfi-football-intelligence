@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const migration = await readFile(new URL('../supabase/migrations/20260904091500_add_pc_result_recovery_queue.sql', import.meta.url), 'utf8');
 const edge = await readFile(new URL('../supabase/functions/cfi-pc-result-recovery/index.ts', import.meta.url), 'utf8');
 const worker = await readFile(new URL('../pc-node/cfi-result-recovery-worker.mjs', import.meta.url), 'utf8');
+const installer = await readFile(new URL('../pc-node/install-result-recovery-task.ps1', import.meta.url), 'utf8');
 
 test('PC result recovery queues only strict selected historical pending snapshots', () => {
   assert.match(migration, /selected_for_match_audit=true/);
@@ -27,6 +28,15 @@ test('PC result recovery API is node-authenticated and re-verifies submissions b
   assert.match(edge, /cfi_settle_prediction_snapshots/);
 });
 
+test('PC result recovery uses the real prediction history settlement columns', () => {
+  assert.doesNotMatch(edge, /actual_ht_score/);
+  assert.doesNotMatch(edge, /actual_ft_score/);
+  assert.match(edge, /actual_ht_home/);
+  assert.match(edge, /actual_ht_away/);
+  assert.match(edge, /actual_ft_home/);
+  assert.match(edge, /actual_ft_away/);
+});
+
 test('post-match worker is separate from prematch urgent bridge and requires consensus', () => {
   assert.doesNotMatch(worker, /URGENT_FIXTURE_(PULL|QUEUE|ACK)/);
   assert.match(worker, /action:\"SUBMIT\"/);
@@ -36,4 +46,15 @@ test('post-match worker is separate from prematch urgent bridge and requires con
   assert.match(worker, /FOTMOB/);
   assert.match(worker, /SOFASCORE/);
   assert.match(worker, /kickoffClose/);
+});
+
+test('R4 installer is one-shot, config-backed, quote-safe and self-verifying', () => {
+  assert.match(installer, /CFI-PC-NODE-R4-RESULT-RECOVERY/);
+  assert.match(installer, /D:\\CFI\\PC-Node/);
+  assert.match(installer, /AUTH_SOURCE=config\.json/);
+  assert.match(installer, /DIRECT_SMOKE=PASS/);
+  assert.match(installer, /\/XML \$TaskXml/);
+  assert.match(installer, /TASK_VERIFY=PASS/);
+  assert.match(installer, /FIX_RESULT=PASS/);
+  assert.match(installer, /MAIN_RUNNER_MUTATED=FALSE/);
 });
