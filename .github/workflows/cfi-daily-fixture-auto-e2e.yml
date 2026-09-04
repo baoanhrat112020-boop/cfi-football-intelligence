@@ -42,6 +42,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Syntax check Tier A browser orchestration
+        run: |
+          node --check local-node/browser/fixture-collector/probe.mjs
+          node --check local-node/browser/fixture-collector/daily-text-parser.mjs
+          node --check local-node/browser/fixture-collector/run-daily-source-adapter.mjs
+          node --check local-node/registry/tier-a-browser-discovery.mjs
+          node --check local-node/registry/daily-fixture-registry.mjs
+          node --check local-node/orchestrator.mjs
+
       - name: Deterministic registry, source-policy and Tier A parser contract tests
         run: >-
           node --experimental-strip-types --test
@@ -81,10 +90,11 @@ jobs:
           if (report.safety?.decisionUse !== false) throw new Error('DECISION_USE_NOT_FALSE');
           if (report.safety?.bigDbWriteAllowed !== false) throw new Error('BIGDB_WRITE_ALLOWED');
           if (report.safety?.productionScheduleActivated !== false) throw new Error('PRODUCTION_SCHEDULE_ACTIVATED');
-          if (report.deterministic?.cycle1?.matrix?.rescuedWithoutPcNode < 2) throw new Error('PC_MISS_RESCUE_NOT_PROVEN');
-          if (report.deterministic?.sourceFailureCycle?.matrix?.unionFixtures !== 3) throw new Error('SOURCE_FAILURE_RETENTION_NOT_PROVEN');
+          if (report.deterministic?.cycle1?.matrix?.rescuedByTierABrowser < 1) throw new Error('TIER_A_BROWSER_RESCUE_NOT_PROVEN');
+          if (report.deterministic?.cycle1?.matrix?.rescuedWithoutPcNode < 3) throw new Error('PC_MISS_RESCUE_NOT_PROVEN');
+          if (report.deterministic?.sourceFailureCycle?.matrix?.unionFixtures !== 4) throw new Error('SOURCE_FAILURE_RETENTION_NOT_PROVEN');
           if (report.deterministic?.conflictCycle?.verificationStatus !== 'CONFLICT_FAIL_CLOSED') throw new Error('CONFLICT_FAIL_CLOSED_NOT_PROVEN');
-          console.log(JSON.stringify({status:'PASS', safety:report.safety, livePublic:report.livePublic}));
+          console.log(JSON.stringify({status:'PASS', safety:report.safety, deterministic:report.deterministic, livePublic:report.livePublic}));
           NODE
 
       - name: Upload Auto E2E evidence
