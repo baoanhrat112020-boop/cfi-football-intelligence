@@ -12,16 +12,21 @@ test('selected settlement dispatcher rotates backlog every 20 minutes', async ()
   assert.match(src, /settlement_status[^\n]*PENDING/);
 });
 
-test('live calibration learner is settlement-only and terminal-aware', async () => {
+test('live calibration learner is settlement-only, terminal-aware and unique-fixture weighted', async () => {
   const src = await read('supabase/functions/cfi-calibration-learn/index.ts');
-  assert.match(src, /CFI_CAL_LEARNER_V3_2_TERMINAL_AWARE/);
+  assert.match(src, /CFI_CAL_LEARNER_V3_3_1_UNIQUE_FIXTURE_FIX/);
   assert.match(src, /SETTLED_PRODUCTION/);
-  assert.match(src, /NO_NEW_SELECTED_SETTLEMENTS/);
-  assert.match(src, /TERMINAL_AWARE_DAILY_AUDIT/);
-  assert.match(src, /TERMINAL_LEDGER_FALLBACK/);
+  assert.match(src, /cfi_prediction_fixture_identity_v1/);
+  assert.match(src, /fixture_identity_key/);
+  assert.match(src, /selected_representative_snapshot_id/);
+  assert.match(src, /NO_NEW_UNIQUE_FIXTURE_SETTLEMENTS/);
+  assert.match(src, /UNIQUE_FIXTURE_DAILY_AUDIT/);
   assert.match(src, /RECENT_SETTLEMENT_COVERAGE_INCOMPLETE/);
   assert.match(src, /partialLabelsBlockedFromPromotion:true/);
   assert.match(src, /terminalAwareCoverage:true/);
+  assert.match(src, /uniqueFixtureWeighting:true/);
+  assert.match(src, /rawSettledProductionSnapshots/);
+  assert.match(src, /dedupedSettledSnapshots/);
 });
 
 test('feedback-loop migration schedules settlement retry, daily audit and learner', async () => {
@@ -55,6 +60,31 @@ test('daily audit excludes terminal fixtures from effective pending denominator'
   assert.match(sql, /activePending/);
   assert.match(sql, /v_eligible := greatest\(v_selected-v_terminal,0\)/);
   assert.match(sql, /v_pending=0 and v_settled=v_eligible/);
+});
+
+test('verified alias identity groups only resolved canonical teams', async () => {
+  const sql = await read('supabase/migrations/20260904095843_add_verified_alias_fixture_identity_v1.sql');
+  assert.match(sql, /cfi_prediction_fixture_identity_v1/);
+  assert.match(sql, /security_invoker\s*=\s*true/i);
+  assert.match(sql, /cfi_resolve_team_name/);
+  assert.match(sql, /fixture_identity_key/);
+  assert.match(sql, /identity_resolved/);
+  assert.match(sql, /selected_snapshot_count_for_fixture/);
+  assert.match(sql, /selected_representative_snapshot_id/);
+  assert.match(sql, /SNAPSHOT\|/);
+});
+
+test('daily audit is unique-fixture aware while preserving snapshot lineage', async () => {
+  const sql = await read('supabase/migrations/20260904100012_make_prediction_audit_unique_fixture_aware.sql');
+  assert.match(sql, /auditUnit','UNIQUE_FIXTURE'/);
+  assert.match(sql, /cfi_prediction_fixture_identity_v1/);
+  assert.match(sql, /selected_representative_snapshot_id/);
+  assert.match(sql, /duplicateSelectedSnapshots/);
+  assert.match(sql, /rawSelectedSnapshots/);
+  assert.match(sql, /uniqueSelectedFixtures/);
+  assert.match(sql, /terminalExcluded/);
+  assert.match(sql, /activePending/);
+  assert.match(sql, /v_unique_pending=0 and v_unique_settled=v_unique_eligible/);
 });
 
 test('PC result recovery never reclaims immutable terminal fixtures', async () => {
