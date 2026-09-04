@@ -24,6 +24,8 @@
     "cfi:bigdb:dry-run": "node local-node/canonical/bigdb-dry-run.mjs",
     "cfi:node:once": "node local-node/index.mjs --once",
     "cfi:node:deep": "node local-node/index.mjs --once --deep",
+    "cfi:public-discovery": "node local-node/registry/public-discovery.mjs",
+    "cfi:web-rescue": "node local-node/registry/web-search-rescue.mjs",
     "cfi:registry": "node local-node/registry/daily-fixture-registry.mjs",
     "cfi:orchestrator": "node local-node/orchestrator.mjs",
     "cfi:orchestrator:once": "node local-node/orchestrator.mjs --once",
