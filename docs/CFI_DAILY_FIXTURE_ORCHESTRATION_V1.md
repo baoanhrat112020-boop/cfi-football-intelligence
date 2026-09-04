@@ -39,7 +39,7 @@ Registry identity is the exact/canonical home identity + exact/canonical away id
 
 Repeated identical observations are idempotent. Source failure or absence never deletes a previously seen fixture.
 
-If the same identity/date has more than one distinct kickoff, the entry becomes `CONFLICT_FAIL_CLOSED`. The registry does not average, prefer, or overwrite kickoff times.
+If the same identity/date has more than one distinct kickoff, the entry becomes `CONFLICT_FAIL_CLOSED`. The registry does not average, prefer, or overwrite kickoff times. Upstream canonical fail-closed states also propagate into the registry and rolling gate.
 
 ## Rolling horizon
 
@@ -51,27 +51,82 @@ The prediction horizon is rolling, not a rigid 90-minute block. Default horizon:
 
 Only future, non-conflicted fixtures enter the rolling prediction queue. A fixture can be rediscovered in multiple overlapping windows without creating a duplicate registry entry.
 
+## Phase 2 source model
+
+Three source classes are measured independently:
+
+1. `PC_NODE` — existing local Football-Data / Soccerway / Sofascore canonical path.
+2. `PUBLIC_DISCOVERY` — existing CFI public discovery path using Sofascore, TheSportsDB and ESPN fallbacks.
+3. `WEB_SEARCH_RESCUE` — externally discovered candidates that pass the existing GPT search-first validation contract.
+
+The three source runners are isolated. A failure in one does not prevent the registry from executing. The orchestrator reports `PASS_WITH_SOURCE_FAILURES` when one or more source stages fail but the registry still completes.
+
+### Public discovery
+
+`local-node/registry/public-discovery.mjs` executes the existing `discoverFixtures()` implementation and writes a shadow supplement snapshot. It requests the broadest currently supported pool (`minimumRows=100`) while retaining the existing provider implementation instead of creating a duplicate provider pipeline.
+
+### Web-search rescue
+
+`local-node/registry/web-search-rescue.mjs` reads candidate JSON and reuses `normalizeAiFixtureCandidates()`. A rescue candidate is rejected unless it has:
+
+- exact home and away labels;
+- provider ID;
+- valid kickoff;
+- HTTPS provenance;
+- valid discovery timestamp;
+- same target local date;
+- prematch/future status.
+
+Web search is therefore additive evidence, not an unaudited fixture injection path.
+
+### Snapshot freshness
+
+Public and web rescue snapshots have a default 30-minute TTL. Stale or future-dated snapshots are not re-ingested as current-cycle evidence. Previously registered fixtures remain in the daily registry, but they become `seenInCurrentCycle=false` until a source observes them again.
+
 ## Coverage telemetry
 
-The registry reports observable coverage metrics rather than claiming global fixture recall without an authoritative denominator:
+The registry reports observable coverage metrics rather than claiming global fixture recall without an authoritative denominator.
 
-- registry fixture count;
-- fixtures seen in the current cycle;
-- source observation counts;
-- multi-source vs single-source entries;
-- kickoff conflicts;
-- fixtures eligible for the rolling horizon;
-- fixtures rescued without PC-Node evidence.
+Phase 2 adds a three-source coverage matrix:
+
+- union fixtures;
+- PC-Node fixtures;
+- public-discovery fixtures;
+- web-search-rescue fixtures;
+- PC-only / public-only / web-only;
+- pairwise overlaps;
+- all-three overlap;
+- rescued without PC-Node;
+- rescued by public discovery;
+- rescued by web search.
 
 `rescuedWithoutPcNode` is specifically intended to prove that PC-Node is additive rather than a gatekeeper.
 
-## Phase 1 integration
+## Commands
 
-1. Implement source-agnostic registry/rolling-horizon core.
-2. Add contract tests for idempotency, source independence, conflict fail-closed, and overlapping 90-minute windows.
-3. Add a Local Node shadow stage after canonical merge that updates a local daily registry JSON and rolling-window JSON.
-4. Keep `bigDbWriteAllowed=false`, `bigDbWriteAttempted=false`, and `decisionUse=false`.
+- `npm run cfi:public-discovery`
+- `npm run cfi:web-rescue`
+- `npm run cfi:registry`
+- `npm run cfi:orchestrator:once`
+- `npm run cfi:orchestrator`
 
-## Phase 2 (after Phase 1 gates pass)
+## Safety state
 
-Wire cloud discovery/web-search observations into the same registry contract, add a discovery-coverage watchdog, then feed only rolling-window eligible fixtures to the existing CFI evidence/prediction path. Promotion to production requires explicit validation of fixture coverage, identity safety, conflict behavior, and no regression in existing discovery tests.
+All Phase 1/2 outputs remain:
+
+- `decisionUse=false`;
+- `bigDbWriteAllowed=false`;
+- `bigDbWriteAttempted=false`;
+- no production scheduler activation;
+- no prediction weight/calibration mutation.
+
+## Promotion gate
+
+Do not merge into an active production schedule until:
+
+1. deterministic CI is green;
+2. real current-day source coverage has been sampled;
+3. public/web rescue demonstrates recovered PC misses without identity leakage;
+4. kickoff conflict behavior is observed and remains fail-closed;
+5. source-failure cycles preserve prior registry state;
+6. a soak run shows stable duplicate/conflict/coverage counters.
