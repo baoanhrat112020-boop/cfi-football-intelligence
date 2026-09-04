@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'src/discovery/fixture-source-policy.mjs'
+      - 'src/discovery/fixture-verification.mjs'
       - 'local-node/browser/fixture-collector/**'
       - 'local-node/registry/tier-a-browser-discovery.mjs'
       - 'tools/cfi-tier-a-live-soak-report.mjs'
@@ -58,7 +59,7 @@ jobs:
         if: always()
         run: node tools/cfi-tier-a-live-soak-report.mjs
 
-      - name: Verify live soak remains shadow-only
+      - name: Verify live soak remains shadow-only and fixture-gated
         if: always()
         run: |
           node - <<'NODE'
@@ -69,11 +70,22 @@ jobs:
           if (report.safety?.decisionUse !== false) throw new Error('DECISION_USE_NOT_FALSE');
           if (report.safety?.bigDbWriteAllowed !== false) throw new Error('BIGDB_WRITE_ALLOWED');
           if (report.safety?.productionScheduleActivated !== false) throw new Error('PRODUCTION_SCHEDULE_ACTIVATED');
+          if (report.safety?.globalSourceCoverageDoesNotVerifyIndividualFixture !== true) {
+            throw new Error('GLOBAL_COVERAGE_FIXTURE_VERIFICATION_SEPARATION_MISSING');
+          }
+          const m = report.metrics ?? {};
+          if ((m.trustedRankingReadyFixtures ?? 0) > (m.multiSourceFixtures ?? 0)) {
+            throw new Error('TIER_A_RANKING_READY_EXCEEDS_MULTI_SOURCE_FIXTURES');
+          }
+          if ((m.singleSourceFixtures ?? 0) > 0 && (m.trustedDiscoveryOnlyFixtures ?? 0) === 0) {
+            throw new Error('SINGLE_SOURCE_FIXTURES_NOT_DISCOVERY_ONLY');
+          }
           console.log(JSON.stringify({
             status: report.status,
             metrics: report.metrics,
             providerRows: report.providerRows,
-            sourceHealth: report.sourceHealth,
+            globalSourceHealth: report.globalSourceHealth,
+            perFixtureVerification: report.perFixtureVerification,
             tierALiveExit: '${{ steps.tier_a_live.outputs.exit_code }}',
             chromiumInstallOutcome: '${{ steps.browser_install.outcome }}'
           }));
