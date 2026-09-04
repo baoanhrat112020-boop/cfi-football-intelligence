@@ -73,7 +73,7 @@ const status = input.readError
           : 'PASS_EMPTY';
 
 const audit = {
-  contract: 'CFI_WEB_SEARCH_RESCUE_AUDIT_V1',
+  contract: 'CFI_WEB_SEARCH_RESCUE_AUDIT_V2',
   generatedAt,
   status,
   targetDate,
@@ -87,10 +87,13 @@ const audit = {
     acc[reason] = (acc[reason] ?? 0) + 1;
     return acc;
   }, {}),
+  sourceHealth: supplement.sourceHealth,
   error: input.readError ?? null,
   policy: supplement.policy,
   safety: {
     webSearchCanRescuePcMisses: true,
+    prioritySourcePolicyEnforced: true,
+    espnCanSatisfyCoverageReadiness: false,
     httpsProvenanceRequired: true,
     sourceFailureDeletesFixture: false,
     decisionUse: false,
@@ -110,6 +113,7 @@ console.log(JSON.stringify({
   targetDate,
   accepted: audit.accepted,
   rejected: audit.rejected,
+  sourceHealth: audit.sourceHealth,
   decisionUse: false,
   bigDbWriteAllowed: false
 }));
