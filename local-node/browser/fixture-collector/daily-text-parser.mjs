@@ -47,6 +47,12 @@ function isNoise(value) {
 
 function cleanTeam(value) {
   return clean(value)
+    .replace(/^\s*-\s*\[[^\]]*\d[^\]]*\]\s*/, '')
+    .replace(/^\s*\[[^\]]*\d[^\]]*\]\s*/, '')
+    .replace(/\s*\[[^\]]*\d[^\]]*\]\s*-\s*$/, '')
+    .replace(/\s*\[[^\]]*\d[^\]]*\]\s*$/, '')
+    .replace(/^\s*-\s*/, '')
+    .replace(/\s*-\s*$/, '')
     .replace(/\s+(?:Live|Prediction|H2H|Odds)\s*$/i, '')
     .trim();
 }
