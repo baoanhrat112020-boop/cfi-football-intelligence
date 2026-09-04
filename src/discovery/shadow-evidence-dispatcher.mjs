@@ -134,6 +134,9 @@ function baseReceipt(request) {
     away: request?.away ?? null,
     targetDate: request?.targetDate ?? null,
     kickoffIso: request?.kickoffIso ?? null,
+    trustedLiveProviders: Array.isArray(request?.trustedLiveProviders)
+      ? [...request.trustedLiveProviders]
+      : [],
     rankingInputEligibleAtDispatch:
       request?.routing?.rankingInputEligible === true,
     bigDb: {
@@ -169,11 +172,14 @@ export function buildWebCrosscheckRequest(request, bigDbReceipt = null) {
     requestId: request?.requestId ?? null,
     identityKey: request?.identityKey ?? null,
     lane: request?.lane ?? null,
-    home: request?.bigDb?.request?.body?.home ?? null,
-    away: request?.bigDb?.request?.body?.away ?? null,
-    targetDate: request?.bigDb?.request?.body?.target_date ?? null,
+    home: request?.home ?? request?.bigDb?.request?.body?.home ?? null,
+    away: request?.away ?? request?.bigDb?.request?.body?.away ?? null,
+    targetDate: request?.targetDate ?? request?.bigDb?.request?.body?.target_date ?? null,
     kickoffIso: request?.kickoffIso ?? null,
     shouldRequest,
+    trustedLiveProvidersAlreadyObserved: Array.isArray(request?.trustedLiveProviders)
+      ? [...request.trustedLiveProviders]
+      : [],
     trustedSourcePriority: Array.isArray(web?.trustedSourcePriority)
       ? [...web.trustedSourcePriority]
       : [],
@@ -205,9 +211,9 @@ export function finalizeEvidenceReceipt(request, bigDbReceipt, webState = null) 
     Boolean(receipt.bigDb?.identity?.homeTeamId) &&
     Boolean(receipt.bigDb?.identity?.awayTeamId);
   const crosscheckLane = request?.lane === 'CROSSCHECK_REQUIRED_QUEUE';
-  const hasTrustedLiveProvider = Array.isArray(request?.web?.trustedSourcePriority)
-    ? true
-    : false;
+  const hasTrustedLiveProvider =
+    Array.isArray(request?.trustedLiveProviders) &&
+    request.trustedLiveProviders.length > 0;
 
   if (crosscheckLane && canonicalResolved && hasTrustedLiveProvider) {
     receipt.eligibleForNextCycleReverification = true;
@@ -247,17 +253,20 @@ export function buildNextCycleReverificationCandidates(receipts, requests, {
       provider: 'CFI_BIGDB_RETRIEVAL',
       providerId: receipt.requestId,
       sourceUrl: null,
-      home: identity.homeCanonical || request?.bigDb?.request?.body?.home || null,
-      away: identity.awayCanonical || request?.bigDb?.request?.body?.away || null,
+      home: identity.homeCanonical || request?.home || request?.bigDb?.request?.body?.home || null,
+      away: identity.awayCanonical || request?.away || request?.bigDb?.request?.body?.away || null,
       canonicalHomeId: identity.homeTeamId,
       canonicalAwayId: identity.awayTeamId,
-      targetDate: request?.bigDb?.request?.body?.target_date ?? null,
+      targetDate: request?.targetDate ?? request?.bigDb?.request?.body?.target_date ?? null,
       kickoffIso: request?.kickoffIso ?? null,
       status: 'scheduled',
       upstreamVerificationStatus: 'BIGDB_CANONICAL_IDENTITY_RESOLVED',
       observedAt: generatedAt,
       sourceCycleId,
       reverifyOnly: true,
+      trustedLiveProvidersAtDispatch: Array.isArray(request?.trustedLiveProviders)
+        ? [...request.trustedLiveProviders]
+        : [],
       decisionUse: false,
       bigDbWriteAllowed: false
     });
