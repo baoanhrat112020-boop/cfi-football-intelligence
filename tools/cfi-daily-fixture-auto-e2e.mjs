@@ -72,6 +72,17 @@ async function runDeterministicResilience(targetDate) {
     observedAt
   });
 
+  const tierA = row({
+    sourceClass: 'TIER_A_BROWSER_DISCOVERY',
+    provider: 'AISCORE',
+    providerId: 'tier-a-1',
+    home: 'E2E Tier A Rescue U19',
+    away: 'E2E Tier A Rescue Away U19',
+    kickoffIso: isoLocal(targetDate, '12:45'),
+    observedAt,
+    sourceUrl: 'https://www.aiscore.com/e2e/tier-a-1'
+  });
+
   const pub = row({
     sourceClass: 'PUBLIC_DISCOVERY',
     provider: 'E2E_PUBLIC',
@@ -106,6 +117,7 @@ async function runDeterministicResilience(targetDate) {
 
   const cycle1 = mergeDailyFixtureRegistry(null, [
     pc,
+    tierA,
     pub,
     ...webSupplement.rows
   ], {
@@ -116,17 +128,19 @@ async function runDeterministicResilience(targetDate) {
   });
 
   const matrix1 = buildRegistryCoverageMatrix(cycle1);
-  must(matrix1.unionFixtures === 3, 'CYCLE1_UNION_EXPECTED_3', matrix1);
+  must(matrix1.unionFixtures === 4, 'CYCLE1_UNION_EXPECTED_4', matrix1);
   must(matrix1.pcNodeFixtures === 1, 'CYCLE1_PC_EXPECTED_1', matrix1);
+  must(matrix1.tierABrowserFixtures === 1, 'CYCLE1_TIER_A_BROWSER_EXPECTED_1', matrix1);
   must(matrix1.publicDiscoveryFixtures === 1, 'CYCLE1_PUBLIC_EXPECTED_1', matrix1);
   must(matrix1.webSearchRescueFixtures === 1, 'CYCLE1_WEB_EXPECTED_1', matrix1);
-  must(matrix1.rescuedWithoutPcNode === 2, 'CYCLE1_PC_MISS_RESCUE_EXPECTED_2', matrix1);
+  must(matrix1.rescuedWithoutPcNode === 3, 'CYCLE1_PC_MISS_RESCUE_EXPECTED_3', matrix1);
+  must(matrix1.rescuedByTierABrowser === 1, 'CYCLE1_TIER_A_RESCUE_EXPECTED_1', matrix1);
 
   const rolling1 = selectRollingFixtureWindow(cycle1, {
     nowMs,
     horizonMinutes: 90
   });
-  must(rolling1.metrics.selected === 3, 'ROLLING_CYCLE1_EXPECTED_3', rolling1.metrics);
+  must(rolling1.metrics.selected === 4, 'ROLLING_CYCLE1_EXPECTED_4', rolling1.metrics);
 
   const cycle2 = mergeDailyFixtureRegistry(cycle1, [], {
     targetDate,
@@ -135,15 +149,15 @@ async function runDeterministicResilience(targetDate) {
     pcSourceClass: 'PC_NODE'
   });
   const matrix2 = buildRegistryCoverageMatrix(cycle2);
-  must(matrix2.unionFixtures === 3, 'SOURCE_FAILURE_DELETED_FIXTURES', matrix2);
+  must(matrix2.unionFixtures === 4, 'SOURCE_FAILURE_DELETED_FIXTURES', matrix2);
   must(cycle2.coverage.seenInCurrentCycle === 0, 'SOURCE_FAILURE_SEEN_CURRENT_SHOULD_BE_0');
-  must(cycle2.coverage.notSeenInCurrentCycle === 3, 'SOURCE_FAILURE_PRIOR_FIXTURE_COUNT_EXPECTED_3');
+  must(cycle2.coverage.notSeenInCurrentCycle === 4, 'SOURCE_FAILURE_PRIOR_FIXTURE_COUNT_EXPECTED_4');
 
   const rolling2 = selectRollingFixtureWindow(cycle2, {
     nowMs: nowMs + 5 * 60_000,
     horizonMinutes: 90
   });
-  must(rolling2.metrics.refreshRequired === 3, 'SOURCE_FAILURE_REFRESH_REQUIRED_EXPECTED_3');
+  must(rolling2.metrics.refreshRequired === 4, 'SOURCE_FAILURE_REFRESH_REQUIRED_EXPECTED_4');
 
   const conflictObservation = row({
     sourceClass: 'WEB_SEARCH_RESCUE',
@@ -276,7 +290,7 @@ async function main() {
     deterministic = await runDeterministicResilience(targetDate);
   } catch (error) {
     const report = {
-      contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V2',
+      contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V3',
       status: 'FAIL',
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -299,7 +313,7 @@ async function main() {
 
   const livePublic = await runLivePublicSmoke();
   const report = {
-    contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V2',
+    contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V3',
     status: 'PASS',
     startedAt,
     finishedAt: new Date().toISOString(),
@@ -320,6 +334,7 @@ async function main() {
     `- Status: ${report.status}\n` +
     `- Target date: ${targetDate}\n` +
     `- Deterministic resilience: ${deterministic.status}\n` +
+    `- Tier A browser rescued fixtures: ${deterministic.cycle1.matrix.rescuedByTierABrowser}\n` +
     `- PC-miss rescued fixtures (synthetic contract E2E): ${deterministic.cycle1.matrix.rescuedWithoutPcNode}\n` +
     `- Source-outage retained fixtures: ${deterministic.sourceFailureCycle.matrix.unionFixtures}\n` +
     `- Kickoff conflict status: ${deterministic.conflictCycle.verificationStatus}\n` +
@@ -331,7 +346,7 @@ async function main() {
     `- decisionUse: false\n` +
     `- bigDbWriteAllowed: false\n` +
     `- Production schedule activated: false\n\n` +
-    `Live public-provider failure is non-blocking because third-party outages are an expected resilience scenario. Fallback-only ESPN/TheSportsDB rows do not satisfy ranking coverage readiness. Deterministic registry integrity failures are blocking.\n`;
+    `Live public-provider failure is non-blocking because third-party outages are an expected resilience scenario. Tier A browser discovery is additive and cannot become a PC-Node gate. Fallback-only ESPN/TheSportsDB rows do not satisfy ranking coverage readiness. Deterministic registry integrity failures are blocking.\n`;
 
   await Promise.all([
     writeFile(REPORT_JSON, JSON.stringify(report, null, 2), 'utf8'),
@@ -343,6 +358,7 @@ async function main() {
     status: report.status,
     targetDate,
     deterministic: deterministic.status,
+    tierABrowserRescued: deterministic.cycle1.matrix.rescuedByTierABrowser,
     rescuedWithoutPcNode: deterministic.cycle1.matrix.rescuedWithoutPcNode,
     retainedAfterSourceFailure: deterministic.sourceFailureCycle.matrix.unionFixtures,
     conflictStatus: deterministic.conflictCycle.verificationStatus,
