@@ -14,13 +14,16 @@ function iso() {
   return new Date().toISOString();
 }
 
-function runNode(label, script, args = []) {
+function runNode(label, script, args = [], envPatch = {}) {
   return new Promise((resolve, reject) => {
     console.log(`[${iso()}] ORCHESTRATOR START ${label}`);
 
     const child = spawn(process.execPath, [script, ...args], {
       cwd: process.cwd(),
-      env: process.env,
+      env: {
+        ...process.env,
+        ...envPatch
+      },
       stdio: 'inherit'
     });
 
@@ -39,6 +42,8 @@ function runNode(label, script, args = []) {
 
 async function runCycle() {
   const startedAt = iso();
+  let pcNodeOk = true;
+  let pcNodeError = null;
 
   try {
     await runNode(
@@ -46,22 +51,43 @@ async function runCycle() {
       'local-node/index.mjs',
       ['--once']
     );
+  } catch (error) {
+    pcNodeOk = false;
+    pcNodeError = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[${iso()}] ORCHESTRATOR PC_NODE DEGRADED | ${pcNodeError}`
+    );
+  }
 
+  try {
     await runNode(
       'DAILY_FIXTURE_REGISTRY',
-      'local-node/registry/daily-fixture-registry.mjs'
+      'local-node/registry/daily-fixture-registry.mjs',
+      [],
+      pcNodeOk
+        ? {}
+        : { CFI_REGISTRY_SKIP_PC_INPUT: '1' }
     );
+
+    const status = pcNodeOk
+      ? 'PASS'
+      : 'PASS_WITH_PC_NODE_FAILURE';
 
     console.log(JSON.stringify({
       contract: 'CFI_DISCOVERY_ORCHESTRATOR_V1',
-      status: 'PASS',
+      status,
       startedAt,
       completedAt: iso(),
       intervalMinutes: INTERVAL_MINUTES,
       rollingHorizonMinutes: Number(
         process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90
       ),
+      pcNode: {
+        ok: pcNodeOk,
+        error: pcNodeError
+      },
       pcNodeIsGatekeeper: false,
+      registryStillRunsWithoutPcNode: true,
       decisionUse: false,
       bigDbWriteAllowed: false
     }));
@@ -73,8 +99,12 @@ async function runCycle() {
       status: 'FAIL',
       startedAt,
       completedAt: iso(),
+      pcNode: {
+        ok: pcNodeOk,
+        error: pcNodeError
+      },
       error: error instanceof Error ? error.message : String(error),
-      note: 'Existing daily registry is retained; failed discovery cycles do not delete prior fixtures.',
+      note: 'Existing daily registry remains on disk; failed cycles never delete prior fixtures.',
       pcNodeIsGatekeeper: false,
       decisionUse: false,
       bigDbWriteAllowed: false
