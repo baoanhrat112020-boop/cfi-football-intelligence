@@ -9,6 +9,7 @@ const TIME_ZONE = process.env.CFI_TIME_ZONE || 'Asia/Ho_Chi_Minh';
 const HORIZON_MINUTES = Number(
   process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90
 );
+const SKIP_PC_INPUT = process.env.CFI_REGISTRY_SKIP_PC_INPUT === '1';
 
 const FILES = {
   canonical: resolve('local-node/cache/canonical/prospective-fixtures.json'),
@@ -138,16 +139,21 @@ if (!Number.isFinite(HORIZON_MINUTES) || HORIZON_MINUTES <= 0) {
 }
 
 const [canonical, previousRegistry, supplement] = await Promise.all([
-  readJson(FILES.canonical),
+  SKIP_PC_INPUT ? Promise.resolve(null) : readJson(FILES.canonical),
   readJson(FILES.registry),
   readJson(FILES.supplement)
 ]);
 
-if (!canonical || !Array.isArray(canonical?.fixtures)) {
+if (
+  !SKIP_PC_INPUT &&
+  (!canonical || !Array.isArray(canonical?.fixtures))
+) {
   throw new Error('CANONICAL_PROSPECTIVE_FIXTURES_REQUIRED');
 }
 
-const pcRows = canonicalObservations(canonical, observedAt);
+const pcRows = SKIP_PC_INPUT
+  ? []
+  : canonicalObservations(canonical, observedAt);
 const supplementalRows = supplementObservations(supplement, observedAt);
 const allRows = [...pcRows, ...supplementalRows];
 
@@ -173,14 +179,18 @@ const audit = {
   status:
     registry.coverage.kickoffConflicts > 0 ||
     registry.coverage.upstreamFailClosed > 0 ||
-    registry.coverage.terminalObserved > 0
+    registry.coverage.terminalObserved > 0 ||
+    SKIP_PC_INPUT
       ? 'PASS_WITH_FAIL_CLOSED_ITEMS'
       : 'PASS',
   targetDate,
   timeZone: TIME_ZONE,
   horizonMinutes: HORIZON_MINUTES,
   input: {
-    canonicalFixtures: canonical.fixtures.length,
+    pcNodeSkipped: SKIP_PC_INPUT,
+    canonicalFixtures: Array.isArray(canonical?.fixtures)
+      ? canonical.fixtures.length
+      : 0,
     pcNodeObservations: pcRows.length,
     supplementalObservations: supplementalRows.length,
     supplementConfigured: Boolean(FILES.supplement)
@@ -189,6 +199,7 @@ const audit = {
   rolling: rolling.metrics,
   safety: {
     pcNodeIsGatekeeper: false,
+    registryRunsWithoutPcNode: true,
     sourceFailureDeletesFixture: false,
     conflictPolicy: 'FAIL_CLOSED',
     upstreamFailClosedPropagates: true,
@@ -209,6 +220,7 @@ console.log(JSON.stringify({
   status: audit.status,
   contract: audit.contract,
   targetDate,
+  pcNodeSkipped: SKIP_PC_INPUT,
   registryFixtures: registry.coverage.registryFixtures,
   seenInCurrentCycle: registry.coverage.seenInCurrentCycle,
   rescuedWithoutPcNode: registry.coverage.rescuedWithoutPcNode,
