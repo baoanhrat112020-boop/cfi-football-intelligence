@@ -1,15 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const VERSION="CFI_CAL_LEARNER_V3_2_TERMINAL_AWARE";
+const VERSION="CFI_CAL_LEARNER_V3_3_1_UNIQUE_FIXTURE_FIX";
 const SOURCE="SETTLED_PRODUCTION";
 const MARKETS=["3+ HT","7+ FT","Other HT","Other FT"] as const;
 const WEIGHTS=[0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1] as const;
-const COLS:any={
-  "3+ HT":["method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht"],
-  "7+ FT":["method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft"],
-  "Other HT":["method_a_other_ht","method_b_other_ht","final_other_ht"],
-  "Other FT":["method_a_other_ft","method_b_other_ft","final_other_ft"]
-};
+const COLS:any={"3+ HT":["method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht"],"7+ FT":["method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft"],"Other HT":["method_a_other_ht","method_b_other_ht","final_other_ht"],"Other FT":["method_a_other_ft","method_b_other_ft","final_other_ft"]};
 const json=(x:unknown,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{"content-type":"application/json"}});
 const clamp=(x:number)=>Math.max(0,Math.min(1,x));
 const localYmd=()=>{const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Ho_Chi_Minh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());const g=(t:string)=>p.find(x=>x.type===t)?.value;return `${g("year")}-${g("month")}-${g("day")}`;};
@@ -21,6 +16,7 @@ const add=(a:Acc,x:number)=>{a.sum+=x;a.n++;};
 const avg=(a:Acc)=>a.n?a.sum/a.n:null;
 const errText=(e:any)=>{try{return JSON.stringify({message:e?.message??null,code:e?.code??null,details:e?.details??null,hint:e?.hint??null,name:e?.name??null});}catch{return String(e);}};
 async function allRows(db:any,select:string){const out:any[]=[];for(let from=0;;from+=1000){const {data,error}=await db.from("cfi_prediction_history").select(select).eq("selected_for_match_audit",true).eq("settlement_status","SETTLED").order("created_at").range(from,from+999);if(error)throw error;out.push(...(data??[]));if((data??[]).length<1000)break;}return out;}
+async function allIdentityRows(db:any){const out:any[]=[];for(let from=0;;from+=1000){const {data,error}=await db.from("cfi_prediction_fixture_identity_v1").select("snapshot_id,fixture_identity_key,selected_representative_snapshot_id,selected_for_match_audit,identity_resolved,target_date,prediction_created_at").eq("selected_for_match_audit",true).order("target_date").order("prediction_created_at").range(from,from+999);if(error)throw error;out.push(...(data??[]));if((data??[]).length<1000)break;}return out;}
 
 Deno.serve(async(req)=>{
   if(req.method!=="POST")return json({status:"ERROR",error:"POST_REQUIRED"},405);
@@ -34,17 +30,17 @@ Deno.serve(async(req)=>{
   const force=body?.force===true;
   let stage="PREFLIGHT";
   try{
-    const [{count:settledCount,error:countError},{data:last,error:lastError}]=await Promise.all([
-      db.from("cfi_prediction_history").select("snapshot_id",{count:"exact",head:true}).eq("selected_for_match_audit",true).eq("settlement_status","SETTLED"),
-      db.from("cfi_calibration_runs").select("run_id,metrics,created_at").eq("source",SOURCE).order("created_at",{ascending:false}).limit(1).maybeSingle()
-    ]);
-    if(countError)throw countError;if(lastError)throw lastError;
-    const settled=settledCount??0,lastSettled=Number(last?.metrics?.settledProduction??-1);
-    if(!force&&last&&lastSettled===settled)return json({status:"SKIPPED",version:VERSION,reason:"NO_NEW_SELECTED_SETTLEMENTS",settledProduction:settled,lastRunAt:last.created_at});
+    const {data:last,error:lastError}=await db.from("cfi_calibration_runs").select("run_id,learner_version,metrics,created_at").eq("source",SOURCE).order("created_at",{ascending:false}).limit(1).maybeSingle();
+    if(lastError)throw lastError;
 
     stage="READ_SETTLED_HISTORY";
     const selectCols=["snapshot_id","target_date","engine_version","created_at","actual_markets","actual_ht_home","actual_ht_away","actual_ft_home","actual_ft_away","top3_ht","top3_ft","method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht","method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft","method_a_other_ht","method_b_other_ht","final_other_ht","method_a_other_ft","method_b_other_ft","final_other_ft"].join(",");
-    const rows=await allRows(db,selectCols);
+    const [rawRows,identityRows]=await Promise.all([allRows(db,selectCols),allIdentityRows(db)]);
+    const representativeIds=new Set(identityRows.filter((x:any)=>String(x.snapshot_id)===String(x.selected_representative_snapshot_id)).map((x:any)=>String(x.snapshot_id)));
+    const rows=rawRows.filter((r:any)=>representativeIds.has(String(r.snapshot_id)));
+    const rawSettledSnapshots=rawRows.length,settled=rows.length,dedupedSettledSnapshots=rawSettledSnapshots-settled;
+    const lastUnique=last?.learner_version===VERSION?Number(last?.metrics?.settledProduction??-1):-1;
+    if(!force&&last?.learner_version===VERSION&&lastUnique===settled)return json({status:"SKIPPED",version:VERSION,reason:"NO_NEW_UNIQUE_FIXTURE_SETTLEMENTS",settledProduction:settled,rawSettledSnapshots,lastRunAt:last.created_at});
 
     stage="COMPUTE_METRICS";
     const market:any={};for(const m of MARKETS)market[m]={baseline:acc(),methodA:acc(),methodB:acc(),weights:Object.fromEntries(WEIGHTS.map(w=>[String(w),acc()]))};
@@ -65,24 +61,18 @@ Deno.serve(async(req)=>{
     const today=localYmd(),yesterday=addDays(today,-1);
     const {data:audit,error:auditError}=await db.from("cfi_daily_prediction_audit_latest").select("selected_count,settled_count,pending_count,coverage,status,metrics").eq("target_date",yesterday).maybeSingle();
     if(auditError)throw auditError;
-    let coverageSummary:any;
-    if(audit){
-      const terminalExcluded=Number(audit?.metrics?.terminalExcluded??0),selected=Number(audit.selected_count??0),eligible=Math.max(0,selected-terminalExcluded),settledY=Number(audit.settled_count??0),pending=Number(audit.pending_count??0),coverage=Number(audit.coverage??(eligible?settledY/eligible:1));
-      coverageSummary={targetDate:yesterday,selected,eligible,settled:settledY,terminalExcluded,pending,coverage,requiredCoverage:.90,pass:(pending===0&&coverage>=.90),source:"TERMINAL_AWARE_DAILY_AUDIT"};
-    }else{
-      const {data:evalRows,error:evalError}=await db.from("cfi_prediction_evaluation").select("snapshot_id,settlement_status").eq("target_date",yesterday).eq("selected_for_match_audit",true);if(evalError)throw evalError;
-      const ids=(evalRows??[]).map((x:any)=>x.snapshot_id),{data:terms,error:termError}=ids.length?await db.from("cfi_prediction_terminal_resolutions").select("snapshot_id").in("snapshot_id",ids):{data:[],error:null};if(termError)throw termError;
-      const selected=(evalRows??[]).length,terminalExcluded=(terms??[]).length,eligible=Math.max(0,selected-terminalExcluded),settledY=(evalRows??[]).filter((x:any)=>x.settlement_status==="SETTLED").length,pending=Math.max(0,eligible-settledY),coverage=eligible?settledY/eligible:1;
-      coverageSummary={targetDate:yesterday,selected,eligible,settled:settledY,terminalExcluded,pending,coverage,requiredCoverage:.90,pass:(pending===0&&coverage>=.90),source:"TERMINAL_LEDGER_FALLBACK"};
-    }
+    if(!audit)throw new Error("UNIQUE_FIXTURE_DAILY_AUDIT_MISSING");
+    const terminalExcluded=Number(audit?.metrics?.terminalExcluded??0),selected=Number(audit.selected_count??0),eligible=Number(audit?.metrics?.effectiveEligible??Math.max(0,selected-terminalExcluded)),settledY=Number(audit.settled_count??0),pending=Number(audit.pending_count??0),coverage=Number(audit.coverage??(eligible?settledY/eligible:1)),rawSelectedSnapshots=Number(audit?.metrics?.rawSelectedSnapshots??selected);
+    const coverageSummary={targetDate:yesterday,auditUnit:String(audit?.metrics?.auditUnit??"UNIQUE_FIXTURE"),rawSelectedSnapshots,selected,eligible,settled:settledY,terminalExcluded,pending,coverage,requiredCoverage:.90,pass:(pending===0&&coverage>=.90),source:"UNIQUE_FIXTURE_DAILY_AUDIT"};
     const coverageGate=coverageSummary.pass===true;
     const avgImp=impSum/MARKETS.length,marketGate=minLive>=80&&avgImp>=0&&maxDeg<=.005,scoreGate=score.HT.n>=80&&score.FT.n>=80,promotion=marketGate&&scoreGate&&coverageGate;
     const reason=!coverageGate?"RECENT_SETTLEMENT_COVERAGE_INCOMPLETE":!marketGate?"LIVE_MARKET_GATE_FAILED":!scoreGate?"INSUFFICIENT_SETTLED_SCORELINE_PRODUCTION":"PROMOTION_GATE_PASSED";
 
     stage="WRITE_CALIBRATION_RUN";
     const engineVersion=engines.size===1?[...engines][0]:"CFI_PRODUCTION_MIXED";
-    const {data:run,error:runError}=await db.from("cfi_calibration_runs").insert({learner_version:VERSION,engine_version:engineVersion,source:SOURCE,strict_prior:true,fixture_count:settled,replay_count:0,metrics:{liveMarkets:metrics,liveScorelines:scorelines,settledProduction:settled,newSettlements:lastSettled<0?settled:settled-lastSettled,recentCoverage:coverageSummary,marketGate,scorelineGate:scoreGate,coverageGate,partialLabelsBlockedFromPromotion:true,terminalAwareCoverage:true},promotion_eligible:promotion,promotion_reason:reason}).select("run_id").single();
+    const newSettlements=lastUnique<0?settled:settled-lastUnique;
+    const {data:run,error:runError}=await db.from("cfi_calibration_runs").insert({learner_version:VERSION,engine_version:engineVersion,source:SOURCE,strict_prior:true,fixture_count:settled,replay_count:0,metrics:{auditUnit:"UNIQUE_FIXTURE",liveMarkets:metrics,liveScorelines:scorelines,settledProduction:settled,rawSettledProductionSnapshots:rawSettledSnapshots,dedupedSettledSnapshots,newSettlements,recentCoverage:coverageSummary,marketGate,scorelineGate:scoreGate,coverageGate,partialLabelsBlockedFromPromotion:true,terminalAwareCoverage:true,uniqueFixtureWeighting:true},promotion_eligible:promotion,promotion_reason:reason}).select("run_id").single();
     if(runError)throw runError;
-    return json({status:"COMPLETED",version:VERSION,source:SOURCE,strictPrior:true,settledProduction:settled,newSettlements:lastSettled<0?settled:settled-lastSettled,metrics:{liveMarkets:metrics,liveScorelines:scorelines},recentCoverage:coverageSummary,promotion:{eligible:promotion,reason,marketGate,scorelineGate:scoreGate,coverageGate},runId:run.run_id});
+    return json({status:"COMPLETED",version:VERSION,source:SOURCE,strictPrior:true,auditUnit:"UNIQUE_FIXTURE",settledProduction:settled,rawSettledSnapshots,dedupedSettledSnapshots,newSettlements,metrics:{liveMarkets:metrics,liveScorelines:scorelines},recentCoverage:coverageSummary,promotion:{eligible:promotion,reason,marketGate,scorelineGate:scoreGate,coverageGate},runId:run.run_id});
   }catch(e){return json({status:"ERROR",version:VERSION,error:"LEARNER_FAILED",stage,message:errText(e)},500);}
 });
