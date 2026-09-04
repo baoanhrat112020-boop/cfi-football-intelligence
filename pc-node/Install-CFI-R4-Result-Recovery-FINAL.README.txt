@@ -1,0 +1,13 @@
+CFI R4 RESULT RECOVERY FINAL
+
+Use: Install-CFI-R4-Result-Recovery-FINAL.cmd
+
+Properties:
+- Pure CMD installer
+- No PowerShell installer payload
+- No network downloads
+- Uses existing D:\CFI\PC-Node\cfi-result-recovery-launch.mjs
+- Uses existing D:\CFI\PC-Node\src\cfi-result-recovery-worker.mjs
+- Creates Scheduled Task: CFI-PC-NODE-R4-RESULT-RECOVERY
+- Cadence: every 5 minutes
+- Does not mutate main R4 runner
