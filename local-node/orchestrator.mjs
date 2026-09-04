@@ -4,7 +4,6 @@ const ONCE = process.argv.includes('--once');
 const rawInterval = Number(process.env.CFI_ORCHESTRATOR_INTERVAL_MINUTES ?? 15);
 const INTERVAL_MINUTES = Number.isFinite(rawInterval) && rawInterval >= 1 ? rawInterval : 15;
 const INTERVAL_MS = INTERVAL_MINUTES * 60_000;
-const TIER_A_SUPPLEMENT = 'local-node/cache/registry/tier-a-browser-discovery.json';
 
 let stopping = false;
 
@@ -57,16 +56,11 @@ async function runCycle() {
   const sourceFailures = sourceStates.filter(source => !source.ok);
 
   try {
-    const registryEnv = {
-      ...(pcNode.ok ? {} : { CFI_REGISTRY_SKIP_PC_INPUT: '1' }),
-      ...(tierABrowser.ok ? { CFI_DISCOVERY_SUPPLEMENT_FILE: TIER_A_SUPPLEMENT } : {})
-    };
-
     await runNode(
       'DAILY_FIXTURE_REGISTRY',
       'local-node/registry/daily-fixture-registry.mjs',
       [],
-      registryEnv
+      pcNode.ok ? {} : { CFI_REGISTRY_SKIP_PC_INPUT: '1' }
     );
 
     const status = sourceFailures.length === 0 ? 'PASS' : 'PASS_WITH_SOURCE_FAILURES';
@@ -84,7 +78,7 @@ async function runCycle() {
       tierABrowserIsGatekeeper: false,
       publicDiscoveryIsGatekeeper: false,
       webSearchRescueIsGatekeeper: false,
-      tierABrowserSupplementInjected: tierABrowser.ok,
+      tierABrowserHasDedicatedRegistryInput: true,
       registryStillRunsWithSourceFailures: true,
       decisionUse: false,
       bigDbWriteAllowed: false
