@@ -61,7 +61,7 @@ echo WRAPPER=PASS
 echo [4/5] CREATE_R4_TASK
 schtasks.exe /Delete /TN "%OLDTASK%" /F >nul 2>&1
 schtasks.exe /Delete /TN "%TASK%" /F >nul 2>&1
-schtasks.exe /Create /TN "%TASK%" /TR "%WRAP%" /SC MINUTE /MO 5 /RL HIGHEST /F
+schtasks.exe /Create /TN "%TASK%" /TR "cmd.exe /d /s /c %WRAP%" /SC MINUTE /MO 5 /RL HIGHEST /F
 if errorlevel 1 goto fail_create
 
 > "%LOG%" echo [CFI-R4-INSTALL] scheduled task verification start
