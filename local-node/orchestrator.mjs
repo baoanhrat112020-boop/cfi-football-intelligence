@@ -31,7 +31,7 @@ function runNode(label, script, args = [], envPatch = {}) {
     child.on('exit', code => {
       if (code === 0) {
         console.log(`[${iso()}] ORCHESTRATOR PASS ${label}`);
-        resolve();
+        resolve({ label, ok: true, error: null });
         return;
       }
 
@@ -40,41 +40,55 @@ function runNode(label, script, args = [], envPatch = {}) {
   });
 }
 
+async function isolatedSource(label, script, args = []) {
+  try {
+    await runNode(label, script, args);
+    return { label, ok: true, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[${iso()}] ORCHESTRATOR SOURCE DEGRADED ${label} | ${message}`);
+    return { label, ok: false, error: message };
+  }
+}
+
 async function runCycle() {
   const startedAt = iso();
-  let pcNodeOk = true;
-  let pcNodeError = null;
 
-  try {
-    await runNode(
+  const [pcNode, publicDiscovery, webSearchRescue] = await Promise.all([
+    isolatedSource(
       'PC_NODE_DISCOVERY_CYCLE',
       'local-node/index.mjs',
       ['--once']
-    );
-  } catch (error) {
-    pcNodeOk = false;
-    pcNodeError = error instanceof Error ? error.message : String(error);
-    console.error(
-      `[${iso()}] ORCHESTRATOR PC_NODE DEGRADED | ${pcNodeError}`
-    );
-  }
+    ),
+    isolatedSource(
+      'PUBLIC_DISCOVERY',
+      'local-node/registry/public-discovery.mjs'
+    ),
+    isolatedSource(
+      'WEB_SEARCH_RESCUE_INGEST',
+      'local-node/registry/web-search-rescue.mjs'
+    )
+  ]);
+
+  const sourceStates = [pcNode, publicDiscovery, webSearchRescue];
+  const sourceFailures = sourceStates.filter(source => !source.ok);
 
   try {
     await runNode(
       'DAILY_FIXTURE_REGISTRY',
       'local-node/registry/daily-fixture-registry.mjs',
       [],
-      pcNodeOk
+      pcNode.ok
         ? {}
         : { CFI_REGISTRY_SKIP_PC_INPUT: '1' }
     );
 
-    const status = pcNodeOk
+    const status = sourceFailures.length === 0
       ? 'PASS'
-      : 'PASS_WITH_PC_NODE_FAILURE';
+      : 'PASS_WITH_SOURCE_FAILURES';
 
     console.log(JSON.stringify({
-      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V1',
+      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V2',
       status,
       startedAt,
       completedAt: iso(),
@@ -82,12 +96,16 @@ async function runCycle() {
       rollingHorizonMinutes: Number(
         process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90
       ),
-      pcNode: {
-        ok: pcNodeOk,
-        error: pcNodeError
+      sources: {
+        pcNode,
+        publicDiscovery,
+        webSearchRescue
       },
+      sourceFailures,
       pcNodeIsGatekeeper: false,
-      registryStillRunsWithoutPcNode: true,
+      publicDiscoveryIsGatekeeper: false,
+      webSearchRescueIsGatekeeper: false,
+      registryStillRunsWithSourceFailures: true,
       decisionUse: false,
       bigDbWriteAllowed: false
     }));
@@ -95,17 +113,21 @@ async function runCycle() {
     return true;
   } catch (error) {
     console.error(JSON.stringify({
-      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V1',
-      status: 'FAIL',
+      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V2',
+      status: 'FAIL_REGISTRY',
       startedAt,
       completedAt: iso(),
-      pcNode: {
-        ok: pcNodeOk,
-        error: pcNodeError
+      sources: {
+        pcNode,
+        publicDiscovery,
+        webSearchRescue
       },
+      sourceFailures,
       error: error instanceof Error ? error.message : String(error),
       note: 'Existing daily registry remains on disk; failed cycles never delete prior fixtures.',
       pcNodeIsGatekeeper: false,
+      publicDiscoveryIsGatekeeper: false,
+      webSearchRescueIsGatekeeper: false,
       decisionUse: false,
       bigDbWriteAllowed: false
     }));
