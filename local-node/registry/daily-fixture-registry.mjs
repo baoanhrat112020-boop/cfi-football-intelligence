@@ -8,6 +8,10 @@ import {
   buildRegistryCoverageMatrix,
   snapshotFreshness
 } from '../../src/discovery/registry-source-adapters.mjs';
+import {
+  annotateRegistryFixtureVerification,
+  annotateRollingVerification
+} from '../../src/discovery/fixture-verification.mjs';
 
 const TIME_ZONE = process.env.CFI_TIME_ZONE || 'Asia/Ho_Chi_Minh';
 const HORIZON_MINUTES = Number(process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90);
@@ -188,16 +192,20 @@ const allRows = [
   ...supplementalRows
 ];
 
-const registry = mergeDailyFixtureRegistry(previousRegistry, allRows, {
+const baseRegistry = mergeDailyFixtureRegistry(previousRegistry, allRows, {
   targetDate,
   timeZone: TIME_ZONE,
   nowMs,
   pcSourceClass: 'PC_NODE'
 });
-const rolling = selectRollingFixtureWindow(registry, {
+const registry = annotateRegistryFixtureVerification(baseRegistry, {
+  pcSourceClass: 'PC_NODE'
+});
+const baseRolling = selectRollingFixtureWindow(registry, {
   nowMs,
   horizonMinutes: HORIZON_MINUTES
 });
+const rolling = annotateRollingVerification(baseRolling, registry);
 const coverageMatrix = buildRegistryCoverageMatrix(registry);
 
 const degradedInputs = [];
@@ -221,7 +229,7 @@ const hasFailClosed =
   registry.coverage.terminalObserved > 0;
 
 const audit = {
-  contract: 'CFI_DAILY_FIXTURE_REGISTRY_AUDIT_V3',
+  contract: 'CFI_DAILY_FIXTURE_REGISTRY_AUDIT_V4',
   generatedAt: observedAt,
   status: hasFailClosed
     ? 'PASS_WITH_FAIL_CLOSED_ITEMS'
@@ -260,13 +268,18 @@ const audit = {
   },
   coverage: registry.coverage,
   coverageMatrix,
+  trustedVerificationCoverage: registry.trustedVerificationCoverage,
   rolling: rolling.metrics,
+  rankingPolicy: rolling.rankingPolicy,
   safety: {
     pcNodeIsGatekeeper: false,
     registryRunsWithoutPcNode: true,
     tierABrowserIsAdditive: true,
     publicDiscoveryIsAdditive: true,
     webSearchRescueIsAdditive: true,
+    globalSourceCoverageDoesNotVerifyIndividualFixture: true,
+    singleSourceCanEnterEvidenceRefresh: true,
+    singleSourceCanEnterHighConfidenceRanking: false,
     staleSnapshotsAreNotReingested: true,
     sourceFailureDeletesFixture: false,
     conflictPolicy: 'FAIL_CLOSED',
@@ -299,8 +312,11 @@ console.log(JSON.stringify({
   rescuedByTierABrowser: coverageMatrix.rescuedByTierABrowser,
   rescuedByPublicDiscovery: coverageMatrix.rescuedByPublicDiscovery,
   rescuedByWebSearch: coverageMatrix.rescuedByWebSearch,
-  upstreamFailClosed: registry.coverage.upstreamFailClosed,
+  trustedRankingReady: registry.trustedVerificationCoverage.rankingReady,
+  trustedDiscoveryOnly: registry.trustedVerificationCoverage.discoveryOnly,
   rollingSelected: rolling.metrics.selected,
+  rollingRankingReady: rolling.metrics.rankingReady,
+  rollingDiscoveryOnly: rolling.metrics.discoveryOnly,
   conflictsExcluded: rolling.metrics.conflictsExcluded,
   upstreamFailClosedExcluded: rolling.metrics.upstreamFailClosedExcluded,
   decisionUse: false,
