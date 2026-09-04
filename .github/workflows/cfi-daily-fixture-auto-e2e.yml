@@ -1,0 +1,73 @@
+name: CFI Daily Fixture Auto E2E
+
+on:
+  pull_request:
+    paths:
+      - 'src/discovery/**'
+      - 'local-node/registry/**'
+      - 'local-node/orchestrator.mjs'
+      - 'tools/cfi-daily-fixture-auto-e2e.mjs'
+      - 'tests/daily-fixture-registry.test.mjs'
+      - 'tests/registry-source-adapters.test.mjs'
+      - 'package.json'
+      - '.github/workflows/cfi-daily-fixture-auto-e2e.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cfi-daily-fixture-auto-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shadow-auto-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TZ: Asia/Ho_Chi_Minh
+      CFI_TIME_ZONE: Asia/Ho_Chi_Minh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Deterministic registry contract tests
+        run: >-
+          node --experimental-strip-types --test
+          tests/daily-fixture-registry.test.mjs
+          tests/registry-source-adapters.test.mjs
+
+      - name: Shadow Auto E2E with live public smoke
+        run: npm run cfi:auto-e2e
+
+      - name: Verify shadow safety flags
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('audit-reports/cfi-daily-fixture-auto-e2e.json', 'utf8'));
+          if (report.status !== 'PASS') throw new Error(`AUTO_E2E_${report.status}`);
+          if (report.safety?.decisionUse !== false) throw new Error('DECISION_USE_NOT_FALSE');
+          if (report.safety?.bigDbWriteAllowed !== false) throw new Error('BIGDB_WRITE_ALLOWED');
+          if (report.safety?.productionScheduleActivated !== false) throw new Error('PRODUCTION_SCHEDULE_ACTIVATED');
+          if (report.deterministic?.cycle1?.matrix?.rescuedWithoutPcNode < 2) throw new Error('PC_MISS_RESCUE_NOT_PROVEN');
+          if (report.deterministic?.sourceFailureCycle?.matrix?.unionFixtures !== 3) throw new Error('SOURCE_FAILURE_RETENTION_NOT_PROVEN');
+          if (report.deterministic?.conflictCycle?.verificationStatus !== 'CONFLICT_FAIL_CLOSED') throw new Error('CONFLICT_FAIL_CLOSED_NOT_PROVEN');
+          console.log(JSON.stringify({status:'PASS', safety:report.safety, livePublic:report.livePublic}));
+          NODE
+
+      - name: Upload Auto E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-daily-fixture-auto-e2e-${{ github.run_id }}
+          path: |
+            audit-reports/cfi-daily-fixture-auto-e2e.json
+            audit-reports/cfi-daily-fixture-auto-e2e.md
+          if-no-files-found: warn
