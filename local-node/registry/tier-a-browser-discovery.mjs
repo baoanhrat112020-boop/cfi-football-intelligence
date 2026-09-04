@@ -13,6 +13,10 @@ const AUDIT = resolve(
   process.env.CFI_TIER_A_BROWSER_AUDIT ||
   'local-node/cache/registry/tier-a-browser-discovery-audit.json'
 );
+const PROBE_AUDIT = resolve(
+  process.env.CFI_BROWSER_PROBE_AUDIT ||
+  'local-node/cache/browser/source-probe-audit.json'
+);
 
 const PROVIDERS = [
   ['AISCORE', 'local-node/browser/fixture-collector/aiscore-adapter.mjs'],
@@ -71,9 +75,13 @@ const probe = await runNode(
     CFI_TARGET_DATE: targetDate
   }
 );
+const probeAudit = await readJson(PROBE_AUDIT);
+const probeUsable = probe.ok &&
+  probeAudit?.status !== 'FAIL' &&
+  Number(probeAudit?.sourcesSuccessful ?? 0) > 0;
 
 const adapterRuns = [];
-if (probe.ok) {
+if (probeUsable) {
   for (const [provider, script] of PROVIDERS) {
     adapterRuns.push([
       provider,
@@ -131,12 +139,14 @@ const unavailableProviders = providerAudits.filter(item =>
   ['SOURCE_UNAVAILABLE', 'NO_SNAPSHOT', 'ADAPTER_PROCESS_FAILED'].includes(item.status)
 );
 const status = !probe.ok
-  ? 'FAIL_PROBE'
-  : rows.length === 0
-    ? 'PASS_EMPTY'
-    : unavailableProviders.length > 0
-      ? 'PASS_WITH_SOURCE_FAILURES'
-      : 'PASS';
+  ? 'FAIL_PROBE_PROCESS'
+  : !probeUsable
+    ? 'FAIL_ALL_TIER_A_SOURCES'
+    : rows.length === 0
+      ? 'PASS_EMPTY'
+      : unavailableProviders.length > 0
+        ? 'PASS_WITH_SOURCE_FAILURES'
+        : 'PASS';
 
 const supplement = {
   contract: 'CFI_TIER_A_BROWSER_DISCOVERY_V1',
@@ -158,6 +168,16 @@ const audit = {
   targetDate,
   timeZone: TIME_ZONE,
   probe,
+  probeAudit: probeAudit
+    ? {
+        status: probeAudit.status,
+        sourcesConfigured: probeAudit.sourcesConfigured,
+        sourcesSuccessful: probeAudit.sourcesSuccessful,
+        sourcesBlocked: probeAudit.sourcesBlocked,
+        sourcesErrored: probeAudit.sourcesErrored,
+        snapshotsTruncated: probeAudit.snapshotsTruncated
+      }
+    : null,
   providersConfigured: PROVIDERS.map(([provider]) => provider),
   providerAudits,
   rows: rows.length,
@@ -167,6 +187,7 @@ const audit = {
     isolatedFromPcNode: true,
     pcNodeIsGatekeeper: false,
     successfulProbeRequired: true,
+    atLeastOneUsableTierASourceRequired: true,
     blockedPagesRejected: true,
     explicitKickoffTimeRequired: true,
     missingKickoffFabrication: false,
@@ -194,4 +215,4 @@ console.log(JSON.stringify({
   bigDbWriteAllowed: false
 }));
 
-if (!probe.ok) process.exitCode = 1;
+if (!probeUsable) process.exitCode = 1;
