@@ -34,6 +34,7 @@
     "cfi:public-discovery": "node local-node/registry/public-discovery.mjs",
     "cfi:web-rescue": "node local-node/registry/web-search-rescue.mjs",
     "cfi:registry": "node local-node/registry/daily-fixture-registry.mjs",
+    "cfi:queues": "node local-node/registry/rolling-evidence-queues.mjs",
     "cfi:orchestrator": "node local-node/orchestrator.mjs",
     "cfi:orchestrator:once": "node local-node/orchestrator.mjs --once",
     "cfi:auto-e2e": "node --experimental-strip-types tools/cfi-daily-fixture-auto-e2e.mjs",
