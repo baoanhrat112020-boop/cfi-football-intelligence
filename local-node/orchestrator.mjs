@@ -63,10 +63,15 @@ async function runCycle() {
       pcNode.ok ? {} : { CFI_REGISTRY_SKIP_PC_INPUT: '1' }
     );
 
+    await runNode(
+      'ROLLING_EVIDENCE_QUEUES',
+      'local-node/registry/rolling-evidence-queues.mjs'
+    );
+
     const status = sourceFailures.length === 0 ? 'PASS' : 'PASS_WITH_SOURCE_FAILURES';
 
     console.log(JSON.stringify({
-      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V3',
+      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V4',
       status,
       startedAt,
       completedAt: iso(),
@@ -80,24 +85,34 @@ async function runCycle() {
       webSearchRescueIsGatekeeper: false,
       tierABrowserHasDedicatedRegistryInput: true,
       registryStillRunsWithSourceFailures: true,
+      rollingEvidenceQueuesMaterialized: true,
+      verifiedRankingQueueMaterialized: true,
+      crosscheckRequiredQueueMaterialized: true,
+      evidenceRequestPlanMaterialized: true,
+      bigDbRetrievalReused: true,
+      webSearchRescueReused: true,
+      productionEvidenceDispatchPerformed: false,
+      predictionExecutionAllowed: false,
       decisionUse: false,
       bigDbWriteAllowed: false
     }));
     return true;
   } catch (error) {
     console.error(JSON.stringify({
-      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V3',
-      status: 'FAIL_REGISTRY',
+      contract: 'CFI_DISCOVERY_ORCHESTRATOR_V4',
+      status: 'FAIL_REGISTRY_OR_QUEUE_BUILD',
       startedAt,
       completedAt: iso(),
       sources: { pcNode, tierABrowser, publicDiscovery, webSearchRescue },
       sourceFailures,
       error: error instanceof Error ? error.message : String(error),
-      note: 'Existing daily registry remains on disk; failed cycles never delete prior fixtures.',
+      note: 'Existing registry/queue artifacts remain on disk; failed cycles never delete prior fixtures. Consumers must enforce artifact freshness.',
       pcNodeIsGatekeeper: false,
       tierABrowserIsGatekeeper: false,
       publicDiscoveryIsGatekeeper: false,
       webSearchRescueIsGatekeeper: false,
+      productionEvidenceDispatchPerformed: false,
+      predictionExecutionAllowed: false,
       decisionUse: false,
       bigDbWriteAllowed: false
     }));
