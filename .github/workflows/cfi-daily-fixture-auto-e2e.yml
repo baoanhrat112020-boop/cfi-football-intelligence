@@ -12,6 +12,7 @@ on:
       - 'tests/registry-source-adapters.test.mjs'
       - 'tests/fixture-source-policy.test.mjs'
       - 'tests/fixture-verification.test.mjs'
+      - 'tests/rolling-evidence-queues.test.mjs'
       - 'tests/daily-text-parser.test.mjs'
       - 'tests/tier-a-registry-coverage.test.mjs'
       - 'package.json'
@@ -43,25 +44,83 @@ jobs:
 
       - run: npm ci
 
-      - name: Syntax check Tier A browser orchestration
+      - name: Syntax check Tier A browser orchestration and rolling queues
         run: |
           node --check src/discovery/fixture-verification.mjs
+          node --check src/discovery/rolling-evidence-queues.mjs
           node --check local-node/browser/fixture-collector/probe.mjs
           node --check local-node/browser/fixture-collector/daily-text-parser.mjs
           node --check local-node/browser/fixture-collector/run-daily-source-adapter.mjs
           node --check local-node/registry/tier-a-browser-discovery.mjs
           node --check local-node/registry/daily-fixture-registry.mjs
+          node --check local-node/registry/rolling-evidence-queues.mjs
           node --check local-node/orchestrator.mjs
 
-      - name: Deterministic registry, source-policy and per-fixture verification contract tests
+      - name: Deterministic registry, verification and queue contract tests
         run: >-
           node --experimental-strip-types --test
           tests/daily-fixture-registry.test.mjs
           tests/registry-source-adapters.test.mjs
           tests/fixture-source-policy.test.mjs
           tests/fixture-verification.test.mjs
+          tests/rolling-evidence-queues.test.mjs
           tests/daily-text-parser.test.mjs
           tests/tier-a-registry-coverage.test.mjs
+
+      - name: Materialize physical verified and crosscheck queues
+        run: |
+          mkdir -p local-node/cache/registry
+          cat > local-node/cache/registry/rolling-fixture-window.json <<'JSON'
+          {
+            "generatedAt":"2026-09-05T00:00:00.000Z",
+            "targetDate":"2026-09-05",
+            "timeZone":"Asia/Ho_Chi_Minh",
+            "horizonMinutes":90,
+            "fixtures":[
+              {
+                "identityKey":"verified|fixture|2026-09-05",
+                "targetDate":"2026-09-05",
+                "home":"Verified Home",
+                "away":"Verified Away",
+                "kickoffIso":"2026-09-05T01:00:00.000Z",
+                "kickoffLocal":"08:00",
+                "minutesToKickoff":30,
+                "rankingReady":true,
+                "rankingVerificationStatus":"MULTI_SOURCE_VERIFIED",
+                "trustedVerification":{"needsCrossCheck":false,"trustedProviders":["BONGDAWAP","FLASHSCORE"],"trustedLiveProviders":["BONGDAWAP","FLASHSCORE"]}
+              },
+              {
+                "identityKey":"single|fixture|2026-09-05",
+                "targetDate":"2026-09-05",
+                "home":"Single Home",
+                "away":"Single Away",
+                "kickoffIso":"2026-09-05T01:15:00.000Z",
+                "kickoffLocal":"08:15",
+                "minutesToKickoff":45,
+                "rankingReady":false,
+                "rankingVerificationStatus":"SINGLE_TRUSTED_SOURCE_OBSERVED",
+                "trustedVerification":{"needsCrossCheck":true,"trustedProviders":["FLASHSCORE"],"trustedLiveProviders":["FLASHSCORE"]}
+              }
+            ]
+          }
+          JSON
+          npm run cfi:queues
+          node - <<'NODE'
+          const fs = require('fs');
+          const verified = JSON.parse(fs.readFileSync('local-node/cache/registry/verified-ranking-queue.json','utf8'));
+          const crosscheck = JSON.parse(fs.readFileSync('local-node/cache/registry/crosscheck-required-queue.json','utf8'));
+          const plan = JSON.parse(fs.readFileSync('local-node/cache/registry/evidence-request-plan.json','utf8'));
+          const audit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          if (verified.count !== 1) throw new Error('VERIFIED_QUEUE_EXPECTED_1');
+          if (crosscheck.count !== 1) throw new Error('CROSSCHECK_QUEUE_EXPECTED_1');
+          if (plan.count !== 2) throw new Error('EVIDENCE_REQUEST_PLAN_EXPECTED_2');
+          if (audit.metrics?.droppedByQuota !== 0) throw new Error('QUEUE_DROPPED_BY_QUOTA');
+          if (plan.requests?.some(x => x.safety?.predictionExecutionAllowed !== false)) throw new Error('PREDICTION_EXECUTION_ENABLED');
+          if (plan.requests?.some(x => x.bigDb?.writeAllowed !== false)) throw new Error('BIGDB_WRITE_ENABLED');
+          if (plan.requests?.[0]?.bigDb?.implementation !== 'supabase/functions/cfi-bigdb-retrieval') throw new Error('BIGDB_PIPELINE_NOT_REUSED');
+          if (plan.webRescueImplementation !== 'local-node/registry/web-search-rescue.mjs') throw new Error('WEB_RESCUE_PIPELINE_NOT_REUSED');
+          console.log(JSON.stringify({status:'PASS',verified:verified.count,crosscheck:crosscheck.count,evidenceRequests:plan.count,safety:audit.safety}));
+          NODE
 
       - name: Build prioritized source scan plan
         run: npm run cfi:source-plan
@@ -109,4 +168,9 @@ jobs:
             audit-reports/cfi-daily-fixture-auto-e2e.json
             audit-reports/cfi-daily-fixture-auto-e2e.md
             local-node/cache/registry/source-scan-plan.json
+            local-node/cache/registry/rolling-evidence-queue-set.json
+            local-node/cache/registry/verified-ranking-queue.json
+            local-node/cache/registry/crosscheck-required-queue.json
+            local-node/cache/registry/evidence-request-plan.json
+            local-node/cache/registry/rolling-evidence-queues-audit.json
           if-no-files-found: warn
