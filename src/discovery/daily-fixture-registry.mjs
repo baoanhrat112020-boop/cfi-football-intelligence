@@ -94,7 +94,6 @@ export function registryIdentityKey(row, targetDate = null) {
   const date = clean(targetDate ?? row?.targetDate ?? row?.target_date);
 
   if (!home || !away || !date) return null;
-
   return `${home}|${away}|${date}`;
 }
 
@@ -117,7 +116,9 @@ export function normalizeRegistryObservation(
     row?.kickoff;
 
   const kickoffMs = finiteMs(kickoffRaw);
-  const observedMs = finiteMs(row?.observedAt ?? row?.discoveredAt ?? observedAt);
+  const observedMs = finiteMs(
+    row?.observedAt ?? row?.discoveredAt ?? observedAt
+  );
 
   if (!home || !away) {
     return { accepted: false, reason: 'TEAM_REQUIRED', row };
@@ -169,6 +170,11 @@ export function normalizeRegistryObservation(
   ).toUpperCase();
 
   const status = clean(row?.status ?? 'scheduled').toLowerCase();
+  const upstreamVerificationStatus = clean(
+    row?.upstreamVerificationStatus ??
+    row?.verificationStatus ??
+    row?.verification_status
+  ).toUpperCase() || null;
 
   const normalized = {
     home,
@@ -182,6 +188,10 @@ export function normalizeRegistryObservation(
     country: clean(row?.country) || null,
     status,
     terminal: TERMINAL.has(status),
+    upstreamVerificationStatus,
+    upstreamFailClosed:
+      Boolean(upstreamVerificationStatus) &&
+      upstreamVerificationStatus.includes('FAIL_CLOSED'),
     observedAt: new Date(observedMs).toISOString(),
     sourceClass: resolvedSourceClass,
     provider,
@@ -209,22 +219,21 @@ export function normalizeRegistryObservation(
   };
 }
 
+function cloneList(list) {
+  return Array.isArray(list) ? list.map(value => ({ ...value })) : [];
+}
+
 function cloneEntry(entry) {
   return {
     ...entry,
-    sourceObservations: Array.isArray(entry?.sourceObservations)
-      ? entry.sourceObservations.map(source => ({ ...source }))
-      : [],
+    sourceObservations: cloneList(entry?.sourceObservations),
+    terminalObservations: cloneList(entry?.terminalObservations),
+    blockingObservations: cloneList(entry?.blockingObservations),
     kickoffCandidates: Array.isArray(entry?.kickoffCandidates)
       ? entry.kickoffCandidates.map(candidate => ({
           ...candidate,
-          sources: Array.isArray(candidate?.sources)
-            ? candidate.sources.map(source => ({ ...source }))
-            : []
+          sources: cloneList(candidate?.sources)
         }))
-      : [],
-    terminalObservations: Array.isArray(entry?.terminalObservations)
-      ? entry.terminalObservations.map(source => ({ ...source }))
       : []
   };
 }
@@ -247,6 +256,7 @@ function newEntry(observation) {
     sourceObservations: [],
     kickoffCandidates: [],
     terminalObservations: [],
+    blockingObservations: [],
     verificationStatus: 'SINGLE_SOURCE',
     decisionUse: false,
     bigDbWriteEligible: false
@@ -261,8 +271,25 @@ function sourceProjection(observation) {
     sourceUrl: observation.sourceUrl,
     kickoffIso: observation.kickoffIso,
     status: observation.status,
+    upstreamVerificationStatus: observation.upstreamVerificationStatus,
     observedAt: observation.observedAt
   };
+}
+
+function upsertByKey(list, keyFn, value) {
+  const map = new Map(list.map(item => [keyFn(item), item]));
+  const key = keyFn(value);
+  const previous = map.get(key);
+  map.set(key, {
+    ...(previous ?? value),
+    status: value.status ?? previous?.status ?? null,
+    upstreamVerificationStatus:
+      value.upstreamVerificationStatus ??
+      previous?.upstreamVerificationStatus ??
+      null,
+    observedAt: maxIso(previous?.observedAt, value.observedAt)
+  });
+  return [...map.values()];
 }
 
 function upsertObservation(entry, observation) {
@@ -273,33 +300,22 @@ function upsertObservation(entry, observation) {
   if (!entry.canonicalHomeId && observation.canonicalHomeId) {
     entry.canonicalHomeId = observation.canonicalHomeId;
   }
-
   if (!entry.canonicalAwayId && observation.canonicalAwayId) {
     entry.canonicalAwayId = observation.canonicalAwayId;
   }
-
   if (!entry.competition && observation.competition) {
     entry.competition = observation.competition;
   }
-
   if (!entry.country && observation.country) {
     entry.country = observation.country;
   }
 
   const projected = sourceProjection(observation);
-  const sources = new Map(
-    entry.sourceObservations.map(source => [sourceKey(source), source])
+  entry.sourceObservations = upsertByKey(
+    entry.sourceObservations,
+    sourceKey,
+    projected
   );
-
-  const key = sourceKey(projected);
-  const previous = sources.get(key);
-
-  sources.set(key, {
-    ...(previous ?? projected),
-    observedAt: maxIso(previous?.observedAt, projected.observedAt)
-  });
-
-  entry.sourceObservations = [...sources.values()];
 
   const cycleClasses = new Set(entry.currentCycleSourceClasses);
   cycleClasses.add(observation.sourceClass);
@@ -319,38 +335,38 @@ function upsertObservation(entry, observation) {
 
   kickoff.firstSeenAt = minIso(kickoff.firstSeenAt, observation.observedAt);
   kickoff.lastSeenAt = maxIso(kickoff.lastSeenAt, observation.observedAt);
-
-  const kickoffSources = new Map(
-    kickoff.sources.map(source => [kickoffSourceKey(source), source])
+  kickoff.sources = upsertByKey(
+    kickoff.sources,
+    kickoffSourceKey,
+    {
+      sourceClass: observation.sourceClass,
+      provider: observation.provider,
+      providerId: observation.providerId,
+      sourceUrl: observation.sourceUrl,
+      status: observation.status,
+      upstreamVerificationStatus: observation.upstreamVerificationStatus,
+      observedAt: observation.observedAt
+    }
   );
 
-  const kickoffProjected = {
-    sourceClass: observation.sourceClass,
-    provider: observation.provider,
-    providerId: observation.providerId,
-    sourceUrl: observation.sourceUrl,
-    observedAt: observation.observedAt
-  };
-
-  const kickoffKey = kickoffSourceKey(kickoffProjected);
-  const kickoffPrevious = kickoffSources.get(kickoffKey);
-
-  kickoffSources.set(kickoffKey, {
-    ...(kickoffPrevious ?? kickoffProjected),
-    observedAt: maxIso(kickoffPrevious?.observedAt, kickoffProjected.observedAt)
-  });
-
-  kickoff.sources = [...kickoffSources.values()];
   kickoffs.set(kickoff.kickoffIso, kickoff);
   entry.kickoffCandidates = [...kickoffs.values()]
     .sort((a, b) => Date.parse(a.kickoffIso) - Date.parse(b.kickoffIso));
 
   if (observation.terminal) {
-    const terminal = new Map(
-      entry.terminalObservations.map(source => [sourceKey(source), source])
+    entry.terminalObservations = upsertByKey(
+      entry.terminalObservations,
+      sourceKey,
+      projected
     );
-    terminal.set(key, projected);
-    entry.terminalObservations = [...terminal.values()];
+  }
+
+  if (observation.upstreamFailClosed) {
+    entry.blockingObservations = upsertByKey(
+      entry.blockingObservations,
+      sourceKey,
+      projected
+    );
   }
 }
 
@@ -367,21 +383,21 @@ function finalizeEntry(entry, pcSourceClass) {
       .filter(Boolean)
   );
 
-  const hasKickoffConflict = entry.kickoffCandidates.length > 1;
-  const hasTerminalObservation = entry.terminalObservations.length > 0;
-
   entry.sourceClasses = [...sourceClasses].sort();
   entry.providers = [...providers].sort();
   entry.sourceCount = entry.sourceObservations.length;
   entry.distinctProviderCount = providers.size;
   entry.hasPcNodeEvidence = sourceClasses.has(pcSourceClass);
   entry.rescuedWithoutPcNode = !entry.hasPcNodeEvidence;
-  entry.hasKickoffConflict = hasKickoffConflict;
-  entry.hasTerminalObservation = hasTerminalObservation;
+  entry.hasKickoffConflict = entry.kickoffCandidates.length > 1;
+  entry.hasTerminalObservation = entry.terminalObservations.length > 0;
+  entry.hasUpstreamFailClosed = entry.blockingObservations.length > 0;
 
-  if (hasTerminalObservation) {
+  if (entry.hasTerminalObservation) {
     entry.verificationStatus = 'TERMINAL_OBSERVED_FAIL_CLOSED';
-  } else if (hasKickoffConflict) {
+  } else if (entry.hasUpstreamFailClosed) {
+    entry.verificationStatus = 'UPSTREAM_FAIL_CLOSED';
+  } else if (entry.hasKickoffConflict) {
     entry.verificationStatus = 'CONFLICT_FAIL_CLOSED';
   } else if (providers.size > 1 || sourceClasses.size > 1) {
     entry.verificationStatus = 'MULTI_SOURCE_EXACT';
@@ -454,8 +470,9 @@ export function mergeDailyFixtureRegistry(
     entries.set(observation.identityKey, entry);
   }
 
+  const pcClass = clean(pcSourceClass).toUpperCase();
   const finalized = [...entries.values()]
-    .map(entry => finalizeEntry(entry, clean(pcSourceClass).toUpperCase()))
+    .map(entry => finalizeEntry(entry, pcClass))
     .sort((a, b) => {
       const aKickoff = finiteMs(a.kickoffCandidates?.[0]?.kickoffIso) ?? Infinity;
       const bKickoff = finiteMs(b.kickoffCandidates?.[0]?.kickoffIso) ?? Infinity;
@@ -466,7 +483,8 @@ export function mergeDailyFixtureRegistry(
   for (const entry of finalized) {
     for (const source of entry.sourceObservations) {
       const label = clean(source.provider).toUpperCase() || 'UNKNOWN';
-      sourceObservationCounts[label] = (sourceObservationCounts[label] ?? 0) + 1;
+      sourceObservationCounts[label] =
+        (sourceObservationCounts[label] ?? 0) + 1;
     }
   }
 
@@ -474,9 +492,14 @@ export function mergeDailyFixtureRegistry(
     registryFixtures: finalized.length,
     seenInCurrentCycle: finalized.filter(entry => entry.seenInCurrentCycle).length,
     notSeenInCurrentCycle: finalized.filter(entry => !entry.seenInCurrentCycle).length,
-    singleSourceFixtures: finalized.filter(entry => entry.verificationStatus === 'SINGLE_SOURCE').length,
-    multiSourceFixtures: finalized.filter(entry => entry.verificationStatus === 'MULTI_SOURCE_EXACT').length,
+    singleSourceFixtures: finalized.filter(
+      entry => entry.verificationStatus === 'SINGLE_SOURCE'
+    ).length,
+    multiSourceFixtures: finalized.filter(
+      entry => entry.verificationStatus === 'MULTI_SOURCE_EXACT'
+    ).length,
     kickoffConflicts: finalized.filter(entry => entry.hasKickoffConflict).length,
+    upstreamFailClosed: finalized.filter(entry => entry.hasUpstreamFailClosed).length,
     terminalObserved: finalized.filter(entry => entry.hasTerminalObservation).length,
     withPcNodeEvidence: finalized.filter(entry => entry.hasPcNodeEvidence).length,
     rescuedWithoutPcNode: finalized.filter(entry => entry.rescuedWithoutPcNode).length,
@@ -493,6 +516,7 @@ export function mergeDailyFixtureRegistry(
       sourceFailureDeletesFixture: false,
       pcNodeIsGatekeeper: false,
       automaticKickoffCorrection: false,
+      upstreamFailClosedPropagates: true,
       conflictPolicy: 'FAIL_CLOSED',
       decisionUse: false,
       bigDbWriteAllowed: false
@@ -529,12 +553,26 @@ export function selectRollingFixtureWindow(
 
   for (const entry of Array.isArray(registry?.entries) ? registry.entries : []) {
     if (entry?.hasTerminalObservation) {
-      excluded.push({ identityKey: entry.identityKey, reason: 'TERMINAL_OBSERVED' });
+      excluded.push({
+        identityKey: entry.identityKey,
+        reason: 'TERMINAL_OBSERVED'
+      });
+      continue;
+    }
+
+    if (entry?.hasUpstreamFailClosed) {
+      excluded.push({
+        identityKey: entry.identityKey,
+        reason: 'UPSTREAM_FAIL_CLOSED'
+      });
       continue;
     }
 
     if (entry?.hasKickoffConflict || entry?.kickoffCandidates?.length !== 1) {
-      excluded.push({ identityKey: entry.identityKey, reason: 'KICKOFF_CONFLICT' });
+      excluded.push({
+        identityKey: entry.identityKey,
+        reason: 'KICKOFF_CONFLICT'
+      });
       continue;
     }
 
@@ -547,12 +585,18 @@ export function selectRollingFixtureWindow(
     }
 
     if (kickoffMs <= nowMs) {
-      excluded.push({ identityKey: entry.identityKey, reason: 'KICKOFF_NOT_FUTURE' });
+      excluded.push({
+        identityKey: entry.identityKey,
+        reason: 'KICKOFF_NOT_FUTURE'
+      });
       continue;
     }
 
     if (kickoffMs > endMs) {
-      excluded.push({ identityKey: entry.identityKey, reason: 'OUTSIDE_ROLLING_HORIZON' });
+      excluded.push({
+        identityKey: entry.identityKey,
+        reason: 'OUTSIDE_ROLLING_HORIZON'
+      });
       continue;
     }
 
@@ -564,7 +608,8 @@ export function selectRollingFixtureWindow(
       competition: entry.competition,
       kickoffIso,
       kickoffLocal: entry.kickoffCandidates[0].kickoffLocal,
-      minutesToKickoff: Math.round(((kickoffMs - nowMs) / 60_000) * 10) / 10,
+      minutesToKickoff:
+        Math.round(((kickoffMs - nowMs) / 60_000) * 10) / 10,
       verificationStatus: entry.verificationStatus,
       seenInCurrentCycle: entry.seenInCurrentCycle,
       queueStatus: entry.seenInCurrentCycle
@@ -578,7 +623,9 @@ export function selectRollingFixtureWindow(
     });
   }
 
-  selected.sort((a, b) => Date.parse(a.kickoffIso) - Date.parse(b.kickoffIso));
+  selected.sort(
+    (a, b) => Date.parse(a.kickoffIso) - Date.parse(b.kickoffIso)
+  );
 
   return {
     contract: ROLLING_FIXTURE_WINDOW_CONTRACT,
@@ -593,8 +640,15 @@ export function selectRollingFixtureWindow(
     metrics: {
       selected: selected.length,
       rescuedWithoutPcNode: selected.filter(row => row.rescuedWithoutPcNode).length,
-      refreshRequired: selected.filter(row => row.queueStatus === 'REFRESH_REQUIRED').length,
-      conflictsExcluded: excluded.filter(row => row.reason === 'KICKOFF_CONFLICT').length
+      refreshRequired: selected.filter(
+        row => row.queueStatus === 'REFRESH_REQUIRED'
+      ).length,
+      conflictsExcluded: excluded.filter(
+        row => row.reason === 'KICKOFF_CONFLICT'
+      ).length,
+      upstreamFailClosedExcluded: excluded.filter(
+        row => row.reason === 'UPSTREAM_FAIL_CLOSED'
+      ).length
     },
     decisionUse: false
   };
