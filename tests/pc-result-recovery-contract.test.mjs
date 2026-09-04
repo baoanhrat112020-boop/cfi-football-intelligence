@@ -15,19 +15,23 @@ test('PC result recovery queues only strict selected historical pending snapshot
   assert.match(migration, /cfi-pc-result-recovery-enqueue-10m/);
 });
 
-test('PC result recovery API is node-authenticated and settlement-aware', () => {
+test('PC result recovery API is node-authenticated and re-verifies submissions before settlement', () => {
   assert.match(edge, /x-cfi-node-key/);
-  assert.match(edge, /independentSources:2/);
-  assert.match(edge, /completeHtFt:true/);
-  assert.match(edge, /kickoffAgreementMinutes:30/);
+  assert.match(edge, /action===\"SUBMIT\"/);
+  assert.match(edge, /TWO_INDEPENDENT_SOURCES_REQUIRED/);
+  assert.match(edge, /COMPLETE_FINISHED_HT_FT_REQUIRED/);
+  assert.match(edge, /TWO_SOURCE_KICKOFF_AGREEMENT_REQUIRED/);
+  assert.match(edge, /POST_KICKOFF_SNAPSHOT/);
+  assert.match(edge, /BONGDAWAP_EXACT_HINT_REQUIRED/);
+  assert.match(edge, /PC_NODE_RESULT_RECOVERY/);
   assert.match(edge, /cfi_settle_prediction_snapshots/);
-  assert.match(edge, /settlement_status===\"SETTLED\"/);
 });
 
 test('post-match worker is separate from prematch urgent bridge and requires consensus', () => {
   assert.doesNotMatch(worker, /URGENT_FIXTURE_(PULL|QUEUE|ACK)/);
-  assert.match(worker, /RESULT_CONSENSUS/);
+  assert.match(worker, /action:\"SUBMIT\"/);
   assert.match(worker, /consensusPair/);
+  assert.match(worker, /BONGDAWAP/);
   assert.match(worker, /FLASHSCORE/);
   assert.match(worker, /FOTMOB/);
   assert.match(worker, /SOFASCORE/);
