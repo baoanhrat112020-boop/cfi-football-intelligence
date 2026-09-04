@@ -1,12 +1,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const VERSION = "CFI_RESULT_COLLECTOR_SELECTED_DISPATCH_R2";
+const VERSION = "CFI_RESULT_COLLECTOR_SELECTED_DISPATCH_R3_20M_ROTATION";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify({version: VERSION, ...(body as any)}), {status, headers: {"content-type": "application/json"}});
 
 function localParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23"}).formatToParts(date);
+  const parts = new Intl.DateTimeFormat("en-CA", {timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23"}).formatToParts(date);
   const get = (t: string) => parts.find(p => p.type === t)?.value ?? "";
-  return {ymd: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) || 0};
+  return {ymd: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) || 0, minute: Number(get("minute")) || 0};
 }
 function addDays(ymd: string, delta: number) {
   const d = new Date(`${ymd}T00:00:00Z`);
@@ -27,8 +27,9 @@ Deno.serve(async (req) => {
   const targetDate = typeof body?.targetDate === "string" ? body.targetDate.slice(0, 10) : null;
   const home = typeof body?.home === "string" ? body.home.trim() : null;
   const away = typeof body?.away === "string" ? body.away.trim() : null;
-  const {ymd: today, hour: localHour} = localParts();
+  const {ymd: today, hour: localHour, minute: localMinute} = localParts();
   const floorDate = addDays(today, -maxAgeDays);
+  const rotationSlot = localHour * 3 + Math.floor(localMinute / 20);
   const db = createClient(supabaseUrl, serviceRole, {auth: {persistSession: false, autoRefreshToken: false}});
   const cols = "snapshot_id,target_date,home_team,away_team,created_at,settlement_status,selected_for_match_audit";
 
@@ -39,13 +40,16 @@ Deno.serve(async (req) => {
     return q;
   };
 
-  let priorityQ = db.from("cfi_prediction_history").select(cols)
-    .eq("selected_for_match_audit", true).eq("settlement_status", "PENDING")
-    .eq("target_date", today).order("created_at", {ascending: true}).limit(Math.min(2, limit));
-  priorityQ = applyFilters(priorityQ);
-  const {data: priorityData, error: priorityError} = await priorityQ;
-  if (priorityError) return json({status: "ERROR", error: "PRIORITY_READ_FAILED", message: priorityError.message}, 500);
-  const priority = priorityData ?? [];
+  let priority: any[] = [];
+  if (!targetDate || targetDate === today) {
+    let priorityQ = db.from("cfi_prediction_history").select(cols)
+      .eq("selected_for_match_audit", true).eq("settlement_status", "PENDING")
+      .eq("target_date", today).order("created_at", {ascending: true}).limit(Math.min(2, limit));
+    priorityQ = applyFilters(priorityQ);
+    const {data: priorityData, error: priorityError} = await priorityQ;
+    if (priorityError) return json({status: "ERROR", error: "PRIORITY_READ_FAILED", message: priorityError.message}, 500);
+    priority = priorityData ?? [];
+  }
 
   const backlogSlots = Math.max(0, limit - priority.length);
   let backlog: any[] = [];
@@ -54,21 +58,25 @@ Deno.serve(async (req) => {
   if (backlogSlots > 0) {
     let countQ = db.from("cfi_prediction_history").select("snapshot_id", {count: "exact", head: true})
       .eq("selected_for_match_audit", true).eq("settlement_status", "PENDING")
-      .gte("target_date", floorDate).lt("target_date", today);
-    countQ = applyFilters(countQ);
+      .gte("target_date", floorDate).lt("target_date", targetDate && targetDate < today ? addDays(targetDate, 1) : today);
+    if (targetDate) countQ = countQ.eq("target_date", targetDate);
+    if (home) countQ = countQ.eq("home_team", home);
+    if (away) countQ = countQ.eq("away_team", away);
     const {count, error: countError} = await countQ;
     if (countError) return json({status: "ERROR", error: "BACKLOG_COUNT_FAILED", message: countError.message}, 500);
     backlogCount = count ?? 0;
     if (backlogCount > 0) {
       backlogOffset = Number.isInteger(Number(body?.offset))
         ? Math.max(0, Number(body.offset)) % backlogCount
-        : (localHour * backlogSlots) % backlogCount;
+        : (rotationSlot * backlogSlots) % backlogCount;
       let backlogQ = db.from("cfi_prediction_history").select(cols)
         .eq("selected_for_match_audit", true).eq("settlement_status", "PENDING")
-        .gte("target_date", floorDate).lt("target_date", today)
+        .gte("target_date", floorDate).lt("target_date", targetDate && targetDate < today ? addDays(targetDate, 1) : today)
         .order("target_date", {ascending: false}).order("created_at", {ascending: true})
         .range(backlogOffset, Math.min(backlogCount - 1, backlogOffset + backlogSlots - 1));
-      backlogQ = applyFilters(backlogQ);
+      if (targetDate) backlogQ = backlogQ.eq("target_date", targetDate);
+      if (home) backlogQ = backlogQ.eq("home_team", home);
+      if (away) backlogQ = backlogQ.eq("away_team", away);
       const {data: backlogData, error: backlogError} = await backlogQ;
       if (backlogError) return json({status: "ERROR", error: "BACKLOG_READ_FAILED", message: backlogError.message}, 500);
       backlog = backlogData ?? [];
@@ -76,10 +84,12 @@ Deno.serve(async (req) => {
         const remain = backlogSlots - backlog.length;
         let wrapQ = db.from("cfi_prediction_history").select(cols)
           .eq("selected_for_match_audit", true).eq("settlement_status", "PENDING")
-          .gte("target_date", floorDate).lt("target_date", today)
+          .gte("target_date", floorDate).lt("target_date", targetDate && targetDate < today ? addDays(targetDate, 1) : today)
           .order("target_date", {ascending: false}).order("created_at", {ascending: true})
           .range(0, remain - 1);
-        wrapQ = applyFilters(wrapQ);
+        if (targetDate) wrapQ = wrapQ.eq("target_date", targetDate);
+        if (home) wrapQ = wrapQ.eq("home_team", home);
+        if (away) wrapQ = wrapQ.eq("away_team", away);
         const {data: wrapData, error: wrapError} = await wrapQ;
         if (wrapError) return json({status: "ERROR", error: "BACKLOG_WRAP_FAILED", message: wrapError.message}, 500);
         backlog.push(...(wrapData ?? []));
@@ -89,7 +99,7 @@ Deno.serve(async (req) => {
 
   const seen = new Set<string>();
   const candidates = [...priority, ...backlog].filter((c: any) => c?.snapshot_id && !seen.has(c.snapshot_id) && seen.add(c.snapshot_id));
-  if (dryRun) return json({status: "OK", mode: "DRY_RUN", today, floorDate, localHour, backlogCount, backlogOffset, count: candidates.length, candidates});
+  if (dryRun) return json({status: "OK", mode: "DRY_RUN", today, floorDate, localHour, localMinute, rotationSlot, backlogCount, backlogOffset, count: candidates.length, candidates});
 
   const runs: any[] = [];
   for (const c of candidates) {
@@ -107,5 +117,5 @@ Deno.serve(async (req) => {
       runs.push({snapshotId: c.snapshot_id, targetDate: c.target_date, home: c.home_team, away: c.away_team, httpStatus: null, ok: false, error: e instanceof Error ? e.message : String(e)});
     }
   }
-  return json({status: "OK", mode: "SELECTED_CANONICAL_DISPATCH", today, floorDate, localHour, backlogCount, backlogOffset, count: candidates.length, success: runs.filter(r => r.ok).length, runs});
+  return json({status: "OK", mode: "SELECTED_CANONICAL_DISPATCH", today, floorDate, localHour, localMinute, rotationSlot, backlogCount, backlogOffset, count: candidates.length, success: runs.filter(r => r.ok).length, runs});
 });

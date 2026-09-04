@@ -1,30 +1,105 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-type F={id:string,date:string,homeId:string,awayId:string,home:string,away:string,hh:number|null,ha:number|null,fh:number|null,fa:number|null};
-const MARKETS=['3+ HT','7+ FT','Other HT','Other FT'] as const;
-const WEIGHTS=[0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1];
-const COLS:any={'3+ HT':['method_a_3plus_ht','method_b_3plus_ht','final_3plus_ht'],'7+ FT':['method_a_7plus_ft','method_b_7plus_ft','final_7plus_ft'],'Other HT':['method_a_other_ht','method_b_other_ht','final_other_ht'],'Other FT':['method_a_other_ft','method_b_other_ft','final_other_ft']};
-const json=(x:unknown,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{'content-type':'application/json'}});
+
+const VERSION = "CFI_CAL_LEARNER_V3_1_LIVE_FEEDBACK";
+const SOURCE = "SETTLED_PRODUCTION";
+const MARKETS = ["3+ HT","7+ FT","Other HT","Other FT"] as const;
+const WEIGHTS = [0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1] as const;
+const COLS:any = {
+  "3+ HT":["method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht"],
+  "7+ FT":["method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft"],
+  "Other HT":["method_a_other_ht","method_b_other_ht","final_other_ht"],
+  "Other FT":["method_a_other_ft","method_b_other_ft","final_other_ft"]
+};
+const json=(x:unknown,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{"content-type":"application/json"}});
 const clamp=(x:number)=>Math.max(0,Math.min(1,x));
-const mean=(xs:number[])=>xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;
-const wm=(xs:number[])=>{if(!xs.length)return null;let a=0,b=0;for(let i=0;i<xs.length;i++){const w=Math.pow(.92,xs.length-1-i);a+=xs[i]*w;b+=w;}return a/b;};
-const hit=(f:F,m:string)=>m==='3+ HT'?(f.hh===null||f.ha===null?null:f.hh+f.ha>=3):m==='7+ FT'?(f.fh===null||f.fa===null?null:f.fh+f.fa>=7):m==='Other HT'?(f.hh===null||f.ha===null?null:f.hh>=4||f.ha>=4):(f.fh===null||f.fa===null?null:f.fh>=5||f.fa>=5);
-const teamGoals=(rows:F[],id:string,part:'ht'|'ft')=>rows.filter(r=>r.homeId===id||r.awayId===id).sort((a,b)=>a.date.localeCompare(b.date)).flatMap(r=>{const v=part==='ht'?(r.homeId===id?r.hh:r.ha):(r.homeId===id?r.fh:r.fa);return v===null?[]:[v];});
-function pois(k:number,l:number){let f=1;for(let i=2;i<=k;i++)f*=i;return Math.exp(-l)*Math.pow(l,k)/f;}
-function structural(h:number,a:number,m:string){const max=m.includes('HT')?8:12;let total=0,yes=0;for(let i=0;i<=max;i++)for(let j=0;j<=max;j++){const p=pois(i,h)*pois(j,a);total+=p;const ok=m==='3+ HT'?i+j>=3:m==='7+ FT'?i+j>=7:m==='Other HT'?i>=4||j>=4:i>=5||j>=5;if(ok)yes+=p;}return total?yes/total:0;}
-function model(prior:F[],target:F,m:string){const involved=(r:F,id:string)=>r.homeId===id||r.awayId===id;const home=prior.filter(r=>involved(r,target.homeId)),away=prior.filter(r=>involved(r,target.awayId));const unique=[...new Map([...home,...away].map(r=>[r.id,r])).values()];const eligible=unique.filter(r=>hit(r,m)!==null);const hits=eligible.filter(r=>hit(r,m)===true).length;const A=(hits+1.5)/(eligible.length+7.5);const ph=m.includes('HT');const hg=wm(teamGoals(home,target.homeId,ph?'ht':'ft'))??(ph?.68:1.35);const ag=wm(teamGoals(away,target.awayId,ph?'ht':'ft'))??(ph?.68:1.35);const B=structural(Math.max(.08,Math.min(ph?4.5:6,hg)),Math.max(.08,Math.min(ph?4.5:6,ag)),m);const completeness=Math.min(1,eligible.length/30),dis=Math.abs(A-B),w=clamp(.42+.28*completeness-.15*dis);return{A,B,baseline:clamp(A*w+B*(1-w)),engineWeightA:w};}
-Deno.serve(async(req)=>{if(req.method!=='POST')return json({error:'POST_REQUIRED'},405);const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');if(!url||!key)return json({error:'SERVER_SECRET_MISSING'},500);const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
- const [{data:teams,error:te},{data:raw,error:fe},{data:liveRows,error:he},{data:last,error:le}]=await Promise.all([
-  db.from('teams').select('team_id,canonical_name').range(0,9999),
-  db.from('fixtures').select('fixture_id,match_date,home_team_id,away_team_id,ht_home,ht_away,ft_home,ft_away,status').order('match_date').range(0,9999),
-  db.from('cfi_prediction_history').select('*').eq('selected_for_match_audit',true).eq('settlement_status','SETTLED').range(0,9999),
-  db.from('cfi_calibration_runs').select('fixture_count,metrics,created_at').eq('source','HISTORICAL_REPLAY').order('created_at',{ascending:false}).limit(1).maybeSingle()
- ]);if(te||fe||he||le)return json({error:'DB_READ_FAILED',details:[te?.message,fe?.message,he?.message,le?.message].filter(Boolean)},500);
- const fixtureCount=(raw??[]).length,settled=(liveRows??[]).length;const lastSettled=Number((last as any)?.metrics?.settledProduction??-1);if(last&&Number((last as any).fixture_count)===fixtureCount&&lastSettled===settled)return json({status:'SKIPPED',reason:'NO_NEW_FIXTURES_OR_SELECTED_SETTLEMENTS',fixtureCount,settledProduction:settled,lastRunAt:(last as any).created_at});
- const names=new Map((teams??[]).map((t:any)=>[t.team_id,t.canonical_name]));const rows:F[]=(raw??[]).map((r:any)=>({id:r.fixture_id,date:r.match_date,homeId:r.home_team_id,awayId:r.away_team_id,home:names.get(r.home_team_id)??r.home_team_id,away:names.get(r.away_team_id)??r.away_team_id,hh:r.ht_home,ha:r.ht_away,fh:r.ft_home,fa:r.ft_away})).filter((r:F)=>r.home&&r.away).sort((a,b)=>a.date.localeCompare(b.date));
- const losses:any=Object.fromEntries(MARKETS.map(m=>[m,Object.fromEntries(WEIGHTS.map(w=>[String(w),[]]))]));const baselineLoss:any=Object.fromEntries(MARKETS.map(m=>[m,[]]));const onlineLoss:any=Object.fromEntries(MARKETS.map(m=>[m,[]]));const chosen:any=Object.fromEntries(MARKETS.map(m=>[m,[]]));const mature:any=Object.fromEntries(MARKETS.map(m=>[m,0]));let replay=0;
- for(let i=0;i<rows.length;i++){const t=rows[i],prior=rows.slice(0,i).filter(r=>r.date<t.date);if(prior.length<8)continue;replay++;for(const m of MARKETS){const y0=hit(t,m);if(y0===null)continue;const y=y0?1:0,x=model(prior,t,m);const scored=WEIGHTS.map(w=>({w,n:losses[m][String(w)].length,b:mean(losses[m][String(w)])})).filter(z=>z.n>=20&&z.b!==null).sort((a,b)=>(a.b!-b.b!)||Math.abs(a.w-.5)-Math.abs(b.w-.5));const w=scored.length?scored[0].w:x.engineWeightA;if(scored.length)mature[m]++;const p=clamp(x.A*w+x.B*(1-w));baselineLoss[m].push((x.baseline-y)**2);onlineLoss[m].push((p-y)**2);chosen[m].push(w);for(const cw of WEIGHTS){const cp=clamp(x.A*cw+x.B*(1-cw));losses[m][String(cw)].push((cp-y)**2);}}}
- const metrics:any={};let minM=1e9,sumImp=0,maxDeg=0;for(const m of MARKETS){const bb=mean(baselineLoss[m]),bl=mean(onlineLoss[m]),imp=bb===null||bl===null?null:bb-bl;const candidates=WEIGHTS.map(w=>({weightA:w,brier:mean(losses[m][String(w)]),n:losses[m][String(w)].length})).filter(x=>x.brier!==null).sort((a,b)=>a.brier!-b.brier!);metrics[m]={eligible:baselineLoss[m].length,matureEligible:mature[m],brierBaseline:bb,brierLearned:bl,brierImprovement:imp,championWeightA:candidates[0]?.weightA??null,championBrier:candidates[0]?.brier??null,meanOnlineWeightA:mean(chosen[m])};minM=Math.min(minM,mature[m]);if(imp!==null){sumImp+=imp;maxDeg=Math.max(maxDeg,-imp);}}
- const live:any={};let minLive=1e9,liveImpSum=0,liveMaxDeg=0;for(const m of MARKETS){const base:number[]=[],chall:number[]=[];const [ca,cb,cf]=COLS[m];for(const h of liveRows??[]){const A=Number((h as any)[ca]),B=Number((h as any)[cb]),F=Number((h as any)[cf]),y=(h as any)?.actual_markets?.[m];if(typeof y!=='boolean'||![A,B,F].every(Number.isFinite))continue;const yy=y?1:0,w=metrics[m].championWeightA,p=clamp(A*w+B*(1-w));base.push((F-yy)**2);chall.push((p-yy)**2);}const bb=mean(base),cbrier=mean(chall),imp=bb===null||cbrier===null?null:bb-cbrier;live[m]={eligible:base.length,brierBaseline:bb,brierChallenger:cbrier,brierImprovement:imp};minLive=Math.min(minLive,base.length);if(imp!==null){liveImpSum+=imp;liveMaxDeg=Math.max(liveMaxDeg,-imp);}}
- const avgImp=sumImp/MARKETS.length;const avgLiveImp=liveImpSum/MARKETS.length;const histGate=minM>=80&&avgImp>=.002&&maxDeg<=.005;const liveGate=minLive>=80&&avgLiveImp>=0&&liveMaxDeg<=.005;const reason=!histGate?(minM<80?'INSUFFICIENT_OUT_OF_SAMPLE_REPLAY':avgImp<.002?'NO_MEANINGFUL_BRIER_GAIN':'MARKET_REGRESSION'):!liveGate?(minLive<80?'INSUFFICIENT_SETTLED_PRODUCTION':avgLiveImp<0?'LIVE_BRIER_REGRESSION':'LIVE_MARKET_REGRESSION'):'PROMOTION_GATE_PASSED';const promotion=histGate&&liveGate;
- const {data:run,error:re}=await db.from('cfi_calibration_runs').insert({learner_version:'CFI_CAL_LEARNER_V1.1',engine_version:'CFI_FINAL_V5.0.1',source:'HISTORICAL_REPLAY',strict_prior:true,fixture_count:rows.length,replay_count:replay,metrics:{markets:metrics,live,settledProduction:settled,settlementSelection:'selected_for_match_audit=true',historicalGate:histGate,liveGate,averageLiveBrierImprovement:avgLiveImp,maxLiveMarketDegradation:liveMaxDeg},promotion_eligible:promotion,promotion_reason:reason}).select('run_id').single();if(re)return json({error:'RUN_WRITE_FAILED',message:re.message},500);
- const params={markets:Object.fromEntries(MARKETS.map(m=>[m,{weightA:metrics[m].championWeightA,weightB:metrics[m].championWeightA===null?null:1-metrics[m].championWeightA}]))};const version=`CFI_CAL_CHALLENGER_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`;const {error:ce}=await db.from('cfi_calibration_versions').insert({calibration_version:version,learner_version:'CFI_CAL_LEARNER_V1.1',engine_version:'CFI_FINAL_V5.0.1',parameters:params,evidence_run_id:run.run_id,status:'CHALLENGER'});if(ce)return json({error:'CHALLENGER_WRITE_FAILED',message:ce.message,runId:run.run_id},500);return json({status:'COMPLETED',learner:'CFI_CAL_LEARNER_V1.1',strictPrior:true,fixtureCount:rows.length,replayCount:replay,settledProduction:settled,settlementSelection:'selected_for_match_audit=true',metrics:{historical:metrics,live},promotion:{eligible:promotion,historicalGate:histGate,liveGate,reason,minMaturePerMarket:minM,averageBrierImprovement:avgImp,maxMarketDegradation:maxDeg,minSettledPerMarket:minLive,averageLiveBrierImprovement:avgLiveImp,maxLiveMarketDegradation:liveMaxDeg},challenger:{version,runId:run.run_id,status:'CHALLENGER'}});});
+const localYmd=()=>{const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Ho_Chi_Minh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());const g=(t:string)=>p.find(x=>x.type===t)?.value;return `${g("year")}-${g("month")}-${g("day")}`;};
+const addDays=(ymd:string,n:number)=>{const d=new Date(`${ymd}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);};
+const rankOf=(top:any[],score:string)=>{const i=(Array.isArray(top)?top:[]).findIndex((x:any)=>String(x?.score??"")===score);return i<0?null:i+1;};
+type Acc={sum:number;n:number};
+const acc=():Acc=>({sum:0,n:0});
+const add=(a:Acc,x:number)=>{a.sum+=x;a.n++;};
+const avg=(a:Acc)=>a.n?a.sum/a.n:null;
+const errText=(e:any)=>{try{return JSON.stringify({message:e?.message??null,code:e?.code??null,details:e?.details??null,hint:e?.hint??null,name:e?.name??null});}catch{return String(e);}};
+async function allRows(db:any,select:string){const out:any[]=[];for(let from=0;;from+=1000){const {data,error}=await db.from("cfi_prediction_history").select(select).eq("selected_for_match_audit",true).eq("settlement_status","SETTLED").order("created_at").range(from,from+999);if(error)throw error;out.push(...(data??[]));if((data??[]).length<1000)break;}return out;}
+
+Deno.serve(async(req)=>{
+  if(req.method!=="POST")return json({status:"ERROR",error:"POST_REQUIRED"},405);
+  const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if(!url||!key)return json({status:"ERROR",error:"SERVER_SECRET_MISSING"},500);
+  const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+  const {data:tokenRow,error:tokenError}=await db.from("cfi_scheduler_tokens").select("token").eq("token_name","calibration_learning").maybeSingle();
+  if(tokenError||!tokenRow?.token)return json({status:"ERROR",error:"LEARNING_SCHEDULER_AUTH_NOT_CONFIGURED",message:errText(tokenError)},500);
+  if(req.headers.get("x-cfi-scheduler-token")!==String(tokenRow.token))return json({status:"UNAUTHORIZED"},401);
+  const body=await req.json().catch(()=>({}));
+  const force=body?.force===true;
+  let stage="PREFLIGHT";
+
+  try{
+    const [{count:settledCount,error:countError},{data:last,error:lastError}]=await Promise.all([
+      db.from("cfi_prediction_history").select("snapshot_id",{count:"exact",head:true}).eq("selected_for_match_audit",true).eq("settlement_status","SETTLED"),
+      db.from("cfi_calibration_runs").select("run_id,metrics,created_at").eq("source",SOURCE).order("created_at",{ascending:false}).limit(1).maybeSingle()
+    ]);
+    if(countError)throw countError;if(lastError)throw lastError;
+    const settled=settledCount??0,lastSettled=Number(last?.metrics?.settledProduction??-1);
+    if(!force&&last&&lastSettled===settled)return json({status:"SKIPPED",version:VERSION,reason:"NO_NEW_SELECTED_SETTLEMENTS",settledProduction:settled,lastRunAt:last.created_at});
+
+    stage="READ_SETTLED_HISTORY";
+    const selectCols=["snapshot_id","target_date","engine_version","created_at","actual_markets","actual_ht_home","actual_ht_away","actual_ft_home","actual_ft_away","top3_ht","top3_ft",
+      "method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht","method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft","method_a_other_ht","method_b_other_ht","final_other_ht","method_a_other_ft","method_b_other_ft","final_other_ft"].join(",");
+    const rows=await allRows(db,selectCols);
+
+    stage="COMPUTE_METRICS";
+    const market:any={};
+    for(const m of MARKETS){market[m]={baseline:acc(),methodA:acc(),methodB:acc(),weights:Object.fromEntries(WEIGHTS.map(w=>[String(w),acc()]))};}
+    const score:any={HT:{n:0,hit1:0,hit3:0,rr:0},FT:{n:0,hit1:0,hit3:0,rr:0}};
+    const engines=new Set<string>();
+    for(const r of rows){
+      if(r?.engine_version)engines.add(String(r.engine_version));
+      for(const m of MARKETS){
+        const [ca,cb,cf]=COLS[m];const A=Number(r?.[ca]),B=Number(r?.[cb]),F=Number(r?.[cf]),raw=r?.actual_markets?.[m];
+        if(typeof raw!=="boolean"||![A,B,F].every(Number.isFinite))continue;const y=raw?1:0;
+        add(market[m].baseline,(clamp(F)-y)**2);add(market[m].methodA,(clamp(A)-y)**2);add(market[m].methodB,(clamp(B)-y)**2);
+        for(const w of WEIGHTS){const q=clamp(A*w+B*(1-w));add(market[m].weights[String(w)],(q-y)**2);}
+      }
+      if(Number.isInteger(r.actual_ht_home)&&Number.isInteger(r.actual_ht_away)){
+        const rr=rankOf(r.top3_ht,`${r.actual_ht_home}-${r.actual_ht_away}`);score.HT.n++;if(rr===1)score.HT.hit1++;if(rr!==null){score.HT.hit3++;score.HT.rr+=1/rr;}
+      }
+      if(Number.isInteger(r.actual_ft_home)&&Number.isInteger(r.actual_ft_away)){
+        const rr=rankOf(r.top3_ft,`${r.actual_ft_home}-${r.actual_ft_away}`);score.FT.n++;if(rr===1)score.FT.hit1++;if(rr!==null){score.FT.hit3++;score.FT.rr+=1/rr;}
+      }
+    }
+
+    const metrics:any={};let minLive=Number.POSITIVE_INFINITY,impSum=0,maxDeg=0;
+    for(const m of MARKETS){
+      const s=market[m],candidates=WEIGHTS.map(w=>({weightA:w,brier:avg(s.weights[String(w)]),n:s.weights[String(w)].n})).filter(x=>x.brier!==null).sort((a:any,b:any)=>(a.brier-b.brier)||Math.abs(a.weightA-.5)-Math.abs(b.weightA-.5));
+      const base=avg(s.baseline),best=candidates[0]?.brier??null,imp=base===null||best===null?null:base-best;
+      metrics[m]={eligible:s.baseline.n,brierFinal:base,brierMethodA:avg(s.methodA),brierMethodB:avg(s.methodB),challengerWeightA:candidates[0]?.weightA??null,challengerWeightB:candidates[0]?1-candidates[0].weightA:null,brierChallenger:best,brierImprovement:imp};
+      minLive=Math.min(minLive,s.baseline.n);if(imp!==null){impSum+=imp;maxDeg=Math.max(maxDeg,-imp);}
+    }
+    if(!Number.isFinite(minLive))minLive=0;
+    const scorelines={
+      "Top-3 HT":{eligible:score.HT.n,hitAt1:score.HT.n?score.HT.hit1/score.HT.n:null,hitAt3:score.HT.n?score.HT.hit3/score.HT.n:null,mrr:score.HT.n?score.HT.rr/score.HT.n:null},
+      "Top-3 FT":{eligible:score.FT.n,hitAt1:score.FT.n?score.FT.hit1/score.FT.n:null,hitAt3:score.FT.n?score.FT.hit3/score.FT.n:null,mrr:score.FT.n?score.FT.rr/score.FT.n:null}
+    };
+
+    stage="RECENT_COVERAGE";
+    const today=localYmd(),yesterday=addDays(today,-1);
+    const {data:evalRows,error:evalError}=await db.from("cfi_prediction_evaluation").select("settlement_status").eq("target_date",yesterday).eq("selected_for_match_audit",true);
+    if(evalError)throw evalError;
+    const selectedYesterday=(evalRows??[]).length,settledYesterday=(evalRows??[]).filter((x:any)=>x.settlement_status==="SETTLED").length,pendingYesterday=selectedYesterday-settledYesterday;
+    const coverage=selectedYesterday?settledYesterday/selectedYesterday:1;
+    const coverageGate=selectedYesterday===0||coverage>=.90;
+    const avgImp=impSum/MARKETS.length;
+    const marketGate=minLive>=80&&avgImp>=0&&maxDeg<=.005;
+    const scoreGate=score.HT.n>=80&&score.FT.n>=80;
+    const promotion=marketGate&&scoreGate&&coverageGate;
+    const reason=!coverageGate?"RECENT_SETTLEMENT_COVERAGE_INCOMPLETE":!marketGate?"LIVE_MARKET_GATE_FAILED":!scoreGate?"INSUFFICIENT_SETTLED_SCORELINE_PRODUCTION":"PROMOTION_GATE_PASSED";
+    const coverageSummary={targetDate:yesterday,selected:selectedYesterday,settled:settledYesterday,pending:pendingYesterday,coverage,requiredCoverage:.90,pass:coverageGate};
+
+    stage="WRITE_CALIBRATION_RUN";
+    const engineVersion=engines.size===1?[...engines][0]:"CFI_PRODUCTION_MIXED";
+    const {data:run,error:runError}=await db.from("cfi_calibration_runs").insert({learner_version:VERSION,engine_version:engineVersion,source:SOURCE,strict_prior:true,fixture_count:settled,replay_count:0,metrics:{liveMarkets:metrics,liveScorelines:scorelines,settledProduction:settled,newSettlements:lastSettled<0?settled:settled-lastSettled,recentCoverage:coverageSummary,marketGate,scorelineGate:scoreGate,coverageGate,partialLabelsBlockedFromPromotion:true},promotion_eligible:promotion,promotion_reason:reason}).select("run_id").single();
+    if(runError)throw runError;
+    return json({status:"COMPLETED",version:VERSION,source:SOURCE,strictPrior:true,settledProduction:settled,newSettlements:lastSettled<0?settled:settled-lastSettled,metrics:{liveMarkets:metrics,liveScorelines:scorelines},recentCoverage:coverageSummary,promotion:{eligible:promotion,reason,marketGate,scorelineGate:scoreGate,coverageGate},runId:run.run_id});
+  }catch(e){return json({status:"ERROR",version:VERSION,error:"LEARNER_FAILED",stage,message:errText(e)},500);}
+});
