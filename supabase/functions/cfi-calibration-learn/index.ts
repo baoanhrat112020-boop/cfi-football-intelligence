@@ -1,10 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const VERSION = "CFI_CAL_LEARNER_V3_1_LIVE_FEEDBACK";
-const SOURCE = "SETTLED_PRODUCTION";
-const MARKETS = ["3+ HT","7+ FT","Other HT","Other FT"] as const;
-const WEIGHTS = [0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1] as const;
-const COLS:any = {
+const VERSION="CFI_CAL_LEARNER_V3_2_TERMINAL_AWARE";
+const SOURCE="SETTLED_PRODUCTION";
+const MARKETS=["3+ HT","7+ FT","Other HT","Other FT"] as const;
+const WEIGHTS=[0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1] as const;
+const COLS:any={
   "3+ HT":["method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht"],
   "7+ FT":["method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft"],
   "Other HT":["method_a_other_ht","method_b_other_ht","final_other_ht"],
@@ -33,7 +33,6 @@ Deno.serve(async(req)=>{
   const body=await req.json().catch(()=>({}));
   const force=body?.force===true;
   let stage="PREFLIGHT";
-
   try{
     const [{count:settledCount,error:countError},{data:last,error:lastError}]=await Promise.all([
       db.from("cfi_prediction_history").select("snapshot_id",{count:"exact",head:true}).eq("selected_for_match_audit",true).eq("settlement_status","SETTLED"),
@@ -44,61 +43,45 @@ Deno.serve(async(req)=>{
     if(!force&&last&&lastSettled===settled)return json({status:"SKIPPED",version:VERSION,reason:"NO_NEW_SELECTED_SETTLEMENTS",settledProduction:settled,lastRunAt:last.created_at});
 
     stage="READ_SETTLED_HISTORY";
-    const selectCols=["snapshot_id","target_date","engine_version","created_at","actual_markets","actual_ht_home","actual_ht_away","actual_ft_home","actual_ft_away","top3_ht","top3_ft",
-      "method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht","method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft","method_a_other_ht","method_b_other_ht","final_other_ht","method_a_other_ft","method_b_other_ft","final_other_ft"].join(",");
+    const selectCols=["snapshot_id","target_date","engine_version","created_at","actual_markets","actual_ht_home","actual_ht_away","actual_ft_home","actual_ft_away","top3_ht","top3_ft","method_a_3plus_ht","method_b_3plus_ht","final_3plus_ht","method_a_7plus_ft","method_b_7plus_ft","final_7plus_ft","method_a_other_ht","method_b_other_ht","final_other_ht","method_a_other_ft","method_b_other_ft","final_other_ft"].join(",");
     const rows=await allRows(db,selectCols);
 
     stage="COMPUTE_METRICS";
-    const market:any={};
-    for(const m of MARKETS){market[m]={baseline:acc(),methodA:acc(),methodB:acc(),weights:Object.fromEntries(WEIGHTS.map(w=>[String(w),acc()]))};}
+    const market:any={};for(const m of MARKETS)market[m]={baseline:acc(),methodA:acc(),methodB:acc(),weights:Object.fromEntries(WEIGHTS.map(w=>[String(w),acc()]))};
     const score:any={HT:{n:0,hit1:0,hit3:0,rr:0},FT:{n:0,hit1:0,hit3:0,rr:0}};
     const engines=new Set<string>();
     for(const r of rows){
       if(r?.engine_version)engines.add(String(r.engine_version));
-      for(const m of MARKETS){
-        const [ca,cb,cf]=COLS[m];const A=Number(r?.[ca]),B=Number(r?.[cb]),F=Number(r?.[cf]),raw=r?.actual_markets?.[m];
-        if(typeof raw!=="boolean"||![A,B,F].every(Number.isFinite))continue;const y=raw?1:0;
-        add(market[m].baseline,(clamp(F)-y)**2);add(market[m].methodA,(clamp(A)-y)**2);add(market[m].methodB,(clamp(B)-y)**2);
-        for(const w of WEIGHTS){const q=clamp(A*w+B*(1-w));add(market[m].weights[String(w)],(q-y)**2);}
-      }
-      if(Number.isInteger(r.actual_ht_home)&&Number.isInteger(r.actual_ht_away)){
-        const rr=rankOf(r.top3_ht,`${r.actual_ht_home}-${r.actual_ht_away}`);score.HT.n++;if(rr===1)score.HT.hit1++;if(rr!==null){score.HT.hit3++;score.HT.rr+=1/rr;}
-      }
-      if(Number.isInteger(r.actual_ft_home)&&Number.isInteger(r.actual_ft_away)){
-        const rr=rankOf(r.top3_ft,`${r.actual_ft_home}-${r.actual_ft_away}`);score.FT.n++;if(rr===1)score.FT.hit1++;if(rr!==null){score.FT.hit3++;score.FT.rr+=1/rr;}
-      }
+      for(const m of MARKETS){const [ca,cb,cf]=COLS[m];const A=Number(r?.[ca]),B=Number(r?.[cb]),F=Number(r?.[cf]),raw=r?.actual_markets?.[m];if(typeof raw!=="boolean"||![A,B,F].every(Number.isFinite))continue;const y=raw?1:0;add(market[m].baseline,(clamp(F)-y)**2);add(market[m].methodA,(clamp(A)-y)**2);add(market[m].methodB,(clamp(B)-y)**2);for(const w of WEIGHTS){const q=clamp(A*w+B*(1-w));add(market[m].weights[String(w)],(q-y)**2);}}
+      if(Number.isInteger(r.actual_ht_home)&&Number.isInteger(r.actual_ht_away)){const rr=rankOf(r.top3_ht,`${r.actual_ht_home}-${r.actual_ht_away}`);score.HT.n++;if(rr===1)score.HT.hit1++;if(rr!==null){score.HT.hit3++;score.HT.rr+=1/rr;}}
+      if(Number.isInteger(r.actual_ft_home)&&Number.isInteger(r.actual_ft_away)){const rr=rankOf(r.top3_ft,`${r.actual_ft_home}-${r.actual_ft_away}`);score.FT.n++;if(rr===1)score.FT.hit1++;if(rr!==null){score.FT.hit3++;score.FT.rr+=1/rr;}}
     }
-
     const metrics:any={};let minLive=Number.POSITIVE_INFINITY,impSum=0,maxDeg=0;
-    for(const m of MARKETS){
-      const s=market[m],candidates=WEIGHTS.map(w=>({weightA:w,brier:avg(s.weights[String(w)]),n:s.weights[String(w)].n})).filter(x=>x.brier!==null).sort((a:any,b:any)=>(a.brier-b.brier)||Math.abs(a.weightA-.5)-Math.abs(b.weightA-.5));
-      const base=avg(s.baseline),best=candidates[0]?.brier??null,imp=base===null||best===null?null:base-best;
-      metrics[m]={eligible:s.baseline.n,brierFinal:base,brierMethodA:avg(s.methodA),brierMethodB:avg(s.methodB),challengerWeightA:candidates[0]?.weightA??null,challengerWeightB:candidates[0]?1-candidates[0].weightA:null,brierChallenger:best,brierImprovement:imp};
-      minLive=Math.min(minLive,s.baseline.n);if(imp!==null){impSum+=imp;maxDeg=Math.max(maxDeg,-imp);}
-    }
+    for(const m of MARKETS){const s=market[m],candidates=WEIGHTS.map(w=>({weightA:w,brier:avg(s.weights[String(w)]),n:s.weights[String(w)].n})).filter(x=>x.brier!==null).sort((a:any,b:any)=>(a.brier-b.brier)||Math.abs(a.weightA-.5)-Math.abs(b.weightA-.5));const base=avg(s.baseline),best=candidates[0]?.brier??null,imp=base===null||best===null?null:base-best;metrics[m]={eligible:s.baseline.n,brierFinal:base,brierMethodA:avg(s.methodA),brierMethodB:avg(s.methodB),challengerWeightA:candidates[0]?.weightA??null,challengerWeightB:candidates[0]?1-candidates[0].weightA:null,brierChallenger:best,brierImprovement:imp};minLive=Math.min(minLive,s.baseline.n);if(imp!==null){impSum+=imp;maxDeg=Math.max(maxDeg,-imp);}}
     if(!Number.isFinite(minLive))minLive=0;
-    const scorelines={
-      "Top-3 HT":{eligible:score.HT.n,hitAt1:score.HT.n?score.HT.hit1/score.HT.n:null,hitAt3:score.HT.n?score.HT.hit3/score.HT.n:null,mrr:score.HT.n?score.HT.rr/score.HT.n:null},
-      "Top-3 FT":{eligible:score.FT.n,hitAt1:score.FT.n?score.FT.hit1/score.FT.n:null,hitAt3:score.FT.n?score.FT.hit3/score.FT.n:null,mrr:score.FT.n?score.FT.rr/score.FT.n:null}
-    };
+    const scorelines={"Top-3 HT":{eligible:score.HT.n,hitAt1:score.HT.n?score.HT.hit1/score.HT.n:null,hitAt3:score.HT.n?score.HT.hit3/score.HT.n:null,mrr:score.HT.n?score.HT.rr/score.HT.n:null},"Top-3 FT":{eligible:score.FT.n,hitAt1:score.FT.n?score.FT.hit1/score.FT.n:null,hitAt3:score.FT.n?score.FT.hit3/score.FT.n:null,mrr:score.FT.n?score.FT.rr/score.FT.n:null}};
 
     stage="RECENT_COVERAGE";
     const today=localYmd(),yesterday=addDays(today,-1);
-    const {data:evalRows,error:evalError}=await db.from("cfi_prediction_evaluation").select("settlement_status").eq("target_date",yesterday).eq("selected_for_match_audit",true);
-    if(evalError)throw evalError;
-    const selectedYesterday=(evalRows??[]).length,settledYesterday=(evalRows??[]).filter((x:any)=>x.settlement_status==="SETTLED").length,pendingYesterday=selectedYesterday-settledYesterday;
-    const coverage=selectedYesterday?settledYesterday/selectedYesterday:1;
-    const coverageGate=selectedYesterday===0||coverage>=.90;
-    const avgImp=impSum/MARKETS.length;
-    const marketGate=minLive>=80&&avgImp>=0&&maxDeg<=.005;
-    const scoreGate=score.HT.n>=80&&score.FT.n>=80;
-    const promotion=marketGate&&scoreGate&&coverageGate;
+    const {data:audit,error:auditError}=await db.from("cfi_daily_prediction_audit_latest").select("selected_count,settled_count,pending_count,coverage,status,metrics").eq("target_date",yesterday).maybeSingle();
+    if(auditError)throw auditError;
+    let coverageSummary:any;
+    if(audit){
+      const terminalExcluded=Number(audit?.metrics?.terminalExcluded??0),selected=Number(audit.selected_count??0),eligible=Math.max(0,selected-terminalExcluded),settledY=Number(audit.settled_count??0),pending=Number(audit.pending_count??0),coverage=Number(audit.coverage??(eligible?settledY/eligible:1));
+      coverageSummary={targetDate:yesterday,selected,eligible,settled:settledY,terminalExcluded,pending,coverage,requiredCoverage:.90,pass:(pending===0&&coverage>=.90),source:"TERMINAL_AWARE_DAILY_AUDIT"};
+    }else{
+      const {data:evalRows,error:evalError}=await db.from("cfi_prediction_evaluation").select("snapshot_id,settlement_status").eq("target_date",yesterday).eq("selected_for_match_audit",true);if(evalError)throw evalError;
+      const ids=(evalRows??[]).map((x:any)=>x.snapshot_id),{data:terms,error:termError}=ids.length?await db.from("cfi_prediction_terminal_resolutions").select("snapshot_id").in("snapshot_id",ids):{data:[],error:null};if(termError)throw termError;
+      const selected=(evalRows??[]).length,terminalExcluded=(terms??[]).length,eligible=Math.max(0,selected-terminalExcluded),settledY=(evalRows??[]).filter((x:any)=>x.settlement_status==="SETTLED").length,pending=Math.max(0,eligible-settledY),coverage=eligible?settledY/eligible:1;
+      coverageSummary={targetDate:yesterday,selected,eligible,settled:settledY,terminalExcluded,pending,coverage,requiredCoverage:.90,pass:(pending===0&&coverage>=.90),source:"TERMINAL_LEDGER_FALLBACK"};
+    }
+    const coverageGate=coverageSummary.pass===true;
+    const avgImp=impSum/MARKETS.length,marketGate=minLive>=80&&avgImp>=0&&maxDeg<=.005,scoreGate=score.HT.n>=80&&score.FT.n>=80,promotion=marketGate&&scoreGate&&coverageGate;
     const reason=!coverageGate?"RECENT_SETTLEMENT_COVERAGE_INCOMPLETE":!marketGate?"LIVE_MARKET_GATE_FAILED":!scoreGate?"INSUFFICIENT_SETTLED_SCORELINE_PRODUCTION":"PROMOTION_GATE_PASSED";
-    const coverageSummary={targetDate:yesterday,selected:selectedYesterday,settled:settledYesterday,pending:pendingYesterday,coverage,requiredCoverage:.90,pass:coverageGate};
 
     stage="WRITE_CALIBRATION_RUN";
     const engineVersion=engines.size===1?[...engines][0]:"CFI_PRODUCTION_MIXED";
-    const {data:run,error:runError}=await db.from("cfi_calibration_runs").insert({learner_version:VERSION,engine_version:engineVersion,source:SOURCE,strict_prior:true,fixture_count:settled,replay_count:0,metrics:{liveMarkets:metrics,liveScorelines:scorelines,settledProduction:settled,newSettlements:lastSettled<0?settled:settled-lastSettled,recentCoverage:coverageSummary,marketGate,scorelineGate:scoreGate,coverageGate,partialLabelsBlockedFromPromotion:true},promotion_eligible:promotion,promotion_reason:reason}).select("run_id").single();
+    const {data:run,error:runError}=await db.from("cfi_calibration_runs").insert({learner_version:VERSION,engine_version:engineVersion,source:SOURCE,strict_prior:true,fixture_count:settled,replay_count:0,metrics:{liveMarkets:metrics,liveScorelines:scorelines,settledProduction:settled,newSettlements:lastSettled<0?settled:settled-lastSettled,recentCoverage:coverageSummary,marketGate,scorelineGate:scoreGate,coverageGate,partialLabelsBlockedFromPromotion:true,terminalAwareCoverage:true},promotion_eligible:promotion,promotion_reason:reason}).select("run_id").single();
     if(runError)throw runError;
     return json({status:"COMPLETED",version:VERSION,source:SOURCE,strictPrior:true,settledProduction:settled,newSettlements:lastSettled<0?settled:settled-lastSettled,metrics:{liveMarkets:metrics,liveScorelines:scorelines},recentCoverage:coverageSummary,promotion:{eligible:promotion,reason,marketGate,scorelineGate:scoreGate,coverageGate},runId:run.run_id});
   }catch(e){return json({status:"ERROR",version:VERSION,error:"LEARNER_FAILED",stage,message:errText(e)},500);}
