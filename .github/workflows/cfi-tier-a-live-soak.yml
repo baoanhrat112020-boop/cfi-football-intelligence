@@ -1,0 +1,96 @@
+name: CFI Tier A Live Soak
+
+on:
+  pull_request:
+    paths:
+      - 'src/discovery/fixture-source-policy.mjs'
+      - 'local-node/browser/fixture-collector/**'
+      - 'local-node/registry/tier-a-browser-discovery.mjs'
+      - 'tools/cfi-tier-a-live-soak-report.mjs'
+      - 'package.json'
+      - '.github/workflows/cfi-tier-a-live-soak.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cfi-tier-a-live-soak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-tier-a-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      TZ: Asia/Ho_Chi_Minh
+      CFI_TIME_ZONE: Asia/Ho_Chi_Minh
+      CFI_BROWSER_SNAPSHOT_MAX_CHARS: 500000
+      CFI_BROWSER_PROBE_SCROLL_STEPS: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium for live Tier A soak
+        id: browser_install
+        continue-on-error: true
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live Tier A browser discovery
+        id: tier_a_live
+        shell: bash
+        run: |
+          set +e
+          npm run cfi:tier-a-discovery
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          echo "CFI_TIER_A_LIVE_EXIT=$code"
+          exit 0
+
+      - name: Build live Tier A soak report
+        if: always()
+        run: node tools/cfi-tier-a-live-soak-report.mjs
+
+      - name: Verify live soak remains shadow-only
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'audit-reports/cfi-tier-a-live-soak.json';
+          if (!fs.existsSync(path)) throw new Error('TIER_A_SOAK_REPORT_MISSING');
+          const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (report.safety?.decisionUse !== false) throw new Error('DECISION_USE_NOT_FALSE');
+          if (report.safety?.bigDbWriteAllowed !== false) throw new Error('BIGDB_WRITE_ALLOWED');
+          if (report.safety?.productionScheduleActivated !== false) throw new Error('PRODUCTION_SCHEDULE_ACTIVATED');
+          console.log(JSON.stringify({
+            status: report.status,
+            metrics: report.metrics,
+            providerRows: report.providerRows,
+            sourceHealth: report.sourceHealth,
+            tierALiveExit: '${{ steps.tier_a_live.outputs.exit_code }}',
+            chromiumInstallOutcome: '${{ steps.browser_install.outcome }}'
+          }));
+          NODE
+
+      - name: Upload Tier A live soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-tier-a-live-soak-${{ github.run_id }}
+          path: |
+            audit-reports/cfi-tier-a-live-soak.json
+            audit-reports/cfi-tier-a-live-soak.md
+            local-node/cache/registry/tier-a-browser-discovery.json
+            local-node/cache/registry/tier-a-browser-discovery-audit.json
+            local-node/cache/browser/source-probe-audit.json
+            local-node/cache/browser/*-adapter-audit.json
+            local-node/cache/browser/probes/daily-*.txt
+            local-node/browser/fixture-collector/input/*-candidates.json
+          if-no-files-found: warn
