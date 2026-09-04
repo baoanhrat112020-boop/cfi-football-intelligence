@@ -50,6 +50,25 @@ test('BongdaWap-style time followed by two team lines is parsed without inventin
   assert.equal(parsed.candidates[0].competition, 'ALL FOOTBALL');
 });
 
+test('BongdaWap standings decorations are stripped from team identity', () => {
+  const source = {
+    ...baseSource,
+    id: 'daily-bongdawap',
+    provider: 'bongdawap',
+    url: 'https://bongdawap.com/lich-thi-dau-bong-da.html'
+  };
+  const parsed = parseDailyFixtureText(source, `
+    18:30 - [5] Newcastle vs Bournemouth [14] -
+    21:00 - [Đông B-3] Fujieda MYFC vs Vanraure Hachinohe [Đông A-9] -
+  `, { targetDate, timeZone: 'Asia/Ho_Chi_Minh' });
+
+  assert.equal(parsed.candidates.length, 2);
+  assert.equal(parsed.candidates[0].home_team, 'Newcastle');
+  assert.equal(parsed.candidates[0].away_team, 'Bournemouth');
+  assert.equal(parsed.candidates[1].home_team, 'Fujieda MYFC');
+  assert.equal(parsed.candidates[1].away_team, 'Vanraure Hachinohe');
+});
+
 test('Flashscore-style inline time and teams is accepted', () => {
   const source = {
     ...baseSource,
