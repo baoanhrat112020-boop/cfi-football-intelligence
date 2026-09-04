@@ -5,10 +5,12 @@ on:
     paths:
       - 'src/discovery/**'
       - 'local-node/registry/**'
+      - 'local-node/browser/fixture-collector/source-registry.mjs'
       - 'local-node/orchestrator.mjs'
       - 'tools/cfi-daily-fixture-auto-e2e.mjs'
       - 'tests/daily-fixture-registry.test.mjs'
       - 'tests/registry-source-adapters.test.mjs'
+      - 'tests/fixture-source-policy.test.mjs'
       - 'package.json'
       - '.github/workflows/cfi-daily-fixture-auto-e2e.yml'
   workflow_dispatch:
@@ -38,11 +40,30 @@ jobs:
 
       - run: npm ci
 
-      - name: Deterministic registry contract tests
+      - name: Deterministic registry and source-policy contract tests
         run: >-
           node --experimental-strip-types --test
           tests/daily-fixture-registry.test.mjs
           tests/registry-source-adapters.test.mjs
+          tests/fixture-source-policy.test.mjs
+
+      - name: Build prioritized source scan plan
+        run: npm run cfi:source-plan
+
+      - name: Verify source priority policy
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const plan = JSON.parse(fs.readFileSync('local-node/cache/registry/source-scan-plan.json', 'utf8'));
+          const expected = ['AISCORE','BONGDAWAP','SOFASCORE','FLASHSCORE'];
+          if (JSON.stringify(plan.primaryOrder) !== JSON.stringify(expected)) {
+            throw new Error(`PRIMARY_SOURCE_ORDER_INVALID:${JSON.stringify(plan.primaryOrder)}`);
+          }
+          if (plan.rules?.espnCanSatisfyCoverageReadiness !== false) throw new Error('ESPN_COVERAGE_AUTHORITY_INVALID');
+          if (plan.rules?.theSportsDbCanSatisfyCoverageReadiness !== false) throw new Error('TSDB_COVERAGE_AUTHORITY_INVALID');
+          if (plan.rules?.stopAfterRowQuota !== false) throw new Error('ROW_QUOTA_EARLY_STOP_NOT_DISABLED');
+          console.log(JSON.stringify({status:'PASS', primaryOrder:plan.primaryOrder, secondaryOrder:plan.secondaryOrder, fallbackOrder:plan.fallbackOrder}));
+          NODE
 
       - name: Shadow Auto E2E with live public smoke
         run: npm run cfi:auto-e2e
@@ -70,4 +91,5 @@ jobs:
           path: |
             audit-reports/cfi-daily-fixture-auto-e2e.json
             audit-reports/cfi-daily-fixture-auto-e2e.md
+            local-node/cache/registry/source-scan-plan.json
           if-no-files-found: warn
