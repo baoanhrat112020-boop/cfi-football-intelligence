@@ -54,6 +54,8 @@ test('R4 installer is one-shot, config-backed, quote-safe and self-verifying', (
   assert.match(installer, /AUTH_SOURCE=config\.json/);
   assert.match(installer, /DIRECT_SMOKE=PASS/);
   assert.match(installer, /\/XML \$TaskXml/);
+  assert.match(installer, /WindowsIdentity/);
+  assert.match(installer, /<UserId>\$EscUserSid<\/UserId>/);
   assert.match(installer, /TASK_VERIFY=PASS/);
   assert.match(installer, /FIX_RESULT=PASS/);
   assert.match(installer, /MAIN_RUNNER_MUTATED=FALSE/);
