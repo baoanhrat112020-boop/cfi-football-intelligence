@@ -128,8 +128,6 @@ async function runDeterministicResilience(targetDate) {
   });
   must(rolling1.metrics.selected === 3, 'ROLLING_CYCLE1_EXPECTED_3', rolling1.metrics);
 
-  // Simulate a complete current-cycle discovery outage. Prior registry entries
-  // must remain available for refresh and must never be deleted by source absence.
   const cycle2 = mergeDailyFixtureRegistry(cycle1, [], {
     targetDate,
     timeZone: TIME_ZONE,
@@ -147,7 +145,6 @@ async function runDeterministicResilience(targetDate) {
   });
   must(rolling2.metrics.refreshRequired === 3, 'SOURCE_FAILURE_REFRESH_REQUIRED_EXPECTED_3');
 
-  // Same identity/date with a second kickoff from another source must fail closed.
   const conflictObservation = row({
     sourceClass: 'WEB_SEARCH_RESCUE',
     provider: 'E2E_WEB_CONFLICT',
@@ -239,11 +236,16 @@ async function runLivePublicSmoke() {
   const attempts = Array.isArray(discovery.attempts) ? discovery.attempts : [];
   const successfulAttempts = attempts.filter(attempt => attempt?.ok === true).length;
   const failedAttempts = attempts.length - successfulAttempts;
+  const sourceHealth = supplement.telemetry?.sourceHealth ?? null;
   const status = successfulAttempts === 0
     ? 'DEGRADED_ALL_PUBLIC_PROVIDERS_FAILED'
     : supplement.rows.length === 0
       ? 'PASS_EMPTY'
-      : 'PASS';
+      : sourceHealth?.status === 'FALLBACK_ONLY'
+        ? 'PASS_FALLBACK_ONLY'
+        : sourceHealth?.status === 'SECONDARY_ONLY'
+          ? 'PASS_SECONDARY_ONLY'
+          : 'PASS';
 
   must(supplement.decisionUse === false, 'LIVE_PUBLIC_DECISION_USE_MUST_BE_FALSE');
   must(supplement.bigDbWriteAllowed === false, 'LIVE_PUBLIC_BIGDB_WRITE_MUST_BE_FALSE');
@@ -255,10 +257,12 @@ async function runLivePublicSmoke() {
     provider: discovery.provider,
     providers: discovery.providers,
     rows: supplement.rows.length,
+    sourceHealth,
+    coverageReadyForRanking: sourceHealth?.coverageReadyForRanking === true,
     successfulAttempts,
     failedAttempts,
     search: discovery.search,
-    note: 'Live provider smoke measures observable coverage only; it does not claim global fixture recall.'
+    note: 'Live provider smoke measures observable coverage only. Fallback-only ESPN/TheSportsDB coverage cannot satisfy ranking readiness and never claims global fixture recall.'
   };
 }
 
@@ -272,7 +276,7 @@ async function main() {
     deterministic = await runDeterministicResilience(targetDate);
   } catch (error) {
     const report = {
-      contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V1',
+      contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V2',
       status: 'FAIL',
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -295,7 +299,7 @@ async function main() {
 
   const livePublic = await runLivePublicSmoke();
   const report = {
-    contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V1',
+    contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V2',
     status: 'PASS',
     startedAt,
     finishedAt: new Date().toISOString(),
@@ -320,12 +324,14 @@ async function main() {
     `- Source-outage retained fixtures: ${deterministic.sourceFailureCycle.matrix.unionFixtures}\n` +
     `- Kickoff conflict status: ${deterministic.conflictCycle.verificationStatus}\n` +
     `- Live public smoke: ${livePublic.status}\n` +
+    `- Live public source health: ${livePublic.sourceHealth?.status ?? 'N/A'}\n` +
+    `- Live public ranking-ready coverage: ${livePublic.coverageReadyForRanking === true}\n` +
     `- Live public rows: ${livePublic.rows ?? 0}\n` +
     `- Live public successful attempts: ${livePublic.successfulAttempts ?? 0}\n` +
     `- decisionUse: false\n` +
     `- bigDbWriteAllowed: false\n` +
     `- Production schedule activated: false\n\n` +
-    `Live public-provider failure is non-blocking because third-party outages are an expected resilience scenario. Deterministic registry integrity failures are blocking.\n`;
+    `Live public-provider failure is non-blocking because third-party outages are an expected resilience scenario. Fallback-only ESPN/TheSportsDB rows do not satisfy ranking coverage readiness. Deterministic registry integrity failures are blocking.\n`;
 
   await Promise.all([
     writeFile(REPORT_JSON, JSON.stringify(report, null, 2), 'utf8'),
@@ -341,6 +347,8 @@ async function main() {
     retainedAfterSourceFailure: deterministic.sourceFailureCycle.matrix.unionFixtures,
     conflictStatus: deterministic.conflictCycle.verificationStatus,
     livePublicStatus: livePublic.status,
+    livePublicSourceHealth: livePublic.sourceHealth?.status ?? null,
+    livePublicCoverageReadyForRanking: livePublic.coverageReadyForRanking === true,
     livePublicRows: livePublic.rows ?? 0,
     decisionUse: false,
     bigDbWriteAllowed: false
