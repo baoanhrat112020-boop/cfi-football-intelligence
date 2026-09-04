@@ -5,12 +5,13 @@ on:
     paths:
       - 'src/discovery/**'
       - 'local-node/registry/**'
-      - 'local-node/browser/fixture-collector/source-registry.mjs'
+      - 'local-node/browser/fixture-collector/**'
       - 'local-node/orchestrator.mjs'
       - 'tools/cfi-daily-fixture-auto-e2e.mjs'
       - 'tests/daily-fixture-registry.test.mjs'
       - 'tests/registry-source-adapters.test.mjs'
       - 'tests/fixture-source-policy.test.mjs'
+      - 'tests/daily-text-parser.test.mjs'
       - 'package.json'
       - '.github/workflows/cfi-daily-fixture-auto-e2e.yml'
   workflow_dispatch:
@@ -40,12 +41,13 @@ jobs:
 
       - run: npm ci
 
-      - name: Deterministic registry and source-policy contract tests
+      - name: Deterministic registry, source-policy and Tier A parser contract tests
         run: >-
           node --experimental-strip-types --test
           tests/daily-fixture-registry.test.mjs
           tests/registry-source-adapters.test.mjs
           tests/fixture-source-policy.test.mjs
+          tests/daily-text-parser.test.mjs
 
       - name: Build prioritized source scan plan
         run: npm run cfi:source-plan
