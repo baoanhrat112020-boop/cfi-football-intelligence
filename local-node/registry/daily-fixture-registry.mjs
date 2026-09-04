@@ -4,10 +4,20 @@ import {
   mergeDailyFixtureRegistry,
   selectRollingFixtureWindow
 } from '../../src/discovery/daily-fixture-registry.mjs';
+import {
+  buildRegistryCoverageMatrix,
+  snapshotFreshness
+} from '../../src/discovery/registry-source-adapters.mjs';
 
 const TIME_ZONE = process.env.CFI_TIME_ZONE || 'Asia/Ho_Chi_Minh';
 const HORIZON_MINUTES = Number(
   process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90
+);
+const PUBLIC_TTL_MINUTES = Number(
+  process.env.CFI_PUBLIC_DISCOVERY_TTL_MINUTES ?? 30
+);
+const WEB_TTL_MINUTES = Number(
+  process.env.CFI_WEB_RESCUE_TTL_MINUTES ?? 30
 );
 const SKIP_PC_INPUT = process.env.CFI_REGISTRY_SKIP_PC_INPUT === '1';
 
@@ -16,6 +26,14 @@ const FILES = {
   registry: resolve('local-node/cache/registry/daily-fixture-registry.json'),
   rolling: resolve('local-node/cache/registry/rolling-fixture-window.json'),
   audit: resolve('local-node/cache/registry/daily-fixture-registry-audit.json'),
+  publicDiscovery: resolve(
+    process.env.CFI_PUBLIC_DISCOVERY_OUTPUT ||
+    'local-node/cache/registry/public-discovery.json'
+  ),
+  webRescue: resolve(
+    process.env.CFI_WEB_RESCUE_OUTPUT_FILE ||
+    'local-node/cache/registry/web-search-rescue.json'
+  ),
   supplement: process.env.CFI_DISCOVERY_SUPPLEMENT_FILE
     ? resolve(process.env.CFI_DISCOVERY_SUPPLEMENT_FILE)
     : null
@@ -106,7 +124,7 @@ function canonicalObservations(canonical, observedAt) {
   return out;
 }
 
-function supplementObservations(supplement, observedAt) {
+function supplementObservations(supplement, observedAt, fallbackSourceClass) {
   const rows = Array.isArray(supplement)
     ? supplement
     : Array.isArray(supplement?.rows)
@@ -120,12 +138,18 @@ function supplementObservations(supplement, observedAt) {
     sourceClass:
       clean(row?.sourceClass) ||
       clean(row?.source_class) ||
-      'CFI_SUPPLEMENT',
+      clean(supplement?.sourceClass) ||
+      fallbackSourceClass,
     observedAt:
       clean(row?.observedAt) ||
       clean(row?.discoveredAt) ||
       observedAt
   }));
+}
+
+function freshRows(snapshot, freshness, observedAt, fallbackSourceClass) {
+  if (!snapshot || freshness?.fresh !== true) return [];
+  return supplementObservations(snapshot, observedAt, fallbackSourceClass);
 }
 
 const nowMs = Date.now();
@@ -137,10 +161,24 @@ const targetDate =
 if (!Number.isFinite(HORIZON_MINUTES) || HORIZON_MINUTES <= 0) {
   throw new Error('CFI_ROLLING_HORIZON_MINUTES_INVALID');
 }
+if (!Number.isFinite(PUBLIC_TTL_MINUTES) || PUBLIC_TTL_MINUTES <= 0) {
+  throw new Error('CFI_PUBLIC_DISCOVERY_TTL_MINUTES_INVALID');
+}
+if (!Number.isFinite(WEB_TTL_MINUTES) || WEB_TTL_MINUTES <= 0) {
+  throw new Error('CFI_WEB_RESCUE_TTL_MINUTES_INVALID');
+}
 
-const [canonical, previousRegistry, supplement] = await Promise.all([
+const [
+  canonical,
+  previousRegistry,
+  publicDiscovery,
+  webRescue,
+  supplement
+] = await Promise.all([
   SKIP_PC_INPUT ? Promise.resolve(null) : readJson(FILES.canonical),
   readJson(FILES.registry),
+  readJson(FILES.publicDiscovery),
+  readJson(FILES.webRescue),
   readJson(FILES.supplement)
 ]);
 
@@ -151,11 +189,46 @@ if (
   throw new Error('CANONICAL_PROSPECTIVE_FIXTURES_REQUIRED');
 }
 
+const publicFreshness = publicDiscovery
+  ? snapshotFreshness(publicDiscovery, {
+      nowMs,
+      ttlMinutes: PUBLIC_TTL_MINUTES
+    })
+  : { fresh: false, reason: 'SNAPSHOT_MISSING', ageMinutes: null };
+
+const webFreshness = webRescue
+  ? snapshotFreshness(webRescue, {
+      nowMs,
+      ttlMinutes: WEB_TTL_MINUTES
+    })
+  : { fresh: false, reason: 'SNAPSHOT_MISSING', ageMinutes: null };
+
 const pcRows = SKIP_PC_INPUT
   ? []
   : canonicalObservations(canonical, observedAt);
-const supplementalRows = supplementObservations(supplement, observedAt);
-const allRows = [...pcRows, ...supplementalRows];
+const publicRows = freshRows(
+  publicDiscovery,
+  publicFreshness,
+  observedAt,
+  'PUBLIC_DISCOVERY'
+);
+const webRows = freshRows(
+  webRescue,
+  webFreshness,
+  observedAt,
+  'WEB_SEARCH_RESCUE'
+);
+const supplementalRows = supplementObservations(
+  supplement,
+  observedAt,
+  'CFI_SUPPLEMENT'
+);
+const allRows = [
+  ...pcRows,
+  ...publicRows,
+  ...webRows,
+  ...supplementalRows
+];
 
 const registry = mergeDailyFixtureRegistry(
   previousRegistry,
@@ -173,15 +246,35 @@ const rolling = selectRollingFixtureWindow(registry, {
   horizonMinutes: HORIZON_MINUTES
 });
 
+const coverageMatrix = buildRegistryCoverageMatrix(registry);
+const degradedInputs = [];
+if (publicDiscovery && !publicFreshness.fresh) {
+  degradedInputs.push({
+    sourceClass: 'PUBLIC_DISCOVERY',
+    reason: publicFreshness.reason,
+    ageMinutes: publicFreshness.ageMinutes
+  });
+}
+if (webRescue && !webFreshness.fresh) {
+  degradedInputs.push({
+    sourceClass: 'WEB_SEARCH_RESCUE',
+    reason: webFreshness.reason,
+    ageMinutes: webFreshness.ageMinutes
+  });
+}
+
+const hasFailClosed =
+  registry.coverage.kickoffConflicts > 0 ||
+  registry.coverage.upstreamFailClosed > 0 ||
+  registry.coverage.terminalObserved > 0;
+
 const audit = {
-  contract: 'CFI_DAILY_FIXTURE_REGISTRY_AUDIT_V1',
+  contract: 'CFI_DAILY_FIXTURE_REGISTRY_AUDIT_V2',
   generatedAt: observedAt,
-  status:
-    registry.coverage.kickoffConflicts > 0 ||
-    registry.coverage.upstreamFailClosed > 0 ||
-    registry.coverage.terminalObserved > 0 ||
-    SKIP_PC_INPUT
-      ? 'PASS_WITH_FAIL_CLOSED_ITEMS'
+  status: hasFailClosed
+    ? 'PASS_WITH_FAIL_CLOSED_ITEMS'
+    : SKIP_PC_INPUT || degradedInputs.length > 0
+      ? 'PASS_WITH_DEGRADED_INPUTS'
       : 'PASS',
   targetDate,
   timeZone: TIME_ZONE,
@@ -192,14 +285,31 @@ const audit = {
       ? canonical.fixtures.length
       : 0,
     pcNodeObservations: pcRows.length,
+    publicDiscoveryObservations: publicRows.length,
+    webSearchRescueObservations: webRows.length,
     supplementalObservations: supplementalRows.length,
-    supplementConfigured: Boolean(FILES.supplement)
+    publicDiscoverySnapshot: {
+      configured: true,
+      present: Boolean(publicDiscovery),
+      ...publicFreshness
+    },
+    webSearchRescueSnapshot: {
+      configured: true,
+      present: Boolean(webRescue),
+      ...webFreshness
+    },
+    supplementConfigured: Boolean(FILES.supplement),
+    degradedInputs
   },
   coverage: registry.coverage,
+  coverageMatrix,
   rolling: rolling.metrics,
   safety: {
     pcNodeIsGatekeeper: false,
     registryRunsWithoutPcNode: true,
+    publicDiscoveryIsAdditive: true,
+    webSearchRescueIsAdditive: true,
+    staleSnapshotsAreNotReingested: true,
     sourceFailureDeletesFixture: false,
     conflictPolicy: 'FAIL_CLOSED',
     upstreamFailClosedPropagates: true,
@@ -223,7 +333,12 @@ console.log(JSON.stringify({
   pcNodeSkipped: SKIP_PC_INPUT,
   registryFixtures: registry.coverage.registryFixtures,
   seenInCurrentCycle: registry.coverage.seenInCurrentCycle,
-  rescuedWithoutPcNode: registry.coverage.rescuedWithoutPcNode,
+  pcNodeFixtures: coverageMatrix.pcNodeFixtures,
+  publicDiscoveryFixtures: coverageMatrix.publicDiscoveryFixtures,
+  webSearchRescueFixtures: coverageMatrix.webSearchRescueFixtures,
+  rescuedWithoutPcNode: coverageMatrix.rescuedWithoutPcNode,
+  rescuedByPublicDiscovery: coverageMatrix.rescuedByPublicDiscovery,
+  rescuedByWebSearch: coverageMatrix.rescuedByWebSearch,
   upstreamFailClosed: registry.coverage.upstreamFailClosed,
   rollingSelected: rolling.metrics.selected,
   conflictsExcluded: rolling.metrics.conflictsExcluded,
