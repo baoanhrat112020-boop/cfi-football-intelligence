@@ -14,6 +14,40 @@ async function saveJson(file, data) {
   await writeFile(file, JSON.stringify(data, null, 2), 'utf8');
 }
 
+async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate, status, reason = null }) {
+  const generatedAt = new Date().toISOString();
+  const audit = {
+    contract: `CFI_${provider}_DAILY_ADAPTER_AUDIT_V1`,
+    generatedAt,
+    provider,
+    sourceId,
+    targetDate,
+    status,
+    reason,
+    rawCandidates: 0,
+    prospectiveCandidates: 0,
+    decisionUse: false,
+    bigDbWriteAllowed: false,
+    bigDbWriteAttempted: false
+  };
+  await Promise.all([
+    saveJson(output, {
+      contract: `CFI_${provider}_RAW_CANDIDATES_V1`,
+      generatedAt,
+      provider,
+      targetDate,
+      candidates: [],
+      identityOnly: [],
+      decisionUse: false,
+      bigDbWriteAllowed: false,
+      bigDbWriteAttempted: false
+    }),
+    saveJson(auditOutput, audit)
+  ]);
+  console.log(JSON.stringify(audit));
+  return audit;
+}
+
 export async function runDailySourceAdapter({ providerKey }) {
   const provider = String(providerKey ?? '').trim().toUpperCase();
   if (!provider) throw new Error('PROVIDER_KEY_REQUIRED');
@@ -34,29 +68,21 @@ export async function runDailySourceAdapter({ providerKey }) {
   const sourceProbe = (probe.results ?? []).find(row => row.source_id === sourceId);
 
   if (!sourceProbe?.snapshot) {
-    const audit = {
-      contract: `CFI_${provider}_DAILY_ADAPTER_AUDIT_V1`,
-      generatedAt: new Date().toISOString(),
+    return writeEmpty({ output, auditOutput, provider, sourceId, targetDate, status: 'NO_SNAPSHOT' });
+  }
+
+  const httpOk = typeof sourceProbe.http_status === 'number' &&
+    sourceProbe.http_status >= 200 && sourceProbe.http_status < 400;
+  if (sourceProbe.blocked === true || sourceProbe.status === 'ERROR' || !httpOk) {
+    return writeEmpty({
+      output,
+      auditOutput,
       provider,
       sourceId,
       targetDate,
-      status: 'NO_SNAPSHOT',
-      rawCandidates: 0,
-      decisionUse: false,
-      bigDbWriteAllowed: false,
-      bigDbWriteAttempted: false
-    };
-    await Promise.all([
-      saveJson(output, {
-        contract: `CFI_${provider}_RAW_CANDIDATES_V1`,
-        generatedAt: audit.generatedAt,
-        targetDate,
-        candidates: []
-      }),
-      saveJson(auditOutput, audit)
-    ]);
-    console.log(JSON.stringify(audit));
-    return audit;
+      status: 'SOURCE_UNAVAILABLE',
+      reason: sourceProbe.blocked ? `BLOCKED:${sourceProbe.blockMarker ?? 'UNKNOWN'}` : sourceProbe.error ?? `HTTP_${sourceProbe.http_status ?? 'UNKNOWN'}`
+    });
   }
 
   const text = await readFile(sourceProbe.snapshot, 'utf8');
@@ -109,6 +135,8 @@ export async function runDailySourceAdapter({ providerKey }) {
     identityOnlySegments: parsed.identityOnly.length,
     parserTelemetry: parsed.telemetry,
     safeguards: {
+      successfulProbeRequired: true,
+      blockedPageRejected: true,
       explicitKickoffTimeRequired: true,
       missingKickoffFabrication: false,
       currentTargetDateOnly: true,
