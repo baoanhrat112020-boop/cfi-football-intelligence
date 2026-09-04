@@ -8,6 +8,7 @@ const clean = value => String(value ?? '').trim();
 
 export const PUBLIC_DISCOVERY_SOURCE_CLASS = 'PUBLIC_DISCOVERY';
 export const WEB_SEARCH_RESCUE_SOURCE_CLASS = 'WEB_SEARCH_RESCUE';
+export const TIER_A_BROWSER_SOURCE_CLASS = 'TIER_A_BROWSER_DISCOVERY';
 
 function httpsUrls(values) {
   const out = [];
@@ -194,11 +195,13 @@ export function buildRegistryCoverageMatrix(
   registry,
   {
     pcSourceClass = 'PC_NODE',
+    tierABrowserSourceClass = TIER_A_BROWSER_SOURCE_CLASS,
     publicSourceClass = PUBLIC_DISCOVERY_SOURCE_CLASS,
     webSourceClass = WEB_SEARCH_RESCUE_SOURCE_CLASS
   } = {}
 ) {
   const pcClass = clean(pcSourceClass).toUpperCase();
+  const tierAClass = clean(tierABrowserSourceClass).toUpperCase();
   const publicClass = clean(publicSourceClass).toUpperCase();
   const webClass = clean(webSourceClass).toUpperCase();
   const entries = Array.isArray(registry?.entries) ? registry.entries : [];
@@ -206,6 +209,7 @@ export function buildRegistryCoverageMatrix(
   const matrix = {
     unionFixtures: entries.length,
     pcNodeFixtures: 0,
+    tierABrowserFixtures: 0,
     publicDiscoveryFixtures: 0,
     webSearchRescueFixtures: 0,
     pcOnly: 0,
@@ -216,6 +220,7 @@ export function buildRegistryCoverageMatrix(
     publicAndWeb: 0,
     allThree: 0,
     rescuedWithoutPcNode: 0,
+    rescuedByTierABrowser: 0,
     rescuedByPublicDiscovery: 0,
     rescuedByWebSearch: 0
   };
@@ -228,10 +233,12 @@ export function buildRegistryCoverageMatrix(
     );
 
     const pc = classes.has(pcClass);
+    const tierA = classes.has(tierAClass);
     const pub = classes.has(publicClass);
     const web = classes.has(webClass);
 
     if (pc) matrix.pcNodeFixtures += 1;
+    if (tierA) matrix.tierABrowserFixtures += 1;
     if (pub) matrix.publicDiscoveryFixtures += 1;
     if (web) matrix.webSearchRescueFixtures += 1;
 
@@ -243,7 +250,8 @@ export function buildRegistryCoverageMatrix(
     if (!pc && pub && web) matrix.publicAndWeb += 1;
     if (pc && pub && web) matrix.allThree += 1;
 
-    if (!pc && (pub || web)) matrix.rescuedWithoutPcNode += 1;
+    if (!pc && (tierA || pub || web)) matrix.rescuedWithoutPcNode += 1;
+    if (!pc && tierA) matrix.rescuedByTierABrowser += 1;
     if (!pc && pub) matrix.rescuedByPublicDiscovery += 1;
     if (!pc && web) matrix.rescuedByWebSearch += 1;
   }
