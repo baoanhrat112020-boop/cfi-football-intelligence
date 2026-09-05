@@ -2,7 +2,10 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { localDateNow } from '../../src/discovery/cfi-discovery.ts';
-import { buildDateUnverifiedWebPlan } from '../../src/discovery/date-unverified-rescue.mjs';
+import {
+  buildDateUnverifiedWebPlan,
+  resolveDateUnverifiedHints
+} from '../../src/discovery/date-unverified-rescue.mjs';
 import { evaluateFixtureSourceCoverage } from '../../src/discovery/fixture-source-policy.mjs';
 
 const TIME_ZONE = process.env.CFI_TIME_ZONE || 'Asia/Ho_Chi_Minh';
@@ -17,6 +20,10 @@ const AUDIT = resolve(
 const DATE_UNVERIFIED_PLAN = resolve(
   process.env.CFI_TIER_A_DATE_UNVERIFIED_PLAN ||
   'local-node/cache/registry/tier-a-date-unverified-web-plan.json'
+);
+const DATE_UNVERIFIED_RESOLUTION = resolve(
+  process.env.CFI_TIER_A_DATE_UNVERIFIED_RESOLUTION ||
+  'local-node/cache/registry/tier-a-date-unverified-resolution.json'
 );
 const PROBE_AUDIT = resolve(
   process.env.CFI_BROWSER_PROBE_AUDIT ||
@@ -128,7 +135,9 @@ for (const [provider, run] of adapterRuns) {
       status: 'scheduled',
       observedAt: generatedAt,
       parserEvidence: candidate.parser_evidence ?? null,
-      decisionUse: false
+      predictionExecutionAllowed: false,
+      decisionUse: false,
+      bigDbWriteAllowed: false
     });
   }
   providerAudits.push({
@@ -143,11 +152,18 @@ for (const [provider, run] of adapterRuns) {
   });
 }
 
-const datePlan = buildDateUnverifiedWebPlan(dateUnverified, {
+const dateResolution = resolveDateUnverifiedHints(dateUnverified, rows, {
   generatedAt,
   targetDate,
   timeZone: TIME_ZONE
 });
+rows.push(...dateResolution.recoveredRows);
+const datePlan = buildDateUnverifiedWebPlan(dateResolution.webRequiredHints, {
+  generatedAt,
+  targetDate,
+  timeZone: TIME_ZONE
+});
+
 const sourceHealth = evaluateFixtureSourceCoverage(rows);
 const unavailableProviders = providerAudits.filter(item =>
   ['SOURCE_UNAVAILABLE', 'NO_SNAPSHOT', 'ADAPTER_PROCESS_FAILED'].includes(item.status)
@@ -166,14 +182,19 @@ const status = !probe.ok
         : 'PASS';
 
 const supplement = {
-  contract: 'CFI_TIER_A_BROWSER_DISCOVERY_V1',
+  contract: 'CFI_TIER_A_BROWSER_DISCOVERY_V2',
   generatedAt,
   targetDate,
   timeZone: TIME_ZONE,
   sourceClass: 'TIER_A_BROWSER_DISCOVERY',
   rows,
-  dateUnverifiedHints: datePlan.count,
+  dateUnverifiedHints: dateResolution.metrics.hints,
+  dateUnverifiedRecovered: dateResolution.metrics.recovered,
+  dateUnverifiedConflicts: dateResolution.metrics.conflicts,
+  dateUnverifiedOutsideTargetDate: dateResolution.metrics.resolvedOutsideTargetDate,
+  dateUnverifiedWebRequired: dateResolution.metrics.webRequired,
   dateUnverifiedPlan: DATE_UNVERIFIED_PLAN,
+  dateUnverifiedResolution: DATE_UNVERIFIED_RESOLUTION,
   sourceHealth,
   decisionUse: false,
   bigDbWriteAllowed: false,
@@ -181,7 +202,7 @@ const supplement = {
 };
 
 const audit = {
-  contract: 'CFI_TIER_A_BROWSER_DISCOVERY_AUDIT_V1',
+  contract: 'CFI_TIER_A_BROWSER_DISCOVERY_AUDIT_V2',
   generatedAt,
   status,
   targetDate,
@@ -200,8 +221,13 @@ const audit = {
   providersConfigured: PROVIDERS.map(([provider]) => provider),
   providerAudits,
   rows: rows.length,
-  dateUnverifiedHints: datePlan.count,
+  dateUnverifiedHints: dateResolution.metrics.hints,
+  dateUnverifiedRecovered: dateResolution.metrics.recovered,
+  dateUnverifiedConflicts: dateResolution.metrics.conflicts,
+  dateUnverifiedOutsideTargetDate: dateResolution.metrics.resolvedOutsideTargetDate,
+  dateUnverifiedWebRequired: dateResolution.metrics.webRequired,
   dateUnverifiedPlan: DATE_UNVERIFIED_PLAN,
+  dateUnverifiedResolution: DATE_UNVERIFIED_RESOLUTION,
   unavailableProviders: unavailableProviders.map(item => item.provider),
   dateContextDegradedProviders: dateContextDegradedProviders.map(item => item.provider),
   sourceHealth,
@@ -214,10 +240,19 @@ const audit = {
     explicitKickoffTimeRequired: true,
     missingKickoffFabrication: false,
     sourceFailureDeletesFixture: false,
-    dateUnverifiedHintCanEnterRegistry: false,
-    dateUnverifiedHintCanEnterRanking: false,
+    rawDateUnverifiedHintCanEnterRegistry: false,
+    rawDateUnverifiedHintCanEnterRanking: false,
     dateUnverifiedHintRequiresIndependentKickoffVerification: true,
+    dateRecoveryRequiresExactHomeAwayIdentity: true,
+    dateRecoveryRequiresSameDisplayedTime: true,
+    dateRecoveryRequiresIndependentTrustedTierABProvider: true,
+    dateRecoveryRequiresOneDistinctKickoff: true,
+    dateRecoveryRequiresResolvedLocalDateEqualsTargetDate: true,
+    dateRecoveryAllowsFuzzyIdentity: false,
+    dateRecoveryAllowsAutomaticKickoffCorrection: false,
+    recoveredObservationCanSelfSetRankingReady: false,
     sourcePageDateClaimCanVerifyKickoff: false,
+    predictionExecutionAllowed: false,
     decisionUse: false,
     bigDbWriteAllowed: false,
     bigDbWriteAttempted: false
@@ -227,7 +262,8 @@ const audit = {
 await Promise.all([
   saveJson(OUTPUT, supplement),
   saveJson(AUDIT, audit),
-  saveJson(DATE_UNVERIFIED_PLAN, datePlan)
+  saveJson(DATE_UNVERIFIED_PLAN, datePlan),
+  saveJson(DATE_UNVERIFIED_RESOLUTION, dateResolution)
 ]);
 
 console.log(JSON.stringify({
@@ -235,11 +271,16 @@ console.log(JSON.stringify({
   status,
   targetDate,
   rows: rows.length,
-  dateUnverifiedHints: datePlan.count,
+  dateUnverifiedHints: audit.dateUnverifiedHints,
+  dateUnverifiedRecovered: audit.dateUnverifiedRecovered,
+  dateUnverifiedConflicts: audit.dateUnverifiedConflicts,
+  dateUnverifiedOutsideTargetDate: audit.dateUnverifiedOutsideTargetDate,
+  dateUnverifiedWebRequired: audit.dateUnverifiedWebRequired,
   dateContextDegradedProviders: audit.dateContextDegradedProviders,
   sourceHealth: sourceHealth.status,
   coverageReadyForRanking: sourceHealth.coverageReadyForRanking,
   unavailableProviders: audit.unavailableProviders,
+  predictionExecutionAllowed: false,
   decisionUse: false,
   bigDbWriteAllowed: false
 }));
