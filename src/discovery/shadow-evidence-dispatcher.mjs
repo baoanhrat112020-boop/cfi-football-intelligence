@@ -222,8 +222,6 @@ export function finalizeEvidenceReceipt(request, bigDbReceipt, webState = null) 
     receipt.nextCycleReverificationReason = 'VERIFIED_FIXTURE_EVIDENCE_REFRESH_COMPLETE';
   }
 
-  // Dispatcher never promotes a fixture. Ranking status can change only after a
-  // later registry cycle consumes audited evidence and re-runs fixture verification.
   receipt.autoPromoted = false;
   receipt.rankingReady = false;
   receipt.predictionExecutionAllowed = false;
@@ -249,6 +247,7 @@ export function buildNextCycleReverificationCandidates(receipts, requests, {
     if (!request || !identity?.homeTeamId || !identity?.awayTeamId) continue;
 
     rows.push({
+      identityKey: receipt?.identityKey ?? request?.identityKey ?? null,
       sourceClass: 'EVIDENCE_REVERIFICATION',
       provider: 'CFI_BIGDB_RETRIEVAL',
       providerId: receipt.requestId,
