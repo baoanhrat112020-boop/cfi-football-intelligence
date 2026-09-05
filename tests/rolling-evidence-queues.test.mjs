@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildRollingEvidenceQueues } from '../src/discovery/rolling-evidence-queues.mjs';
+import { partitionWebRescueCandidates } from '../src/discovery/web-alias-gap-audit.mjs';
 
 function fixture(identityKey, overrides = {}) {
   return {
@@ -110,6 +111,93 @@ test('crosscheck lane requires registry reverification and web rescue only after
     'REVERIFY_NEXT_REGISTRY_CYCLE'
   );
   assert.equal(item.evidencePlan.routing.rankingInputEligible, false);
+});
+
+test('web rescue alias change is review-only and cannot enter registry ingest', () => {
+  const unresolved = [{
+    identityKey: 'cancun fc|cruz a hidalgo|2026-09-05',
+    home: 'Cancun FC',
+    away: 'Cruz A.Hidalgo',
+    targetDate: '2026-09-05',
+    kickoffIso: '2026-09-05T01:00:00.000Z'
+  }];
+  const partition = partitionWebRescueCandidates([{
+    rescueIdentityKey: 'cancun fc|cruz a hidalgo|2026-09-05',
+    provider: 'SOCCERWAY',
+    providerId: 'fixture-123',
+    home: 'Cancun FC',
+    away: 'Cruz Azul Hidalgo',
+    targetDate: '2026-09-05',
+    kickoffIso: '2026-09-05T01:00:00.000Z',
+    sourceUrls: ['https://example.test/fixture-123']
+  }], unresolved, {
+    generatedAt: '2026-09-05T00:00:00.000Z'
+  });
+
+  assert.equal(partition.metrics.accepted, 0);
+  assert.equal(partition.metrics.aliasReviewRequired, 1);
+  assert.equal(partition.metrics.rejected, 0);
+  assert.equal(partition.aliasReview[0].classification, 'ALIAS_CANDIDATE_REVIEW_REQUIRED');
+  assert.equal(partition.aliasReview[0].registryIngestAllowed, false);
+  assert.equal(partition.aliasReview[0].autoAliasAllowed, false);
+});
+
+test('web rescue exact identity and kickoff remains eligible for existing ingest path', () => {
+  const unresolved = [{
+    identityKey: 'same|fixture|2026-09-05',
+    home: 'Same Home',
+    away: 'Same Away',
+    targetDate: '2026-09-05',
+    kickoffIso: '2026-09-05T02:00:00.000Z'
+  }];
+  const candidate = {
+    rescueIdentityKey: 'same|fixture|2026-09-05',
+    provider: 'FLASHSCORE',
+    providerId: 'same-1',
+    home: 'Same Home',
+    away: 'Same Away',
+    targetDate: '2026-09-05',
+    kickoffIso: '2026-09-05T02:00:00.000Z',
+    sourceUrls: ['https://example.test/same-1']
+  };
+  const partition = partitionWebRescueCandidates([candidate], unresolved);
+
+  assert.equal(partition.metrics.accepted, 1);
+  assert.equal(partition.metrics.aliasReviewRequired, 0);
+  assert.equal(partition.metrics.rejected, 0);
+  assert.equal(partition.accepted[0], candidate);
+});
+
+test('web rescue rescue-key mismatch or kickoff mismatch fails closed', () => {
+  const unresolved = [{
+    identityKey: 'fixture|key|2026-09-05',
+    home: 'Home',
+    away: 'Away',
+    targetDate: '2026-09-05',
+    kickoffIso: '2026-09-05T03:00:00.000Z'
+  }];
+  const partition = partitionWebRescueCandidates([
+    {
+      rescueIdentityKey: 'missing|key|2026-09-05',
+      home: 'Home',
+      away: 'Away',
+      kickoffIso: '2026-09-05T03:00:00.000Z'
+    },
+    {
+      rescueIdentityKey: 'fixture|key|2026-09-05',
+      home: 'Home',
+      away: 'Away',
+      kickoffIso: '2026-09-05T03:15:00.000Z'
+    }
+  ], unresolved);
+
+  assert.equal(partition.metrics.accepted, 0);
+  assert.equal(partition.metrics.aliasReviewRequired, 0);
+  assert.equal(partition.metrics.rejected, 2);
+  assert.deepEqual(
+    partition.rejected.map(row => row.reason).sort(),
+    ['RESCUE_IDENTITY_KEY_NOT_FOUND', 'RESCUE_KICKOFF_MISMATCH'].sort()
+  );
 });
 
 test('fail-closed fixture never enters either active queue', () => {
