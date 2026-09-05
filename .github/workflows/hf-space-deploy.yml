@@ -48,11 +48,11 @@ jobs:
         run: node --experimental-strip-types cfi-hf-shadow-node/src/self-check.mjs
 
       - name: Install pinned Hugging Face Hub CLI
-        run: python -m pip install --disable-pip-version-check 'huggingface_hub[cli]==0.35.0'
+        run: python -m pip install --disable-pip-version-check 'huggingface_hub[cli]==1.30.0'
 
       - name: Authenticate without printing token
         run: |
-          printf '%s' "$HF_TOKEN" | hf auth login --token "$HF_TOKEN" --add-to-git-credential=false
+          hf auth login --token "$HF_TOKEN"
           hf auth whoami
 
       - name: Deploy isolated Docker Space
