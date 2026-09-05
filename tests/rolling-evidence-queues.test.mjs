@@ -78,18 +78,9 @@ test('verified queue reuses existing BigDB retrieval request contract and web re
     away: 'verified Away',
     target_date: '2026-09-05'
   });
-  assert.equal(
-    item.evidencePlan.bigDb.implementation,
-    'supabase/functions/cfi-bigdb-retrieval'
-  );
-  assert.equal(
-    item.evidencePlan.web.ingestFile,
-    'local-node/cache/registry/web-search-candidates.json'
-  );
-  assert.equal(
-    item.evidencePlan.web.implementation,
-    'local-node/registry/web-search-rescue.mjs'
-  );
+  assert.equal(item.evidencePlan.bigDb.implementation, 'supabase/functions/cfi-bigdb-retrieval');
+  assert.equal(item.evidencePlan.web.ingestFile, 'local-node/cache/registry/web-search-candidates.json');
+  assert.equal(item.evidencePlan.web.implementation, 'local-node/registry/web-search-rescue.mjs');
   assert.equal(item.evidencePlan.routing.rankingInputEligible, true);
   assert.equal(item.evidencePlan.safety.predictionExecutionAllowed, false);
 });
@@ -106,10 +97,7 @@ test('crosscheck lane requires registry reverification and web rescue only after
   assert.equal(item.evidencePlan.routing.webCanSupplementBigDb, false);
   assert.equal(item.evidencePlan.routing.reverifyFixtureAfterEvidence, true);
   assert.equal(item.evidencePlan.routing.autoPromoteWithinCycle, false);
-  assert.equal(
-    item.evidencePlan.routing.promotionPolicy,
-    'REVERIFY_NEXT_REGISTRY_CYCLE'
-  );
+  assert.equal(item.evidencePlan.routing.promotionPolicy, 'REVERIFY_NEXT_REGISTRY_CYCLE');
   assert.equal(item.evidencePlan.routing.rankingInputEligible, false);
 });
 
@@ -137,6 +125,8 @@ test('web rescue alias change is review-only and cannot enter registry ingest', 
   assert.equal(partition.metrics.accepted, 0);
   assert.equal(partition.metrics.aliasReviewRequired, 1);
   assert.equal(partition.metrics.rejected, 0);
+  assert.equal(partition.metrics.accountedFor, partition.inputCandidates);
+  assert.equal(partition.policy.aliasCandidateCanCreateFixture, false);
   assert.equal(partition.aliasReview[0].classification, 'ALIAS_CANDIDATE_REVIEW_REQUIRED');
   assert.equal(partition.aliasReview[0].registryIngestAllowed, false);
   assert.equal(partition.aliasReview[0].autoAliasAllowed, false);
@@ -165,6 +155,7 @@ test('web rescue exact identity and kickoff remains eligible for existing ingest
   assert.equal(partition.metrics.accepted, 1);
   assert.equal(partition.metrics.aliasReviewRequired, 0);
   assert.equal(partition.metrics.rejected, 0);
+  assert.equal(partition.metrics.accountedFor, partition.inputCandidates);
   assert.equal(partition.accepted[0], candidate);
 });
 
@@ -194,6 +185,7 @@ test('web rescue rescue-key mismatch or kickoff mismatch fails closed', () => {
   assert.equal(partition.metrics.accepted, 0);
   assert.equal(partition.metrics.aliasReviewRequired, 0);
   assert.equal(partition.metrics.rejected, 2);
+  assert.equal(partition.metrics.accountedFor, partition.inputCandidates);
   assert.deepEqual(
     partition.rejected.map(row => row.reason).sort(),
     ['RESCUE_IDENTITY_KEY_NOT_FOUND', 'RESCUE_KICKOFF_MISMATCH'].sort()
