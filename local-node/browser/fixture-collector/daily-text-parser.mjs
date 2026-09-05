@@ -29,6 +29,37 @@ function explicitDate(value) {
   return null;
 }
 
+function addIsoDays(value, offset) {
+  const match = clean(value).match(/^(20\d{2})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const base = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (Number.isNaN(base.getTime())) return null;
+  base.setUTCDate(base.getUTCDate() + Number(offset));
+  return normalizeDateParts(base.getUTCFullYear(), base.getUTCMonth() + 1, base.getUTCDate());
+}
+
+function relativeDate(value, referenceDate) {
+  const text = clean(value);
+  const match = text.match(/^(today|tomorrow|yesterday)(.*)$/i);
+  if (!match) return null;
+
+  // Do not interpret navigation strings such as "Yesterday Today Tomorrow"
+  // or a team name beginning with one of the relative-date words as a date anchor.
+  const suffix = clean(match[2]).replace(/^[,·|:/-]+\s*/, '');
+  if (suffix) {
+    if (/\b(today|tomorrow|yesterday)\b/i.test(suffix)) return null;
+    if (!/\d/.test(suffix)) return null;
+    if (/\b(?:vs\.?|v\.?)\b/i.test(suffix)) return null;
+  }
+
+  const offset = match[1].toLowerCase() === 'tomorrow'
+    ? 1
+    : match[1].toLowerCase() === 'yesterday'
+      ? -1
+      : 0;
+  return addIsoDays(referenceDate, offset);
+}
+
 function isTerminalOrLiveStatus(value) {
   const text = clean(value);
   return /^(?:FT|AET|PEN|Finished|Full[- ]?time|Postponed|Cancelled|Canceled|Abandoned|Live|HT)$/i.test(text) ||
@@ -102,7 +133,7 @@ function candidateRecord({ source, targetDate, timeZone, time, home, away, evide
     kickoff_utc: kickoff,
     parser_evidence: {
       provider: String(source.provider || '').toLowerCase(),
-      parser: 'CFI_DAILY_TEXT_FIXTURE_V1',
+      parser: 'CFI_DAILY_TEXT_FIXTURE_V2',
       target_date: targetDate,
       time_line: time,
       home_line: home,
@@ -115,10 +146,14 @@ function candidateRecord({ source, targetDate, timeZone, time, home, away, evide
 
 export function parseDailyFixtureText(source, text, {
   targetDate,
-  timeZone = source?.render_timezone || 'Asia/Ho_Chi_Minh'
+  timeZone = source?.render_timezone || 'Asia/Ho_Chi_Minh',
+  referenceDate = targetDate
 } = {}) {
   if (!/^20\d{2}-\d{2}-\d{2}$/.test(String(targetDate ?? ''))) {
     throw new Error('TARGET_DATE_REQUIRED');
+  }
+  if (!/^20\d{2}-\d{2}-\d{2}$/.test(String(referenceDate ?? ''))) {
+    throw new Error('REFERENCE_DATE_REQUIRED');
   }
 
   const lines = String(text ?? '')
@@ -129,8 +164,9 @@ export function parseDailyFixtureText(source, text, {
   const candidates = [];
   const rejected = [];
   const identityOnly = [];
-  let activeExplicitDate = null;
+  let activeDate = null;
   let explicitDateAnchors = 0;
+  let relativeDateAnchors = 0;
 
   const pushCandidate = payload => {
     const record = candidateRecord({ source, targetDate, timeZone, ...payload });
@@ -143,24 +179,30 @@ export function parseDailyFixtureText(source, text, {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const date = explicitDate(line);
+    const explicit = explicitDate(line);
+    const relative = explicit ? null : relativeDate(line, referenceDate);
+    const date = explicit ?? relative;
     if (date) {
-      activeExplicitDate = date;
-      explicitDateAnchors += 1;
-      const inlineAfterDate = clean(line.replace(/.*?20\d{2}[\/-]\d{1,2}[\/-]\d{1,2}/, ''));
-      const dateTeams = splitTeams(inlineAfterDate);
-      if (dateTeams && date === targetDate) {
-        identityOnly.push({
-          home: dateTeams.home,
-          away: dateTeams.away,
-          explicitDate: date,
-          reason: 'MISSING_EXPLICIT_KICKOFF_TIME'
-        });
+      activeDate = date;
+      if (explicit) explicitDateAnchors += 1;
+      else relativeDateAnchors += 1;
+
+      if (explicit) {
+        const inlineAfterDate = clean(line.replace(/.*?20\d{2}[\/-]\d{1,2}[\/-]\d{1,2}/, ''));
+        const dateTeams = splitTeams(inlineAfterDate);
+        if (dateTeams && date === targetDate) {
+          identityOnly.push({
+            home: dateTeams.home,
+            away: dateTeams.away,
+            explicitDate: date,
+            reason: 'MISSING_EXPLICIT_KICKOFF_TIME'
+          });
+        }
       }
       continue;
     }
 
-    if (activeExplicitDate && activeExplicitDate !== targetDate) continue;
+    if (activeDate && activeDate !== targetDate) continue;
 
     const inline = line.match(/^((?:[01]?\d|2[0-3]):[0-5]\d)\s+(.+)$/);
     if (inline) {
@@ -170,7 +212,12 @@ export function parseDailyFixtureText(source, text, {
         pushCandidate({
           time,
           ...teams,
-          evidence: { extraction: 'INLINE_TIME_TEAMS', date_basis: activeExplicitDate ? 'EXPLICIT_DATE' : 'RUN_CONTEXT_TARGET_DATE' }
+          evidence: {
+            extraction: 'INLINE_TIME_TEAMS',
+            date_basis: activeDate ? 'DATE_SECTION' : 'RUN_CONTEXT_TARGET_DATE',
+            active_date: activeDate,
+            reference_date: referenceDate
+          }
         });
         continue;
       }
@@ -179,7 +226,7 @@ export function parseDailyFixtureText(source, text, {
     const time = isTime(line);
     if (!time) {
       const teams = splitTeams(line);
-      if (teams && (activeExplicitDate === targetDate || !activeExplicitDate)) {
+      if (teams && (activeDate === targetDate || !activeDate)) {
         identityOnly.push({ ...teams, reason: 'MISSING_EXPLICIT_KICKOFF_TIME' });
       }
       continue;
@@ -189,7 +236,7 @@ export function parseDailyFixtureText(source, text, {
     const window = [];
     while (j < lines.length && window.length < 6) {
       const next = lines[j];
-      if (isTime(next) || explicitDate(next)) break;
+      if (isTime(next) || explicitDate(next) || relativeDate(next, referenceDate)) break;
       if (!isNoise(next) && !isTerminalOrLiveStatus(next)) window.push(next);
       j += 1;
     }
@@ -204,7 +251,12 @@ export function parseDailyFixtureText(source, text, {
       pushCandidate({
         time,
         ...joinedTeams,
-        evidence: { extraction: 'TIME_PLUS_JOINED_TEAMS', date_basis: activeExplicitDate ? 'EXPLICIT_DATE' : 'RUN_CONTEXT_TARGET_DATE' }
+        evidence: {
+          extraction: 'TIME_PLUS_JOINED_TEAMS',
+          date_basis: activeDate ? 'DATE_SECTION' : 'RUN_CONTEXT_TARGET_DATE',
+          active_date: activeDate,
+          reference_date: referenceDate
+        }
       });
       continue;
     }
@@ -220,7 +272,12 @@ export function parseDailyFixtureText(source, text, {
       time,
       home,
       away,
-      evidence: { extraction: 'TIME_PLUS_TWO_TEAM_LINES', date_basis: activeExplicitDate ? 'EXPLICIT_DATE' : 'RUN_CONTEXT_TARGET_DATE' }
+      evidence: {
+        extraction: 'TIME_PLUS_TWO_TEAM_LINES',
+        date_basis: activeDate ? 'DATE_SECTION' : 'RUN_CONTEXT_TARGET_DATE',
+        active_date: activeDate,
+        reference_date: referenceDate
+      }
     });
   }
 
@@ -240,12 +297,15 @@ export function parseDailyFixtureText(source, text, {
     telemetry: {
       lines: lines.length,
       explicitDateAnchors,
+      relativeDateAnchors,
+      dateAnchors: explicitDateAnchors + relativeDateAnchors,
       rawCandidates: candidates.length,
       uniqueCandidates: unique.length,
       duplicatesRemoved: candidates.length - unique.length,
       rejected: rejected.length,
       identityOnly: identityOnly.length,
       targetDate,
+      referenceDate,
       timeZone
     }
   };
