@@ -11,6 +11,13 @@ import {
   webSearchCandidatesToSupplement
 } from '../src/discovery/registry-source-adapters.mjs';
 import {
+  annotateRegistryFixtureVerification,
+  annotateRollingVerification
+} from '../src/discovery/fixture-verification.mjs';
+import { buildRollingEvidenceQueues } from '../src/discovery/rolling-evidence-queues.mjs';
+import { buildShadowEvidenceDispatch } from '../src/discovery/shadow-evidence-dispatcher.mjs';
+import { applyNextCycleReverification } from '../src/discovery/next-cycle-reverification.mjs';
+import {
   discoverFixtures,
   localDateNow
 } from '../src/discovery/cfi-discovery.ts';
@@ -218,6 +225,198 @@ async function runDeterministicResilience(targetDate) {
   };
 }
 
+function runTwoCycleEvidencePromotion(targetDate) {
+  const cycle1Now = Date.parse(`${targetDate}T12:00:00+07:00`);
+  const cycle2Now = cycle1Now + 5 * 60_000;
+  const kickoffIso = isoLocal(targetDate, '13:20');
+  const home = 'E2E Canonical Rescue Home U19';
+  const away = 'E2E Canonical Rescue Away U19';
+  const liveObservation = observedAt => row({
+    sourceClass: 'TIER_A_BROWSER_DISCOVERY',
+    provider: 'FLASHSCORE',
+    providerId: 'two-cycle-fs-1',
+    home,
+    away,
+    kickoffIso,
+    observedAt,
+    sourceUrl: 'https://www.flashscore.com/e2e/two-cycle-fs-1'
+  });
+
+  const cycle1Base = mergeDailyFixtureRegistry(null, [
+    liveObservation(new Date(cycle1Now).toISOString())
+  ], {
+    targetDate,
+    timeZone: TIME_ZONE,
+    nowMs: cycle1Now,
+    pcSourceClass: 'PC_NODE'
+  });
+  const cycle1 = annotateRegistryFixtureVerification(cycle1Base, {
+    pcSourceClass: 'PC_NODE'
+  });
+  const entry1 = cycle1.entries[0];
+  must(cycle1.entries.length === 1, 'TWO_CYCLE_EXPECTED_ONE_FIXTURE');
+  must(entry1?.rankingReady === false, 'TWO_CYCLE_SINGLE_SOURCE_SHOULD_NOT_RANK');
+  must(
+    entry1?.rankingVerificationStatus === 'SINGLE_TRUSTED_SOURCE_OBSERVED',
+    'TWO_CYCLE_EXPECTED_SINGLE_TRUSTED_SOURCE',
+    entry1?.rankingVerificationStatus
+  );
+
+  const rolling1 = annotateRollingVerification(
+    selectRollingFixtureWindow(cycle1, {
+      nowMs: cycle1Now,
+      horizonMinutes: 90
+    }),
+    cycle1
+  );
+  const queues1 = buildRollingEvidenceQueues(rolling1);
+  must(queues1.verifiedRankingQueue.count === 0, 'TWO_CYCLE_VERIFIED_QUEUE_SHOULD_START_EMPTY');
+  must(queues1.crosscheckRequiredQueue.count === 1, 'TWO_CYCLE_CROSSCHECK_EXPECTED_ONE');
+  must(queues1.metrics.droppedByQuota === 0, 'TWO_CYCLE_QUEUE_DROP_FORBIDDEN');
+
+  const request = queues1.evidenceRequestPlan.requests[0];
+  const bigDbResult = {
+    httpStatus: 200,
+    body: {
+      status: 'OK',
+      version: 'CFI_BIG_DB_RETRIEVAL_TWO_CYCLE_E2E',
+      identity: {
+        homeTeamId: 'E2E-CANON-HOME-ID',
+        awayTeamId: 'E2E-CANON-AWAY-ID',
+        homeCanonical: home,
+        awayCanonical: away,
+        homeResolution: 'CANONICAL_FOLDED_EXACT',
+        awayResolution: 'CANONICAL_FOLDED_EXACT'
+      },
+      exactTeam: {
+        home: { retrieved: 8 },
+        away: { retrieved: 7 },
+        h2h: { retrieved: 2 }
+      },
+      temporalAudit: {
+        verified: true,
+        targetDate
+      }
+    }
+  };
+  const dispatch = buildShadowEvidenceDispatch(
+    queues1.evidenceRequestPlan,
+    new Map([[request.requestId, bigDbResult]]),
+    {
+      liveReadEnabled: true,
+      generatedAt: new Date(cycle1Now + 60_000).toISOString(),
+      sourceCycleId: 'E2E-CYCLE-1'
+    }
+  );
+
+  must(dispatch.metrics.bigDbFound === 1, 'TWO_CYCLE_BIGDB_FOUND_EXPECTED_ONE', dispatch.metrics);
+  must(dispatch.metrics.autoPromoted === 0, 'TWO_CYCLE_DISPATCHER_AUTO_PROMOTED');
+  must(dispatch.receipts[0]?.rankingReady === false, 'TWO_CYCLE_SAME_CYCLE_RANKING_LEAK');
+  must(dispatch.nextCycleReverification.count === 1, 'TWO_CYCLE_REVERIFY_CANDIDATE_EXPECTED_ONE');
+  must(
+    dispatch.nextCycleReverification.rows[0]?.identityKey === entry1.identityKey,
+    'TWO_CYCLE_REVERIFY_IDENTITY_KEY_CHANGED'
+  );
+
+  const sameCycle = applyNextCycleReverification(
+    cycle1,
+    dispatch.nextCycleReverification,
+    {
+      currentCycleId: 'E2E-CYCLE-1',
+      targetDate,
+      pcSourceClass: 'PC_NODE'
+    }
+  );
+  must(sameCycle.audit.applied === 0, 'TWO_CYCLE_SAME_CYCLE_EVIDENCE_APPLIED');
+  must(sameCycle.audit.sameCycleBlocked === 1, 'TWO_CYCLE_SAME_CYCLE_BLOCK_NOT_PROVEN');
+
+  const nextCycleApplied = applyNextCycleReverification(
+    cycle1,
+    dispatch.nextCycleReverification,
+    {
+      currentCycleId: 'E2E-CYCLE-2',
+      targetDate,
+      pcSourceClass: 'PC_NODE'
+    }
+  );
+  must(nextCycleApplied.audit.applied === 1, 'TWO_CYCLE_NEXT_CYCLE_APPLY_EXPECTED_ONE', nextCycleApplied.audit);
+  must(nextCycleApplied.registry.entries.length === 1, 'TWO_CYCLE_REVERIFY_CREATED_DUPLICATE_FIXTURE');
+
+  const cycle2Merged = mergeDailyFixtureRegistry(
+    nextCycleApplied.registry,
+    [liveObservation(new Date(cycle2Now).toISOString())],
+    {
+      targetDate,
+      timeZone: TIME_ZONE,
+      nowMs: cycle2Now,
+      pcSourceClass: 'PC_NODE'
+    }
+  );
+  const cycle2 = annotateRegistryFixtureVerification(cycle2Merged, {
+    pcSourceClass: 'PC_NODE'
+  });
+  const entry2 = cycle2.entries[0];
+  must(cycle2.entries.length === 1, 'TWO_CYCLE_CYCLE2_DUPLICATE_FIXTURE');
+  must(entry2?.rankingReady === true, 'TWO_CYCLE_CYCLE2_NOT_RANKING_READY', entry2);
+  must(
+    entry2?.rankingVerificationStatus === 'CANONICAL_PLUS_LIVE_VERIFIED',
+    'TWO_CYCLE_CANONICAL_PLUS_LIVE_NOT_PROVEN',
+    entry2?.rankingVerificationStatus
+  );
+
+  const rolling2 = annotateRollingVerification(
+    selectRollingFixtureWindow(cycle2, {
+      nowMs: cycle2Now,
+      horizonMinutes: 90
+    }),
+    cycle2
+  );
+  const queues2 = buildRollingEvidenceQueues(rolling2);
+  must(queues2.verifiedRankingQueue.count === 1, 'TWO_CYCLE_VERIFIED_QUEUE_EXPECTED_ONE');
+  must(queues2.crosscheckRequiredQueue.count === 0, 'TWO_CYCLE_CROSSCHECK_SHOULD_CLEAR');
+  must(queues2.metrics.droppedByQuota === 0, 'TWO_CYCLE_CYCLE2_QUEUE_DROP_FORBIDDEN');
+  must(
+    queues2.verifiedRankingQueue.rows[0]?.predictionExecutionAllowed === false,
+    'TWO_CYCLE_VERIFIED_QUEUE_ENABLED_PREDICTION'
+  );
+  must(
+    queues2.verifiedRankingQueue.rows[0]?.decisionUse === false,
+    'TWO_CYCLE_VERIFIED_QUEUE_ENABLED_DECISION_USE'
+  );
+
+  return {
+    status: 'PASS',
+    sourceCycleId: 'E2E-CYCLE-1',
+    nextCycleId: 'E2E-CYCLE-2',
+    cycle1: {
+      rankingVerificationStatus: entry1.rankingVerificationStatus,
+      rankingReady: entry1.rankingReady,
+      verifiedQueue: queues1.verifiedRankingQueue.count,
+      crosscheckQueue: queues1.crosscheckRequiredQueue.count
+    },
+    evidence: {
+      bigDbFound: dispatch.metrics.bigDbFound,
+      sameCycleAutoPromoted: dispatch.metrics.autoPromoted,
+      nextCycleReverificationCandidates: dispatch.nextCycleReverification.count,
+      sameCycleBlocked: sameCycle.audit.sameCycleBlocked,
+      nextCycleApplied: nextCycleApplied.audit.applied
+    },
+    cycle2: {
+      rankingVerificationStatus: entry2.rankingVerificationStatus,
+      rankingReady: entry2.rankingReady,
+      verifiedQueue: queues2.verifiedRankingQueue.count,
+      crosscheckQueue: queues2.crosscheckRequiredQueue.count
+    },
+    safety: {
+      duplicateFixturesCreated: cycle2.entries.length !== 1,
+      droppedByQuota: queues1.metrics.droppedByQuota + queues2.metrics.droppedByQuota,
+      predictionExecutionAllowed: false,
+      decisionUse: false,
+      bigDbWriteAllowed: false
+    }
+  };
+}
+
 async function runLivePublicSmoke() {
   const nowMs = Date.now();
   const targetDate = localDateNow(TIME_ZONE, nowMs);
@@ -286,15 +485,22 @@ async function main() {
   const targetDate = localDateNow(TIME_ZONE, Date.now());
 
   let deterministic;
+  let twoCycleEvidence;
   try {
     deterministic = await runDeterministicResilience(targetDate);
+    twoCycleEvidence = runTwoCycleEvidencePromotion(targetDate);
   } catch (error) {
     const report = {
-      contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V3',
+      contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V4',
       status: 'FAIL',
       startedAt,
       finishedAt: new Date().toISOString(),
-      deterministic: {
+      deterministic: deterministic ?? {
+        status: 'FAIL',
+        error: error instanceof Error ? error.message : String(error),
+        detail: error?.detail ?? null
+      },
+      twoCycleEvidence: twoCycleEvidence ?? {
         status: 'FAIL',
         error: error instanceof Error ? error.message : String(error),
         detail: error?.detail ?? null
@@ -313,11 +519,12 @@ async function main() {
 
   const livePublic = await runLivePublicSmoke();
   const report = {
-    contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V3',
+    contract: 'CFI_DAILY_FIXTURE_AUTO_E2E_V4',
     status: 'PASS',
     startedAt,
     finishedAt: new Date().toISOString(),
     deterministic,
+    twoCycleEvidence,
     livePublic,
     safety: {
       shadowOnly: true,
@@ -338,6 +545,12 @@ async function main() {
     `- PC-miss rescued fixtures (synthetic contract E2E): ${deterministic.cycle1.matrix.rescuedWithoutPcNode}\n` +
     `- Source-outage retained fixtures: ${deterministic.sourceFailureCycle.matrix.unionFixtures}\n` +
     `- Kickoff conflict status: ${deterministic.conflictCycle.verificationStatus}\n` +
+    `- Two-cycle evidence path: ${twoCycleEvidence.status}\n` +
+    `- Two-cycle cycle-1 state: ${twoCycleEvidence.cycle1.rankingVerificationStatus}\n` +
+    `- Two-cycle same-cycle blocked: ${twoCycleEvidence.evidence.sameCycleBlocked}\n` +
+    `- Two-cycle next-cycle applied: ${twoCycleEvidence.evidence.nextCycleApplied}\n` +
+    `- Two-cycle cycle-2 state: ${twoCycleEvidence.cycle2.rankingVerificationStatus}\n` +
+    `- Two-cycle verified queue after reverify: ${twoCycleEvidence.cycle2.verifiedQueue}\n` +
     `- Live public smoke: ${livePublic.status}\n` +
     `- Live public source health: ${livePublic.sourceHealth?.status ?? 'N/A'}\n` +
     `- Live public ranking-ready coverage: ${livePublic.coverageReadyForRanking === true}\n` +
@@ -346,7 +559,7 @@ async function main() {
     `- decisionUse: false\n` +
     `- bigDbWriteAllowed: false\n` +
     `- Production schedule activated: false\n\n` +
-    `Live public-provider failure is non-blocking because third-party outages are an expected resilience scenario. Tier A browser discovery is additive and cannot become a PC-Node gate. Fallback-only ESPN/TheSportsDB rows do not satisfy ranking coverage readiness. Deterministic registry integrity failures are blocking.\n`;
+    `Live public-provider failure is non-blocking because third-party outages are an expected resilience scenario. Tier A browser discovery is additive and cannot become a PC-Node gate. Fallback-only ESPN/TheSportsDB rows do not satisfy ranking coverage readiness. Deterministic registry integrity failures and same-cycle evidence promotion are blocking.\n`;
 
   await Promise.all([
     writeFile(REPORT_JSON, JSON.stringify(report, null, 2), 'utf8'),
@@ -362,6 +575,12 @@ async function main() {
     rescuedWithoutPcNode: deterministic.cycle1.matrix.rescuedWithoutPcNode,
     retainedAfterSourceFailure: deterministic.sourceFailureCycle.matrix.unionFixtures,
     conflictStatus: deterministic.conflictCycle.verificationStatus,
+    twoCycleEvidenceStatus: twoCycleEvidence.status,
+    twoCycleStartState: twoCycleEvidence.cycle1.rankingVerificationStatus,
+    twoCycleSameCycleBlocked: twoCycleEvidence.evidence.sameCycleBlocked,
+    twoCycleNextCycleApplied: twoCycleEvidence.evidence.nextCycleApplied,
+    twoCycleFinalState: twoCycleEvidence.cycle2.rankingVerificationStatus,
+    twoCycleVerifiedQueue: twoCycleEvidence.cycle2.verifiedQueue,
     livePublicStatus: livePublic.status,
     livePublicSourceHealth: livePublic.sourceHealth?.status ?? null,
     livePublicCoverageReadyForRanking: livePublic.coverageReadyForRanking === true,
