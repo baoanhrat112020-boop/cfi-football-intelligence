@@ -87,6 +87,79 @@ test('Flashscore-style inline time and teams is accepted', () => {
   assert.equal(parsed.candidates[0].parser_evidence.extraction, 'INLINE_TIME_TEAMS');
 });
 
+test('relative Yesterday Today Tomorrow sections do not leak adjacent-day fixtures into target date', () => {
+  const source = {
+    ...baseSource,
+    id: 'daily-flashscore',
+    provider: 'flashscore',
+    url: 'https://www.flashscore.com/football/'
+  };
+  const parsed = parseDailyFixtureText(source, `
+    Yesterday
+    23:00 Old Home - Old Away
+    Today
+    08:15 Current Home - Current Away
+    Tomorrow
+    08:00 Club America - Club Tijuana
+    08:00 Tigres UANL - Necaxa
+  `, {
+    targetDate: '2026-09-05',
+    referenceDate: '2026-09-05',
+    timeZone: 'Asia/Ho_Chi_Minh'
+  });
+
+  assert.equal(parsed.candidates.length, 1);
+  assert.equal(parsed.candidates[0].home_team, 'Current Home');
+  assert.equal(parsed.candidates[0].away_team, 'Current Away');
+  assert.equal(parsed.candidates[0].kickoff_utc, '2026-09-05T01:15:00.000Z');
+  assert.equal(parsed.telemetry.relativeDateAnchors, 3);
+});
+
+test('Tomorrow section is eligible only when target date is reference date plus one day', () => {
+  const source = {
+    ...baseSource,
+    id: 'daily-flashscore',
+    provider: 'flashscore',
+    url: 'https://www.flashscore.com/football/'
+  };
+  const parsed = parseDailyFixtureText(source, `
+    Today
+    08:15 Current Home - Current Away
+    Tomorrow, 6 Sep
+    08:00 Future Home - Future Away
+  `, {
+    targetDate: '2026-09-06',
+    referenceDate: '2026-09-05',
+    timeZone: 'Asia/Ho_Chi_Minh'
+  });
+
+  assert.equal(parsed.candidates.length, 1);
+  assert.equal(parsed.candidates[0].home_team, 'Future Home');
+  assert.equal(parsed.candidates[0].away_team, 'Future Away');
+  assert.equal(parsed.candidates[0].kickoff_utc, '2026-09-06T01:00:00.000Z');
+  assert.equal(parsed.candidates[0].parser_evidence.date_basis, 'DATE_SECTION');
+});
+
+test('relative-date navigation string is not treated as a date anchor', () => {
+  const source = {
+    ...baseSource,
+    id: 'daily-flashscore',
+    provider: 'flashscore',
+    url: 'https://www.flashscore.com/football/'
+  };
+  const parsed = parseDailyFixtureText(source, `
+    YESTERDAY TODAY TOMORROW
+    08:15 Current Home - Current Away
+  `, {
+    targetDate: '2026-09-05',
+    referenceDate: '2026-09-05',
+    timeZone: 'Asia/Ho_Chi_Minh'
+  });
+
+  assert.equal(parsed.candidates.length, 1);
+  assert.equal(parsed.telemetry.relativeDateAnchors, 0);
+});
+
 test('fixture identity without explicit kickoff time is kept identity-only and never fabricated into a candidate', () => {
   const parsed = parseDailyFixtureText(baseSource, `
     2026/09/05 Chelsea FC Women vs Aston Villa Women Live
