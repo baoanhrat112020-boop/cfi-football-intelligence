@@ -12,7 +12,7 @@ const PROBE_AUDIT = resolve(
 );
 const OUTPUT = resolve(
   process.env.CFI_DATE_CONTEXT_AUDIT_FILE ||
-  'local-node/cache/registry/browser-date-context-audit.json'
+  'local-node/cache/registry/cycle1-browser-date-context-audit.json'
 );
 const CONTEXT_RADIUS = Math.max(
   2,
