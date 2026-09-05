@@ -34,6 +34,7 @@
     "cfi:public-discovery": "node local-node/registry/public-discovery.mjs",
     "cfi:web-rescue": "node local-node/registry/web-search-rescue.mjs",
     "cfi:web-rescue:shadow": "node --experimental-strip-types tools/cfi-web-rescue-shadow-injection.mjs",
+    "cfi:web-rescue:shadow:live-kwff": "node --experimental-strip-types tools/cfi-kwff-web-rescue-shadow-live.mjs",
     "cfi:registry": "node local-node/registry/daily-fixture-registry.mjs",
     "cfi:queues": "node local-node/registry/rolling-evidence-queues.mjs",
     "cfi:evidence:shadow": "node local-node/registry/shadow-evidence-dispatcher.mjs",
