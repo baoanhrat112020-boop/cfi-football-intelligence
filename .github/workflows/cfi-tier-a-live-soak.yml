@@ -8,14 +8,19 @@ on:
       - 'src/discovery/rolling-evidence-queues.mjs'
       - 'src/discovery/shadow-evidence-dispatcher.mjs'
       - 'src/discovery/next-cycle-reverification.mjs'
+      - 'src/discovery/bigdb-identity-gap-audit.mjs'
+      - 'supabase/functions/_shared/cfi-provider-team-bridge.ts'
       - 'local-node/browser/fixture-collector/**'
       - 'local-node/registry/tier-a-browser-discovery.mjs'
       - 'local-node/registry/daily-fixture-registry.mjs'
       - 'local-node/registry/rolling-evidence-queues.mjs'
       - 'local-node/registry/shadow-evidence-dispatcher.mjs'
+      - 'local-node/registry/bigdb-identity-gap-audit.mjs'
       - 'tests/rolling-evidence-queues.test.mjs'
       - 'tests/shadow-evidence-dispatcher.test.mjs'
       - 'tests/evidence-two-cycle-e2e.test.mjs'
+      - 'tests/bigdb-identity-gap-audit.test.mjs'
+      - 'tests/provider-team-bridge.test.mjs'
       - 'tools/cfi-tier-a-live-soak-report.mjs'
       - 'package.json'
       - '.github/workflows/cfi-tier-a-live-soak.yml'
@@ -177,6 +182,33 @@ jobs:
           }));
           NODE
 
+      - name: Classify BigDB identity gaps for rescue
+        if: success()
+        env:
+          CFI_ORCHESTRATOR_CYCLE_ID: gha-${{ github.run_id }}-c1
+        run: |
+          npm run cfi:evidence:identity-gap
+          node - <<'NODE'
+          const fs = require('fs');
+          const gap = JSON.parse(fs.readFileSync('local-node/cache/registry/bigdb-identity-gap-audit.json','utf8'));
+          if (gap.policy?.bigDbWriteAllowed !== false) throw new Error('IDENTITY_GAP_BIGDB_WRITE_ENABLED');
+          if (gap.policy?.rawFixtureUpsertForIdentityRescueAllowed !== false) throw new Error('IDENTITY_GAP_RAW_FIXTURE_RESCUE_ENABLED');
+          if (gap.policy?.autoAliasAllowed !== false) throw new Error('IDENTITY_GAP_AUTO_ALIAS_ENABLED');
+          if (gap.policy?.webMayAutoCreateCanonicalTeam !== false) throw new Error('IDENTITY_GAP_CANONICAL_AUTO_CREATE_ENABLED');
+          if ((gap.rows ?? []).some(row => row.autoAliasAllowed !== false)) throw new Error('IDENTITY_GAP_ROW_AUTO_ALIAS_ENABLED');
+          if ((gap.rows ?? []).some(row => row.canonicalTeamCreateAllowed !== false)) throw new Error('IDENTITY_GAP_ROW_CANONICAL_CREATE_ENABLED');
+          console.log(JSON.stringify({
+            contract:gap.contract,
+            status:gap.status,
+            metrics:gap.metrics,
+            rawFixtureUpsertForIdentityRescueAllowed:false,
+            autoAliasAllowed:false,
+            canonicalTeamCreateAllowed:false,
+            decisionUse:false,
+            bigDbWriteAllowed:false
+          }));
+          NODE
+
       - name: Apply BigDB canonical evidence only in cycle 2 and rematerialize queues
         if: success()
         env:
@@ -261,6 +293,15 @@ jobs:
             if (bigDbAudit.safety?.predictionExecutionAllowed !== false) throw new Error('DISPATCH_PREDICTION_ENABLED');
             if (bigDbAudit.safety?.bigDbWriteAllowed !== false) throw new Error('DISPATCH_BIGDB_WRITE_ENABLED');
           }
+          const gapAuditPath = 'local-node/cache/registry/bigdb-identity-gap-audit.json';
+          const gapAudit = fs.existsSync(gapAuditPath) ? JSON.parse(fs.readFileSync(gapAuditPath,'utf8')) : null;
+          if (gapAudit) {
+            if (gapAudit.policy?.bigDbWriteAllowed !== false) throw new Error('GAP_AUDIT_BIGDB_WRITE_ENABLED');
+            if (gapAudit.policy?.rawFixtureUpsertForIdentityRescueAllowed !== false) throw new Error('GAP_AUDIT_RAW_FIXTURE_RESCUE_ENABLED');
+            if (gapAudit.policy?.autoAliasAllowed !== false) throw new Error('GAP_AUDIT_AUTO_ALIAS_ENABLED');
+            if (gapAudit.policy?.webMayAutoCreateCanonicalTeam !== false) throw new Error('GAP_AUDIT_CANONICAL_AUTO_CREATE_ENABLED');
+            if ((gapAudit.rows ?? []).some(row => row.autoAliasAllowed !== false || row.canonicalTeamCreateAllowed !== false)) throw new Error('GAP_AUDIT_ROW_MUTATION_ENABLED');
+          }
           console.log(JSON.stringify({
             status: report.status,
             metrics: report.metrics,
@@ -269,6 +310,7 @@ jobs:
             perFixtureVerification: report.perFixtureVerification,
             liveRollingQueues: queueAudit.metrics,
             bigDbLiveRead: bigDbAudit ? {status:bigDbAudit.status,liveRead:bigDbAudit.liveRead,metrics:bigDbAudit.metrics} : null,
+            bigDbIdentityGap: gapAudit ? {status:gapAudit.status,metrics:gapAudit.metrics,policy:gapAudit.policy} : null,
             tierALiveExit: '${{ steps.tier_a_live.outputs.exit_code }}',
             chromiumInstallOutcome: '${{ steps.browser_install.outcome }}'
           }));
@@ -297,6 +339,7 @@ jobs:
             local-node/cache/registry/web-crosscheck-request-plan.json
             local-node/cache/registry/next-cycle-reverification-candidates.json
             local-node/cache/registry/shadow-evidence-dispatcher-audit.json
+            local-node/cache/registry/bigdb-identity-gap-audit.json
             local-node/cache/registry/live-bigdb-unresolved.json
             local-node/cache/registry/live-bigdb-next-cycle-summary.json
             local-node/cache/browser/source-probe-audit.json
