@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import {
   buildShadowEvidenceDispatch,
@@ -25,6 +25,18 @@ const AUDIT = resolve(
   process.env.CFI_SHADOW_EVIDENCE_AUDIT_FILE ||
   'local-node/cache/registry/shadow-evidence-dispatcher-audit.json'
 );
+const DATE_CONTEXT_QUEUE = resolve(
+  process.env.CFI_DATE_CONTEXT_QUEUE_FILE ||
+  'local-node/cache/registry/cycle1-crosscheck-required-queue.json'
+);
+const DATE_CONTEXT_PROBE = resolve(
+  process.env.CFI_BROWSER_PROBE_AUDIT ||
+  'local-node/cache/browser/source-probe-audit.json'
+);
+const DATE_CONTEXT_AUDIT = resolve(
+  process.env.CFI_DATE_CONTEXT_AUDIT_FILE ||
+  'local-node/cache/registry/cycle1-browser-date-context-audit.json'
+);
 
 const LIVE_REQUESTED = process.env.CFI_SHADOW_EVIDENCE_LIVE === '1';
 const MAX_CONCURRENCY = Math.max(
@@ -44,6 +56,15 @@ async function saveJson(file, body) {
 
 async function readJson(file) {
   return JSON.parse(await readFile(file, 'utf8'));
+}
+
+async function exists(file) {
+  try {
+    await access(file);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function safeJson(text) {
@@ -177,8 +198,20 @@ if (dispatch.receipts.some(row => row.bigDbWriteAllowed === true)) {
   throw new Error('DISPATCHER_MUST_NOT_ENABLE_BIGDB_WRITE');
 }
 
+let dateContextAudit = null;
+const dateContextEligible =
+  await exists(DATE_CONTEXT_QUEUE) &&
+  await exists(DATE_CONTEXT_PROBE);
+if (dateContextEligible) {
+  process.env.CFI_DATE_CONTEXT_QUEUE_FILE = DATE_CONTEXT_QUEUE;
+  process.env.CFI_BROWSER_PROBE_AUDIT = DATE_CONTEXT_PROBE;
+  process.env.CFI_DATE_CONTEXT_AUDIT_FILE = DATE_CONTEXT_AUDIT;
+  await import(`../../tools/cfi-browser-date-context-audit.mjs?cycle=${encodeURIComponent(CYCLE_ID ?? generatedAt)}`);
+  dateContextAudit = await readJson(DATE_CONTEXT_AUDIT);
+}
+
 const audit = {
-  contract: 'CFI_SHADOW_EVIDENCE_DISPATCHER_AUDIT_V1',
+  contract: 'CFI_SHADOW_EVIDENCE_DISPATCHER_AUDIT_V2',
   generatedAt,
   status: liveEnabled
     ? dispatch.metrics.bigDbUnauthorized > 0
@@ -207,11 +240,27 @@ const audit = {
     timeoutMs: TIMEOUT_MS,
     serviceRoleKeyUsed: false
   },
+  dateContextAudit: dateContextAudit
+    ? {
+        performed: true,
+        output: DATE_CONTEXT_AUDIT,
+        contract: dateContextAudit.contract,
+        status: dateContextAudit.status,
+        fixtures: dateContextAudit.fixtures,
+        providerContexts: dateContextAudit.providerContexts,
+        statusCounts: dateContextAudit.statusCounts,
+        contextClassifications: dateContextAudit.contextClassifications
+      }
+    : {
+        performed: false,
+        reason: 'CYCLE1_QUEUE_OR_BROWSER_PROBE_NOT_PRESENT'
+      },
   metrics: dispatch.metrics,
   output: {
     receipts: RECEIPTS,
     webCrosscheckPlan: WEB_PLAN,
-    nextCycleReverification: REVERIFY
+    nextCycleReverification: REVERIFY,
+    dateContextAudit: dateContextAudit ? DATE_CONTEXT_AUDIT : null
   },
   integration: {
     bigDbBaseEnv: 'CFI_DB_BASE_URL',
@@ -221,7 +270,11 @@ const audit = {
     webRescueImplementation: dispatch.webCrosscheckPlan.existingIngestImplementation,
     sameCycleRegistryMutationPerformed: false
   },
-  safety: dispatch.safety
+  safety: {
+    ...dispatch.safety,
+    dateContextCanMutateKickoff: false,
+    dateContextCanMutateIdentity: false
+  }
 };
 
 await Promise.all([
@@ -246,6 +299,7 @@ console.log(JSON.stringify({
   liveReadRequested: LIVE_REQUESTED,
   liveReadEnabled: liveEnabled,
   configReason,
+  dateContextAudit: audit.dateContextAudit,
   ...dispatch.metrics,
   networkAttempts,
   actionKeyConfigured: Boolean(dbKey),
