@@ -150,7 +150,7 @@ function evidencePlan(item, lane) {
       : {
           bigDbFirst: true,
           webFallbackWhenBigDbInsufficient: true,
-          webCanSupplementBigDb: true,
+          webCanSupplementBigDb: false,
           reverifyFixtureAfterEvidence: true,
           rankingInputEligible: false,
           promotionPolicy: 'REVERIFY_NEXT_REGISTRY_CYCLE',
