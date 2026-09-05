@@ -13,6 +13,8 @@ on:
       - 'tests/fixture-source-policy.test.mjs'
       - 'tests/fixture-verification.test.mjs'
       - 'tests/rolling-evidence-queues.test.mjs'
+      - 'tests/shadow-evidence-dispatcher.test.mjs'
+      - 'tests/shadow-evidence-dispatcher-runner.test.mjs'
       - 'tests/daily-text-parser.test.mjs'
       - 'tests/tier-a-registry-coverage.test.mjs'
       - 'package.json'
@@ -44,19 +46,21 @@ jobs:
 
       - run: npm ci
 
-      - name: Syntax check Tier A browser orchestration and rolling queues
+      - name: Syntax check Tier A browser orchestration, queues and dispatcher
         run: |
           node --check src/discovery/fixture-verification.mjs
           node --check src/discovery/rolling-evidence-queues.mjs
+          node --check src/discovery/shadow-evidence-dispatcher.mjs
           node --check local-node/browser/fixture-collector/probe.mjs
           node --check local-node/browser/fixture-collector/daily-text-parser.mjs
           node --check local-node/browser/fixture-collector/run-daily-source-adapter.mjs
           node --check local-node/registry/tier-a-browser-discovery.mjs
           node --check local-node/registry/daily-fixture-registry.mjs
           node --check local-node/registry/rolling-evidence-queues.mjs
+          node --check local-node/registry/shadow-evidence-dispatcher.mjs
           node --check local-node/orchestrator.mjs
 
-      - name: Deterministic registry, verification and queue contract tests
+      - name: Deterministic registry, verification, queue and dispatcher contract tests
         run: >-
           node --experimental-strip-types --test
           tests/daily-fixture-registry.test.mjs
@@ -64,10 +68,12 @@ jobs:
           tests/fixture-source-policy.test.mjs
           tests/fixture-verification.test.mjs
           tests/rolling-evidence-queues.test.mjs
+          tests/shadow-evidence-dispatcher.test.mjs
+          tests/shadow-evidence-dispatcher-runner.test.mjs
           tests/daily-text-parser.test.mjs
           tests/tier-a-registry-coverage.test.mjs
 
-      - name: Materialize physical verified and crosscheck queues
+      - name: Materialize physical queues and no-network shadow evidence receipts
         run: |
           mkdir -p local-node/cache/registry
           cat > local-node/cache/registry/rolling-fixture-window.json <<'JSON'
@@ -105,21 +111,34 @@ jobs:
           }
           JSON
           npm run cfi:queues
+          npm run cfi:evidence:shadow
           node - <<'NODE'
           const fs = require('fs');
           const verified = JSON.parse(fs.readFileSync('local-node/cache/registry/verified-ranking-queue.json','utf8'));
           const crosscheck = JSON.parse(fs.readFileSync('local-node/cache/registry/crosscheck-required-queue.json','utf8'));
           const plan = JSON.parse(fs.readFileSync('local-node/cache/registry/evidence-request-plan.json','utf8'));
-          const audit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          const queueAudit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          const receipts = JSON.parse(fs.readFileSync('local-node/cache/registry/shadow-evidence-receipts.json','utf8'));
+          const webPlan = JSON.parse(fs.readFileSync('local-node/cache/registry/web-crosscheck-request-plan.json','utf8'));
+          const reverify = JSON.parse(fs.readFileSync('local-node/cache/registry/next-cycle-reverification-candidates.json','utf8'));
+          const dispatchAudit = JSON.parse(fs.readFileSync('local-node/cache/registry/shadow-evidence-dispatcher-audit.json','utf8'));
           if (verified.count !== 1) throw new Error('VERIFIED_QUEUE_EXPECTED_1');
           if (crosscheck.count !== 1) throw new Error('CROSSCHECK_QUEUE_EXPECTED_1');
           if (plan.count !== 2) throw new Error('EVIDENCE_REQUEST_PLAN_EXPECTED_2');
-          if (audit.metrics?.droppedByQuota !== 0) throw new Error('QUEUE_DROPPED_BY_QUOTA');
+          if (queueAudit.metrics?.droppedByQuota !== 0) throw new Error('QUEUE_DROPPED_BY_QUOTA');
           if (plan.requests?.some(x => x.safety?.predictionExecutionAllowed !== false)) throw new Error('PREDICTION_EXECUTION_ENABLED');
           if (plan.requests?.some(x => x.bigDb?.writeAllowed !== false)) throw new Error('BIGDB_WRITE_ENABLED');
           if (plan.requests?.[0]?.bigDb?.implementation !== 'supabase/functions/cfi-bigdb-retrieval') throw new Error('BIGDB_PIPELINE_NOT_REUSED');
           if (plan.webRescueImplementation !== 'local-node/registry/web-search-rescue.mjs') throw new Error('WEB_RESCUE_PIPELINE_NOT_REUSED');
-          console.log(JSON.stringify({status:'PASS',verified:verified.count,crosscheck:crosscheck.count,evidenceRequests:plan.count,safety:audit.safety}));
+          if (receipts.count !== 2) throw new Error('SHADOW_RECEIPTS_EXPECTED_2');
+          if (receipts.rows?.some(x => x.bigDb?.status !== 'NOT_DISPATCHED_SHADOW')) throw new Error('DEFAULT_SHADOW_MUST_NOT_NETWORK');
+          if (receipts.rows?.some(x => x.rankingReady !== false || x.predictionExecutionAllowed !== false)) throw new Error('SHADOW_RECEIPT_PROMOTION_OR_PREDICTION');
+          if (webPlan.count !== 2) throw new Error('WEB_CROSSCHECK_PLAN_EXPECTED_2');
+          if (reverify.count !== 0) throw new Error('NO_NETWORK_SHOULD_NOT_REVERIFY');
+          if (dispatchAudit.status !== 'PASS_SHADOW_NO_NETWORK') throw new Error(`UNEXPECTED_DISPATCH_STATUS:${dispatchAudit.status}`);
+          if (dispatchAudit.liveRead?.serviceRoleKeyUsed !== false) throw new Error('SERVICE_ROLE_KEY_USED');
+          if (dispatchAudit.integration?.sameCycleRegistryMutationPerformed !== false) throw new Error('SAME_CYCLE_REGISTRY_MUTATION');
+          console.log(JSON.stringify({status:'PASS',verified:verified.count,crosscheck:crosscheck.count,evidenceRequests:plan.count,receipts:receipts.count,webCrosschecks:webPlan.count,reverify:reverify.count,dispatchStatus:dispatchAudit.status}));
           NODE
 
       - name: Build prioritized source scan plan
@@ -173,4 +192,8 @@ jobs:
             local-node/cache/registry/crosscheck-required-queue.json
             local-node/cache/registry/evidence-request-plan.json
             local-node/cache/registry/rolling-evidence-queues-audit.json
+            local-node/cache/registry/shadow-evidence-receipts.json
+            local-node/cache/registry/web-crosscheck-request-plan.json
+            local-node/cache/registry/next-cycle-reverification-candidates.json
+            local-node/cache/registry/shadow-evidence-dispatcher-audit.json
           if-no-files-found: warn
