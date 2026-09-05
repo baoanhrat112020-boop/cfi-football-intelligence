@@ -39,6 +39,70 @@ function successfulProviderUrls(discovery) {
   return map;
 }
 
+function normalizedHost(value) {
+  return clean(value).toLowerCase().replace(/^www\./, '');
+}
+
+/**
+ * A missing providerId may only be recovered from a URL when the URL itself
+ * exposes a provider-native, event-level identifier under a narrowly whitelisted
+ * first-party pattern. This is not a synthetic-ID fallback.
+ *
+ * Explicitly forbidden examples:
+ * - matchup-level Sofascore slugs (same slug can represent multiple meetings),
+ * - schedule/list pages without an event id,
+ * - arbitrary path fragments,
+ * - a URL whose provider contradicts candidate.provider.
+ */
+export function deriveProviderIdFromProvenance(candidate = {}) {
+  const existing = clean(candidate?.providerId);
+  if (existing) {
+    return {
+      providerId: existing,
+      derived: false,
+      provider: clean(candidate?.provider).toUpperCase() || null,
+      sourceUrl: null,
+      rule: 'EXPLICIT_PROVIDER_ID'
+    };
+  }
+
+  const declaredProvider = clean(candidate?.provider).toUpperCase();
+  const urls = httpsUrls(candidate?.sourceUrls);
+
+  for (const value of urls) {
+    let parsed;
+    try {
+      parsed = new URL(value);
+    } catch {
+      continue;
+    }
+
+    const host = normalizedHost(parsed.hostname);
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+
+    if (host === 'kwff.or.kr') {
+      if (declaredProvider && declaredProvider !== 'KWFF') continue;
+      const match = path.match(/^\/matches\/(\d+)$/);
+      if (!match) continue;
+      return {
+        providerId: `KWFF:${match[1]}`,
+        derived: true,
+        provider: 'KWFF',
+        sourceUrl: value,
+        rule: 'KWFF_MATCH_CENTER_NUMERIC_ID'
+      };
+    }
+  }
+
+  return {
+    providerId: null,
+    derived: false,
+    provider: declaredProvider || null,
+    sourceUrl: null,
+    rule: null
+  };
+}
+
 export function publicDiscoveryToSupplement(
   discovery,
   { observedAt = new Date().toISOString() } = {}
@@ -93,7 +157,25 @@ export function publicDiscoveryToSupplement(
 }
 
 export function webSearchCandidatesToSupplement(candidates, window) {
-  const normalized = normalizeAiFixtureCandidates(candidates, window);
+  const derivations = [];
+  const prepared = (Array.isArray(candidates) ? candidates : []).map((candidate, index) => {
+    const resolution = deriveProviderIdFromProvenance(candidate);
+    if (!resolution.derived) return candidate;
+    derivations.push({
+      index,
+      providerId: resolution.providerId,
+      provider: resolution.provider,
+      sourceUrl: resolution.sourceUrl,
+      rule: resolution.rule
+    });
+    return {
+      ...candidate,
+      provider: clean(candidate?.provider) || resolution.provider,
+      providerId: resolution.providerId
+    };
+  });
+
+  const normalized = normalizeAiFixtureCandidates(prepared, window);
   const rows = normalized.rows.map(row => annotateFixtureSource({
     sourceClass: WEB_SEARCH_RESCUE_SOURCE_CLASS,
     provider: row.provider,
@@ -115,15 +197,21 @@ export function webSearchCandidatesToSupplement(candidates, window) {
   const sourceHealth = evaluateFixtureSourceCoverage(rows);
 
   return {
-    contract: 'CFI_WEB_SEARCH_RESCUE_SUPPLEMENT_V2',
+    contract: 'CFI_WEB_SEARCH_RESCUE_SUPPLEMENT_V3',
     generatedAt,
     sourceClass: WEB_SEARCH_RESCUE_SOURCE_CLASS,
     rows,
     rejected: normalized.rejected,
+    providerIdDerivations: derivations,
     sourceHealth,
     policy: {
       httpsProvenanceRequired: true,
       providerIdRequired: true,
+      providerIdMayBeDerivedOnlyFromWhitelistedFirstPartyEventUrl: true,
+      providerIdSyntheticFallbackAllowed: false,
+      providerIdDerivationRules: ['KWFF_MATCH_CENTER_NUMERIC_ID'],
+      matchupSlugAcceptedAsProviderId: false,
+      providerMismatchDerivationAllowed: false,
       prematchOnly: true,
       targetDateRequired: true,
       futureKickoffRequiredForCurrentDay: true,
