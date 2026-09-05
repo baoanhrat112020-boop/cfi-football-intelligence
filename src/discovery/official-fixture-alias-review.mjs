@@ -131,7 +131,7 @@ export function buildOfficialFixtureAliasReview(
 ) {
   const sourceHints = Array.isArray(hints) ? hints : [];
   const sourceOfficialRows = Array.isArray(officialRows) ? officialRows : [];
-  const proposals = [];
+  const provisionalProposals = [];
   const rejected = [];
   const ambiguous = [];
 
@@ -189,6 +189,7 @@ export function buildOfficialFixtureAliasReview(
         targetDate: hintDate,
         candidateProviderIds: best.map(item => officialRowIdentity(item.official)),
         autoAliasAllowed: false,
+        canonicalTeamCreateAllowed: false,
         registryIngestAllowed: false,
         bigDbWriteAllowed: false,
         decisionUse: false
@@ -198,8 +199,9 @@ export function buildOfficialFixtureAliasReview(
 
     const { official, evidence } = best[0];
     const local = localParts(official?.kickoffIso, timeZone);
-    proposals.push({
+    provisionalProposals.push({
       contract: OFFICIAL_FIXTURE_ALIAS_REVIEW_CONTRACT,
+      reviewIndex: index,
       classification: 'ALIAS_CANDIDATE_REVIEW_REQUIRED',
       providerObservation: {
         provider: clean(hint?.provider) || null,
@@ -255,6 +257,45 @@ export function buildOfficialFixtureAliasReview(
     });
   }
 
+  // Batch-level fail-closed guard: the same official fixture cannot be used to
+  // justify two localized observations. Such many-to-one cases are review
+  // ambiguity, not alias evidence.
+  const byOfficial = new Map();
+  for (const proposal of provisionalProposals) {
+    const key = officialRowIdentity(proposal.officialFixture);
+    const current = byOfficial.get(key) ?? [];
+    current.push(proposal);
+    byOfficial.set(key, current);
+  }
+  const reusedOfficial = new Set(
+    [...byOfficial.entries()]
+      .filter(([, rows]) => rows.length > 1)
+      .map(([key]) => key)
+  );
+  const proposals = provisionalProposals.filter(
+    proposal => !reusedOfficial.has(officialRowIdentity(proposal.officialFixture))
+  );
+  for (const [providerId, rows] of byOfficial.entries()) {
+    if (rows.length <= 1) continue;
+    for (const row of rows) {
+      ambiguous.push({
+        index: row.reviewIndex,
+        home: row.providerObservation.home,
+        away: row.providerObservation.away,
+        reason: 'OFFICIAL_FIXTURE_REUSED_BY_MULTIPLE_HINTS',
+        displayedTime: row.providerObservation.displayedTime,
+        targetDate: row.providerObservation.targetDate,
+        candidateProviderIds: [providerId],
+        conflictingHintCount: rows.length,
+        autoAliasAllowed: false,
+        canonicalTeamCreateAllowed: false,
+        registryIngestAllowed: false,
+        bigDbWriteAllowed: false,
+        decisionUse: false
+      });
+    }
+  }
+
   return {
     contract: OFFICIAL_FIXTURE_ALIAS_REVIEW_CONTRACT,
     generatedAt,
@@ -281,6 +322,7 @@ export function buildOfficialFixtureAliasReview(
       fuzzyIdentityResolutionAllowed: false,
       reversedOrientationAllowed: false,
       ambiguousProposalAllowed: false,
+      officialFixtureMayBackMultipleHints: false,
       autoAliasAllowed: false,
       canonicalTeamCreateAllowed: false,
       registryIngestAllowed: false,
