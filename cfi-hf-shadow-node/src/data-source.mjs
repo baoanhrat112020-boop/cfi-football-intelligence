@@ -1,11 +1,11 @@
-import { createHash } from 'node:crypto';
+import { hash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HF_INPUT_CONTRACT } from './contracts.mjs';
 
 export function sha256Bytes(bytes) {
-  return createHash('sha256').update(bytes).digest('hex');
+  return hash('sha256', bytes, 'hex');
 }
 
 export async function sha256File(path) {
