@@ -1,0 +1,97 @@
+name: CFI KWFF Web Rescue Shadow Live
+
+on:
+  pull_request:
+    paths:
+      - 'src/discovery/registry-source-adapters.mjs'
+      - 'src/discovery/fixture-source-policy.mjs'
+      - 'local-node/registry/web-search-rescue.mjs'
+      - 'tools/cfi-web-rescue-shadow-injection.mjs'
+      - 'tools/cfi-kwff-web-rescue-shadow-live.mjs'
+      - 'tests/web-rescue-shadow-injection.test.mjs'
+      - 'tests/kwff-web-rescue-shadow-live.test.mjs'
+      - 'package.json'
+      - '.github/workflows/cfi-kwff-web-rescue-shadow-live.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cfi-kwff-web-rescue-shadow-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-shadow-ingress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      TZ: Asia/Ho_Chi_Minh
+      CFI_TIME_ZONE: Asia/Ho_Chi_Minh
+      CFI_KWFF_SHADOW_LIVE_REPORT: audit-reports/cfi-kwff-web-rescue-shadow-live.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium for official-federation shadow probe
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live KWFF through actual web-rescue shadow harness
+        run: npm run cfi:web-rescue:shadow:live-kwff
+
+      - name: Verify isolated shadow safety and provider-id provenance
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'audit-reports/cfi-kwff-web-rescue-shadow-live.json';
+          if (!fs.existsSync(path)) throw new Error('KWFF_SHADOW_LIVE_REPORT_MISSING');
+          const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const p = report.policy ?? {};
+          if (p.sourceTrustPromotionPerformed !== false) throw new Error('KWFF_SOURCE_TRUST_PROMOTED');
+          if (p.registryInvoked !== false) throw new Error('KWFF_SHADOW_REGISTRY_INVOKED');
+          if (p.orchestratorInvoked !== false) throw new Error('KWFF_SHADOW_ORCHESTRATOR_INVOKED');
+          if (p.predictionExecutionAllowed !== false) throw new Error('KWFF_SHADOW_PREDICTION_ENABLED');
+          if (p.bigDbNetworkInvoked !== false) throw new Error('KWFF_SHADOW_BIGDB_NETWORK_INVOKED');
+          if (p.bigDbWriteAllowed !== false) throw new Error('KWFF_SHADOW_BIGDB_WRITE_ENABLED');
+          if (p.productionMutationAllowed !== false) throw new Error('KWFF_SHADOW_PRODUCTION_MUTATION_ENABLED');
+          if (p.runtimeFixtureDataCommitted !== false) throw new Error('KWFF_RUNTIME_FIXTURE_DATA_COMMITTED');
+          if (p.syntheticProviderIdAllowed !== false) throw new Error('KWFF_SYNTHETIC_PROVIDER_ID_ENABLED');
+          if (p.decisionUse !== false) throw new Error('KWFF_DECISION_USE_ENABLED');
+          if (report.status === 'PASS') {
+            if (!(report.candidates > 0)) throw new Error('KWFF_PASS_WITHOUT_CANDIDATES');
+            if (report.accepted !== report.candidates) throw new Error('KWFF_ACCEPTED_COUNT_MISMATCH');
+            if (report.providerIdDerivations !== report.candidates) throw new Error('KWFF_DERIVATION_COUNT_MISMATCH');
+            const rows = report.runtimeRows ?? [];
+            if (rows.some(row => row.sourceTier !== 'X' || row.sourceKey !== 'UNKNOWN')) throw new Error('KWFF_UNEXPECTED_TRUST_TIER');
+            if (rows.some(row => !/^KWFF:\d+$/.test(String(row.providerId ?? '')))) throw new Error('KWFF_PROVIDER_ID_INVALID');
+          } else if (report.status !== 'DEGRADED_NO_CURRENT_FUTURE_MATCHES') {
+            throw new Error(`KWFF_SHADOW_LIVE_NOT_PASS:${report.status}`);
+          }
+          console.log(JSON.stringify({
+            contract: report.contract,
+            status: report.status,
+            targetDate: report.targetDate,
+            httpStatus: report.source?.httpStatus ?? null,
+            cards: report.source?.cards ?? 0,
+            candidates: report.candidates ?? 0,
+            accepted: report.accepted ?? 0,
+            providerIdDerivations: report.providerIdDerivations ?? 0,
+            sourceTierExpected: report.sourceTierExpected,
+            decisionUse: false,
+            bigDbWriteAllowed: false,
+            productionMutationAllowed: false
+          }));
+          NODE
+
+      - name: Upload live KWFF shadow evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-kwff-web-rescue-shadow-live-${{ github.run_id }}
+          path: audit-reports/cfi-kwff-web-rescue-shadow-live.json
+          if-no-files-found: warn
