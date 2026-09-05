@@ -28,6 +28,13 @@ const fold = value => clean(value)
   .trim()
   .replace(/\s+/g, ' ');
 
+function probeProvider(row) {
+  const explicit = clean(row?.provider);
+  if (explicit) return explicit.toUpperCase();
+  const sourceId = clean(row?.source_id);
+  return sourceId.replace(/^daily-/i, '').toUpperCase();
+}
+
 function dateTokens(value) {
   const text = clean(value);
   const patterns = [
@@ -135,7 +142,9 @@ const generatedAt = new Date().toISOString();
 const queue = await readJson(CROSSCHECK, { rows: [] });
 const probe = await readJson(PROBE_AUDIT, { results: [] });
 const probeByProvider = new Map(
-  (probe?.results ?? []).map(row => [clean(row?.provider).toUpperCase(), row])
+  (probe?.results ?? [])
+    .map(row => [probeProvider(row), row])
+    .filter(([provider]) => Boolean(provider))
 );
 const manifestCache = new Map();
 const snapshotCache = new Map();
