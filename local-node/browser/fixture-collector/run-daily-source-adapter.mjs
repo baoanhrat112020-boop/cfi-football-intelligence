@@ -30,6 +30,7 @@ async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate,
     reason,
     rawCandidates: 0,
     prospectiveCandidates: 0,
+    dateUnverifiedHints: 0,
     decisionUse: false,
     bigDbWriteAllowed: false,
     bigDbWriteAttempted: false
@@ -43,6 +44,7 @@ async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate,
       dateContextPolicy,
       candidates: [],
       identityOnly: [],
+      dateUnverified: [],
       decisionUse: false,
       bigDbWriteAllowed: false,
       bigDbWriteAttempted: false
@@ -51,6 +53,39 @@ async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate,
   ]);
   console.log(JSON.stringify(audit));
   return audit;
+}
+
+function dateUnverifiedHints(parsed, source, provider, targetDate) {
+  const seen = new Set();
+  const rows = [];
+  for (const rejected of Array.isArray(parsed?.rejected) ? parsed.rejected : []) {
+    if (rejected?.reason !== 'MISSING_EXPLICIT_DATE_ANCHOR') continue;
+    const home = String(rejected?.home ?? '').trim();
+    const away = String(rejected?.away ?? '').trim();
+    const displayedTime = String(rejected?.time ?? '').trim();
+    if (!home || !away || !displayedTime) continue;
+    const key = `${home.toLowerCase()}|${away.toLowerCase()}|${displayedTime}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      provider,
+      source_id: source.id,
+      source_url: source.url,
+      home_team: home,
+      away_team: away,
+      displayed_time: displayedTime,
+      source_page_date_claim: targetDate,
+      render_timezone: source.render_timezone,
+      reason: 'DATE_CONTEXT_UNVERIFIED',
+      kickoff_utc: null,
+      can_enter_registry: false,
+      can_enter_ranking: false,
+      requires_external_kickoff_verification: true,
+      decisionUse: false,
+      bigDbWriteAllowed: false
+    });
+  }
+  return rows;
 }
 
 export async function runDailySourceAdapter({
@@ -119,6 +154,7 @@ export async function runDailySourceAdapter({
     new Date(row.kickoff_utc).getTime() > Date.now()
   );
   const pastOrStarted = parsed.candidates.length - prospective.length;
+  const dateUnverified = dateUnverifiedHints(parsed, source, provider, targetDate);
 
   const generatedAt = new Date().toISOString();
   const manifest = {
@@ -131,6 +167,7 @@ export async function runDailySourceAdapter({
     timeBasis: source.render_timezone,
     candidates: prospective,
     identityOnly: parsed.identityOnly,
+    dateUnverified,
     decisionUse: false,
     bigDbWriteAllowed: false,
     bigDbWriteAttempted: false
@@ -146,12 +183,15 @@ export async function runDailySourceAdapter({
     dateContextPolicy,
     status: prospective.length > 0
       ? (parsed.rejected.length > 0 || parsed.identityOnly.length > 0 ? 'PASS_WITH_REJECTIONS' : 'PASS')
-      : (parsed.identityOnly.length > 0 ? 'IDENTITY_ONLY_NO_KICKOFF' : 'PASS_EMPTY'),
+      : dateUnverified.length > 0
+        ? 'DATE_CONTEXT_UNVERIFIED'
+        : (parsed.identityOnly.length > 0 ? 'IDENTITY_ONLY_NO_KICKOFF' : 'PASS_EMPTY'),
     rawCandidates: parsed.candidates.length,
     prospectiveCandidates: prospective.length,
     pastOrStartedSkipped: pastOrStarted,
     rejectedSegments: parsed.rejected.length,
     identityOnlySegments: parsed.identityOnly.length,
+    dateUnverifiedHints: dateUnverified.length,
     parserTelemetry: parsed.telemetry,
     safeguards: {
       successfulProbeRequired: true,
@@ -161,6 +201,8 @@ export async function runDailySourceAdapter({
       referenceDateDerivedFromBrowserTimezone: true,
       unanchoredKickoffAllowed: dateContextPolicy === DATE_CONTEXT_POLICIES.RUN_CONTEXT_ALLOWED,
       explicitTextDateRequired: dateContextPolicy === DATE_CONTEXT_POLICIES.EXPLICIT_TEXT_DATE_REQUIRED,
+      dateUnverifiedCanEnterRegistry: false,
+      dateUnverifiedRequiresExternalKickoffVerification: true,
       missingKickoffFabrication: false,
       currentTargetDateOnly: true,
       prospectiveOnly: true,
@@ -173,7 +215,8 @@ export async function runDailySourceAdapter({
     bigDbWriteAllowed: false,
     bigDbWriteAttempted: false,
     rejected: parsed.rejected,
-    identityOnly: parsed.identityOnly
+    identityOnly: parsed.identityOnly,
+    dateUnverified
   };
 
   await Promise.all([
@@ -191,6 +234,7 @@ export async function runDailySourceAdapter({
     prospectiveCandidates: audit.prospectiveCandidates,
     relativeDateAnchors: parsed.telemetry.relativeDateAnchors,
     missingDateAnchorRejected: parsed.telemetry.missingDateAnchorRejected,
+    dateUnverifiedHints: audit.dateUnverifiedHints,
     rejectedSegments: audit.rejectedSegments,
     identityOnlySegments: audit.identityOnlySegments,
     decisionUse: false,
