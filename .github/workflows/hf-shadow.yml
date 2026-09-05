@@ -1,0 +1,97 @@
+name: CFI HF Shadow Node
+
+on:
+  pull_request:
+    paths:
+      - 'cfi-hf-shadow-node/**'
+      - 'tests/hf-shadow-node.test.mjs'
+      - 'src/prediction/multi-market-backtest.ts'
+      - '.github/workflows/hf-shadow.yml'
+      - '.github/workflows/hf-shadow-free-run.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cfi-hf-shadow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shadow-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: HF shadow unit and E2E smoke tests
+        run: node --experimental-strip-types --test tests/hf-shadow-node.test.mjs
+      - name: HF shadow direct smoke
+        run: node --experimental-strip-types cfi-hf-shadow-node/src/smoke.mjs
+      - name: Free-first runner smoke
+        run: |
+          CFI_FREE_RUN_MODE=smoke node --experimental-strip-types cfi-hf-shadow-node/src/free-run.mjs | tee /tmp/cfi-free-run.json
+          grep -q '"execution_backend":"GITHUB_ACTIONS_FREE_FIRST"' /tmp/cfi-free-run.json
+          grep -q '"paid_compute_required":false' /tmp/cfi-free-run.json
+          grep -q '"production_mutation":false' /tmp/cfi-free-run.json
+      - name: HF shadow short soak
+        run: node --experimental-strip-types cfi-hf-shadow-node/src/soak.mjs
+      - name: Build Docker Space image
+        run: docker build -f cfi-hf-shadow-node/Dockerfile -t cfi-hf-shadow-node:v1 .
+      - name: Boot, run real immutable API job, restart, and verify artifact persistence
+        run: |
+          set -euo pipefail
+          VOLUME=cfi-hf-shadow-artifacts
+          CONTAINER=cfi-hf-shadow
+          RUN_ID=HF-DOCKER-E2E-RESTART-01
+          CORPUS_SHA="$(sha256sum cfi-hf-shadow-node/testdata/real-cfi-smoke-corpus.json | awk '{print $1}')"
+          cleanup() {
+            docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+            docker volume rm "$VOLUME" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker volume create "$VOLUME" >/dev/null
+
+          boot() {
+            docker run -d --rm --name "$CONTAINER" -p 7860:7860 \
+              -e CFI_CODE_COMMIT_SHA="$GITHUB_SHA" \
+              -v "$VOLUME":/home/node/artifacts \
+              cfi-hf-shadow-node:v1 >/dev/null
+            rm -f /tmp/hf-health.json
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:7860/health > /tmp/hf-health.json; then break; fi
+              sleep 1
+            done
+            cat /tmp/hf-health.json
+            grep -q '"shadow_only":true' /tmp/hf-health.json
+            grep -q '"production_mutation":false' /tmp/hf-health.json
+            grep -q '"production_write_capability":false' /tmp/hf-health.json
+            grep -q "\"code_commit_sha\":\"$GITHUB_SHA\"" /tmp/hf-health.json
+          }
+
+          boot
+          cat > /tmp/hf-job.json <<JSON
+          {"kind":"historical","run_id":"$RUN_ID","dataset":{"location":"/home/node/app/cfi-hf-shadow-node/testdata/real-cfi-smoke-corpus.json","sha256":"$CORPUS_SHA","version":"CFI_HF_REAL_SMOKE_ENGLAND_E2_2016_V1"}}
+          JSON
+          curl -fsS -X POST http://127.0.0.1:7860/v1/jobs \
+            -H 'content-type: application/json' --data-binary @/tmp/hf-job.json > /tmp/hf-job-result.json
+          cat /tmp/hf-job-result.json
+          grep -q '"status":"PASS"' /tmp/hf-job-result.json
+          grep -q '"production_mutation":false' /tmp/hf-job-result.json
+          curl -fsS "http://127.0.0.1:7860/v1/runs/$RUN_ID/manifest" > /tmp/hf-manifest-before.json
+          grep -q "\"run_id\":\"$RUN_ID\"" /tmp/hf-manifest-before.json
+          docker stop "$CONTAINER" >/dev/null
+
+          boot
+          curl -fsS "http://127.0.0.1:7860/v1/runs/$RUN_ID/manifest" > /tmp/hf-manifest-after.json
+          cat /tmp/hf-manifest-after.json
+          grep -q "\"run_id\":\"$RUN_ID\"" /tmp/hf-manifest-after.json
+          grep -q '"production_mutation":false' /tmp/hf-manifest-after.json
+          cmp /tmp/hf-manifest-before.json /tmp/hf-manifest-after.json
+          docker logs "$CONTAINER"
+          docker stop "$CONTAINER" >/dev/null
+      - name: Confirm Hugging Face deployment is disabled in free-first mode
+        run: |
+          echo 'HF_DEPLOYMENT_DISABLED_FREE_FIRST'
+          echo 'No Hugging Face compute resource is created by this workflow.'
