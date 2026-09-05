@@ -3,6 +3,11 @@ const clean = value => String(value ?? '')
   .trim()
   .replace(/\s+/g, ' ');
 
+export const DATE_CONTEXT_POLICIES = Object.freeze({
+  RUN_CONTEXT_ALLOWED: 'RUN_CONTEXT_ALLOWED',
+  EXPLICIT_TEXT_DATE_REQUIRED: 'EXPLICIT_TEXT_DATE_REQUIRED'
+});
+
 function isTime(value) {
   const match = clean(value).match(/^(?:[01]?\d|2[0-3]):[0-5]\d$/);
   return match ? match[0].padStart(5, '0') : null;
@@ -133,7 +138,7 @@ function candidateRecord({ source, targetDate, timeZone, time, home, away, evide
     kickoff_utc: kickoff,
     parser_evidence: {
       provider: String(source.provider || '').toLowerCase(),
-      parser: 'CFI_DAILY_TEXT_FIXTURE_V2',
+      parser: 'CFI_DAILY_TEXT_FIXTURE_V3',
       target_date: targetDate,
       time_line: time,
       home_line: home,
@@ -147,13 +152,17 @@ function candidateRecord({ source, targetDate, timeZone, time, home, away, evide
 export function parseDailyFixtureText(source, text, {
   targetDate,
   timeZone = source?.render_timezone || 'Asia/Ho_Chi_Minh',
-  referenceDate = targetDate
+  referenceDate = targetDate,
+  dateContextPolicy = DATE_CONTEXT_POLICIES.RUN_CONTEXT_ALLOWED
 } = {}) {
   if (!/^20\d{2}-\d{2}-\d{2}$/.test(String(targetDate ?? ''))) {
     throw new Error('TARGET_DATE_REQUIRED');
   }
   if (!/^20\d{2}-\d{2}-\d{2}$/.test(String(referenceDate ?? ''))) {
     throw new Error('REFERENCE_DATE_REQUIRED');
+  }
+  if (!Object.values(DATE_CONTEXT_POLICIES).includes(dateContextPolicy)) {
+    throw new Error('DATE_CONTEXT_POLICY_INVALID');
   }
 
   const lines = String(text ?? '')
@@ -167,9 +176,43 @@ export function parseDailyFixtureText(source, text, {
   let activeDate = null;
   let explicitDateAnchors = 0;
   let relativeDateAnchors = 0;
+  let missingDateAnchorRejected = 0;
+
+  const explicitDateRequired =
+    dateContextPolicy === DATE_CONTEXT_POLICIES.EXPLICIT_TEXT_DATE_REQUIRED;
+
+  const rejectMissingDateAnchor = payload => {
+    missingDateAnchorRejected += 1;
+    rejected.push({
+      reason: 'MISSING_EXPLICIT_DATE_ANCHOR',
+      dateContextPolicy,
+      active_date: activeDate,
+      reference_date: referenceDate,
+      ...payload
+    });
+  };
 
   const pushCandidate = payload => {
-    const record = candidateRecord({ source, targetDate, timeZone, ...payload });
+    if (explicitDateRequired && !activeDate) {
+      rejectMissingDateAnchor({
+        time: payload?.time ?? null,
+        home: payload?.home ?? null,
+        away: payload?.away ?? null,
+        extraction: payload?.evidence?.extraction ?? null
+      });
+      return;
+    }
+    const effectiveDate = activeDate || targetDate;
+    const record = candidateRecord({
+      source,
+      targetDate: effectiveDate,
+      timeZone,
+      ...payload,
+      evidence: {
+        ...payload.evidence,
+        requested_target_date: targetDate
+      }
+    });
     if (!record) {
       rejected.push({ reason: 'UNSUPPORTED_TIMEZONE_OR_INVALID_KICKOFF', ...payload });
       return;
@@ -227,7 +270,12 @@ export function parseDailyFixtureText(source, text, {
     if (!time) {
       const teams = splitTeams(line);
       if (teams && (activeDate === targetDate || !activeDate)) {
-        identityOnly.push({ ...teams, reason: 'MISSING_EXPLICIT_KICKOFF_TIME' });
+        identityOnly.push({
+          ...teams,
+          reason: explicitDateRequired && !activeDate
+            ? 'MISSING_EXPLICIT_DATE_AND_KICKOFF_CONTEXT'
+            : 'MISSING_EXPLICIT_KICKOFF_TIME'
+        });
       }
       continue;
     }
@@ -299,6 +347,9 @@ export function parseDailyFixtureText(source, text, {
       explicitDateAnchors,
       relativeDateAnchors,
       dateAnchors: explicitDateAnchors + relativeDateAnchors,
+      dateContextPolicy,
+      explicitDateRequired,
+      missingDateAnchorRejected,
       rawCandidates: candidates.length,
       uniqueCandidates: unique.length,
       duplicatesRemoved: candidates.length - unique.length,
