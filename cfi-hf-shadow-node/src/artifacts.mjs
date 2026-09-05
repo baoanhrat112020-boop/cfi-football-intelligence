@@ -1,9 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { hash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { buildInfo, shadowStamp } from './contracts.mjs';
 
-const sha256 = (text) => createHash('sha256').update(text).digest('hex');
+const sha256 = (text) => hash('sha256', text, 'hex');
 
 export function newRunId(kind) {
   return `HF-${String(kind).toUpperCase()}-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-${randomUUID().slice(0, 8)}`;
