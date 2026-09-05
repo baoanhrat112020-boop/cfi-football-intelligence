@@ -95,8 +95,6 @@ export function buildBigDbIdentityGapAudit(receiptsDocument, {
       bigDbStatus: receipt?.bigDb?.status ?? null,
       bigDbReason: receipt?.bigDb?.reason ?? null,
       gapClass,
-      home: receipt?.home ?? null,
-      away: receipt?.away ?? null,
       identity: {
         homeFound: Boolean(identity?.homeTeamId),
         awayFound: Boolean(identity?.awayTeamId),
