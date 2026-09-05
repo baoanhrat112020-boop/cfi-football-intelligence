@@ -146,6 +146,27 @@ test('BigDB exact canonical identity makes single trusted live fixture eligible 
   );
 });
 
+test('BigDB FOUND suppresses web rescue when no explicit supplement is requested', () => {
+  const req = request('found-no-web', {
+    routing: {
+      rankingInputEligible: false,
+      webCanSupplementBigDb: false,
+      autoPromoteWithinCycle: false
+    }
+  });
+  const results = new Map([[req.requestId, readyBigDb('HOME-ID', 'AWAY-ID')]]);
+  const dispatch = buildShadowEvidenceDispatch({ requests: [req] }, results, {
+    liveReadEnabled: true,
+    generatedAt: '2026-09-05T00:01:00.000Z',
+    sourceCycleId: 'cycle-1'
+  });
+
+  assert.equal(dispatch.receipts[0].bigDb.status, 'FOUND');
+  assert.equal(dispatch.webCrosscheckPlan.rows[0].shouldRequest, false);
+  assert.equal(dispatch.metrics.webCrosschecksRequested, 0);
+  assert.equal(dispatch.nextCycleReverification.count, 1);
+});
+
 test('canonical identity alone cannot create reverification candidate when no trusted live provider was observed', () => {
   const req = request('no-live', { trustedLiveProviders: [] });
   const results = new Map([[req.requestId, readyBigDb()]]);
