@@ -12,13 +12,18 @@ import {
   annotateRegistryFixtureVerification,
   annotateRollingVerification
 } from '../../src/discovery/fixture-verification.mjs';
+import {
+  applyNextCycleReverification
+} from '../../src/discovery/next-cycle-reverification.mjs';
 
 const TIME_ZONE = process.env.CFI_TIME_ZONE || 'Asia/Ho_Chi_Minh';
 const HORIZON_MINUTES = Number(process.env.CFI_ROLLING_HORIZON_MINUTES ?? 90);
 const TIER_A_TTL_MINUTES = Number(process.env.CFI_TIER_A_BROWSER_TTL_MINUTES ?? 30);
 const PUBLIC_TTL_MINUTES = Number(process.env.CFI_PUBLIC_DISCOVERY_TTL_MINUTES ?? 30);
 const WEB_TTL_MINUTES = Number(process.env.CFI_WEB_RESCUE_TTL_MINUTES ?? 30);
+const REVERIFY_TTL_MINUTES = Number(process.env.CFI_REVERIFICATION_TTL_MINUTES ?? 30);
 const SKIP_PC_INPUT = process.env.CFI_REGISTRY_SKIP_PC_INPUT === '1';
+const CURRENT_CYCLE_ID = String(process.env.CFI_ORCHESTRATOR_CYCLE_ID ?? '').trim() || null;
 
 const FILES = {
   canonical: resolve('local-node/cache/canonical/prospective-fixtures.json'),
@@ -36,6 +41,10 @@ const FILES = {
   webRescue: resolve(
     process.env.CFI_WEB_RESCUE_OUTPUT_FILE ||
     'local-node/cache/registry/web-search-rescue.json'
+  ),
+  reverification: resolve(
+    process.env.CFI_NEXT_CYCLE_REVERIFICATION_FILE ||
+    'local-node/cache/registry/next-cycle-reverification-candidates.json'
   ),
   supplement: process.env.CFI_DISCOVERY_SUPPLEMENT_FILE
     ? resolve(process.env.CFI_DISCOVERY_SUPPLEMENT_FILE)
@@ -143,7 +152,8 @@ for (const [name, value] of [
   ['CFI_ROLLING_HORIZON_MINUTES', HORIZON_MINUTES],
   ['CFI_TIER_A_BROWSER_TTL_MINUTES', TIER_A_TTL_MINUTES],
   ['CFI_PUBLIC_DISCOVERY_TTL_MINUTES', PUBLIC_TTL_MINUTES],
-  ['CFI_WEB_RESCUE_TTL_MINUTES', WEB_TTL_MINUTES]
+  ['CFI_WEB_RESCUE_TTL_MINUTES', WEB_TTL_MINUTES],
+  ['CFI_REVERIFICATION_TTL_MINUTES', REVERIFY_TTL_MINUTES]
 ]) {
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${name}_INVALID`);
 }
@@ -154,6 +164,7 @@ const [
   tierABrowser,
   publicDiscovery,
   webRescue,
+  reverification,
   supplement
 ] = await Promise.all([
   SKIP_PC_INPUT ? Promise.resolve(null) : readJson(FILES.canonical),
@@ -161,6 +172,7 @@ const [
   readJson(FILES.tierABrowser),
   readJson(FILES.publicDiscovery),
   readJson(FILES.webRescue),
+  readJson(FILES.reverification),
   readJson(FILES.supplement)
 ]);
 
@@ -177,6 +189,25 @@ const publicFreshness = publicDiscovery
 const webFreshness = webRescue
   ? snapshotFreshness(webRescue, { nowMs, ttlMinutes: WEB_TTL_MINUTES })
   : { fresh: false, reason: 'SNAPSHOT_MISSING', ageMinutes: null };
+const reverifyFreshness = reverification
+  ? snapshotFreshness(reverification, { nowMs, ttlMinutes: REVERIFY_TTL_MINUTES })
+  : { fresh: false, reason: 'SNAPSHOT_MISSING', ageMinutes: null };
+
+const effectiveReverification = reverifyFreshness.fresh
+  ? reverification
+  : reverification
+    ? { ...reverification, rows: [] }
+    : null;
+const reverificationApply = applyNextCycleReverification(
+  previousRegistry,
+  effectiveReverification,
+  {
+    currentCycleId: CURRENT_CYCLE_ID,
+    targetDate,
+    pcSourceClass: 'PC_NODE'
+  }
+);
+const previousRegistryForMerge = reverificationApply.registry ?? previousRegistry;
 
 const pcRows = SKIP_PC_INPUT ? [] : canonicalObservations(canonical, observedAt);
 const tierARows = freshRows(tierABrowser, tierAFreshness, observedAt, 'TIER_A_BROWSER_DISCOVERY');
@@ -192,7 +223,7 @@ const allRows = [
   ...supplementalRows
 ];
 
-const baseRegistry = mergeDailyFixtureRegistry(previousRegistry, allRows, {
+const baseRegistry = mergeDailyFixtureRegistry(previousRegistryForMerge, allRows, {
   targetDate,
   timeZone: TIME_ZONE,
   nowMs,
@@ -212,7 +243,8 @@ const degradedInputs = [];
 for (const [sourceClass, snapshot, freshness] of [
   ['TIER_A_BROWSER_DISCOVERY', tierABrowser, tierAFreshness],
   ['PUBLIC_DISCOVERY', publicDiscovery, publicFreshness],
-  ['WEB_SEARCH_RESCUE', webRescue, webFreshness]
+  ['WEB_SEARCH_RESCUE', webRescue, webFreshness],
+  ['EVIDENCE_REVERIFICATION', reverification, reverifyFreshness]
 ]) {
   if (snapshot && !freshness.fresh) {
     degradedInputs.push({
@@ -223,19 +255,24 @@ for (const [sourceClass, snapshot, freshness] of [
   }
 }
 
+const reverifyFailClosed = reverificationApply.audit?.rejectedRows?.filter(row =>
+  String(row?.reason ?? '').endsWith('FAIL_CLOSED')
+).length ?? 0;
 const hasFailClosed =
   registry.coverage.kickoffConflicts > 0 ||
   registry.coverage.upstreamFailClosed > 0 ||
-  registry.coverage.terminalObserved > 0;
+  registry.coverage.terminalObserved > 0 ||
+  reverifyFailClosed > 0;
 
 const audit = {
-  contract: 'CFI_DAILY_FIXTURE_REGISTRY_AUDIT_V4',
+  contract: 'CFI_DAILY_FIXTURE_REGISTRY_AUDIT_V5',
   generatedAt: observedAt,
   status: hasFailClosed
     ? 'PASS_WITH_FAIL_CLOSED_ITEMS'
-    : SKIP_PC_INPUT || degradedInputs.length > 0
+    : SKIP_PC_INPUT || degradedInputs.length > 0 || (reverificationApply.audit?.rejected ?? 0) > 0
       ? 'PASS_WITH_DEGRADED_INPUTS'
       : 'PASS',
+  currentCycleId: CURRENT_CYCLE_ID,
   targetDate,
   timeZone: TIME_ZONE,
   horizonMinutes: HORIZON_MINUTES,
@@ -263,6 +300,14 @@ const audit = {
       present: Boolean(webRescue),
       ...webFreshness
     },
+    reverificationSnapshot: {
+      configured: true,
+      present: Boolean(reverification),
+      sourceCycleId: reverification?.sourceCycleId ?? null,
+      currentCycleId: CURRENT_CYCLE_ID,
+      ...reverifyFreshness
+    },
+    reverificationApply: reverificationApply.audit,
     supplementConfigured: Boolean(FILES.supplement),
     degradedInputs
   },
@@ -280,7 +325,12 @@ const audit = {
     globalSourceCoverageDoesNotVerifyIndividualFixture: true,
     singleSourceCanEnterEvidenceRefresh: true,
     singleSourceCanEnterHighConfidenceRanking: false,
-    staleSnapshotsAreNotReingested: true,
+    reverificationCreatesNewFixture: false,
+    reverificationRequiresExactIdentityKey: true,
+    reverificationRequiresExactKickoff: true,
+    reverificationRequiresTrustedLiveSource: true,
+    sameCycleReverificationAllowed: false,
+    staleReverificationSnapshotIgnored: true,
     sourceFailureDeletesFixture: false,
     conflictPolicy: 'FAIL_CLOSED',
     upstreamFailClosedPropagates: true,
@@ -300,6 +350,7 @@ await Promise.all([
 console.log(JSON.stringify({
   status: audit.status,
   contract: audit.contract,
+  currentCycleId: CURRENT_CYCLE_ID,
   targetDate,
   pcNodeSkipped: SKIP_PC_INPUT,
   registryFixtures: registry.coverage.registryFixtures,
@@ -312,6 +363,9 @@ console.log(JSON.stringify({
   rescuedByTierABrowser: coverageMatrix.rescuedByTierABrowser,
   rescuedByPublicDiscovery: coverageMatrix.rescuedByPublicDiscovery,
   rescuedByWebSearch: coverageMatrix.rescuedByWebSearch,
+  reverificationApplied: reverificationApply.audit?.applied ?? 0,
+  reverificationRejected: reverificationApply.audit?.rejected ?? 0,
+  sameCycleReverificationBlocked: reverificationApply.audit?.sameCycleBlocked ?? 0,
   trustedRankingReady: registry.trustedVerificationCoverage.rankingReady,
   trustedDiscoveryOnly: registry.trustedVerificationCoverage.discoveryOnly,
   rollingSelected: rolling.metrics.selected,
