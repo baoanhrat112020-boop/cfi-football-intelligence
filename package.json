@@ -36,6 +36,7 @@
     "cfi:registry": "node local-node/registry/daily-fixture-registry.mjs",
     "cfi:queues": "node local-node/registry/rolling-evidence-queues.mjs",
     "cfi:evidence:shadow": "node local-node/registry/shadow-evidence-dispatcher.mjs",
+    "cfi:evidence:identity-gap": "node local-node/registry/bigdb-identity-gap-audit.mjs",
     "cfi:orchestrator": "node local-node/orchestrator.mjs",
     "cfi:orchestrator:once": "node local-node/orchestrator.mjs --once",
     "cfi:auto-e2e": "node --experimental-strip-types tools/cfi-daily-fixture-auto-e2e.mjs",
