@@ -15,6 +15,10 @@ const DATE_UNVERIFIED_PLAN = resolve(
   process.env.CFI_TIER_A_DATE_UNVERIFIED_PLAN ||
   'local-node/cache/registry/tier-a-date-unverified-web-plan.json'
 );
+const DATE_UNVERIFIED_RESOLUTION = resolve(
+  process.env.CFI_TIER_A_DATE_UNVERIFIED_RESOLUTION ||
+  'local-node/cache/registry/tier-a-date-unverified-resolution.json'
+);
 const PROBE_AUDIT = resolve(
   process.env.CFI_BROWSER_PROBE_AUDIT ||
   'local-node/cache/browser/source-probe-audit.json'
@@ -57,15 +61,22 @@ function increment(map, key, by = 1) {
   map[key] = (map[key] ?? 0) + by;
 }
 
-const [discovery, discoveryAudit, dateUnverifiedPlan, probeAudit] = await Promise.all([
+const [discovery, discoveryAudit, dateUnverifiedPlan, dateResolution, probeAudit] = await Promise.all([
   readJson(DISCOVERY),
   readJson(DISCOVERY_AUDIT),
   readJson(DATE_UNVERIFIED_PLAN),
+  readJson(DATE_UNVERIFIED_RESOLUTION),
   readJson(PROBE_AUDIT)
 ]);
 
 const rows = Array.isArray(discovery?.rows) ? discovery.rows : [];
-const dateHintRows = Array.isArray(dateUnverifiedPlan?.rows) ? dateUnverifiedPlan.rows : [];
+const dateWebRows = Array.isArray(dateUnverifiedPlan?.rows) ? dateUnverifiedPlan.rows : [];
+const recoveredDateRows = Array.isArray(dateResolution?.recoveredRows) ? dateResolution.recoveredRows : [];
+const dateConflictRows = Array.isArray(dateResolution?.conflictHints) ? dateResolution.conflictHints : [];
+const dateUnresolvedRows = Array.isArray(dateResolution?.unresolvedHints) ? dateResolution.unresolvedHints : [];
+const dateOutsideRows = Array.isArray(dateResolution?.resolvedOutsideTargetDate)
+  ? dateResolution.resolvedOutsideTargetDate
+  : [];
 const fixtureGroups = new Map();
 const identityKickoffs = new Map();
 const providerRows = {};
@@ -196,7 +207,9 @@ const expectedDateHints = adapterAudits.reduce(
   (sum, item) => sum + Number(item.dateUnverifiedHints ?? 0),
   0
 );
-const invalidDateHints = dateHintRows.filter(row =>
+const resolutionMetrics = dateResolution?.metrics ?? {};
+const resolutionWebRequired = Number(resolutionMetrics.webRequired ?? 0);
+const invalidDateWebRows = dateWebRows.filter(row =>
   row?.kickoffIso != null ||
   row?.canEnterRegistry !== false ||
   row?.canEnterRanking !== false ||
@@ -206,14 +219,83 @@ const invalidDateHints = dateHintRows.filter(row =>
   row?.bigDbWriteAllowed !== false ||
   row?.requiredEvidence?.sourcePageDateClaimCannotVerifyKickoff !== true
 );
+const invalidRecoveredRows = recoveredDateRows.filter(row =>
+  !clean(row?.kickoffIso) ||
+  row?.sourceClass !== 'TIER_A_DATE_RECOVERED' ||
+  row?.dateRecoveryVerified !== true ||
+  row?.rankingReady !== false ||
+  row?.predictionExecutionAllowed !== false ||
+  row?.decisionUse !== false ||
+  row?.bigDbWriteAllowed !== false ||
+  row?.parserEvidence?.date_basis !== 'EXACT_IDENTITY_PLUS_SAME_DISPLAYED_TIME_INDEPENDENT_TRUSTED_PROVIDER' ||
+  row?.parserEvidence?.fuzzy_identity_used !== false ||
+  row?.parserEvidence?.automatic_kickoff_correction_used !== false ||
+  !Array.isArray(row?.parserEvidence?.independent_providers) ||
+  row.parserEvidence.independent_providers.length === 0 ||
+  row?.targetDate !== (discovery?.targetDate ?? discoveryAudit?.targetDate)
+);
+const recoveredMissingFromDiscovery = recoveredDateRows.filter(recovered =>
+  !rows.some(row =>
+    row?.sourceClass === 'TIER_A_DATE_RECOVERED' &&
+    clean(row?.provider).toUpperCase() === clean(recovered?.provider).toUpperCase() &&
+    normalize(row?.home) === normalize(recovered?.home) &&
+    normalize(row?.away) === normalize(recovered?.away) &&
+    clean(row?.kickoffIso) === clean(recovered?.kickoffIso)
+  )
+);
+const conflictLeakedIntoRecovered = dateConflictRows.filter(conflict =>
+  recoveredDateRows.some(recovered =>
+    clean(recovered?.provider).toUpperCase() === clean(conflict?.provider).toUpperCase() &&
+    normalize(recovered?.home) === normalize(conflict?.home_team ?? conflict?.home) &&
+    normalize(recovered?.away) === normalize(conflict?.away_team ?? conflict?.away)
+  )
+);
 
-if (expectedDateHints !== dateHintRows.length) {
-  throw new Error(`DATE_UNVERIFIED_HINT_ACCOUNTING_MISMATCH:${expectedDateHints}:${dateHintRows.length}`);
+if (!dateResolution || dateResolution.__readError) {
+  throw new Error('DATE_UNVERIFIED_RESOLUTION_MISSING');
 }
-if (invalidDateHints.length > 0) {
-  throw new Error(`DATE_UNVERIFIED_HINT_SAFETY_VIOLATION:${invalidDateHints.length}`);
+if (Number(resolutionMetrics.hints ?? -1) !== expectedDateHints) {
+  throw new Error(`DATE_UNVERIFIED_HINT_ACCOUNTING_MISMATCH:${expectedDateHints}:${resolutionMetrics.hints}`);
 }
-if (dateHintRows.length > 0) {
+if (Number(resolutionMetrics.recovered ?? -1) !== recoveredDateRows.length) {
+  throw new Error('DATE_UNVERIFIED_RECOVERED_ACCOUNTING_MISMATCH');
+}
+if (Number(resolutionMetrics.conflicts ?? -1) !== dateConflictRows.length) {
+  throw new Error('DATE_UNVERIFIED_CONFLICT_ACCOUNTING_MISMATCH');
+}
+if (Number(resolutionMetrics.unresolved ?? -1) !== dateUnresolvedRows.length) {
+  throw new Error('DATE_UNVERIFIED_UNRESOLVED_ACCOUNTING_MISMATCH');
+}
+if (Number(resolutionMetrics.resolvedOutsideTargetDate ?? -1) !== dateOutsideRows.length) {
+  throw new Error('DATE_UNVERIFIED_OUTSIDE_DATE_ACCOUNTING_MISMATCH');
+}
+if (resolutionWebRequired !== dateWebRows.length) {
+  throw new Error(`DATE_UNVERIFIED_WEB_ACCOUNTING_MISMATCH:${resolutionWebRequired}:${dateWebRows.length}`);
+}
+if (invalidDateWebRows.length > 0) {
+  throw new Error(`DATE_UNVERIFIED_WEB_SAFETY_VIOLATION:${invalidDateWebRows.length}`);
+}
+if (invalidRecoveredRows.length > 0) {
+  throw new Error(`DATE_UNVERIFIED_RECOVERY_SAFETY_VIOLATION:${invalidRecoveredRows.length}`);
+}
+if (recoveredMissingFromDiscovery.length > 0) {
+  throw new Error(`DATE_UNVERIFIED_RECOVERY_NOT_MATERIALIZED:${recoveredMissingFromDiscovery.length}`);
+}
+if (conflictLeakedIntoRecovered.length > 0) {
+  throw new Error(`DATE_UNVERIFIED_CONFLICT_LEAKED_TO_REGISTRY:${conflictLeakedIntoRecovered.length}`);
+}
+if (dateResolution?.policy?.exactHomeAwayIdentityOnly !== true ||
+    dateResolution?.policy?.fuzzyIdentityAllowed !== false ||
+    dateResolution?.policy?.independentProviderRequired !== true ||
+    dateResolution?.policy?.trustedTierABProviderRequired !== true ||
+    dateResolution?.policy?.displayedTimeMustMatch !== true ||
+    dateResolution?.policy?.oneDistinctKickoffRequired !== true ||
+    dateResolution?.policy?.recoveredKickoffLocalDateMustEqualTargetDate !== true ||
+    dateResolution?.policy?.conflictingKickoffAutoCorrectionAllowed !== false ||
+    dateResolution?.policy?.recoveredObservationMaySelfSetRankingReady !== false) {
+  throw new Error('DATE_UNVERIFIED_RESOLUTION_POLICY_WEAKENED');
+}
+if (dateWebRows.length > 0) {
   if (dateUnverifiedPlan?.policy?.sourcePageDateClaimTrustedAsKickoffDate !== false) {
     throw new Error('DATE_UNVERIFIED_SOURCE_PAGE_DATE_TRUST_ENABLED');
   }
@@ -232,13 +314,13 @@ const status = discoveryAudit?.status?.startsWith('FAIL_')
   ? 'DEGRADED_SOURCE_FAILURE'
   : successfulProbeSources.length === 0
     ? 'DEGRADED_NO_USABLE_TIER_A_SOURCE'
-    : uniqueFixtures.length === 0 && dateHintRows.length === 0
+    : uniqueFixtures.length === 0 && expectedDateHints === 0
       ? 'PASS_EMPTY'
       : 'PASS';
 
 const generatedAt = new Date().toISOString();
 const report = {
-  contract: 'CFI_TIER_A_LIVE_SOAK_REPORT_V3',
+  contract: 'CFI_TIER_A_LIVE_SOAK_REPORT_V4',
   generatedAt,
   status,
   targetDate: discovery?.targetDate ?? discoveryAudit?.targetDate ?? null,
@@ -246,13 +328,24 @@ const report = {
   discoveryStatus: discoveryAudit?.status ?? null,
   globalSourceHealth: discovery?.sourceHealth ?? discoveryAudit?.sourceHealth ?? null,
   dateUnverifiedRescue: {
-    contract: dateUnverifiedPlan?.contract ?? null,
-    planPresent: Boolean(dateUnverifiedPlan),
-    hints: dateHintRows.length,
+    planContract: dateUnverifiedPlan?.contract ?? null,
+    resolutionContract: dateResolution?.contract ?? null,
+    resolutionPresent: Boolean(dateResolution),
+    rawHints: expectedDateHints,
+    recovered: recoveredDateRows.length,
+    conflicts: dateConflictRows.length,
+    unresolved: dateUnresolvedRows.length,
+    resolvedOutsideTargetDate: dateOutsideRows.length,
+    webRequired: dateWebRows.length,
     degradedProviders: degradedDateAdapters.map(item => item.provider),
     candidateOutput: dateUnverifiedPlan?.policy?.candidateOutput ?? null,
-    policy: dateUnverifiedPlan?.policy ?? null,
-    safetyVerified: invalidDateHints.length === 0 && expectedDateHints === dateHintRows.length
+    resolutionPolicy: dateResolution?.policy ?? null,
+    webPolicy: dateUnverifiedPlan?.policy ?? null,
+    safetyVerified:
+      invalidDateWebRows.length === 0 &&
+      invalidRecoveredRows.length === 0 &&
+      recoveredMissingFromDiscovery.length === 0 &&
+      conflictLeakedIntoRecovered.length === 0
   },
   perFixtureVerification: {
     rankingReadyFixtures: trustedRankingReadyFixtures.length,
@@ -280,7 +373,12 @@ const report = {
     blockedSources: blockedSources.length,
     erroredSources: erroredSources.length,
     truncatedSources: truncatedSources.length,
-    dateUnverifiedHints: dateHintRows.length,
+    dateUnverifiedHints: expectedDateHints,
+    dateUnverifiedRecovered: recoveredDateRows.length,
+    dateUnverifiedConflicts: dateConflictRows.length,
+    dateUnverifiedUnresolved: dateUnresolvedRows.length,
+    dateUnverifiedOutsideTargetDate: dateOutsideRows.length,
+    dateUnverifiedWebRequired: dateWebRows.length,
     dateContextDegradedProviders: degradedDateAdapters.length
   },
   providerRows,
@@ -312,8 +410,11 @@ const report = {
     automaticBetting: false,
     globalRecallClaimAllowed: false,
     globalSourceCoverageDoesNotVerifyIndividualFixture: true,
-    dateUnverifiedCanEnterRegistry: false,
-    dateUnverifiedCanEnterRanking: false,
+    rawDateUnverifiedCanEnterRegistry: false,
+    rawDateUnverifiedCanEnterRanking: false,
+    recoveredDateObservationRequiresExactCrossSourceVerification: true,
+    recoveredDateObservationCanSelfSetRankingReady: false,
+    kickoffConflictAutoCorrectionAllowed: false,
     sourcePageDateClaimCanVerifyKickoff: false
   }
 };
@@ -332,7 +433,12 @@ const md = `# CFI Tier A Live Soak\n\n` +
   `- Per-fixture ranking ready: ${report.metrics.trustedRankingReadyFixtures}\n` +
   `- Discovery-only fixtures: ${report.metrics.trustedDiscoveryOnlyFixtures}\n` +
   `- Fail-closed fixtures: ${report.metrics.trustedFailClosedFixtures}\n` +
-  `- Date-unverified hints: ${report.metrics.dateUnverifiedHints}\n` +
+  `- Date-unverified raw hints: ${report.metrics.dateUnverifiedHints}\n` +
+  `- Date-unverified exact recovered: ${report.metrics.dateUnverifiedRecovered}\n` +
+  `- Date-unverified kickoff conflicts: ${report.metrics.dateUnverifiedConflicts}\n` +
+  `- Date-unverified unresolved: ${report.metrics.dateUnverifiedUnresolved}\n` +
+  `- Date-unverified outside target date: ${report.metrics.dateUnverifiedOutsideTargetDate}\n` +
+  `- Date-unverified remaining for web: ${report.metrics.dateUnverifiedWebRequired}\n` +
   `- Date-context degraded providers: ${report.metrics.dateContextDegradedProviders}\n` +
   `- Duplicate observations: ${report.metrics.duplicateObservations}\n` +
   `- Kickoff-conflict identities: ${report.metrics.kickoffConflictIdentities}\n` +
@@ -341,7 +447,7 @@ const md = `# CFI Tier A Live Soak\n\n` +
   `- Errored sources: ${report.metrics.erroredSources}\n` +
   `- Truncated snapshots: ${report.metrics.truncatedSources}\n\n` +
   `## Rows by provider\n${providerLines}\n\n` +
-  `Global source health is not fixture verification. Date-unverified hints never receive a kickoff, never enter the registry/ranking, and require independent exact kickoff verification. Single-source fixtures stay discovery-only and kickoff conflicts stay fail-closed. This is shadow telemetry only and cannot activate betting decisions.\n`;
+  `Raw date-unverified hints never receive a kickoff. A recovered observation exists only when an independent trusted Tier A/B source matches exact home/away, the displayed time agrees, exactly one kickoff remains, and its local date equals the target date. Conflicts stay fail-closed and unresolved hints remain web-required. Recovery cannot self-promote ranking readiness. This is shadow telemetry only and cannot activate betting decisions.\n`;
 
 await mkdir(dirname(OUTPUT_JSON), { recursive: true });
 await Promise.all([
