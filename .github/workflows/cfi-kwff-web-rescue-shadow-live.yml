@@ -5,11 +5,17 @@ on:
     paths:
       - 'src/discovery/registry-source-adapters.mjs'
       - 'src/discovery/fixture-source-policy.mjs'
+      - 'src/discovery/official-fixture-alias-review.mjs'
       - 'local-node/registry/web-search-rescue.mjs'
+      - 'local-node/registry/official-fixture-alias-review.mjs'
+      - 'local-node/registry/tier-a-browser-discovery.mjs'
+      - 'local-node/browser/fixture-collector/**'
       - 'tools/cfi-web-rescue-shadow-injection.mjs'
       - 'tools/cfi-kwff-web-rescue-shadow-live.mjs'
       - 'tests/web-rescue-shadow-injection.test.mjs'
       - 'tests/kwff-web-rescue-shadow-live.test.mjs'
+      - 'tests/official-fixture-alias-review.test.mjs'
+      - 'tests/official-fixture-alias-review-batch.test.mjs'
       - 'package.json'
       - '.github/workflows/cfi-kwff-web-rescue-shadow-live.yml'
   workflow_dispatch:
@@ -21,13 +27,14 @@ concurrency:
 jobs:
   live-shadow-ingress:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     permissions:
       contents: read
     env:
       TZ: Asia/Ho_Chi_Minh
       CFI_TIME_ZONE: Asia/Ho_Chi_Minh
       CFI_KWFF_SHADOW_LIVE_REPORT: audit-reports/cfi-kwff-web-rescue-shadow-live.json
+      CFI_OFFICIAL_ALIAS_REVIEW_OUTPUT: audit-reports/cfi-official-fixture-alias-review.json
     steps:
       - uses: actions/checkout@v4
 
@@ -41,16 +48,25 @@ jobs:
       - name: Install Chromium for official-federation shadow probe
         run: npx playwright install --with-deps chromium
 
+      - name: Materialize existing Tier A hints for review-only matching
+        run: npm run cfi:tier-a-discovery
+
       - name: Run live KWFF through actual web-rescue shadow harness
         run: npm run cfi:web-rescue:shadow:live-kwff
 
-      - name: Verify isolated shadow safety and provider-id provenance
+      - name: Build review-only official alias proposals
+        run: npm run cfi:alias-review:official
+
+      - name: Verify isolated shadow safety, provider-id provenance and alias-review gates
         run: |
           node - <<'NODE'
           const fs = require('fs');
-          const path = 'audit-reports/cfi-kwff-web-rescue-shadow-live.json';
-          if (!fs.existsSync(path)) throw new Error('KWFF_SHADOW_LIVE_REPORT_MISSING');
-          const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const kwffPath = 'audit-reports/cfi-kwff-web-rescue-shadow-live.json';
+          const aliasPath = 'audit-reports/cfi-official-fixture-alias-review.json';
+          if (!fs.existsSync(kwffPath)) throw new Error('KWFF_SHADOW_LIVE_REPORT_MISSING');
+          if (!fs.existsSync(aliasPath)) throw new Error('OFFICIAL_ALIAS_REVIEW_REPORT_MISSING');
+          const report = JSON.parse(fs.readFileSync(kwffPath, 'utf8'));
+          const alias = JSON.parse(fs.readFileSync(aliasPath, 'utf8'));
           const p = report.policy ?? {};
           if (p.sourceTrustPromotionPerformed !== false) throw new Error('KWFF_SOURCE_TRUST_PROMOTED');
           if (p.registryInvoked !== false) throw new Error('KWFF_SHADOW_REGISTRY_INVOKED');
@@ -72,6 +88,31 @@ jobs:
           } else if (report.status !== 'DEGRADED_NO_CURRENT_FUTURE_MATCHES') {
             throw new Error(`KWFF_SHADOW_LIVE_NOT_PASS:${report.status}`);
           }
+
+          const ap = alias.policy ?? {};
+          const safety = alias.safety ?? {};
+          if (ap.reviewOnly !== true) throw new Error('ALIAS_REVIEW_ONLY_NOT_TRUE');
+          if (ap.exactDateRequired !== true || ap.exactDisplayedTimeRequired !== true) throw new Error('ALIAS_DATE_TIME_GATE_WEAKENED');
+          if (ap.womenEntityScopeRequired !== true) throw new Error('ALIAS_WOMEN_SCOPE_GATE_WEAKENED');
+          if (ap.lexicalAnchorsMayOnlyCreateReviewProposal !== true) throw new Error('ALIAS_LEXICAL_ANCHOR_MUTATION_ENABLED');
+          if (ap.fuzzyIdentityResolutionAllowed !== false) throw new Error('ALIAS_FUZZY_IDENTITY_ENABLED');
+          if (ap.reversedOrientationAllowed !== false) throw new Error('ALIAS_REVERSED_ORIENTATION_ENABLED');
+          if (ap.ambiguousProposalAllowed !== false) throw new Error('ALIAS_AMBIGUITY_ENABLED');
+          if (ap.officialFixtureMayBackMultipleHints !== false) throw new Error('ALIAS_MANY_TO_ONE_ENABLED');
+          for (const key of ['autoAliasAllowed','canonicalTeamCreateAllowed','registryIngestAllowed','rankingInputEligible','predictionExecutionAllowed','bigDbWriteAllowed','decisionUse']) {
+            if (ap[key] !== false) throw new Error(`ALIAS_POLICY_${key}_NOT_FALSE`);
+          }
+          for (const key of ['autoAliasAllowed','canonicalTeamCreateAllowed','registryIngestAllowed','rankingInputEligible','predictionExecutionAllowed','bigDbNetworkInvoked','bigDbWriteAllowed','bigDbWriteAttempted','productionMutationAllowed','decisionUse']) {
+            if (safety[key] !== false) throw new Error(`ALIAS_SAFETY_${key}_NOT_FALSE`);
+          }
+          if (alias.metrics?.accountedFor !== alias.metrics?.hints) throw new Error('ALIAS_REVIEW_ACCOUNTING_MISMATCH');
+          const proposals = alias.proposals ?? [];
+          if (proposals.some(row => row.classification !== 'ALIAS_CANDIDATE_REVIEW_REQUIRED')) throw new Error('ALIAS_NON_REVIEW_CLASSIFICATION');
+          if (proposals.some(row => row.reviewEvidence?.fuzzyIdentityResolutionPerformed !== false)) throw new Error('ALIAS_FUZZY_RESOLUTION_PERFORMED');
+          if (proposals.some(row => row.autoAliasAllowed !== false || row.canonicalTeamCreateAllowed !== false || row.registryIngestAllowed !== false || row.rankingInputEligible !== false || row.bigDbWriteAllowed !== false || row.decisionUse !== false)) throw new Error('ALIAS_PROPOSAL_MUTATION_ENABLED');
+          const officialIds = proposals.map(row => row.officialFixture?.providerId).filter(Boolean);
+          if (new Set(officialIds).size !== officialIds.length) throw new Error('ALIAS_OFFICIAL_FIXTURE_REUSED');
+
           console.log(JSON.stringify({
             contract: report.contract,
             status: report.status,
@@ -81,6 +122,16 @@ jobs:
             candidates: report.candidates ?? 0,
             accepted: report.accepted ?? 0,
             providerIdDerivations: report.providerIdDerivations ?? 0,
+            aliasReview: {
+              contract: alias.contract,
+              status: alias.status,
+              hints: alias.metrics?.hints ?? 0,
+              officialFixtures: alias.metrics?.officialFixtures ?? 0,
+              proposals: alias.metrics?.proposals ?? 0,
+              ambiguous: alias.metrics?.ambiguous ?? 0,
+              rejected: alias.metrics?.rejected ?? 0,
+              providerIds: officialIds
+            },
             sourceTierExpected: report.sourceTierExpected,
             decisionUse: false,
             bigDbWriteAllowed: false,
@@ -88,10 +139,13 @@ jobs:
           }));
           NODE
 
-      - name: Upload live KWFF shadow evidence
+      - name: Upload live KWFF shadow and alias-review evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cfi-kwff-web-rescue-shadow-live-${{ github.run_id }}
-          path: audit-reports/cfi-kwff-web-rescue-shadow-live.json
+          path: |
+            audit-reports/cfi-kwff-web-rescue-shadow-live.json
+            audit-reports/cfi-official-fixture-alias-review.json
+            local-node/browser/fixture-collector/input/bongdawap-candidates.json
           if-no-files-found: warn
