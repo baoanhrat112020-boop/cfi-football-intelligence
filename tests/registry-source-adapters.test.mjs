@@ -4,6 +4,7 @@ import {
   PUBLIC_DISCOVERY_SOURCE_CLASS,
   WEB_SEARCH_RESCUE_SOURCE_CLASS,
   buildRegistryCoverageMatrix,
+  deriveProviderIdFromProvenance,
   publicDiscoveryToSupplement,
   snapshotFreshness,
   webSearchCandidatesToSupplement
@@ -85,6 +86,94 @@ test('web-search rescue accepts only auditable future same-day candidates', () =
   assert.equal(supplement.rows[0].provider, 'GPT_WEB_SEARCH');
   assert.equal(supplement.rows[0].sourceUrl, 'https://example.com/fixture/official-1');
   assert.equal(supplement.policy.httpsProvenanceRequired, true);
+});
+
+test('provider ID may be derived only from a whitelisted first-party event URL', () => {
+  const nowMs = Date.parse('2026-09-05T03:30:55.000Z');
+  const supplement = webSearchCandidatesToSupplement([
+    {
+      provider: 'KWFF',
+      home: 'Suwon FC Women',
+      away: 'Incheon Hyundai Steel Red Angels Women',
+      competition: 'WK League',
+      country: 'South Korea',
+      kickoffIso: '2026-09-05T10:00:00.000Z',
+      status: 'scheduled',
+      sourceUrls: [
+        'https://www.kwff.or.kr/wk-league/matches?lang=en',
+        'https://www.kwff.or.kr/matches/208'
+      ],
+      discoveredAt: '2026-09-05T03:30:00.000Z'
+    }
+  ], {
+    targetDate: '2026-09-05',
+    timeZone: 'Asia/Ho_Chi_Minh',
+    nowMs
+  });
+
+  assert.equal(supplement.rows.length, 1);
+  assert.equal(supplement.rejected.length, 0);
+  assert.equal(supplement.rows[0].providerId, 'KWFF:208');
+  assert.equal(supplement.providerIdDerivations.length, 1);
+  assert.deepEqual(supplement.providerIdDerivations[0], {
+    index: 0,
+    providerId: 'KWFF:208',
+    provider: 'KWFF',
+    sourceUrl: 'https://www.kwff.or.kr/matches/208',
+    rule: 'KWFF_MATCH_CENTER_NUMERIC_ID'
+  });
+  assert.equal(supplement.policy.providerIdRequired, true);
+  assert.equal(supplement.policy.providerIdMayBeDerivedOnlyFromWhitelistedFirstPartyEventUrl, true);
+  assert.equal(supplement.policy.providerIdSyntheticFallbackAllowed, false);
+  assert.equal(supplement.policy.matchupSlugAcceptedAsProviderId, false);
+});
+
+test('schedule pages and matchup slugs cannot satisfy providerIdRequired', () => {
+  const nowMs = Date.parse('2026-09-05T03:30:55.000Z');
+  const supplement = webSearchCandidatesToSupplement([
+    {
+      provider: 'KWFF',
+      home: 'No Event Id',
+      away: 'Schedule Page Only',
+      kickoffIso: '2026-09-05T10:00:00.000Z',
+      status: 'scheduled',
+      sourceUrls: ['https://www.kwff.or.kr/wk-league/matches?lang=en'],
+      discoveredAt: '2026-09-05T03:30:00.000Z'
+    },
+    {
+      provider: 'SOFASCORE',
+      home: 'Sejong Sportstoto WFC',
+      away: 'Seoul City WFC',
+      kickoffIso: '2026-09-05T10:00:00.000Z',
+      status: 'scheduled',
+      sourceUrls: [
+        'https://www.sofascore.com/football/match/sejong-sportstoto-wfc-seoul-city-wfc/JNBbsKNBb'
+      ],
+      discoveredAt: '2026-09-05T03:30:00.000Z'
+    }
+  ], {
+    targetDate: '2026-09-05',
+    timeZone: 'Asia/Ho_Chi_Minh',
+    nowMs
+  });
+
+  assert.equal(supplement.rows.length, 0);
+  assert.equal(supplement.rejected.length, 2);
+  assert.deepEqual(supplement.rejected.map(row => row.reason), [
+    'PROVIDER_ID_REQUIRED',
+    'PROVIDER_ID_REQUIRED'
+  ]);
+  assert.equal(supplement.providerIdDerivations.length, 0);
+});
+
+test('provider mismatch cannot borrow an event id from another first-party URL', () => {
+  const resolution = deriveProviderIdFromProvenance({
+    provider: 'SOFASCORE',
+    sourceUrls: ['https://www.kwff.or.kr/matches/208']
+  });
+  assert.equal(resolution.providerId, null);
+  assert.equal(resolution.derived, false);
+  assert.equal(resolution.rule, null);
 });
 
 test('stale and future snapshots cannot be re-ingested as current-cycle evidence', () => {
