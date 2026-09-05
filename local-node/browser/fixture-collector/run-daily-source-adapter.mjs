@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { localDateNow } from '../../../src/discovery/cfi-discovery.ts';
-import { parseDailyFixtureText } from './daily-text-parser.mjs';
+import {
+  DATE_CONTEXT_POLICIES,
+  parseDailyFixtureText
+} from './daily-text-parser.mjs';
 
 const TIME_ZONE = process.env.CFI_TIME_ZONE || 'Asia/Ho_Chi_Minh';
 const PROBE = resolve(
@@ -14,7 +17,7 @@ async function saveJson(file, data) {
   await writeFile(file, JSON.stringify(data, null, 2), 'utf8');
 }
 
-async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate, status, reason = null }) {
+async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate, status, reason = null, dateContextPolicy }) {
   const generatedAt = new Date().toISOString();
   const audit = {
     contract: `CFI_${provider}_DAILY_ADAPTER_AUDIT_V1`,
@@ -22,6 +25,7 @@ async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate,
     provider,
     sourceId,
     targetDate,
+    dateContextPolicy,
     status,
     reason,
     rawCandidates: 0,
@@ -36,6 +40,7 @@ async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate,
       generatedAt,
       provider,
       targetDate,
+      dateContextPolicy,
       candidates: [],
       identityOnly: [],
       decisionUse: false,
@@ -48,9 +53,15 @@ async function writeEmpty({ output, auditOutput, provider, sourceId, targetDate,
   return audit;
 }
 
-export async function runDailySourceAdapter({ providerKey }) {
+export async function runDailySourceAdapter({
+  providerKey,
+  dateContextPolicy = DATE_CONTEXT_POLICIES.RUN_CONTEXT_ALLOWED
+}) {
   const provider = String(providerKey ?? '').trim().toUpperCase();
   if (!provider) throw new Error('PROVIDER_KEY_REQUIRED');
+  if (!Object.values(DATE_CONTEXT_POLICIES).includes(dateContextPolicy)) {
+    throw new Error('DATE_CONTEXT_POLICY_INVALID');
+  }
 
   const targetDate = String(process.env.CFI_TARGET_DATE ?? '').trim() ||
     localDateNow(TIME_ZONE, Date.now());
@@ -68,7 +79,7 @@ export async function runDailySourceAdapter({ providerKey }) {
   const sourceProbe = (probe.results ?? []).find(row => row.source_id === sourceId);
 
   if (!sourceProbe?.snapshot) {
-    return writeEmpty({ output, auditOutput, provider, sourceId, targetDate, status: 'NO_SNAPSHOT' });
+    return writeEmpty({ output, auditOutput, provider, sourceId, targetDate, status: 'NO_SNAPSHOT', dateContextPolicy });
   }
 
   const httpOk = typeof sourceProbe.http_status === 'number' &&
@@ -80,6 +91,7 @@ export async function runDailySourceAdapter({ providerKey }) {
       provider,
       sourceId,
       targetDate,
+      dateContextPolicy,
       status: 'SOURCE_UNAVAILABLE',
       reason: sourceProbe.blocked ? `BLOCKED:${sourceProbe.blockMarker ?? 'UNKNOWN'}` : sourceProbe.error ?? `HTTP_${sourceProbe.http_status ?? 'UNKNOWN'}`
     });
@@ -99,7 +111,8 @@ export async function runDailySourceAdapter({ providerKey }) {
   const parsed = parseDailyFixtureText(source, text, {
     targetDate,
     timeZone: source.render_timezone,
-    referenceDate
+    referenceDate,
+    dateContextPolicy
   });
 
   const prospective = parsed.candidates.filter(row =>
@@ -114,6 +127,7 @@ export async function runDailySourceAdapter({ providerKey }) {
     provider,
     targetDate,
     referenceDate,
+    dateContextPolicy,
     timeBasis: source.render_timezone,
     candidates: prospective,
     identityOnly: parsed.identityOnly,
@@ -129,6 +143,7 @@ export async function runDailySourceAdapter({ providerKey }) {
     sourceId,
     targetDate,
     referenceDate,
+    dateContextPolicy,
     status: prospective.length > 0
       ? (parsed.rejected.length > 0 || parsed.identityOnly.length > 0 ? 'PASS_WITH_REJECTIONS' : 'PASS')
       : (parsed.identityOnly.length > 0 ? 'IDENTITY_ONLY_NO_KICKOFF' : 'PASS_EMPTY'),
@@ -144,6 +159,8 @@ export async function runDailySourceAdapter({ providerKey }) {
       explicitKickoffTimeRequired: true,
       relativeDateSectionsHonored: true,
       referenceDateDerivedFromBrowserTimezone: true,
+      unanchoredKickoffAllowed: dateContextPolicy === DATE_CONTEXT_POLICIES.RUN_CONTEXT_ALLOWED,
+      explicitTextDateRequired: dateContextPolicy === DATE_CONTEXT_POLICIES.EXPLICIT_TEXT_DATE_REQUIRED,
       missingKickoffFabrication: false,
       currentTargetDateOnly: true,
       prospectiveOnly: true,
@@ -170,8 +187,10 @@ export async function runDailySourceAdapter({ providerKey }) {
     provider,
     targetDate,
     referenceDate,
+    dateContextPolicy,
     prospectiveCandidates: audit.prospectiveCandidates,
     relativeDateAnchors: parsed.telemetry.relativeDateAnchors,
+    missingDateAnchorRejected: parsed.telemetry.missingDateAnchorRejected,
     rejectedSegments: audit.rejectedSegments,
     identityOnlySegments: audit.identityOnlySegments,
     decisionUse: false,
