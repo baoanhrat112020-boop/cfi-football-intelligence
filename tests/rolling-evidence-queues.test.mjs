@@ -93,13 +93,16 @@ test('verified queue reuses existing BigDB retrieval request contract and web re
   assert.equal(item.evidencePlan.safety.predictionExecutionAllowed, false);
 });
 
-test('crosscheck lane requires registry reverification and cannot auto-promote in-cycle', () => {
+test('crosscheck lane requires registry reverification and web rescue only after BigDB insufficiency', () => {
   const queues = buildRollingEvidenceQueues({
     targetDate: '2026-09-05',
     fixtures: [fixture('single')]
   });
 
   const item = queues.crosscheckRequiredQueue.rows[0];
+  assert.equal(item.evidencePlan.routing.bigDbFirst, true);
+  assert.equal(item.evidencePlan.routing.webFallbackWhenBigDbInsufficient, true);
+  assert.equal(item.evidencePlan.routing.webCanSupplementBigDb, false);
   assert.equal(item.evidencePlan.routing.reverifyFixtureAfterEvidence, true);
   assert.equal(item.evidencePlan.routing.autoPromoteWithinCycle, false);
   assert.equal(
