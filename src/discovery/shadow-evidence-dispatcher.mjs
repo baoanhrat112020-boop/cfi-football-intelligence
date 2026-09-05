@@ -162,11 +162,8 @@ function baseReceipt(request) {
 export function buildWebCrosscheckRequest(request, bigDbReceipt = null) {
   const web = request?.web ?? {};
   const bigDb = bigDbReceipt ?? { status: 'NOT_DISPATCHED_SHADOW', ready: false };
-  const crosscheckLane = request?.lane === 'CROSSCHECK_REQUIRED_QUEUE';
-  const shouldRequest =
-    crosscheckLane ||
-    bigDb.ready !== true ||
-    request?.routing?.webCanSupplementBigDb === true;
+  const explicitSupplement = request?.routing?.webCanSupplementBigDb === true;
+  const shouldRequest = bigDb.ready !== true || explicitSupplement;
 
   return {
     requestId: request?.requestId ?? null,
