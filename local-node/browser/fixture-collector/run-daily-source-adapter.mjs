@@ -94,10 +94,12 @@ export async function runDailySourceAdapter({ providerKey }) {
     country: 'GLOBAL',
     render_timezone: sourceProbe.render_timezone || TIME_ZONE
   };
+  const referenceDate = localDateNow(source.render_timezone, Date.now());
 
   const parsed = parseDailyFixtureText(source, text, {
     targetDate,
-    timeZone: source.render_timezone
+    timeZone: source.render_timezone,
+    referenceDate
   });
 
   const prospective = parsed.candidates.filter(row =>
@@ -111,6 +113,7 @@ export async function runDailySourceAdapter({ providerKey }) {
     generatedAt,
     provider,
     targetDate,
+    referenceDate,
     timeBasis: source.render_timezone,
     candidates: prospective,
     identityOnly: parsed.identityOnly,
@@ -125,6 +128,7 @@ export async function runDailySourceAdapter({ providerKey }) {
     provider,
     sourceId,
     targetDate,
+    referenceDate,
     status: prospective.length > 0
       ? (parsed.rejected.length > 0 || parsed.identityOnly.length > 0 ? 'PASS_WITH_REJECTIONS' : 'PASS')
       : (parsed.identityOnly.length > 0 ? 'IDENTITY_ONLY_NO_KICKOFF' : 'PASS_EMPTY'),
@@ -138,6 +142,8 @@ export async function runDailySourceAdapter({ providerKey }) {
       successfulProbeRequired: true,
       blockedPageRejected: true,
       explicitKickoffTimeRequired: true,
+      relativeDateSectionsHonored: true,
+      referenceDateDerivedFromBrowserTimezone: true,
       missingKickoffFabrication: false,
       currentTargetDateOnly: true,
       prospectiveOnly: true,
@@ -163,7 +169,9 @@ export async function runDailySourceAdapter({ providerKey }) {
     status: audit.status,
     provider,
     targetDate,
+    referenceDate,
     prospectiveCandidates: audit.prospectiveCandidates,
+    relativeDateAnchors: parsed.telemetry.relativeDateAnchors,
     rejectedSegments: audit.rejectedSegments,
     identityOnlySegments: audit.identityOnlySegments,
     decisionUse: false,
