@@ -8,6 +8,7 @@ on:
       - 'src/prediction/multi-market-backtest.ts'
       - '.github/workflows/hf-shadow.yml'
       - '.github/workflows/hf-shadow-free-run.yml'
+      - '.github/workflows/hf-space-deploy.yml'
   workflow_dispatch:
 
 concurrency:
