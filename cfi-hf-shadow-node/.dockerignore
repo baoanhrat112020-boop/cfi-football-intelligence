@@ -1,0 +1,8 @@
+.git
+node_modules
+local-node/cache
+local-node/logs
+local-node/state
+artifacts
+.env
+.env.*
