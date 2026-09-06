@@ -1,10 +1,13 @@
 import { buildIndependentScoreGrid, buildMultiMarketV1, MULTI_MARKET_VERSION } from './multi-market-v1.ts';
 import { buildK048TrajectoryEnsemble, K048_VERSION } from '../../research/trajectory-joint-forecast.mjs';
+import { evaluateThreePlusHtSafety } from './three-plus-ht-safety.ts';
+import { evaluateSevenPlusFtSafety } from './seven-plus-ft-safety.ts';
 
 const finiteNonNegative=(v:unknown)=>Number.isFinite(Number(v))&&Number(v)>=0?Number(v):null;
 const CROSS_CORE_EQUIVALENCE_GATE='CFI_CROSS_CORE_EQUIVALENCE_GATE_V1';
 const EQUIVALENCE_TOLERANCE=0.01;
 const K048_SHADOW_CONTRACT='CFI_K048_SHADOW_INTEGRATION_V1';
+const EXTREME_THRESHOLD_RESEARCH_SAFETY='CFI_EXTREME_THRESHOLD_RESEARCH_SAFETY_V1';
 const K048_EXPECTED_SHADOW_FAILURES=new Set(['K048_INFEASIBLE_HT_SUPPORT','K048_INFEASIBLE_FT_SUPPORT','K048_IPF_ROW_ZERO','K048_IPF_COL_ZERO','K048_MARGINAL_PRESERVATION_FAIL']);
 
 export function isExpectedK048ShadowFailure(error:unknown){return error instanceof Error&&K048_EXPECTED_SHADOW_FAILURES.has(error.message);}
@@ -33,10 +36,25 @@ function attachK048Shadow(body:any,input:{htHome:number;htAway:number;ftHome:num
   body.k048TrajectoryShadow={version:K048_VERSION,integrationVersion:K048_SHADOW_CONTRACT,status:'SHADOW_ELIGIBLE_ACTIVE',researchOnly:true,decisionUse:false,productionEligible:false,baselineLock:'R0_IMMUTABLE',promotionEvidence:{score:100,threshold:80,runRef:'K048-HISTORICAL-OOS-2026-V1'},strictPrior:ensemble.strictPrior,marginalAudit:ensemble.marginalAudit,trajectoryCount:ensemble.trajectoryCount,topTrajectories:ensemble.trajectories.slice(0,12),htToFtOutcomeTransition:transition,championMutation:false};
 }
 
+function attachExtremeThresholdResearchSafety(body:any){
+  const threePlusHt=evaluateThreePlusHtSafety(body);
+  const sevenPlusFt=evaluateSevenPlusFtSafety(body);
+  body.threePlusHtSafety=threePlusHt;
+  body.sevenPlusFtSafety=sevenPlusFt;
+  body.extremeThresholdResearchSafety={
+    version:EXTREME_THRESHOLD_RESEARCH_SAFETY,
+    researchOnly:true,
+    decisionUse:false,
+    productionEligible:false,
+    events:{'3+ HT':threePlusHt,'7+ FT':sevenPlusFt},
+    policy:'RESEARCH_MAY_SCORE_RAW_METHOD_A_FUTURE_SIX_AND_SCORE_GRID; NO_AUTO_PROMOTION; PRACTICAL_USE_REQUIRES_SEPARATE_APPROVED_CALIBRATION_AND_ALIAS_COHERENCE'
+  };
+}
+
 export function attachMultiMarketShadow(body:any){
   const e=body?.scoreline?.expectedGoals,htHome=finiteNonNegative(e?.htHome),htAway=finiteNonNegative(e?.htAway),ftHome=finiteNonNegative(e?.ftHome),ftAway=finiteNonNegative(e?.ftAway),observable=[htHome,htAway,ftHome,ftAway].every(v=>v!==null);
   const nativeSingleCore=body?.multiMarket?.version===MULTI_MARKET_VERSION&&body?.multiMarket?.model?.source==='FINAL_CALIBRATED_SCORE_DISTRIBUTION';
-  if(!nativeSingleCore&&!observable){body.multiMarketIntegration={version:MULTI_MARKET_VERSION,status:'UNAVAILABLE',decisionUse:false,reason:'EXPECTED_GOALS_TELEMETRY_REQUIRED'};unavailableK048(body,'EXPECTED_GOALS_TELEMETRY_REQUIRED');return body;}
+  if(!nativeSingleCore&&!observable){body.multiMarketIntegration={version:MULTI_MARKET_VERSION,status:'UNAVAILABLE',decisionUse:false,reason:'EXPECTED_GOALS_TELEMETRY_REQUIRED'};unavailableK048(body,'EXPECTED_GOALS_TELEMETRY_REQUIRED');attachExtremeThresholdResearchSafety(body);return body;}
   const input=observable?{htHome:htHome!,htAway:htAway!,ftHome:ftHome!,ftAway:ftAway!}:null;
   const multiMarket=nativeSingleCore?body.multiMarket:buildMultiMarketV1(input!);
   const crossCoreConsistency=crossCoreEquivalence(body,multiMarket);
@@ -44,5 +62,6 @@ export function attachMultiMarketShadow(body:any){
   if(input)attachK048Shadow(body,input);else unavailableK048(body,'EXPECTED_GOALS_TELEMETRY_REQUIRED');
   const internalPass=multiMarket.consistencyGuard.status==='PASS',crossCorePass=crossCoreConsistency.status==='PASS';
   body.multiMarketIntegration={version:MULTI_MARKET_VERSION,status:internalPass&&crossCorePass?'SHADOW_READY':'SHADOW_BLOCKED',decisionUse:false,source:nativeSingleCore?'FINAL_CALIBRATED_SCORE_DISTRIBUTION':'scoreline.expectedGoals',singleCore:nativeSingleCore,championMutation:false,consistencyGuard:multiMarket.consistencyGuard,crossCoreConsistency,k048Status:body?.k048TrajectoryShadow?.status??'UNAVAILABLE',...(!crossCorePass?{reason:'CROSS_CORE_EQUIVALENCE_FAIL'}:{})};
+  attachExtremeThresholdResearchSafety(body);
   return body;
 }
