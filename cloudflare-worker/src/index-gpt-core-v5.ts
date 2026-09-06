@@ -8,6 +8,7 @@ import { MARKET_COHERENCE_VERSION } from '../../src/prediction/market-coherence.
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 type FeedRow={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string;sourceUrls?:string[];discoveredAt?:string};
 
+const GPT_PRODUCTION_HOST='cfi-football-intelligence.baoanhrat112020.workers.dev';
 const COMPACT_CONTRACT='CFI_GPT_PREDICT_COMPACT_V2_EXTREME_THRESHOLD_SAFETY';
 const THRESHOLD_TARGETS=['3+ HT','7+ FT','Other HT','Other FT'] as const;
 
@@ -106,7 +107,13 @@ function compactPrediction(body:any){
   return compact;
 }
 
-function wantsFull(input:any){return String(input?.response_mode??'').toLowerCase()==='full';}
+function shouldCompactPredict(request:Request,input:any){
+  const requested=String(input?.response_mode??'').toLowerCase();
+  if(requested==='full')return false;
+  if(requested==='compact')return true;
+  const host=new URL(request.url).hostname;
+  return host===GPT_PRODUCTION_HOST&&!request.headers.get('origin');
+}
 
 function fullPredictRequest(request:Request,input:any){
   const next={...(input??{}),response_mode:'full'};
@@ -209,7 +216,7 @@ export default{
       const response=await v4.fetch(fullPredictRequest(request,input),env,ctx);
       if(!response.headers.get('content-type')?.includes('application/json'))return response;
       const body:any=await readJson(response);patchRuntimeTelemetry(body);
-      if(!response.ok||wantsFull(input))return Response.json(body,{status:response.status});
+      if(!response.ok||!shouldCompactPredict(request,input))return Response.json(body,{status:response.status});
       return Response.json(compactPrediction(body),{status:response.status});
     }
 
