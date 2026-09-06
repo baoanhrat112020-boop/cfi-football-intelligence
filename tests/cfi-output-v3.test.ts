@@ -157,3 +157,50 @@ test('output exposes a non-placing bet-ledger handoff',()=>{
   assert.equal(out.betLedger.autoPlaced,false);
   assert.match(out.renderedPracticalReport,/BET LEDGER: NOT_RECORDED/);
 });
+
+test('coherence failure blocks equivalent market only and preserves unrelated promoted market',()=>{
+  const out=buildCfiOutputV3(
+    prediction(true),
+    {
+      input_mode:'DISCOVER_TOP_MATCHES',
+      fixture_identity:{verified:true},
+      now_ms:NOW,
+      odds:verifiedOdds({
+        'FT 1':2,
+        'HT O2.5':3.5
+      })
+    }
+  );
+
+  // Synthetic fixture intentionally has:
+  // 3+ HT = .60 vs HT O2.5 = .31
+  assert.equal(out.marketCoherence.status,'FAIL');
+
+  assert.ok(
+    out.marketCoherence.blockedMarkets.includes('3+ HT')
+  );
+
+  assert.ok(
+    out.marketCoherence.blockedMarkets.includes('HT O2.5')
+  );
+
+  // Equivalent O/U route must not bypass the contradiction.
+  const htO25=out.multiMarket.overUnder.find(
+    (x:any)=>x.market==='HT O2.5'
+  );
+
+  assert.equal(htO25.decisionUse,false);
+  assert.equal(htO25.decision,'SHADOW');
+  assert.equal(htO25.edge,null);
+  assert.equal(htO25.expectedValue,null);
+  assert.equal(htO25.fairOdds,null);
+
+  // Unrelated promoted market remains valid.
+  const ft1=out.multiMarket.oneXTwo.find(
+    (x:any)=>x.market==='FT 1'
+  );
+
+  assert.equal(out.multiMarket.policy.decisionUse,true);
+  assert.equal(ft1.decisionUse,true);
+  assert.equal(ft1.decision,'BET');
+});

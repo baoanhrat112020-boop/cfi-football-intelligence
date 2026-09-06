@@ -1,4 +1,5 @@
 import { evaluateThreePlusHtSafety } from '../prediction/three-plus-ht-safety.ts';
+import { evaluateMarketCoherence } from '../prediction/market-coherence.ts';
 
 export const CFI_OUTPUT_V2='CFI_OUTPUT_V2';
 
@@ -126,7 +127,22 @@ function applyThreePlusHtSafety(row:Card,safety:ReturnType<typeof evaluateThreeP
 
 export function buildCfiOutputV2(body:any,odds:any={}){
   const threePlusHtSafety=evaluateThreePlusHtSafety(body);
-  const champion=(body?.ranking??[]).map((r:any)=>applyThreePlusHtSafety(card(r.target,r.probability,r.confidence,odds?.[r.target],'CHAMPION'),threePlusHtSafety));
+  const marketCoherence=evaluateMarketCoherence(body);
+  const champion=(body?.ranking??[]).map((r:any)=>{
+    const row=applyThreePlusHtSafety(
+      card(r.target,r.probability,r.confidence,odds?.[r.target],'CHAMPION'),
+      threePlusHtSafety
+    );
+
+    if(marketCoherence.blockedMarkets.includes(row.market)){
+      row.decisionUse=false;
+      row.fairOdds=null;
+      row.edge=null;
+      row.status='WATCH';
+    }
+
+    return row;
+  });
   const mm=body?.multiMarket;
   const shadow:Card[]=[];
   add1x2(shadow,mm,odds,'HT');add1x2(shadow,mm,odds,'FT');
@@ -156,6 +172,7 @@ export function buildCfiOutputV2(body:any,odds:any={}){
     championMarkets:champion,
     shadowMarkets:shadow,
     threePlusHtSafety,
+    marketCoherence,
     marketGroups,
     fullMarketReport:report,
     visibility:{
@@ -168,7 +185,7 @@ export function buildCfiOutputV2(body:any,odds:any={}){
     scoreline:{top1HT:top1ht,top1FT:top1ft,path:body?.scoreline?.mostLikelyPath??null},
     expectedGoals:body?.scoreline?.expectedGoals??null,
     quality:{strictPrior:body?.strictPrior?.verified??body?.strictPriorAudit?.evidence?.verified??null,consistency:body?.consistencyGuard?.status??null,multiMarketConsistency:mm?.consistencyGuard?.status??null,uncertainty:body?.scoreline?.uncertainty??null,multiMarketStatus:body?.multiMarketIntegration?.status??null},
-    rules:{betRequiresOdds:true,minModelEdge:0.05,watchEdge:0.015,noGuaranteedWin:true,shadowDecisionUse:false,quarterAndIntegerLinesExposeSettlementStates:true,threePlusHtRawFinalIsAuditOnly:true,threePlusHtRequiresApprovedCalibration:true,threePlusHtRequiresCrossCoreEquivalence:true},
+    rules:{betRequiresOdds:true,minModelEdge:0.05,watchEdge:0.015,noGuaranteedWin:true,shadowDecisionUse:false,quarterAndIntegerLinesExposeSettlementStates:true,threePlusHtRawFinalIsAuditOnly:true,threePlusHtRequiresApprovedCalibration:true,threePlusHtRequiresCrossCoreEquivalence:true,marketCoherenceRequired:true},
   };
 }
 
@@ -176,6 +193,7 @@ export function attachCfiOutputV2(body:any,odds:any={}){
   const output=buildCfiOutputV2(body,odds);
   body.outputV2=output;
   body.threePlusHtSafety=output.threePlusHtSafety;
+  body.marketCoherence=output.marketCoherence;
   body.fullMarketReport=output.fullMarketReport;
   if(typeof body?.renderedReport==='string'&&output.fullMarketReport&&!body.renderedReport.includes(FULL_MARKET_REPORT_MARKER))body.renderedReport=`${body.renderedReport}\n\n${output.fullMarketReport}`;
   body.presentation={...(body.presentation??{}),fullMultiMarketVisible:true,allTargetsExposed:true,multiMarketDecisionUse:false,primaryScorelineOutput:'TOP1_HT_PLUS_TOP1_FT',fullMarketReportSource:'fullMarketReport',threePlusHtBettingPolicy:output.threePlusHtSafety.status};
