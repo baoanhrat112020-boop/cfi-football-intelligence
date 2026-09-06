@@ -112,6 +112,7 @@ function applyThreePlusHtSafety(row:Card,safety:ReturnType<typeof evaluateThreeP
   row.probabilitySource=safety.decisionUse?'CALIBRATED_3PLUS_HT':'FINAL_AUDIT_ONLY';
   if(!safety.decisionUse){
     row.status='WATCH';
+    row.fairOdds=null;
     row.edge=null;
     return row;
   }
