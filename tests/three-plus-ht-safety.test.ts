@@ -44,6 +44,22 @@ test('approved calibrated probability plus equivalence PASS makes 3+ HT eligible
   assert.equal(out.approvalVersion,'CFI_3HT_CAL_V1');
 });
 
+test('caller cannot widen 3+ HT equivalence tolerance beyond one percentage point',()=>{
+  const x:any=body(.20,.15,.19);
+  x.multiMarketIntegration.crossCoreConsistency.tolerance=.50;
+  x.multiMarketIntegration.crossCoreConsistency.checks[0].tolerance=.50;
+  const out=evaluateThreePlusHtSafety(x);
+  assert.equal(out.crossCore.tolerance,.01);
+  assert.equal(out.crossCore.status,'FAIL');
+});
+
+test('invalid 3+ HT probabilities are unavailable rather than accepted',()=>{
+  const out=evaluateThreePlusHtSafety(body(-.1,.2,.1));
+  assert.equal(out.rawFinalProbability,null);
+  assert.equal(out.crossCore.status,'UNAVAILABLE');
+  assert.equal(out.decisionUse,false);
+});
+
 test('calibration bins report actual hit rate and calibration gap',()=>{
   const bins=buildThreePlusHtCalibrationBins([
     {probability:.05,outcome:false},
