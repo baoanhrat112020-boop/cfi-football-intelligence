@@ -16,12 +16,17 @@ test('PC result recovery queues only strict selected historical pending snapshot
   assert.match(migration, /cfi-pc-result-recovery-enqueue-10m/);
 });
 
-test('PC result recovery API is node-authenticated and re-verifies submissions before settlement', () => {
+test('PC result recovery persists valid single-source observations but settles only after accumulated dual-source consensus', () => {
   assert.match(edge, /x-cfi-node-key/);
   assert.match(edge, /action===\"SUBMIT\"/);
-  assert.match(edge, /TWO_INDEPENDENT_SOURCES_REQUIRED/);
+  assert.match(edge, /PC_RESULT_RECOVERY_OBSERVATION_V1/);
+  assert.match(edge, /status:\"OBSERVED\"/);
+  assert.match(edge, /PARTIAL_STORED/);
+  assert.match(edge, /CONFLICT_PENDING/);
+  assert.match(edge, /consensusPair/);
+  assert.match(edge, /PC_RESULT_RECOVERY_ACCUMULATED_DUAL_SOURCE_V1/);
+  assert.match(edge, /status:\"VERIFIED\"/);
   assert.match(edge, /COMPLETE_FINISHED_HT_FT_REQUIRED/);
-  assert.match(edge, /TWO_SOURCE_KICKOFF_AGREEMENT_REQUIRED/);
   assert.match(edge, /POST_KICKOFF_SNAPSHOT/);
   assert.match(edge, /BONGDAWAP_EXACT_HINT_REQUIRED/);
   assert.match(edge, /PC_NODE_RESULT_RECOVERY/);
@@ -37,15 +42,17 @@ test('PC result recovery uses the real prediction history settlement columns', (
   assert.match(edge, /actual_ft_away/);
 });
 
-test('post-match worker is separate from prematch urgent bridge and requires consensus', () => {
+test('post-match worker submits every valid observation and no longer discards single-source evidence locally', () => {
   assert.doesNotMatch(worker, /URGENT_FIXTURE_(PULL|QUEUE|ACK)/);
   assert.match(worker, /action:\"SUBMIT\"/);
-  assert.match(worker, /consensusPair/);
+  assert.match(worker, /sources:events/);
+  assert.match(worker, /PARTIAL_STORED/);
+  assert.match(worker, /CONFLICT_PENDING/);
+  assert.doesNotMatch(worker, /NO_DUAL_SOURCE_CONSENSUS/);
   assert.match(worker, /BONGDAWAP/);
   assert.match(worker, /FLASHSCORE/);
   assert.match(worker, /FOTMOB/);
   assert.match(worker, /SOFASCORE/);
-  assert.match(worker, /kickoffClose/);
 });
 
 test('R4 installer is one-shot, config-backed, quote-safe and self-verifying', () => {
