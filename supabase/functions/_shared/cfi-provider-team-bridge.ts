@@ -54,6 +54,11 @@ const providerTeamAliases=new Map<string,string>([
 
   ['Flora Tallinn','FC Flora Tallinn'],
 
+  // Exact women provider identities observed in live Tier-A discovery.
+  // Keep these entity-scoped: never generalize standalone "W" into Women.
+  ['Atlas W','Atlas Women'],
+  ['Guadalajara Chivas W','Chivas Guadalajara Women'],
+
   // IMAGE_ANALYSIS OCR aliases: explicit entity-scoped mappings only.
   // Do not generalize "W" into Women globally; that would weaken entity guards.
   ['Gintra Universitetas W','Gintra Universitetas Women'],

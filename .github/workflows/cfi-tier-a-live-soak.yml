@@ -1,0 +1,349 @@
+name: CFI Tier A Live Soak
+
+on:
+  pull_request:
+    paths:
+      - 'src/discovery/fixture-source-policy.mjs'
+      - 'src/discovery/fixture-verification.mjs'
+      - 'src/discovery/rolling-evidence-queues.mjs'
+      - 'src/discovery/shadow-evidence-dispatcher.mjs'
+      - 'src/discovery/next-cycle-reverification.mjs'
+      - 'src/discovery/bigdb-identity-gap-audit.mjs'
+      - 'supabase/functions/_shared/cfi-provider-team-bridge.ts'
+      - 'local-node/browser/fixture-collector/**'
+      - 'local-node/registry/tier-a-browser-discovery.mjs'
+      - 'local-node/registry/daily-fixture-registry.mjs'
+      - 'local-node/registry/rolling-evidence-queues.mjs'
+      - 'local-node/registry/shadow-evidence-dispatcher.mjs'
+      - 'local-node/registry/bigdb-identity-gap-audit.mjs'
+      - 'tests/rolling-evidence-queues.test.mjs'
+      - 'tests/shadow-evidence-dispatcher.test.mjs'
+      - 'tests/evidence-two-cycle-e2e.test.mjs'
+      - 'tests/bigdb-identity-gap-audit.test.mjs'
+      - 'tests/provider-team-bridge.test.mjs'
+      - 'tools/cfi-tier-a-live-soak-report.mjs'
+      - 'package.json'
+      - '.github/workflows/cfi-tier-a-live-soak.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cfi-tier-a-live-soak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-tier-a-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      TZ: Asia/Ho_Chi_Minh
+      CFI_TIME_ZONE: Asia/Ho_Chi_Minh
+      CFI_BROWSER_SNAPSHOT_MAX_CHARS: 500000
+      CFI_BROWSER_PROBE_SCROLL_STEPS: 6
+      CFI_REGISTRY_SKIP_PC_INPUT: 1
+      CFI_ROLLING_HORIZON_MINUTES: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium for live Tier A soak
+        id: browser_install
+        continue-on-error: true
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live Tier A browser discovery
+        id: tier_a_live
+        shell: bash
+        run: |
+          set +e
+          npm run cfi:tier-a-discovery
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          echo "CFI_TIER_A_LIVE_EXIT=$code"
+          exit 0
+
+      - name: Build live Tier A soak report
+        if: always()
+        run: node tools/cfi-tier-a-live-soak-report.mjs
+
+      - name: Materialize cycle-1 live 90-minute registry and evidence queues
+        if: always()
+        env:
+          CFI_ORCHESTRATOR_CYCLE_ID: gha-${{ github.run_id }}-c1
+        run: |
+          npm run cfi:registry
+          npm run cfi:queues
+          cp local-node/cache/registry/daily-fixture-registry.json local-node/cache/registry/cycle1-daily-fixture-registry.json
+          cp local-node/cache/registry/daily-fixture-registry-audit.json local-node/cache/registry/cycle1-daily-fixture-registry-audit.json
+          cp local-node/cache/registry/rolling-fixture-window.json local-node/cache/registry/cycle1-rolling-fixture-window.json
+          cp local-node/cache/registry/verified-ranking-queue.json local-node/cache/registry/cycle1-verified-ranking-queue.json
+          cp local-node/cache/registry/crosscheck-required-queue.json local-node/cache/registry/cycle1-crosscheck-required-queue.json
+          cp local-node/cache/registry/evidence-request-plan.json local-node/cache/registry/cycle1-evidence-request-plan.json
+          cp local-node/cache/registry/rolling-evidence-queues-audit.json local-node/cache/registry/cycle1-rolling-evidence-queues-audit.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const rolling = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-fixture-window.json','utf8'));
+          const verified = JSON.parse(fs.readFileSync('local-node/cache/registry/verified-ranking-queue.json','utf8'));
+          const crosscheck = JSON.parse(fs.readFileSync('local-node/cache/registry/crosscheck-required-queue.json','utf8'));
+          const queueAudit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          if (queueAudit.metrics?.accountedFor !== queueAudit.metrics?.rollingFixtures) throw new Error('LIVE_QUEUE_ACCOUNTING_MISMATCH');
+          if (queueAudit.metrics?.droppedByQuota !== 0) throw new Error('LIVE_QUEUE_QUOTA_DROP');
+          if (verified.rows?.some(row => row.rankingInputEligible !== true)) throw new Error('LIVE_VERIFIED_QUEUE_INVALID');
+          if (crosscheck.rows?.some(row => row.rankingInputEligible === true)) throw new Error('LIVE_CROSSCHECK_QUEUE_INVALID');
+          console.log(JSON.stringify({
+            contract:'CFI_TIER_A_LIVE_ROLLING_QUEUE_SOAK_V2',
+            cycleId:'gha-${{ github.run_id }}-c1',
+            targetDate:rolling.targetDate,
+            horizonMinutes:rolling.horizonMinutes,
+            rollingFixtures:rolling.fixtures?.length ?? 0,
+            verifiedRanking:verified.count ?? 0,
+            crosscheckRequired:crosscheck.count ?? 0,
+            droppedByQuota:queueAudit.metrics?.droppedByQuota ?? null,
+            decisionUse:false,
+            bigDbWriteAllowed:false
+          }));
+          NODE
+
+      - name: Run authorized BigDB live-read shadow dispatcher
+        id: bigdb_shadow
+        env:
+          CFI_SHADOW_EVIDENCE_LIVE: '1'
+          CFI_DB_BASE_URL: https://kovmddkkzttquupdgmel.supabase.co/functions/v1/cfi-db
+          CFI_DB_KEY: ${{ secrets.CFI_DB_KEY || secrets.CFI_ACTION_KEY }}
+          CFI_ORCHESTRATOR_CYCLE_ID: gha-${{ github.run_id }}-c1
+        run: |
+          set -euo pipefail
+          if [ -z "${CFI_DB_KEY:-}" ]; then
+            echo 'CFI_BIGDB_SHADOW_CONFIG=CFI_DB_KEY_MISSING' >&2
+            exit 42
+          fi
+          npm run cfi:evidence:shadow
+          node - <<'NODE'
+          const fs = require('fs');
+          const audit = JSON.parse(fs.readFileSync('local-node/cache/registry/shadow-evidence-dispatcher-audit.json','utf8'));
+          const receipts = JSON.parse(fs.readFileSync('local-node/cache/registry/shadow-evidence-receipts.json','utf8'));
+          const webPlan = JSON.parse(fs.readFileSync('local-node/cache/registry/web-crosscheck-request-plan.json','utf8'));
+          const reverify = JSON.parse(fs.readFileSync('local-node/cache/registry/next-cycle-reverification-candidates.json','utf8'));
+          if (audit.liveRead?.requested !== true || audit.liveRead?.enabled !== true) throw new Error(`BIGDB_LIVE_READ_NOT_ENABLED:${audit.liveRead?.configReason}`);
+          if (audit.liveRead?.actionKeyConfigured !== true) throw new Error('BIGDB_ACTION_KEY_NOT_CONFIGURED');
+          if ((audit.metrics?.bigDbUnauthorized ?? 0) !== 0) throw new Error('BIGDB_LIVE_READ_UNAUTHORIZED');
+          if ((audit.metrics?.bigDbNotDispatched ?? 0) !== 0) throw new Error('BIGDB_LIVE_READ_NOT_DISPATCHED');
+          if ((audit.metrics?.requests ?? 0) > 0 && (audit.liveRead?.networkAttempts ?? 0) === 0) throw new Error('BIGDB_LIVE_READ_ZERO_NETWORK_ATTEMPTS');
+          if ((audit.metrics?.autoPromoted ?? 0) !== 0) throw new Error('BIGDB_SAME_CYCLE_AUTO_PROMOTION');
+          if (audit.integration?.sameCycleRegistryMutationPerformed !== false) throw new Error('BIGDB_SAME_CYCLE_REGISTRY_MUTATION');
+          if (audit.safety?.predictionExecutionAllowed !== false) throw new Error('BIGDB_PREDICTION_EXECUTION_ENABLED');
+          if (audit.safety?.bigDbWriteAllowed !== false) throw new Error('BIGDB_WRITE_ENABLED');
+          const unresolved = (webPlan.rows ?? []).filter(row => row.shouldRequest === true && row.lane === 'CROSSCHECK_REQUIRED_QUEUE');
+          const unresolvedSummary = unresolved.map(row => ({
+            identityKey: row.identityKey,
+            home: row.home,
+            away: row.away,
+            targetDate: row.targetDate,
+            kickoffIso: row.kickoffIso,
+            bigDbStatus: row.bigDbStatus,
+            bigDbReason: row.bigDbReason,
+            queries: row.queries
+          }));
+          fs.writeFileSync('local-node/cache/registry/live-bigdb-unresolved.json', JSON.stringify({
+            contract:'CFI_LIVE_BIGDB_UNRESOLVED_V1',
+            generatedAt:new Date().toISOString(),
+            rows:unresolvedSummary,
+            count:unresolvedSummary.length,
+            decisionUse:false
+          }, null, 2));
+          console.log(JSON.stringify({
+            contract:'CFI_BIGDB_LIVE_READ_SHADOW_SOAK_V1',
+            status:audit.status,
+            cycleId:audit.sourceCycleId,
+            requests:audit.metrics?.requests ?? 0,
+            networkAttempts:audit.liveRead?.networkAttempts ?? 0,
+            bigDbFound:audit.metrics?.bigDbFound ?? 0,
+            bigDbInsufficient:audit.metrics?.bigDbInsufficient ?? 0,
+            bigDbUnavailable:audit.metrics?.bigDbUnavailable ?? 0,
+            bigDbErrors:audit.metrics?.bigDbErrors ?? 0,
+            nextCycleReverificationCandidates:reverify.count ?? 0,
+            unresolvedForWeb:unresolvedSummary.length,
+            unresolved:unresolvedSummary,
+            receipts:receipts.count ?? 0,
+            autoPromoted:audit.metrics?.autoPromoted ?? null,
+            serviceRoleKeyUsed:audit.liveRead?.serviceRoleKeyUsed,
+            predictionExecutionAllowed:false,
+            decisionUse:false,
+            bigDbWriteAllowed:false
+          }));
+          NODE
+
+      - name: Classify BigDB identity gaps for rescue
+        if: success()
+        env:
+          CFI_ORCHESTRATOR_CYCLE_ID: gha-${{ github.run_id }}-c1
+        run: |
+          npm run cfi:evidence:identity-gap
+          node - <<'NODE'
+          const fs = require('fs');
+          const gap = JSON.parse(fs.readFileSync('local-node/cache/registry/bigdb-identity-gap-audit.json','utf8'));
+          if (gap.policy?.bigDbWriteAllowed !== false) throw new Error('IDENTITY_GAP_BIGDB_WRITE_ENABLED');
+          if (gap.policy?.rawFixtureUpsertForIdentityRescueAllowed !== false) throw new Error('IDENTITY_GAP_RAW_FIXTURE_RESCUE_ENABLED');
+          if (gap.policy?.autoAliasAllowed !== false) throw new Error('IDENTITY_GAP_AUTO_ALIAS_ENABLED');
+          if (gap.policy?.webMayAutoCreateCanonicalTeam !== false) throw new Error('IDENTITY_GAP_CANONICAL_AUTO_CREATE_ENABLED');
+          if ((gap.rows ?? []).some(row => row.autoAliasAllowed !== false)) throw new Error('IDENTITY_GAP_ROW_AUTO_ALIAS_ENABLED');
+          if ((gap.rows ?? []).some(row => row.canonicalTeamCreateAllowed !== false)) throw new Error('IDENTITY_GAP_ROW_CANONICAL_CREATE_ENABLED');
+          console.log(JSON.stringify({
+            contract:gap.contract,
+            status:gap.status,
+            metrics:gap.metrics,
+            rawFixtureUpsertForIdentityRescueAllowed:false,
+            autoAliasAllowed:false,
+            canonicalTeamCreateAllowed:false,
+            decisionUse:false,
+            bigDbWriteAllowed:false
+          }));
+          NODE
+
+      - name: Apply BigDB canonical evidence only in cycle 2 and rematerialize queues
+        if: success()
+        env:
+          CFI_ORCHESTRATOR_CYCLE_ID: gha-${{ github.run_id }}-c2
+        run: |
+          npm run cfi:registry
+          npm run cfi:queues
+          node - <<'NODE'
+          const fs = require('fs');
+          const cycle1Registry = JSON.parse(fs.readFileSync('local-node/cache/registry/cycle1-daily-fixture-registry.json','utf8'));
+          const cycle1Verified = JSON.parse(fs.readFileSync('local-node/cache/registry/cycle1-verified-ranking-queue.json','utf8'));
+          const cycle1Crosscheck = JSON.parse(fs.readFileSync('local-node/cache/registry/cycle1-crosscheck-required-queue.json','utf8'));
+          const reverify = JSON.parse(fs.readFileSync('local-node/cache/registry/next-cycle-reverification-candidates.json','utf8'));
+          const cycle2Registry = JSON.parse(fs.readFileSync('local-node/cache/registry/daily-fixture-registry.json','utf8'));
+          const cycle2Audit = JSON.parse(fs.readFileSync('local-node/cache/registry/daily-fixture-registry-audit.json','utf8'));
+          const cycle2Verified = JSON.parse(fs.readFileSync('local-node/cache/registry/verified-ranking-queue.json','utf8'));
+          const cycle2Crosscheck = JSON.parse(fs.readFileSync('local-node/cache/registry/crosscheck-required-queue.json','utf8'));
+          const cycle2QueueAudit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          const applied = cycle2Audit.input?.reverificationApply?.applied ?? 0;
+          const rejected = cycle2Audit.input?.reverificationApply?.rejected ?? 0;
+          const sameCycleBlocked = cycle2Audit.input?.reverificationApply?.sameCycleBlocked ?? 0;
+          if (cycle2Audit.currentCycleId !== 'gha-${{ github.run_id }}-c2') throw new Error('CYCLE2_ID_NOT_APPLIED');
+          if (sameCycleBlocked !== 0) throw new Error('CYCLE2_REVERIFICATION_WRONGLY_SAME_CYCLE');
+          if ((cycle2QueueAudit.metrics?.droppedByQuota ?? 0) !== 0) throw new Error('CYCLE2_QUEUE_DROP');
+          if (cycle2Audit.safety?.sameCycleReverificationAllowed !== false) throw new Error('CYCLE2_SAME_CYCLE_POLICY_CHANGED');
+          if (cycle2Audit.safety?.decisionUse !== false || cycle2Audit.safety?.bigDbWriteAllowed !== false) throw new Error('CYCLE2_SAFETY_CHANGED');
+          if (cycle2Registry.coverage?.registryFixtures !== cycle1Registry.coverage?.registryFixtures) throw new Error('REVERIFICATION_CREATED_OR_DELETED_FIXTURE');
+          const summary = {
+            contract:'CFI_BIGDB_LIVE_NEXT_CYCLE_SOAK_V1',
+            cycle1:{
+              registryFixtures:cycle1Registry.coverage?.registryFixtures ?? 0,
+              verifiedRanking:cycle1Verified.count ?? 0,
+              crosscheckRequired:cycle1Crosscheck.count ?? 0
+            },
+            reverifyCandidates:reverify.count ?? 0,
+            cycle2:{
+              registryFixtures:cycle2Registry.coverage?.registryFixtures ?? 0,
+              reverificationApplied:applied,
+              reverificationRejected:rejected,
+              sameCycleBlocked,
+              verifiedRanking:cycle2Verified.count ?? 0,
+              crosscheckRequired:cycle2Crosscheck.count ?? 0,
+              droppedByQuota:cycle2QueueAudit.metrics?.droppedByQuota ?? null
+            },
+            predictionExecutionAllowed:false,
+            decisionUse:false,
+            bigDbWriteAllowed:false
+          };
+          fs.writeFileSync('local-node/cache/registry/live-bigdb-next-cycle-summary.json', JSON.stringify(summary, null, 2));
+          console.log(JSON.stringify(summary));
+          NODE
+
+      - name: Verify live soak remains shadow-only and fixture-gated
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'audit-reports/cfi-tier-a-live-soak.json';
+          if (!fs.existsSync(path)) throw new Error('TIER_A_SOAK_REPORT_MISSING');
+          const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (report.safety?.decisionUse !== false) throw new Error('DECISION_USE_NOT_FALSE');
+          if (report.safety?.bigDbWriteAllowed !== false) throw new Error('BIGDB_WRITE_ALLOWED');
+          if (report.safety?.productionScheduleActivated !== false) throw new Error('PRODUCTION_SCHEDULE_ACTIVATED');
+          if (report.safety?.globalSourceCoverageDoesNotVerifyIndividualFixture !== true) {
+            throw new Error('GLOBAL_COVERAGE_FIXTURE_VERIFICATION_SEPARATION_MISSING');
+          }
+          const m = report.metrics ?? {};
+          if ((m.trustedRankingReadyFixtures ?? 0) > (m.multiSourceFixtures ?? 0)) {
+            throw new Error('TIER_A_RANKING_READY_EXCEEDS_MULTI_SOURCE_FIXTURES');
+          }
+          if ((m.singleSourceFixtures ?? 0) > 0 && (m.trustedDiscoveryOnlyFixtures ?? 0) === 0) {
+            throw new Error('SINGLE_SOURCE_FIXTURES_NOT_DISCOVERY_ONLY');
+          }
+          const queueAudit = JSON.parse(fs.readFileSync('local-node/cache/registry/rolling-evidence-queues-audit.json','utf8'));
+          if (queueAudit.safety?.predictionExecutionAllowed !== false) throw new Error('QUEUE_PREDICTION_EXECUTION_ENABLED');
+          if (queueAudit.safety?.bigDbWriteAllowed !== false) throw new Error('QUEUE_BIGDB_WRITE_ENABLED');
+          const bigDbAuditPath = 'local-node/cache/registry/shadow-evidence-dispatcher-audit.json';
+          const bigDbAudit = fs.existsSync(bigDbAuditPath) ? JSON.parse(fs.readFileSync(bigDbAuditPath,'utf8')) : null;
+          if (bigDbAudit) {
+            if (bigDbAudit.liveRead?.serviceRoleKeyUsed !== false) throw new Error('SERVICE_ROLE_KEY_USED');
+            if (bigDbAudit.integration?.sameCycleRegistryMutationPerformed !== false) throw new Error('SAME_CYCLE_MUTATION');
+            if (bigDbAudit.safety?.predictionExecutionAllowed !== false) throw new Error('DISPATCH_PREDICTION_ENABLED');
+            if (bigDbAudit.safety?.bigDbWriteAllowed !== false) throw new Error('DISPATCH_BIGDB_WRITE_ENABLED');
+          }
+          const gapAuditPath = 'local-node/cache/registry/bigdb-identity-gap-audit.json';
+          const gapAudit = fs.existsSync(gapAuditPath) ? JSON.parse(fs.readFileSync(gapAuditPath,'utf8')) : null;
+          if (gapAudit) {
+            if (gapAudit.policy?.bigDbWriteAllowed !== false) throw new Error('GAP_AUDIT_BIGDB_WRITE_ENABLED');
+            if (gapAudit.policy?.rawFixtureUpsertForIdentityRescueAllowed !== false) throw new Error('GAP_AUDIT_RAW_FIXTURE_RESCUE_ENABLED');
+            if (gapAudit.policy?.autoAliasAllowed !== false) throw new Error('GAP_AUDIT_AUTO_ALIAS_ENABLED');
+            if (gapAudit.policy?.webMayAutoCreateCanonicalTeam !== false) throw new Error('GAP_AUDIT_CANONICAL_AUTO_CREATE_ENABLED');
+            if ((gapAudit.rows ?? []).some(row => row.autoAliasAllowed !== false || row.canonicalTeamCreateAllowed !== false)) throw new Error('GAP_AUDIT_ROW_MUTATION_ENABLED');
+          }
+          console.log(JSON.stringify({
+            status: report.status,
+            metrics: report.metrics,
+            providerRows: report.providerRows,
+            globalSourceHealth: report.globalSourceHealth,
+            perFixtureVerification: report.perFixtureVerification,
+            liveRollingQueues: queueAudit.metrics,
+            bigDbLiveRead: bigDbAudit ? {status:bigDbAudit.status,liveRead:bigDbAudit.liveRead,metrics:bigDbAudit.metrics} : null,
+            bigDbIdentityGap: gapAudit ? {status:gapAudit.status,metrics:gapAudit.metrics,policy:gapAudit.policy} : null,
+            tierALiveExit: '${{ steps.tier_a_live.outputs.exit_code }}',
+            chromiumInstallOutcome: '${{ steps.browser_install.outcome }}'
+          }));
+          NODE
+
+      - name: Upload Tier A live soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-tier-a-live-soak-${{ github.run_id }}
+          path: |
+            audit-reports/cfi-tier-a-live-soak.json
+            audit-reports/cfi-tier-a-live-soak.md
+            local-node/cache/registry/tier-a-browser-discovery.json
+            local-node/cache/registry/tier-a-browser-discovery-audit.json
+            local-node/cache/registry/daily-fixture-registry.json
+            local-node/cache/registry/daily-fixture-registry-audit.json
+            local-node/cache/registry/rolling-fixture-window.json
+            local-node/cache/registry/rolling-evidence-queue-set.json
+            local-node/cache/registry/verified-ranking-queue.json
+            local-node/cache/registry/crosscheck-required-queue.json
+            local-node/cache/registry/evidence-request-plan.json
+            local-node/cache/registry/rolling-evidence-queues-audit.json
+            local-node/cache/registry/cycle1-*.json
+            local-node/cache/registry/shadow-evidence-receipts.json
+            local-node/cache/registry/web-crosscheck-request-plan.json
+            local-node/cache/registry/next-cycle-reverification-candidates.json
+            local-node/cache/registry/shadow-evidence-dispatcher-audit.json
+            local-node/cache/registry/bigdb-identity-gap-audit.json
+            local-node/cache/registry/live-bigdb-unresolved.json
+            local-node/cache/registry/live-bigdb-next-cycle-summary.json
+            local-node/cache/browser/source-probe-audit.json
+            local-node/cache/browser/*-adapter-audit.json
+            local-node/cache/browser/probes/daily-*.txt
+            local-node/browser/fixture-collector/input/*-candidates.json
+          if-no-files-found: warn
