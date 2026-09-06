@@ -12,7 +12,7 @@ function base(){
     ],
     markets:{
       '3+ HT':{final:.20,methodB:.18},
-      '7+ FT':{final:.08},
+      '7+ FT':{final:.08,methodB:.07},
       'Other HT':{final:.10},
       'Other FT':{final:.12}
     },
@@ -28,8 +28,25 @@ function base(){
   };
 }
 
-test('coherent markets pass',()=>{
-  assert.equal(evaluateMarketCoherence(base()).status,'PASS');
+test('coherent markets pass logical gate but unapproved extreme thresholds stay policy-blocked',()=>{
+  const result=evaluateMarketCoherence(base());
+  assert.equal(result.status,'PASS');
+  assert.equal(result.decisionUse,false);
+  assert.ok(result.safetyBlockedMarkets.includes('3+ HT'));
+  assert.ok(result.safetyBlockedMarkets.includes('HT O2.5'));
+  assert.ok(result.safetyBlockedMarkets.includes('7+ FT'));
+  assert.ok(result.safetyBlockedMarkets.includes('FT O6.5'));
+});
+
+test('approved 3+ and 7+ calibrations release only the safety blocks when aliases are coherent',()=>{
+  const b:any=base();
+  b.threePlusHtCalibrationApproval={status:'APPROVED',version:'3CAL',calibratedProbability:.17};
+  b.sevenPlusFtCalibrationApproval={status:'APPROVED',version:'7CAL',calibratedProbability:.06};
+  const result=evaluateMarketCoherence(b);
+  assert.equal(result.status,'PASS');
+  assert.equal(result.decisionUse,true);
+  assert.deepEqual(result.safetyBlockedMarkets,[]);
+  assert.deepEqual(result.blockedMarkets,[]);
 });
 
 test('Other HT cannot exceed 3+ HT',()=>{
@@ -58,19 +75,10 @@ test('3+ HT must equal HT O2.5',()=>{
 
 test('unavailable counterpart is not a proven logical contradiction',()=>{
   const b=base();
-
   delete b.multiMarket.overUnder.ft['6.5'];
-
   const result=evaluateMarketCoherence(b);
-
   assert.equal(result.status,'UNAVAILABLE');
-  assert.equal(
-    result.checks.find(
-      x=>x.id==='SEVEN_PLUS_FT_EQ_FT_O6_5'
-    )?.status,
-    'UNAVAILABLE'
-  );
-
+  assert.equal(result.checks.find(x=>x.id==='SEVEN_PLUS_FT_EQ_FT_O6_5')?.status,'UNAVAILABLE');
   assert.ok(result.blockedMarkets.includes('7+ FT'));
   assert.ok(result.blockedMarkets.includes('FT O6.5'));
 });
