@@ -1,6 +1,7 @@
 export const THREE_PLUS_HT_SAFETY_VERSION='CFI_3PLUS_HT_CALIBRATION_SAFETY_V1';
 export const THREE_PLUS_HT_EVENT='3+ HT ≡ HT O2.5';
 export const THREE_PLUS_HT_DEFAULT_TOLERANCE=.01;
+export const THREE_PLUS_HT_MAX_TOLERANCE=.01;
 export const THREE_PLUS_HT_CALIBRATION_BINS=[
   {label:'0-10%',lo:0,hi:.10},
   {label:'10-20%',lo:.10,hi:.20},
@@ -12,6 +13,11 @@ export const THREE_PLUS_HT_CALIBRATION_BINS=[
 
 type CalibrationPoint={probability:number;outcome:boolean|0|1};
 
+const probability=(v:any)=>{
+  if(v===null||v===undefined||v==='')return null;
+  const n=Number(v);
+  return Number.isFinite(n)&&n>=0&&n<=1?n:null;
+};
 const finite=(v:any)=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const round=(v:number,d=6)=>{const p=10**d;return Math.round(v*p)/p;};
 
@@ -22,19 +28,20 @@ function equivalenceCheck(body:any){
 }
 
 export function evaluateThreePlusHtSafety(body:any){
-  const rawFinalProbability=finite(body?.markets?.['3+ HT']?.final??body?.ranking?.find?.((x:any)=>x?.target==='3+ HT')?.probability);
-  const futureSixChallengerProbability=finite(body?.markets?.['3+ HT']?.methodB);
-  const scoreGridProbability=finite(body?.multiMarket?.overUnder?.ht?.['2.5']?.over?.fullWin);
+  const rawFinalProbability=probability(body?.markets?.['3+ HT']?.final??body?.ranking?.find?.((x:any)=>x?.target==='3+ HT')?.probability);
+  const futureSixChallengerProbability=probability(body?.markets?.['3+ HT']?.methodB);
+  const scoreGridProbability=probability(body?.multiMarket?.overUnder?.ht?.['2.5']?.over?.fullWin);
   const check=equivalenceCheck(body);
-  const tolerance=finite(check?.tolerance??body?.multiMarketIntegration?.crossCoreConsistency?.tolerance)??THREE_PLUS_HT_DEFAULT_TOLERANCE;
+  const requestedTolerance=finite(check?.tolerance??body?.multiMarketIntegration?.crossCoreConsistency?.tolerance);
+  const tolerance=Math.min(THREE_PLUS_HT_MAX_TOLERANCE,Math.max(0,requestedTolerance??THREE_PLUS_HT_DEFAULT_TOLERANCE));
   const observable=rawFinalProbability!==null&&scoreGridProbability!==null;
   const delta=observable?Math.abs(rawFinalProbability!-scoreGridProbability!):null;
-  const crossCoreStatus=!observable?'UNAVAILABLE':delta!<=tolerance?'PASS':'FAIL';
+  const crossCoreStatus=!observable?'UNAVAILABLE':delta!<=tolerance+1e-12?'PASS':'FAIL';
 
   // P0 policy: raw FINAL remains visible for audit, but it is not a betting
   // probability until a separate historical calibration artifact is approved.
   const approval=body?.threePlusHtCalibrationApproval??body?.calibrationApproval?.['3+ HT']??null;
-  const calibratedProbability=finite(approval?.calibratedProbability??approval?.probability);
+  const calibratedProbability=probability(approval?.calibratedProbability??approval?.probability);
   const calibrationApproved=approval?.status==='APPROVED'&&calibratedProbability!==null;
   const reasons:string[]=[];
   if(!calibrationApproved)reasons.push('HISTORICAL_CALIBRATION_NOT_APPROVED');
@@ -63,7 +70,7 @@ export function evaluateThreePlusHtSafety(body:any){
 }
 
 export function buildThreePlusHtCalibrationBins(points:CalibrationPoint[]){
-  const clean=points.map(row=>({p:finite(row?.probability),y:row?.outcome===true||row?.outcome===1?1:0})).filter((row):row is {p:number;y:number}=>row.p!==null&&row.p>=0&&row.p<=1);
+  const clean=points.map(row=>({p:probability(row?.probability),y:row?.outcome===true||row?.outcome===1?1:0})).filter((row):row is {p:number;y:number}=>row.p!==null);
   return THREE_PLUS_HT_CALIBRATION_BINS.map((bin,index)=>{
     const rows=clean.filter(row=>row.p>=bin.lo&&(index===THREE_PLUS_HT_CALIBRATION_BINS.length-1?row.p<=1:row.p<bin.hi));
     if(!rows.length)return{bin:bin.label,n:0,meanPredicted:null,actualHitRate:null,calibrationGap:null,brier:null};

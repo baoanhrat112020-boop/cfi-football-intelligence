@@ -1,4 +1,7 @@
-export const MARKET_COHERENCE_VERSION='CFI_MARKET_COHERENCE_V1';
+import { evaluateThreePlusHtSafety } from './three-plus-ht-safety.ts';
+import { evaluateSevenPlusFtSafety } from './seven-plus-ft-safety.ts';
+
+export const MARKET_COHERENCE_VERSION='CFI_MARKET_COHERENCE_V2';
 export const MARKET_COHERENCE_MAX_TOLERANCE=.01;
 
 type CheckStatus='PASS'|'FAIL'|'UNAVAILABLE'|'NOT_APPLICABLE';
@@ -16,6 +19,12 @@ type CoherenceCheck={
   blockedMarkets:string[];
 };
 
+const probability=(v:any)=>{
+  if(v===null||v===undefined||v==='')return null;
+  const n=Number(v);
+  return Number.isFinite(n)&&n>=0&&n<=1?n:null;
+};
+
 const finite=(v:any)=>
   v===null||v===undefined||v===''?
     null:
@@ -31,11 +40,11 @@ function marketProbability(body:any,target:string){
     ?body.ranking.find((x:any)=>String(x?.target??'')===target)
     :null;
 
-  return finite(body?.markets?.[target]?.final ?? row?.probability);
+  return probability(body?.markets?.[target]?.final ?? row?.probability);
 }
 
 function ouProbability(body:any,period:'ht'|'ft',line:string){
-  return finite(
+  return probability(
     body?.multiMarket?.overUnder?.[period]?.[line]?.over?.fullWin
   );
 }
@@ -166,10 +175,15 @@ export function evaluateMarketCoherence(body:any){
 
   const failed=checks.filter(x=>x.status==='FAIL');
   const unavailable=checks.filter(x=>x.status==='UNAVAILABLE');
-
-  const blockedMarkets=[
-    ...new Set(checks.flatMap(x=>x.blockedMarkets))
+  const threePlusHtSafety=evaluateThreePlusHtSafety(body);
+  const sevenPlusFtSafety=evaluateSevenPlusFtSafety(body);
+  const safetyBlockedMarkets=[
+    ...(threePlusHtSafety.decisionUse?[]:['3+ HT','HT O2.5']),
+    ...(sevenPlusFtSafety.decisionUse?[]:['7+ FT','FT O6.5'])
   ];
+
+  const logicBlockedMarkets=checks.flatMap(x=>x.blockedMarkets);
+  const blockedMarkets=[...new Set([...logicBlockedMarkets,...safetyBlockedMarkets])];
 
   const status=
     failed.length?'FAIL':
@@ -179,13 +193,21 @@ export function evaluateMarketCoherence(body:any){
   return{
     version:MARKET_COHERENCE_VERSION,
     status,
-    decisionUse:status==='PASS',
+    decisionUse:status==='PASS'&&safetyBlockedMarkets.length===0,
     tolerance,
     checks,
     blockedMarkets,
+    logicBlockedMarkets:[...new Set(logicBlockedMarkets)],
+    safetyBlockedMarkets:[...new Set(safetyBlockedMarkets)],
+    extremeThresholdSafety:{
+      threePlusHt:threePlusHtSafety,
+      sevenPlusFt:sevenPlusFtSafety
+    },
     reasons:[
       ...failed.map(x=>x.id),
-      ...unavailable.map(x=>`${x.id}_UNAVAILABLE`)
+      ...unavailable.map(x=>`${x.id}_UNAVAILABLE`),
+      ...(!threePlusHtSafety.decisionUse?['THREE_PLUS_HT_CALIBRATION_REQUIRED']:[]),
+      ...(!sevenPlusFtSafety.decisionUse?['SEVEN_PLUS_FT_CALIBRATION_REQUIRED']:[])
     ],
     invariants:{
       threePlusHtEqualsHtOver25:true,
@@ -194,6 +216,6 @@ export function evaluateMarketCoherence(body:any){
       otherFtSubsetOfFtOver45:true,
       ftOver65SubsetOfFtOver45:true
     },
-    policy:'FAIL_CLOSED_ON_MARKET_LOGIC_VIOLATION'
+    policy:'FAIL_CLOSED_PER_MARKET_ON_LOGIC_VIOLATION_OR_UNAPPROVED_EXTREME_THRESHOLD_CALIBRATION'
   } as const;
 }

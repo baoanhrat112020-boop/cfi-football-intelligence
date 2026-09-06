@@ -22,20 +22,31 @@ test('production entrypoint may add GPT transport or P0 discovery but must deleg
   const wrangler=readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8');
   const liveRouter=readFileSync(new URL('../cloudflare-worker/src/index-live-router.ts',import.meta.url),'utf8');
   const p0Url=new URL('../cloudflare-worker/src/index-p0-router.ts',import.meta.url);
-  const gptCoreUrl=new URL('../cloudflare-worker/src/index-gpt-core-v4.ts',import.meta.url);
+  const gptCoreV4Url=new URL('../cloudflare-worker/src/index-gpt-core-v4.ts',import.meta.url);
+  const gptCoreV5Url=new URL('../cloudflare-worker/src/index-gpt-core-v5.ts',import.meta.url);
   const usesP0=/"main"\s*:\s*"cloudflare-worker\/src\/index-p0-router\.ts"/.test(wrangler);
   const usesLive=/"main"\s*:\s*"cloudflare-worker\/src\/index-live-router\.ts"/.test(wrangler);
-  const usesGptCore=/"main"\s*:\s*"cloudflare-worker\/src\/index-gpt-core-v4\.ts"/.test(wrangler);
-  assert.equal(usesP0||usesLive||usesGptCore,true,'production entrypoint must be canonical live/P0 chain or guarded GPT Core wrapper');
-  if(usesGptCore){
-    assert.equal(existsSync(gptCoreUrl),true,'configured GPT Core V4 wrapper must exist');
-    const gptCore=readFileSync(gptCoreUrl,'utf8');
+  const usesGptCoreV4=/"main"\s*:\s*"cloudflare-worker\/src\/index-gpt-core-v4\.ts"/.test(wrangler);
+  const usesGptCoreV5=/"main"\s*:\s*"cloudflare-worker\/src\/index-gpt-core-v5\.ts"/.test(wrangler);
+  assert.equal(usesP0||usesLive||usesGptCoreV4||usesGptCoreV5,true,'production entrypoint must be canonical live/P0 chain or guarded GPT Core wrapper');
+  if(usesGptCoreV4){
+    assert.equal(existsSync(gptCoreV4Url),true,'configured GPT Core V4 wrapper must exist');
+    const gptCore=readFileSync(gptCoreV4Url,'utf8');
     assert.match(gptCore,/import core from '\.\/index-p0-router\.ts'/);
     assert.match(gptCore,/CFI_GPT_PREDICT_COMPACT_V1/);
     assert.match(gptCore,/SUPPLIED_FIXTURE_ONLY/);
     assert.match(gptCore,/return core\.fetch\(request,env,ctx\)/);
   }
-  if(usesP0||usesGptCore){
+  if(usesGptCoreV5){
+    assert.equal(existsSync(gptCoreV5Url),true,'configured GPT Core V5 safety wrapper must exist');
+    const gptCore=readFileSync(gptCoreV5Url,'utf8');
+    assert.match(gptCore,/import v4 from '\.\/index-gpt-core-v4\.ts'/);
+    assert.match(gptCore,/CFI_GPT_PREDICT_COMPACT_V2_EXTREME_THRESHOLD_SAFETY/);
+    assert.match(gptCore,/SUPPLIED_FIXTURE_ONLY/);
+    assert.match(gptCore,/THREE_PLUS_HT_SAFETY_VERSION/);
+    assert.match(gptCore,/SEVEN_PLUS_FT_SAFETY_VERSION/);
+  }
+  if(usesP0||usesGptCoreV4||usesGptCoreV5){
     assert.equal(existsSync(p0Url),true,'canonical P0 router must exist');
     const p0=readFileSync(p0Url,'utf8');
     assert.match(p0,/import base from '\.\/index-live-router\.ts'/);
