@@ -8,7 +8,7 @@ function prediction(promoted=false){
   return{
     target:{home:'Alpha',away:'Beta',date:'2026-08-26'},strictPrior:{verified:true},consistencyGuard:{status:'PASS'},
     bigDbRetrieval:{exactTeam:{home:{retrieved:12},away:{retrieved:12},h2h:{retrieved:2}}},
-    ranking:[{target:'3+ HT',probability:.60,confidence:'HIGH'},{target:'7+ FT',probability:.18,confidence:'MEDIUM'}],markets:{'Other FT':{final:.16}},
+    ranking:[{target:'3+ HT',probability:.60,confidence:'HIGH'},{target:'7+ FT',probability:.18,confidence:'MEDIUM'}],markets:{'3+ HT':{final:.60,methodB:.32},'Other FT':{final:.16}},
     scoreline:{ht:{final:[{score:'1-1',probability:.2}]},ft:{final:[{score:'3-1',probability:.14}]},expectedGoals:{htHome:.8,htAway:.5,ftHome:1.8,ftAway:1.0},mostLikelyPath:'1-1 HT → 3-1 FT',uncertainty:'MEDIUM'},
     multiMarketIntegration:{status:promoted?'PROMOTED':'SHADOW_READY',decisionUse:promoted},
     multiMarket:{
@@ -23,13 +23,38 @@ function prediction(promoted=false){
 }
 const verifiedOdds=(values:any)=>({values,metadata:{bookmaker:'Pinnacle',capturedAt:'2026-08-26T08:50:00Z',verified:true,maxAgeMinutes:30,source:'USER_SCREENSHOT'}});
 
-test('image input exposes provenance and can BET only with verified fresh odds',()=>{
+test('image input exposes provenance but 3+ HT remains WATCH before calibration approval',()=>{
   const out=buildCfiOutputV3(prediction(),{input_mode:'IMAGE_ANALYSIS',now_ms:NOW,fixture_identity:{verified:true},image_evidence:{image_count:3,extracted_fields:['fixture','odds']},odds:verifiedOdds({'3+ HT':2})});
   assert.equal(out.input.mode,'IMAGE_ANALYSIS');
   assert.equal(out.input.imageEvidence.imageCount,3);
   assert.equal(out.odds.fresh,true);
+  assert.equal(out.decisions.bet.some((x:any)=>x.market==='3+ HT'),false);
+  const row=out.champion.thresholds.find((x:any)=>x.market==='3+ HT');
+  assert.equal(row.decision,'WATCH');
+  assert.equal(row.decisionUse,false);
+  assert.equal(row.calibrationStatus,'CALIBRATION_REQUIRED');
+  assert.equal(row.rawProbability,.60);
+  assert.equal(row.bettingProbability,null);
+  assert.equal(row.edge,null);
+  assert.equal(row.expectedValue,null);
+  assert.equal(row.fairOdds,null);
+  assert.equal(out.threePlusHtSafety.crossCore.status,'FAIL');
+  assert.match(out.renderedPracticalReport,/3\+ HT SAFETY: CALIBRATION_REQUIRED/);
+});
+
+test('approved calibrated 3+ HT can BET only with equivalence PASS and verified fresh odds',()=>{
+  const body:any=prediction();
+  body.multiMarket.overUnder.ht['2.5']=binary(.60,1.6667);
+  body.threePlusHtCalibrationApproval={status:'APPROVED',version:'CFI_3HT_CAL_V1',calibratedProbability:.55};
+  const out=buildCfiOutputV3(body,{input_mode:'IMAGE_ANALYSIS',now_ms:NOW,fixture_identity:{verified:true},odds:verifiedOdds({'3+ HT':2})});
+  const row=out.champion.thresholds.find((x:any)=>x.market==='3+ HT');
+  assert.equal(out.threePlusHtSafety.crossCore.status,'PASS');
+  assert.equal(out.threePlusHtSafety.status,'CALIBRATED_READY');
+  assert.equal(row.decisionUse,true);
+  assert.equal(row.probability,.55);
+  assert.equal(row.bettingProbability,.55);
+  assert.equal(row.decision,'BET');
   assert.equal(out.decisions.bet[0].market,'3+ HT');
-  assert.match(out.renderedPracticalReport,/BET 3\+ HT/);
 });
 
 test('legacy or unverified odds can never produce BET',()=>{
@@ -131,4 +156,51 @@ test('output exposes a non-placing bet-ledger handoff',()=>{
   assert.equal(out.betLedger.explicitConfirmationRequired,true);
   assert.equal(out.betLedger.autoPlaced,false);
   assert.match(out.renderedPracticalReport,/BET LEDGER: NOT_RECORDED/);
+});
+
+test('coherence failure blocks equivalent market only and preserves unrelated promoted market',()=>{
+  const out=buildCfiOutputV3(
+    prediction(true),
+    {
+      input_mode:'DISCOVER_TOP_MATCHES',
+      fixture_identity:{verified:true},
+      now_ms:NOW,
+      odds:verifiedOdds({
+        'FT 1':2,
+        'HT O2.5':3.5
+      })
+    }
+  );
+
+  // Synthetic fixture intentionally has:
+  // 3+ HT = .60 vs HT O2.5 = .31
+  assert.equal(out.marketCoherence.status,'FAIL');
+
+  assert.ok(
+    out.marketCoherence.blockedMarkets.includes('3+ HT')
+  );
+
+  assert.ok(
+    out.marketCoherence.blockedMarkets.includes('HT O2.5')
+  );
+
+  // Equivalent O/U route must not bypass the contradiction.
+  const htO25=out.multiMarket.overUnder.find(
+    (x:any)=>x.market==='HT O2.5'
+  );
+
+  assert.equal(htO25.decisionUse,false);
+  assert.equal(htO25.decision,'SHADOW');
+  assert.equal(htO25.edge,null);
+  assert.equal(htO25.expectedValue,null);
+  assert.equal(htO25.fairOdds,null);
+
+  // Unrelated promoted market remains valid.
+  const ft1=out.multiMarket.oneXTwo.find(
+    (x:any)=>x.market==='FT 1'
+  );
+
+  assert.equal(out.multiMarket.policy.decisionUse,true);
+  assert.equal(ft1.decisionUse,true);
+  assert.equal(ft1.decision,'BET');
 });

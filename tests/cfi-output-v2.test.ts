@@ -10,6 +10,7 @@ function body(){return {
     {target:'Other HT',probability:.08,confidence:'HIGH'},
     {target:'Other FT',probability:.12,confidence:'HIGH'},
   ],
+  markets:{'3+ HT':{final:.40,methodB:.22}},
   scoreline:{ht:{final:[{score:'1-0',probability:.2}]},ft:{final:[{score:'2-1',probability:.16}]},mostLikelyPath:'1-0 HT → 2-1 FT',uncertainty:'MEDIUM',expectedGoals:{htHome:.8,htAway:.5,ftHome:1.8,ftAway:1.2}},
   consistencyGuard:{status:'PASS'},
   strictPrior:{verified:true},
@@ -18,7 +19,10 @@ function body(){return {
     consistencyGuard:{status:'PASS'},
     oneXTwo:{ht:{home:.43,draw:.35,away:.22},ft:{home:.56,draw:.24,away:.20}},
     overUnder:{
-      ht:{'1.5':{over:{fullWin:.48,halfWin:0,push:0,halfLoss:0,fullLoss:.52,fairDecimal:2.083333333},under:{fullWin:.52,halfWin:0,push:0,halfLoss:0,fullLoss:.48,fairDecimal:1.923076923}}},
+      ht:{
+        '1.5':{over:{fullWin:.48,halfWin:0,push:0,halfLoss:0,fullLoss:.52,fairDecimal:2.083333333},under:{fullWin:.52,halfWin:0,push:0,halfLoss:0,fullLoss:.48,fairDecimal:1.923076923}},
+        '2.5':{over:{fullWin:.20,halfWin:0,push:0,halfLoss:0,fullLoss:.80,fairDecimal:5},under:{fullWin:.80,halfWin:0,push:0,halfLoss:0,fullLoss:.20,fairDecimal:1.25}},
+      },
       ft:{'2.5':{over:{fullWin:.57,halfWin:0,push:0,halfLoss:0,fullLoss:.43,fairDecimal:1.754385965},under:{fullWin:.43,halfWin:0,push:0,halfLoss:0,fullLoss:.57,fairDecimal:2.325581395}}}
     },
     asianHandicap:{
@@ -35,12 +39,31 @@ test('without bookmaker odds output never labels champion market BET',()=>{
   assert.ok(out.championMarkets.every((x:any)=>x.status==='WATCH'||x.status==='PASS'));
 });
 
-test('positive edge with sufficient confidence can be labelled BET',()=>{
+test('positive raw FINAL edge cannot make 3+ HT BET before calibration approval',()=>{
   const out=buildCfiOutputV2(body(),{'3+ HT':3.20});
   const row=out.championMarkets.find((x:any)=>x.market==='3+ HT');
+  assert.equal(row.status,'WATCH');
+  assert.equal(row.edge,null);
+  assert.equal(row.decisionUse,false);
+  assert.equal(row.calibrationStatus,'CALIBRATION_REQUIRED');
+  assert.equal(row.rawProbability,.40);
+  assert.equal(row.bettingProbability,null);
+  assert.equal(out.threePlusHtSafety.crossCore.status,'FAIL');
+  assert.equal(out.quickDecision.bet.some((x:any)=>x.market==='3+ HT'),false);
+});
+
+test('approved calibrated 3+ HT probability can BET only after equivalence PASS',()=>{
+  const x:any=body();
+  x.multiMarket.overUnder.ht['2.5'].over.fullWin=.40;
+  x.threePlusHtCalibrationApproval={status:'APPROVED',version:'CFI_3HT_CAL_V1',calibratedProbability:.35};
+  const out=buildCfiOutputV2(x,{'3+ HT':4});
+  const row=out.championMarkets.find((r:any)=>r.market==='3+ HT');
+  assert.equal(out.threePlusHtSafety.crossCore.status,'PASS');
+  assert.equal(row.decisionUse,true);
+  assert.equal(row.probability,.35);
+  assert.equal(row.bettingProbability,.35);
   assert.equal(row.status,'BET');
   assert.ok(row.edge>.05);
-  assert.equal(row.fairOdds,2.5);
 });
 
 test('negative edge is PASS even when payout looks attractive',()=>{

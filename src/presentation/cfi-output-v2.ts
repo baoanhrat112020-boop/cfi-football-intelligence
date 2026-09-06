@@ -1,8 +1,11 @@
+import { evaluateThreePlusHtSafety } from '../prediction/three-plus-ht-safety.ts';
+import { evaluateMarketCoherence } from '../prediction/market-coherence.ts';
+
 export const CFI_OUTPUT_V2='CFI_OUTPUT_V2';
 
 const FULL_MARKET_REPORT_MARKER='CFI MULTI-MARKET FULL BOARD';
 type SettlementView={fullWin:number|null;halfWin:number|null;push:number|null;halfLoss:number|null;fullLoss:number|null;fairDecimal:number|null};
-type Card={market:string;probability:number|null;fairOdds:number|null;confidence:string|null;status:'BET'|'WATCH'|'PASS'|'SHADOW';marketOdds:number|null;edge:number|null;source:'CHAMPION'|'SHADOW';settlement?:SettlementView|null};
+type Card={market:string;probability:number|null;fairOdds:number|null;confidence:string|null;status:'BET'|'WATCH'|'PASS'|'SHADOW';marketOdds:number|null;edge:number|null;source:'CHAMPION'|'SHADOW';settlement?:SettlementView|null;decisionUse?:boolean;calibrationStatus?:string|null;rawProbability?:number|null;bettingProbability?:number|null;probabilitySource?:string|null};
 const finite=(v:any)=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const fairOdds=(p:number|null)=>p&&p>0?Math.round((1/p)*1000)/1000:null;
 const pct=(p:number|null)=>p===null?'—':`${(p*100).toFixed(1)}%`;
@@ -101,8 +104,45 @@ function fullMarketReport(body:any,groups:any){
   ].join('\n');
 }
 
+function applyThreePlusHtSafety(row:Card,safety:ReturnType<typeof evaluateThreePlusHtSafety>){
+  if(row.market!=='3+ HT')return row;
+  row.rawProbability=safety.rawFinalProbability;
+  row.bettingProbability=safety.bettingProbability;
+  row.calibrationStatus=safety.status;
+  row.decisionUse=safety.decisionUse;
+  row.probabilitySource=safety.decisionUse?'CALIBRATED_3PLUS_HT':'FINAL_AUDIT_ONLY';
+  if(!safety.decisionUse){
+    row.status='WATCH';
+    row.fairOdds=null;
+    row.edge=null;
+    return row;
+  }
+  const p=safety.bettingProbability;
+  row.probability=p;
+  row.fairOdds=fairOdds(p);
+  row.edge=p!==null&&row.marketOdds!==null?Math.round((p-1/row.marketOdds)*10000)/10000:null;
+  row.status=decision(p,row.marketOdds,row.confidence,false);
+  return row;
+}
+
 export function buildCfiOutputV2(body:any,odds:any={}){
-  const champion=(body?.ranking??[]).map((r:any)=>card(r.target,r.probability,r.confidence,odds?.[r.target],'CHAMPION'));
+  const threePlusHtSafety=evaluateThreePlusHtSafety(body);
+  const marketCoherence=evaluateMarketCoherence(body);
+  const champion=(body?.ranking??[]).map((r:any)=>{
+    const row=applyThreePlusHtSafety(
+      card(r.target,r.probability,r.confidence,odds?.[r.target],'CHAMPION'),
+      threePlusHtSafety
+    );
+
+    if(marketCoherence.blockedMarkets.includes(row.market)){
+      row.decisionUse=false;
+      row.fairOdds=null;
+      row.edge=null;
+      row.status='WATCH';
+    }
+
+    return row;
+  });
   const mm=body?.multiMarket;
   const shadow:Card[]=[];
   add1x2(shadow,mm,odds,'HT');add1x2(shadow,mm,odds,'FT');
@@ -120,14 +160,19 @@ export function buildCfiOutputV2(body:any,odds:any={}){
     asianHandicap:{ht:shadow.filter(x=>/^HT AH /.test(x.market)),ft:shadow.filter(x=>/^FT AH /.test(x.market))},
   };
   const report=fullMarketReport(body,marketGroups);
+  const headlineMessage=best?.market==='3+ HT'&&!threePlusHtSafety.decisionUse
+    ?`WATCH 3+ HT · RAW FINAL ${pct(threePlusHtSafety.rawFinalProbability)} · ${threePlusHtSafety.status} · betting P —`
+    :best?`${best.status} ${best.market} · P ${pct(best.probability)} · Fair ${best.fairOdds??'—'}${best.marketOdds?` · Market ${best.marketOdds}`:''}`:'No qualified market';
   return {
     version:CFI_OUTPUT_V2,
     contract:body?.primaryTargetMatrix?.contract??body?.primaryTargets?.contract??'CFI_2_METHODS_X_6_TARGETS_V2',
     match:{home:body?.target?.home??null,away:body?.target?.away??null,date:body?.target?.date??null},
-    headline:{status:best?.status??'PASS',market:best?.market??null,probability:best?.probability??null,fairOdds:best?.fairOdds??null,marketOdds:best?.marketOdds??null,edge:best?.edge??null,message:best?`${best.status} ${best.market} · P ${pct(best.probability)} · Fair ${best.fairOdds??'—'}${best.marketOdds?` · Market ${best.marketOdds}`:''}`:'No qualified market'},
+    headline:{status:best?.status??'PASS',market:best?.market??null,probability:best?.probability??null,fairOdds:best?.fairOdds??null,marketOdds:best?.marketOdds??null,edge:best?.edge??null,message:headlineMessage},
     quickDecision:{bet:actionable,watch,pass:all.filter(x=>x.status==='PASS'),shadow:all.filter(x=>x.status==='SHADOW')},
     championMarkets:champion,
     shadowMarkets:shadow,
+    threePlusHtSafety,
+    marketCoherence,
     marketGroups,
     fullMarketReport:report,
     visibility:{
@@ -140,15 +185,17 @@ export function buildCfiOutputV2(body:any,odds:any={}){
     scoreline:{top1HT:top1ht,top1FT:top1ft,path:body?.scoreline?.mostLikelyPath??null},
     expectedGoals:body?.scoreline?.expectedGoals??null,
     quality:{strictPrior:body?.strictPrior?.verified??body?.strictPriorAudit?.evidence?.verified??null,consistency:body?.consistencyGuard?.status??null,multiMarketConsistency:mm?.consistencyGuard?.status??null,uncertainty:body?.scoreline?.uncertainty??null,multiMarketStatus:body?.multiMarketIntegration?.status??null},
-    rules:{betRequiresOdds:true,minModelEdge:0.05,watchEdge:0.015,noGuaranteedWin:true,shadowDecisionUse:false,quarterAndIntegerLinesExposeSettlementStates:true},
+    rules:{betRequiresOdds:true,minModelEdge:0.05,watchEdge:0.015,noGuaranteedWin:true,shadowDecisionUse:false,quarterAndIntegerLinesExposeSettlementStates:true,threePlusHtRawFinalIsAuditOnly:true,threePlusHtRequiresApprovedCalibration:true,threePlusHtRequiresCrossCoreEquivalence:true,marketCoherenceRequired:true},
   };
 }
 
 export function attachCfiOutputV2(body:any,odds:any={}){
   const output=buildCfiOutputV2(body,odds);
   body.outputV2=output;
+  body.threePlusHtSafety=output.threePlusHtSafety;
+  body.marketCoherence=output.marketCoherence;
   body.fullMarketReport=output.fullMarketReport;
   if(typeof body?.renderedReport==='string'&&output.fullMarketReport&&!body.renderedReport.includes(FULL_MARKET_REPORT_MARKER))body.renderedReport=`${body.renderedReport}\n\n${output.fullMarketReport}`;
-  body.presentation={...(body.presentation??{}),fullMultiMarketVisible:true,allTargetsExposed:true,multiMarketDecisionUse:false,primaryScorelineOutput:'TOP1_HT_PLUS_TOP1_FT',fullMarketReportSource:'fullMarketReport'};
+  body.presentation={...(body.presentation??{}),fullMultiMarketVisible:true,allTargetsExposed:true,multiMarketDecisionUse:false,primaryScorelineOutput:'TOP1_HT_PLUS_TOP1_FT',fullMarketReportSource:'fullMarketReport',threePlusHtBettingPolicy:output.threePlusHtSafety.status};
   return body;
 }
