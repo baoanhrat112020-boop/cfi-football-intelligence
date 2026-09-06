@@ -68,7 +68,7 @@ function multiMarketPolicy(body:any){
 
 function championFusionView(body:any){
   const f=body?.championFusion;if(!f)return null;
-  return{version:f.version??null,lineage:f.lineage??null,status:f.status??null,researchOnly:f.researchOnly!==false,decisionUse:f.decisionUse===true,productionEligible:f.productionEligible===true,activeExperts:f.activeExperts??[],candidateExperts:f.candidateExperts??{},gating:f.gating??null,fusion:f.fusion??null,uncertainty:f.uncertainty??null,fstrictPrior:f.strictPrior??null,champion:f.champion??null,oneXTwo:f?.multiMarket?.oneXTwo??null,overUnder:f?.multiMarket?.overUnder??null,asianHandicap:f?.multiMarket?.asianHandicap??null,consistencyGuard:f?.multiMarket?.consistencyGuard??null,reason:f.reason??null};
+  return{version:f.version??null,lineage:f.lineage??null,status:f.status??null,researchOnly:f.researchOnly!==false,decisionUse:f.decisionUse===true,productionEligible:f.productionEligible===true,activeExperts:f.activeExperts??[],candidateExperts:f.candidateExperts??{},gating:f.gating??null,fusion:f.fusion??null,uncertainty:f.uncertainty??null,strictPrior:f.strictPrior??null,champion:f.champion??null,oneXTwo:f?.multiMarket?.oneXTwo??null,overUnder:f?.multiMarket?.overUnder??null,asianHandicap:f?.multiMarket?.asianHandicap??null,consistencyGuard:f?.multiMarket?.consistencyGuard??null,reason:f.reason??null};
 }
 
 function add1x2(cards:Card[],body:any,values:any,period:'HT'|'FT',policy:ReturnType<typeof multiMarketPolicy>,qualityPass:boolean,oddsReady:boolean){
@@ -185,7 +185,7 @@ export function buildCfiOutputV3(body:any,input:any={}){
       c.probabilitySource=threePlusHtSafety.decisionUse?'CALIBRATED_3PLUS_HT':'FINAL_AUDIT_ONLY';
       if(!threePlusHtSafety.decisionUse){
         c.probability=threePlusHtSafety.rawFinalProbability;
-        c.fairOdds=fairOdds(c.probability);
+        c.fairOdds=null;
         c.edge=null;c.expectedValue=null;c.decisionUse=false;
         c.decision=qualityPass?'WATCH':'BLOCKED';
       }
