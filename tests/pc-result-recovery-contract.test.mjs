@@ -19,16 +19,17 @@ test('PC result recovery queues only strict selected historical pending snapshot
 test('PC result recovery persists valid single-source observations but settles only after accumulated dual-source consensus', () => {
   assert.match(edge, /x-cfi-node-key/);
   assert.match(edge, /action===\"SUBMIT\"/);
-  assert.match(edge, /PC_RESULT_RECOVERY_OBSERVATION_V1/);
+  assert.match(edge, /PC_RESULT_RECOVERY_OBSERVATION_V2_FAILOVER/);
   assert.match(edge, /status:\"OBSERVED\"/);
   assert.match(edge, /PARTIAL_STORED/);
   assert.match(edge, /CONFLICT_PENDING/);
   assert.match(edge, /consensusPair/);
-  assert.match(edge, /PC_RESULT_RECOVERY_ACCUMULATED_DUAL_SOURCE_V1/);
+  assert.match(edge, /PC_RESULT_RECOVERY_ACCUMULATED_DUAL_SOURCE_V2_FAILOVER/);
   assert.match(edge, /status:\"VERIFIED\"/);
   assert.match(edge, /COMPLETE_FINISHED_HT_FT_REQUIRED/);
   assert.match(edge, /POST_KICKOFF_SNAPSHOT/);
-  assert.match(edge, /BONGDAWAP_EXACT_HINT_REQUIRED/);
+  assert.match(edge, /EXACT_HINT_REQUIRED/);
+  assert.match(edge, /\[\"BONGDAWAP\",\"AISCORE\"\]/);
   assert.match(edge, /PC_NODE_RESULT_RECOVERY/);
   assert.match(edge, /cfi_settle_prediction_snapshots/);
 });
@@ -50,9 +51,11 @@ test('post-match worker submits every valid observation and no longer discards s
   assert.match(worker, /CONFLICT_PENDING/);
   assert.doesNotMatch(worker, /NO_DUAL_SOURCE_CONSENSUS/);
   assert.match(worker, /BONGDAWAP/);
+  assert.match(worker, /AISCORE/);
   assert.match(worker, /FLASHSCORE/);
   assert.match(worker, /FOTMOB/);
   assert.match(worker, /SOFASCORE/);
+  assert.match(worker, /blockedProviders/);
 });
 
 test('R4 installer is one-shot, config-backed, quote-safe and self-verifying', () => {
