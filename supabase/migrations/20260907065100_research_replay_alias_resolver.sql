@@ -57,7 +57,7 @@ begin
     left join public.team_aliases aa2 on aa2.alias_normalized=public.cfi_normalize_team_name(h.away_team)
     left join public.teams taa on taa.team_id=aa2.team_id
     where h.selected_for_match_audit is true and h.target_date between p_from and p_to
-    order by h.target_date,h.home_team,h.away_team,h.prediction_created_at asc
+    order by h.target_date,h.home_team,h.away_team,h.created_at asc
   loop
     targets:=targets+1;
     if r.home_id is null or r.away_id is null then
