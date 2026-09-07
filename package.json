@@ -24,6 +24,8 @@
     "cfi:bigdb:dry-run": "node local-node/canonical/bigdb-dry-run.mjs",
     "cfi:node:once": "node local-node/index.mjs --once",
     "cfi:node:deep": "node local-node/index.mjs --once --deep",
+    "cfi:research:last2d": "node research/replay-last-two-days.mjs",
+    "cfi:research:replay": "node research/replay-last-two-days.mjs",
     "cfi:audit": "node tools/cfi-audit.mjs",
     "cfi:audit:full": "node tools/cfi-audit.mjs --full"
   },
