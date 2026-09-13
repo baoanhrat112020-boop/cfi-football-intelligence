@@ -1,0 +1,150 @@
+name: CFI Complete Package 2026-09-14
+
+on:
+  push:
+    branches:
+      - packaging/cfi-complete-2026-09-14
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      BASE_SHA: 29debb9c794c9cc5ae27dffa5b721e65669ca708
+      PR199_HEAD: 7d17f9627f23cfa1da61a89972976f5ba99e6b85
+      ROOT_NAME: CFI_COMPLETE_2026-09-14_main_29debb9c
+      ZIP_NAME: CFI_COMPLETE_2026-09-14_main_29debb9c.zip
+    steps:
+      - name: Checkout packaging branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Build clean source snapshot from main baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "out/$ROOT_NAME"
+          git archive "$BASE_SHA" | tar -x -C "out/$ROOT_NAME"
+          mkdir -p "out/$ROOT_NAME/_PACKAGE_META/UNMERGED_PATCHES"
+
+      - name: Capture PR 199 patch and gate status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github.v3.diff"             repos/baoanhrat112020-boop/cfi-football-intelligence/pulls/199             > "out/$ROOT_NAME/_PACKAGE_META/UNMERGED_PATCHES/PR-199.diff" || true
+          cat > "out/$ROOT_NAME/_PACKAGE_META/UNMERGED_PATCHES/PR-199-STATUS.md" <<'EOF'
+          # PR #199 status at packaging time
+
+          - Title: fix: fail closed on incomplete Multi-Market promotion evidence
+          - Head: 7d17f9627f23cfa1da61a89972976f5ba99e6b85
+          - Base: 29debb9c794c9cc5ae27dffa5b721e65669ca708
+          - CFI Tests: PASS (workflow run 34779860984)
+          - Independent AI Auditor V1: FAIL (status target run 34779926730)
+          - Applied to package source: NO
+          - Reason: fail-closed packaging policy; unmerged changes with a failed required auditor gate are preserved as a patch only.
+          EOF
+
+      - name: Install dependencies and validate packaged baseline
+        shell: bash
+        run: |
+          set +e
+          cd "out/$ROOT_NAME"
+          npm ci > "_PACKAGE_META/npm-ci.log" 2>&1
+          NPM_CI_EXIT=$?
+          if [ "$NPM_CI_EXIT" -eq 0 ]; then
+            npm test > "_PACKAGE_META/npm-test.log" 2>&1
+            TEST_EXIT=$?
+            npm run cfi:audit:full > "_PACKAGE_META/cfi-audit-full.log" 2>&1
+            AUDIT_EXIT=$?
+            npx wrangler deploy --dry-run > "_PACKAGE_META/wrangler-dry-run.log" 2>&1
+            WRANGLER_EXIT=$?
+          else
+            TEST_EXIT=99
+            AUDIT_EXIT=99
+            WRANGLER_EXIT=99
+          fi
+          rm -rf node_modules
+          cat > "_PACKAGE_META/VALIDATION_STATUS.env" <<EOF
+          NPM_CI_EXIT=$NPM_CI_EXIT
+          TEST_EXIT=$TEST_EXIT
+          AUDIT_EXIT=$AUDIT_EXIT
+          WRANGLER_DRY_RUN_EXIT=$WRANGLER_EXIT
+          EOF
+          exit 0
+
+      - name: Write package manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS_FILE="out/$ROOT_NAME/_PACKAGE_META/VALIDATION_STATUS.env"
+          source "$STATUS_FILE"
+          cat > "out/$ROOT_NAME/_PACKAGE_META/PACKAGE_MANIFEST.json" <<EOF
+          {
+            "package_name": "$ZIP_NAME",
+            "packaged_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "timezone_context": "Asia/Ho_Chi_Minh",
+            "repository": "baoanhrat112020-boop/cfi-football-intelligence",
+            "source_branch": "main",
+            "source_commit": "$BASE_SHA",
+            "source_policy": "tracked Git files only; no secrets, no .git, no caches, no node_modules",
+            "validation": {
+              "npm_ci_exit": $NPM_CI_EXIT,
+              "npm_test_exit": $TEST_EXIT,
+              "cfi_audit_full_exit": $AUDIT_EXIT,
+              "wrangler_dry_run_exit": $WRANGLER_DRY_RUN_EXIT
+            },
+            "unmerged_pr_199": {
+              "head": "$PR199_HEAD",
+              "tests": "PASS",
+              "independent_ai_auditor": "FAIL",
+              "applied": false,
+              "included_as_patch": true
+            }
+          }
+          EOF
+          cat > "out/$ROOT_NAME/_PACKAGE_META/README_PACKAGE.md" <<EOF
+          # CFI Complete Package — 2026-09-14
+
+          This archive is anchored to the current default-branch baseline:
+          `main@$BASE_SHA`.
+
+          It contains the complete tracked source snapshot plus package metadata and validation logs.
+          No secrets, .git directory, dependency cache, node_modules, or generated local caches are included.
+
+          PR #199 is newer than main and passed CFI Tests, but failed the Independent AI Auditor gate.
+          It is therefore NOT applied to the source. Its diff is preserved under:
+          `_PACKAGE_META/UNMERGED_PATCHES/PR-199.diff`.
+
+          Validation exit codes are recorded in `PACKAGE_MANIFEST.json` and `VALIDATION_STATUS.env`.
+          EOF
+
+      - name: Create final ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd out
+          zip -qr "$ZIP_NAME" "$ROOT_NAME"
+          sha256sum "$ZIP_NAME" > "$ZIP_NAME.sha256"
+          ls -lh "$ZIP_NAME" "$ZIP_NAME.sha256"
+
+      - name: Upload final CFI package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFI-COMPLETE-2026-09-14-main-29debb9c
+          path: |
+            out/CFI_COMPLETE_2026-09-14_main_29debb9c.zip
+            out/CFI_COMPLETE_2026-09-14_main_29debb9c.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
