@@ -22,6 +22,47 @@ process.on('exit',()=>{try{rmSync(bundleDir,{recursive:true,force:true});}catch{
 const ctx={waitUntil(){},passThroughOnException(){}} as ExecutionContext;
 const env={CFI_DB_BASE_URL:'https://example.test/functions/v1/cfi-db',CFI_DB_KEY:'test-key'};
 
+for (const scenario of [
+  {name:'quota restriction', body:{message:'Service restricted: exceed_egress_quota'}, http:402, error:'UPSTREAM_EGRESS_QUOTA_EXCEEDED'},
+  {name:'invalid success envelope', body:{message:'unavailable'}, http:200, error:'UPSTREAM_STATUS_INVALID'},
+  {name:'upstream failure with OK body', body:{status:'OK'}, http:503, error:'UPSTREAM_STATUS_UNAVAILABLE'},
+  {name:'non-JSON upstream failure', body:null, http:502, error:'UPSTREAM_STATUS_INVALID'},
+]) test(`production status fails closed on ${scenario.name}`,async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>scenario.body===null?new Response('Bad gateway',{status:scenario.http}):Response.json(scenario.body,{status:scenario.http});
+  try{
+    const response=await router.fetch(new Request(`https://${PROD_HOST}/api/status`),env,ctx);
+    const body:any=await response.json();
+    assert.equal(response.status,503);
+    assert.equal(body.status,'BLOCKED');
+    assert.equal(body.error,scenario.error);
+    assert.equal(body.upstreamHttpStatus,scenario.http);
+    assert.equal(body.decisionUse,false);
+  }finally{globalThis.fetch=original;}
+});
+
+test('production status keeps healthy backend response and runtime metadata',async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>Response.json({status:'OK',fixtureCount:123});
+  try{
+    const response=await router.fetch(new Request(`https://${PROD_HOST}/api/status`),env,ctx);
+    const body:any=await response.json();
+    assert.equal(response.status,200);assert.equal(body.status,'OK');assert.equal(body.fixtureCount,123);
+    assert.equal(body.runtime.engine,'CFI_FINAL_V5.3.1');
+  }finally{globalThis.fetch=original;}
+});
+
+test('production status returns a structured failure on backend transport errors',async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>{throw new Error('connection unavailable');};
+  try{
+    const response=await router.fetch(new Request(`https://${PROD_HOST}/api/status`),env,ctx);
+    const body:any=await response.json();
+    assert.equal(response.status,503);assert.equal(body.status,'BLOCKED');
+    assert.equal(body.error,'UPSTREAM_STATUS_TRANSPORT_ERROR');assert.equal(body.decisionUse,false);
+  }finally{globalThis.fetch=original;}
+});
+
 function bigDbBody(home:string,away:string){
   const rows=Array.from({length:44},(_,i)=>{const homeSide=i<22;return{id:`gpt-v5-${i}`,matchDate:`2026-07-${String((i%28)+1).padStart(2,'0')}`,homeTeam:homeSide?home:`Opp ${i}`,awayTeam:homeSide?`Opp ${i}`:away,ht:i%3===0?'2-1':i%3===1?'1-0':'0-1',ft:i%4===0?'4-2':i%4===1?'2-1':i%4===2?'1-2':'3-2'};});
   return{status:'OK',version:'CFI_BIG_DB_RETRIEVAL_V2.1.2',targetDate:TARGET_DATE,identity:{homeFound:true,awayFound:true,homeTeamId:`id-${home}`,awayTeamId:`id-${away}`,homeCanonical:home,awayCanonical:away,homeResolution:'TEST_CANONICAL',awayResolution:'TEST_CANONICAL'},exactTeam:{home:{retrieved:22},away:{retrieved:22},h2h:{retrieved:0}},fixtures:{home:rows.slice(0,22),away:rows.slice(22),h2h:[]},globalPrior:{fixtureCount:100,markets:{}},temporalAudit:{targetDate:TARGET_DATE,verified:true,observable:true,maxEvidenceDate:'2026-07-28',exactTeamMaxEvidenceDate:'2026-07-28',globalPriorMaxEvidenceDate:'2026-07-28',futureEvidenceCount:0,sameDateEvidenceCount:0}};
