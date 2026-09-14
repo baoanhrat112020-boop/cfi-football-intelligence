@@ -1,8 +1,9 @@
 import { buildMultiMarketFromScoreGrids } from './multi-market-v1.ts';
+import { buildK048TrajectoryEnsemble, K048_VERSION } from '../../research/trajectory-joint-forecast.mjs';
 
 export const MULTI_MARKET_FUSION_V3_VERSION = 'CFI_MULTI_MARKET_FUSION_V3';
 export const MULTI_MARKET_FUSION_V3_STATUS = 'SHADOW_RESEARCH';
-export const MULTI_MARKET_FUSION_V3_TRAJECTORY = 'CFI_HT_FT_TRAJECTORY_PROJECTION_V1';
+export const MULTI_MARKET_FUSION_V3_TRAJECTORY = 'CFI_HT_FT_TRAJECTORY_K048_V2';
 export const MULTI_MARKET_FUSION_V3_RESEARCH_SYMBOL = Symbol.for('CFI_MULTI_MARKET_FUSION_V3_RESEARCH_V1');
 
 export type ScoreGridInput = {
@@ -342,7 +343,7 @@ function bigDbAudit(bigDb:BigDbFusionContext|undefined|null,targetDate:string){
   return {usable:reasons.length===0,reasons,scorelinePrior,weight,effectiveSampleSize,fixtureCount,exactRows,temporalVerified};
 }
 
-function projectTrajectory(ht:Cell[],ft:Cell[],maxFtProjectionTv:number){
+function projectTrajectoryFallback(ht:Cell[],ft:Cell[],maxFtProjectionTv:number){
   const paths:JointPath[]=[];
   for(const h of ht){
     const allowed=ft.filter(f=>f.home>=h.home&&f.away>=h.away);
@@ -385,6 +386,60 @@ function projectTrajectory(ht:Cell[],ft:Cell[],maxFtProjectionTv:number){
       topPaths,
     }
   };
+}
+
+
+function projectTrajectory(ht:Cell[],ft:Cell[],maxFtProjectionTv:number,targetDate:string,maxEvidenceDate:string){
+  try{
+    const ensemble:any=buildK048TrajectoryEnsemble({
+      targetDate:String(targetDate??'').slice(0,10),
+      maxEvidenceDate:String(maxEvidenceDate??'').slice(0,10),
+      htMarginal:ht.map(r=>({score:r.score,probability:r.probability})),
+      ftMarginal:ft.map(r=>({score:r.score,probability:r.probability})),
+      iterations:1400,
+      tolerance:1e-9,
+    });
+    const paths:JointPath[]=ensemble.trajectories.map((row:any)=>{
+      const h=parseScore(row.ht),f=parseScore(row.ft);
+      return {ht:row.ht,ft:row.ft,htHome:h.home,htAway:h.away,ftHome:f.home,ftAway:f.away,probability:Number(row.probability)};
+    });
+    const invalidPathMass=paths.filter(p=>p.ftHome<p.htHome||p.ftAway<p.htAway).reduce((s,p)=>s+p.probability,0);
+    const topPaths=[...paths].sort((a,b)=>b.probability-a.probability||a.ht.localeCompare(b.ht)||a.ft.localeCompare(b.ft)).slice(0,20)
+      .map(p=>({...p,probability:round(p.probability)}));
+    return{
+      paths,
+      ht,
+      ft,
+      audit:{
+        version:MULTI_MARKET_FUSION_V3_TRAJECTORY,
+        k048Version:K048_VERSION,
+        status:invalidPathMass<=1e-12&&ensemble?.marginalAudit?.status==='PASS'?'PASS':'FAIL',
+        method:'K048_IPF_MARGINAL_PRESERVING',
+        pathCount:paths.length,
+        probabilityMass:round(paths.reduce((s,p)=>s+p.probability,0)),
+        invalidPathMass:round(invalidPathMass),
+        htProjectionTotalVariation:0,
+        ftProjectionTotalVariation:0,
+        maxFtProjectionTv,
+        marginalAudit:ensemble.marginalAudit,
+        topPaths,
+      },
+    };
+  }catch(error){
+    const projected=projectTrajectoryFallback(ht,ft,maxFtProjectionTv);
+    return{
+      ...projected,
+      audit:{
+        ...projected.audit,
+        version:MULTI_MARKET_FUSION_V3_TRAJECTORY,
+        k048Version:K048_VERSION,
+        status:'FAIL',
+        method:'COHERENCE_FALLBACK_ONLY',
+        k048Failure:error instanceof Error?error.message:String(error),
+        promotionUseAllowed:false,
+      },
+    };
+  }
 }
 
 function mass(grid:Cell[],predicate:(r:Cell)=>boolean){
@@ -439,7 +494,7 @@ export function buildMultiMarketFusionV3(args:FusionV3Input){
   const ht=fusePeriod('HT',htExperts,Math.max(0,Number(args.evidenceCount)||0));
   const ft=fusePeriod('FT',ftExperts,Math.max(0,Number(args.evidenceCount)||0));
   const maxProjection=clamp(Number(args.maxTrajectoryFtProjectionTv??.10),.01,.50);
-  const trajectory=projectTrajectory(ht.grid,ft.grid,maxProjection);
+  const trajectory=projectTrajectory(ht.grid,ft.grid,maxProjection,args.targetDate,args.maxEvidenceDate);
   const multiMarket:any=buildMultiMarketFromScoreGrids({ht:trajectory.ht,ft:trajectory.ft});
   multiMarket.model={
     family:MULTI_MARKET_FUSION_V3_VERSION,
