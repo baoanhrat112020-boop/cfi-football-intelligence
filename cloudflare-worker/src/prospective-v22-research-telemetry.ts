@@ -44,6 +44,7 @@ export async function buildProspectiveV22AuditPrediction(prediction:any){
   const incumbent=scoreGrids(prediction?.multiMarket);
   const fusionV1=scoreGrids(prediction?.championFusion?.multiMarket);
   const challengerV2=scoreGrids(prediction?.championFusionChallenger?.multiMarket);
+  const fusionV3=scoreGrids(prediction?.multiMarketFusionV3?.multiMarket);
   const complete=Boolean(incumbent&&fusionV1&&challengerV2);
   const telemetryCore={
     version:PROSPECTIVE_V22_TELEMETRY_VERSION,
@@ -58,7 +59,16 @@ export async function buildProspectiveV22AuditPrediction(prediction:any){
     challengerVersion:prediction?.championFusionChallenger?.version??null,
     challengerLineage:prediction?.championFusionChallenger?.lineage??null,
     protocol:prediction?.championFusionChallenger?.researchProtocol??null,
-    scoreGrids:complete?{incumbent,fusionV1,challengerV2}:null,
+    fusionV3:{
+      version:prediction?.multiMarketFusionV3?.version??null,
+      status:prediction?.multiMarketFusionV3?.status??null,
+      captured:Boolean(fusionV3),
+      fingerprint:prediction?.multiMarketFusionV3?.fusion?.fingerprint??null,
+      trajectoryStatus:prediction?.multiMarketFusionV3?.trajectory?.status??null,
+      bigDbUsed:prediction?.multiMarketFusionV3?.bigDb?.used===true,
+      decisionUse:false,
+    },
+    scoreGrids:complete?{incumbent,fusionV1,challengerV2,fusionV3:fusionV3??null}:null,
   };
   const telemetry={...telemetryCore,sha256:await sha256(telemetryCore)};
   return{...prediction,researchTelemetry:{...(prediction?.researchTelemetry??{}),prospectiveV22:telemetry}};
