@@ -394,7 +394,7 @@ begin
       ('EXTREME_THRESHOLDS','CHAMPION_6')
   ), agg as (
     select m.group_name,
-           count(*) as n,
+           count(*) as sample_n,
            avg((s.evaluation#>>array['fusionV3','groupMetrics',m.node_key,'brier'])::double precision)
              -avg((s.evaluation#>>array['incumbent','groupMetrics',m.node_key,'brier'])::double precision) as brier_delta,
            avg((s.evaluation#>>array['fusionV3','groupMetrics',m.node_key,'logLoss'])::double precision)
@@ -405,12 +405,12 @@ begin
       and s.evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
     group by m.group_name
   )
-  select coalesce(jsonb_object_agg(group_name,jsonb_build_object('n',n,'brierDelta',brier_delta,'logLossDelta',logloss_delta)),'{}'::jsonb)
+  select coalesce(jsonb_object_agg(group_name,jsonb_build_object('n',sample_n,'brierDelta',brier_delta,'logLossDelta',logloss_delta)),'{}'::jsonb)
   into groups from agg;
 
   with monthly as (
     select date_trunc('month',target_date)::date as segment,
-           count(*) n,
+           count(*) segment_n,
            avg((evaluation#>>'{fusionV3,aggregateBrier}')::double precision)
              -avg((evaluation#>>'{incumbent,aggregateBrier}')::double precision) as delta
     from public.cfi_mm_fusion_v3_prospective_samples
@@ -418,7 +418,7 @@ begin
       and evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
     group by 1
   )
-  select max(delta) into segment_worst from monthly where n>=10;
+  select max(delta) into segment_worst from monthly where segment_n>=10;
 
   return jsonb_build_object(
     'version','CFI_MULTI_MARKET_FUSION_V3_PROSPECTIVE_TRIAL_EVAL_V1',
