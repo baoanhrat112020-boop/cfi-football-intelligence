@@ -56,18 +56,22 @@ The BigDB scoreline prior is admitted only if all of these are true:
 
 Otherwise BigDB is ignored fail-closed and the reason is surfaced in the audit output.
 
-### 3. Joint HT→FT trajectory projection
+### 3. Joint HT→FT trajectory with K048/IPF
 
-Independent HT/FT distributions can imply impossible paths. V3 projects the fused distributions into a joint trajectory where every path satisfies:
+Independent HT/FT distributions can imply impossible paths. V3 therefore reuses the existing `CFI_K048_TRAJECTORY_JOINT_V2_FULL_SUPPORT` engine as its primary trajectory core.
+
+K048 applies iterative proportional fitting (IPF) on the feasible support where every path satisfies:
 
 - `FT.home >= HT.home`
 - `FT.away >= HT.away`
 
-HT mass is preserved and FT is projected onto the feasible trajectory support. Projection total variation is measured; excessive distortion fails the trajectory gate.
+When the support is feasible, K048 preserves **both HT and FT marginals** within its numerical tolerance. This is preferred to independently projecting one marginal onto the other because the Multi-Market probabilities remain identical to the fused score-grid marginals.
+
+If K048 cannot construct a valid marginal-preserving joint distribution, V3 may build a diagnostic fallback projection, but that fallback is explicitly marked `FAIL` for promotion and cannot qualify the candidate for promotion.
 
 ### 4. Multi-Market derivation
 
-After trajectory projection, one score-distribution source produces:
+After the K048 trajectory audit passes, the preserved HT/FT score-distribution marginals produce:
 
 - HT 1X2
 - FT 1X2
@@ -137,3 +141,12 @@ The intended comparison is not raw hit-rate alone. Rank candidates primarily by:
 7. exact-score Top-1 accuracy as a separate diagnostic.
 
 The best model is the one that improves probabilistic quality on unseen data while preserving CFI temporal and settlement integrity.
+
+
+## Immutable prospective evaluation
+
+The production prematch wrapper passes the already strict-prior-verified BigDB retrieval payload into V3 as `bigDbContext`.
+
+The normal response may expose the research/shadow V3 object, but the immutable audit snapshot additionally captures the V3 HT/FT score grids before kickoff. This is necessary so post-match evaluation can compute Brier/log-loss/calibration without reconstructing a prediction after the result is known.
+
+A missing V3 capture does not invalidate the incumbent V2.2 telemetry contract, but it makes that fixture ineligible for V3 promotion evidence.
