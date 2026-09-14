@@ -2,7 +2,7 @@ import { buildFutureSixScorelines } from './future-six-scoreline.ts';
 import { calibrateMarketProbability, predictiveConfidence, sampleConfidence } from './probability-calibration.ts';
 import { calibrateScoreDistribution } from './score-distribution-calibration.ts';
 import { buildMultiMarketFromScoreGrids } from './multi-market-v1.ts';
-import { buildMultiMarketChampionFusion, buildMultiMarketChampionFusionV2Challenger, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE, CHAMPION_FUSION_CHALLENGER_VERSION, CHAMPION_FUSION_CHALLENGER_LINEAGE } from './multi-market-champion-fusion.ts';
+import { buildMultiMarketChampionFusion, buildMultiMarketChampionFusionV2Challenger, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE, CHAMPION_FUSION_CHALLENGER_VERSION, CHAMPION_FUSION_CHALLENGER_LINEAGE } from './multi-market-champion-fusion.ts';\nimport { buildMultiMarketFusionV3, MULTI_MARKET_FUSION_V3_VERSION, type BigDbFusionContext } from './multi-market-fusion-v3.ts';
 
 export const FINAL_VERSION = "CFI_FINAL_V5.3.1";
 export const PRIMARY_CONTRACT = "CFI_2_METHODS_X_6_TARGETS_V2";
@@ -96,7 +96,7 @@ function top3(grid:GridRow[]){return [...grid].sort((a,b)=>b.probability-a.proba
 function top1(grid:GridRow[]){return top3(grid)[0]??null;}
 function teamDna(team:string,rows:CanonicalFixture[]){const gf=teamGoals(rows,team,'ft',true),ga=teamGoals(rows,team,'ft',false),ht=teamGoals(rows,team,'ht',true),recent=gf.slice(-5),prev=gf.slice(-10,-5);return{fixtures:teamRows(rows,team).length,recencyWeightedGF:weightedMean(gf),recencyWeightedGA:weightedMean(ga),htGoalMean:mean(ht),ftGoalMean:mean(gf),homeSplit:teamRows(rows,team).filter(r=>r.homeTeam.toLowerCase()===team.toLowerCase()).length,awaySplit:teamRows(rows,team).filter(r=>r.awayTeam.toLowerCase()===team.toLowerCase()).length,scoringStreak:[...gf].reverse().findIndex(x=>x===0)===-1?gf.length:[...gf].reverse().findIndex(x=>x===0),scorelessStreak:[...gf].reverse().findIndex(x=>x>0)===-1?gf.length:[...gf].reverse().findIndex(x=>x>0),highScoreCluster:gf.filter(x=>x>=3).length,lowScoreCluster:gf.filter(x=>x<=1).length,scoringAcceleration:recent.length&&prev.length?mean(recent)!-mean(prev)!:null,extremeScoreRecurrence:gf.filter(x=>x>=5).length,goalTimingProfile:ht.length?{firstHalfShare:ht.reduce((a,b)=>a+b,0)/Math.max(1,gf.reduce((a,b)=>a+b,0))}:'unavailable',leadTrailBehavior:'unavailable',collapseRiskProxy:ga.length?ga.filter(x=>x>=3).length/ga.length:null};}
 
-export function buildPrediction(args:{home:string;away:string;targetDate?:string;language?:string;homePayload:unknown;awayPayload:unknown;h2hPayload:unknown}){
+export function buildPrediction(args:{home:string;away:string;targetDate?:string;language?:string;homePayload:unknown;awayPayload:unknown;h2hPayload:unknown;bigDbContext?:BigDbFusionContext|null}){
  const language=['vi','en','zh','th','id'].includes(args.language??'')?args.language!:'vi';
  const evidence=strictPriorEvidence(args.homePayload,args.awayPayload,args.h2hPayload,args.targetDate);
  const homeRows=evidence.streams.home,awayRows=evidence.streams.away;
@@ -143,6 +143,28 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
  }catch(error){
    championFusionChallenger={version:CHAMPION_FUSION_CHALLENGER_VERSION,lineage:CHAMPION_FUSION_CHALLENGER_LINEAGE,status:'CHALLENGER_UNAVAILABLE',researchOnly:true,decisionUse:false,productionEligible:false,promotionRequired:true,championMutation:false,reason:error instanceof Error?error.message:'CHAMPION_FUSION_CHALLENGER_RUNTIME_ERROR',researchProtocol:{developmentOnly:true,sameCohortPromotionAllowed:false,prospectiveResetRequired:true},audit:{incumbentUnmodified:true,v1Unmodified:true,isolatedFailure:true,prospectiveEvaluationRequired:true}};
  }
+ let multiMarketFusionV3:any;
+ try{
+   multiMarketFusionV3=buildMultiMarketFusionV3({
+     targetDate:args.targetDate??'',
+     maxEvidenceDate:maxEvidenceDate||'',
+     evidenceCount:evidence.unique.length,
+     h2hCount:evidence.streams.h2h.length,
+     htExperts:[
+       {name:'INCUMBENT_FINAL',grid:htFinal,effectiveSampleSize:evidence.unique.length,reliability:.96,source:'FINAL_CALIBRATED_SCORE_DISTRIBUTION'},
+       {name:'FUTURE_SIX',grid:htB,effectiveSampleSize:evidence.unique.length,reliability:.88,source:futureSix.version},
+       {name:'HISTORICAL',grid:htA,effectiveSampleSize:evidence.unique.length,reliability:.90,source:'STRICT_PRIOR_EMPIRICAL_GRID'},
+     ],
+     ftExperts:[
+       {name:'INCUMBENT_FINAL',grid:ftFinal,effectiveSampleSize:evidence.unique.length,reliability:.96,source:'FINAL_CALIBRATED_SCORE_DISTRIBUTION'},
+       {name:'FUTURE_SIX',grid:ftB,effectiveSampleSize:evidence.unique.length,reliability:.88,source:futureSix.version},
+       {name:'HISTORICAL',grid:ftA,effectiveSampleSize:evidence.unique.length,reliability:.90,source:'STRICT_PRIOR_EMPIRICAL_GRID'},
+     ],
+     bigDb:args.bigDbContext??null,
+   });
+ }catch(error){
+   multiMarketFusionV3={version:MULTI_MARKET_FUSION_V3_VERSION,status:'SHADOW_UNAVAILABLE',mode:'SHADOW_RESEARCH',researchOnly:true,decisionUse:false,productionEligible:false,promotionRequired:true,championMutation:false,reason:error instanceof Error?error.message:'MULTI_MARKET_FUSION_V3_RUNTIME_ERROR',audit:{incumbentUnmodified:true,isolatedFailure:true}};
+ }
  const warnings:string[]=[];
  if(ftRecon.audit.direction!=='BALANCED'&&ftRecon.audit.directionalStrength>=.35&&ftRecon.audit.top3AlignedCount===0)warnings.push('FINAL_FT_DIRECTION_MISMATCH');
  if(htRecon.audit.direction!=='BALANCED'&&htRecon.audit.directionalStrength>=.40&&htRecon.audit.top3AlignedCount===0)warnings.push('FINAL_HT_DIRECTION_MISMATCH');
@@ -152,7 +174,7 @@ export function buildPrediction(args:{home:string;away:string;targetDate?:string
  const ranking=Object.entries(markets).map(([market,v]:any)=>({target:market,probability:v.final,confidence:v.predictiveConfidence,sampleConfidence:v.sampleConfidence})).sort((a,b)=>b.probability-a.probability);
  const scorelineTargets={'Top-1 HT':{methodA:primaryTop1.ht.methodA,methodB:primaryTop1.ht.methodB,final:primaryTop1.ht.final,probability:primaryTop1.ht.final?.probability??null,rankingClass:'EXACT_SCORE_TOP1'},'Top-1 FT':{methodA:primaryTop1.ft.methodA,methodB:primaryTop1.ft.methodB,final:primaryTop1.ft.final,probability:primaryTop1.ft.final?.probability??null,rankingClass:'EXACT_SCORE_TOP1'}};
  const max=ranking[0]?.probability??0,verdict=max>=.6?'STRONG_SIGNAL':'NO_STRONG_SIGNAL';
- return{status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA',engine:FINAL_VERSION,contract:PRIMARY_CONTRACT,language,target:{home:args.home,away:args.away,date:args.targetDate??null},evidence:{...evidence.counts,strictPrior:Boolean(args.targetDate)},teamTrendingDNA:{home:teamDna(args.home,evidence.unique),away:teamDna(args.away,evidence.unique)},context:{standings:'unavailable',opponentStrength:'unavailable',restFatigue:'unavailable',lineupInjuries:'unavailable',tacticalTempo:'unavailable',liveMomentum:'unavailable',randomnessAllowance:.025},markets,multiMarket,championFusion,championFusionChallenger,scoreline,primaryTargets:{contract:PRIMARY_CONTRACT,count:6,codes:[...PRIMARY_TARGETS],scorelineTargets},ranking,rankingPolicy:{thresholdMarkets:'RANK_BY_CALIBRATED_FINAL_SCORE_DISTRIBUTION_EVENT_MASS',scorelineTargets:'REPORT_TOP1_EXACT_SCORE_PROBABILITY',crossTypeRanking:false},verdict,localized:{verdict,probabilityUnit:'0..1',unavailable:language==='vi'?'không có dữ liệu':'unavailable'}};
+ return{status:evidence.unique.length?'DATA_READY':'INSUFFICIENT_DATA',engine:FINAL_VERSION,contract:PRIMARY_CONTRACT,language,target:{home:args.home,away:args.away,date:args.targetDate??null},evidence:{...evidence.counts,strictPrior:Boolean(args.targetDate)},teamTrendingDNA:{home:teamDna(args.home,evidence.unique),away:teamDna(args.away,evidence.unique)},context:{standings:'unavailable',opponentStrength:'unavailable',restFatigue:'unavailable',lineupInjuries:'unavailable',tacticalTempo:'unavailable',liveMomentum:'unavailable',randomnessAllowance:.025},markets,multiMarket,championFusion,championFusionChallenger,multiMarketFusionV3,scoreline,primaryTargets:{contract:PRIMARY_CONTRACT,count:6,codes:[...PRIMARY_TARGETS],scorelineTargets},ranking,rankingPolicy:{thresholdMarkets:'RANK_BY_CALIBRATED_FINAL_SCORE_DISTRIBUTION_EVENT_MASS',scorelineTargets:'REPORT_TOP1_EXACT_SCORE_PROBABILITY',crossTypeRanking:false},verdict,localized:{verdict,probabilityUnit:'0..1',unavailable:language==='vi'?'không có dữ liệu':'unavailable'}};
 }
 
 export function walkForwardBacktest(fixtures:CanonicalFixture[]){
