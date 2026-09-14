@@ -2,7 +2,8 @@ import { buildFutureSixScorelines } from './future-six-scoreline.ts';
 import { calibrateMarketProbability, predictiveConfidence, sampleConfidence } from './probability-calibration.ts';
 import { calibrateScoreDistribution } from './score-distribution-calibration.ts';
 import { buildMultiMarketFromScoreGrids } from './multi-market-v1.ts';
-import { buildMultiMarketChampionFusion, buildMultiMarketChampionFusionV2Challenger, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE, CHAMPION_FUSION_CHALLENGER_VERSION, CHAMPION_FUSION_CHALLENGER_LINEAGE } from './multi-market-champion-fusion.ts';\nimport { buildMultiMarketFusionV3, MULTI_MARKET_FUSION_V3_VERSION, type BigDbFusionContext } from './multi-market-fusion-v3.ts';
+import { buildMultiMarketChampionFusion, buildMultiMarketChampionFusionV2Challenger, CHAMPION_FUSION_VERSION, CHAMPION_FUSION_LINEAGE, CHAMPION_FUSION_CHALLENGER_VERSION, CHAMPION_FUSION_CHALLENGER_LINEAGE } from './multi-market-champion-fusion.ts';
+import { buildMultiMarketFusionV3, MULTI_MARKET_FUSION_V3_VERSION, type BigDbFusionContext } from './multi-market-fusion-v3.ts';
 
 export const FINAL_VERSION = "CFI_FINAL_V5.3.1";
 export const PRIMARY_CONTRACT = "CFI_2_METHODS_X_6_TARGETS_V2";
