@@ -568,6 +568,7 @@ export function buildMultiMarketFusionV3(args:FusionV3Input){
     uncertainty:{
       confidence,
       level:confidenceLevel,
+      abstain:confidenceLevel==='LOW'||coherenceStatus!=='PASS',
       evidenceCount:Math.max(0,Number(args.evidenceCount)||0),
       h2hCount:Math.max(0,Number(args.h2hCount)||0),
       averageExpertDivergence:round(avgDisagreement,8),
