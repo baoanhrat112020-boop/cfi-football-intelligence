@@ -17,14 +17,25 @@ test('narrowed requiredGroups cannot conceal a regression',()=>{
   assert.ok(r.hardFailures.includes('BASELINE_REGRESSION_AH_FT'));
   assert.equal(r.shadowEligible,false);
 });
-test('both aggregate proper-score deltas must be actual finite numbers',()=>{
+test('both aggregate proper-score deltas must be finite numeric values',()=>{
   for(const [key,failure] of [['aggregateBrierDelta','INVALID_AGGREGATE_BRIER_DELTA'],['aggregateLogLossDelta','INVALID_AGGREGATE_LOGLOSS_DELTA']]){
-    for(const value of [undefined,null,'',false,'-0.001',NaN,Infinity,-Infinity]){
+    for(const value of [undefined,null,'',false,NaN,Infinity,-Infinity]){
       const r=evaluateMultiMarketPromotion({...valid,baselineComparison:{...baselineComparison,[key]:value}});
       assert.equal(r.shadowEligible,false,`${key}: ${String(value)}`);
       assert.ok(r.hardFailures.includes(failure));
     }
   }
+});
+test('finite numeric strings from JSON preserve eligibility',()=>{
+  const r=evaluateMultiMarketPromotion({...valid,baselineComparison:{...baselineComparison,aggregateBrierDelta:'-0.001',aggregateLogLossDelta:'0'}});
+  assert.equal(r.shadowEligible,true);
+  assert.ok(!r.hardFailures.includes('INVALID_AGGREGATE_BRIER_DELTA'));
+  assert.ok(!r.hardFailures.includes('INVALID_AGGREGATE_LOGLOSS_DELTA'));
+});
+test('extra caller groups remain optional for baseline evidence',()=>{
+  const r=evaluateMultiMarketPromotion({...valid,baselineComparison:{...baselineComparison,requiredGroups:[...REQUIRED_OUTPUT_GROUPS,'OPTIONAL_EXPERIMENT'],perGroup}});
+  assert.equal(r.shadowEligible,true);
+  assert.ok(!r.hardFailures.includes('BASELINE_COMPARISON_OPTIONAL_EXPERIMENT_MISSING'));
 });
 test('an evaluated group needs an explicit no-regression result',()=>{
   for(const value of [undefined,null,0,'false']){
@@ -40,6 +51,14 @@ test('zero proper-score deltas preserve eligibility and do not mutate input',()=
   assert.equal(r.shadowEligible,true);
   assert.equal(r.productionEligible,false);
   assert.equal(r.decisionUse,false);
+  assert.deepEqual(input,before);
+});
+test('hard-gate failures do not mutate input',()=>{
+  const input=structuredClone({...valid,baselineComparison:{...baselineComparison,perGroup:{...perGroup,OU_FT:{evaluated:true}}}});
+  const before=structuredClone(input);
+  const r=evaluateMultiMarketPromotion(input);
+  assert.equal(r.shadowEligible,false);
+  assert.ok(r.hardFailures.includes('BASELINE_REGRESSION_RESULT_OU_FT_MISSING'));
   assert.deepEqual(input,before);
 });
 test('score >=80 with full contract and all hard gates can only become shadow eligible',()=>{const r=evaluateMultiMarketPromotion(valid);assert.ok(r.score>=80);assert.equal(r.shadowEligible,true);assert.equal(r.productionEligible,false);assert.equal(r.decisionUse,false);});
