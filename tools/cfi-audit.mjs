@@ -274,6 +274,10 @@ function runChecks(risk) {
     check('npm test required', {exitCode:1,stdout:'',stderr:'Full audit requires a test command',durationMs:0});
   }
 
+  if (FULL && fs.existsSync(path.join(ROOT, 'package-lock.json'))) {
+    check('npm audit', run('npm', ['audit', '--package-lock-only', '--audit-level=moderate', '--fetch-timeout=20000', '--fetch-retries=0']), true);
+  }
+
   if (s.lint) check("npm run lint", run("npm", ["run", "lint"]), true);
   if (s.typecheck) check("npm run typecheck", run("npm", ["run", "typecheck"]), true);
   if (s.test && (FULL || risk === "P0" || risk === "P1")) {
