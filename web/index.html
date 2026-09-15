@@ -442,13 +442,15 @@
   function renderContext(){
     var stats=$("statsContent"),h2h=$("h2hContent"),form=$("formContent");
     if(state.contextLoading){
-      var loading='<div class="context-state"><span class="loading"><i></i><i></i><i></i></span> Đang tải strict-prior context…</div>';
+      var loading='<span class="loading"><i></i><i></i><i></i></span> Đang tải strict-prior context…';
+      stats.className="context-state";h2h.className="context-state";form.className="context-state";
       stats.innerHTML=loading;h2h.innerHTML=loading;form.innerHTML=loading;return;
     }
     if(state.contextError||!state.context){
       var e=state.contextError||{message:"Context unavailable"};
       var code=e.upstreamStatus?(" · upstream "+e.upstreamStatus):"";
-      var err='<div class="context-state">Không lấy được CFI context'+esc(code)+'.<br>'+esc(e.message||e.error||"")+'</div>';
+      var err='Không lấy được CFI context'+esc(code)+'.<br>'+esc(e.message||e.upstreamError||e.error||"");
+      stats.className="context-state";h2h.className="context-state";form.className="context-state";
       stats.innerHTML=err;h2h.innerHTML=err;form.innerHTML=err;return;
     }
     var d=state.context;
