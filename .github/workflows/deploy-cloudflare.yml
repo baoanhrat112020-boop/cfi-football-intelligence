@@ -105,14 +105,14 @@ jobs:
             if(body?.status!=='OK'||body?.action!=='CFI_FIXTURES_DAY'||!Array.isArray(body?.rows)){
               throw new Error(`BAD_CONTRACT: ${text.slice(0,500)}`);
             }
-            if(body?.version!=='CFI_FIXTURES_DAY_V4_BIGDB_AISCORE_BRIDGE_FOOTBALLDATA'){
+            if(body?.version!=='CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY'){
               throw new Error(`WRONG_FIXTURE_VERSION: ${body?.version}`);
             }
             const bigDb=(body?.attempts||[]).find(x=>x?.provider==='CFI_BIGDB');
             if(!bigDb||bigDb.ok!==true||Number(bigDb.rows)<10){
               throw new Error(`BIGDB_PRIMARY_NOT_READY: ${JSON.stringify(bigDb)}`);
             }
-            if(body.rows.length<10)throw new Error(`INSUFFICIENT_FIXTURES: ${body.rows.length}`);
+            if(body.rows.length<20)throw new Error(`INSUFFICIENT_FIXTURES: ${body.rows.length}`);
             if(elapsed>12000)throw new Error(`FIXTURE_ENDPOINT_TOO_SLOW: ${elapsed}ms`);
             console.log(JSON.stringify({
               status:'PASS',
