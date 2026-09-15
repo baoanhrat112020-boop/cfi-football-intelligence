@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - feat/cfi-ios-shell
+      - fix/cfi-ios-v022-build4
     paths:
       - "ios/**"
       - "web/**"
@@ -41,10 +41,10 @@ jobs:
           APP="$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"
           ICON_SRC="$RUNNER_TEMP/cfi-icon.jpg"
           base64 -D -i ios/Resources/cfi-icon.jpg.b64 -o "$ICON_SRC"
-          sips -z 60 60 "$ICON_SRC" --out "$APP/AppIcon60x60.png" >/dev/null
-          sips -z 120 120 "$ICON_SRC" --out "$APP/AppIcon60x60@2x.png" >/dev/null
-          sips -z 180 180 "$ICON_SRC" --out "$APP/AppIcon60x60@3x.png" >/dev/null
-          sips -z 1024 1024 "$ICON_SRC" --out "$APP/iTunesArtwork.png" >/dev/null
+          sips -s format png -z 60 60 "$ICON_SRC" --out "$APP/AppIcon60x60.png" >/dev/null
+          sips -s format png -z 120 120 "$ICON_SRC" --out "$APP/AppIcon60x60@2x.png" >/dev/null
+          sips -s format png -z 180 180 "$ICON_SRC" --out "$APP/AppIcon60x60@3x.png" >/dev/null
+          sips -s format png -z 1024 1024 "$ICON_SRC" --out "$APP/iTunesArtwork.png" >/dev/null
           python3 - <<'PY'
           import os, plistlib
           app=os.environ["RUNNER_TEMP"]+"/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"
@@ -61,22 +61,26 @@ jobs:
               plistlib.dump(p,fh,sort_keys=False)
           PY
           test -s "$APP/AppIcon60x60@3x.png"
+          for f in "$APP"/AppIcon*.png "$APP"/iTunesArtwork.png; do
+            MAGIC="$(head -c4 "$f" | od -An -tx1 | tr -d ' \n')"
+            test "$MAGIC" = "89504e47" || { echo "Not a real PNG: $f ($MAGIC)"; exit 1; }
+          done
 
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          bash ios/scripts/package-unsigned-ipa.sh             "$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"             "$RUNNER_TEMP/CFI-iOS-v0.2.1-beta1-build3-unsigned.ipa"
+          bash ios/scripts/package-unsigned-ipa.sh             "$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"             "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa"
 
       - name: Inspect IPA
         run: |
           set -euo pipefail
-          unzip -l "$RUNNER_TEMP/CFI-iOS-v0.2.1-beta1-build3-unsigned.ipa"
-          test -s "$RUNNER_TEMP/CFI-iOS-v0.2.1-beta1-build3-unsigned.ipa"
+          unzip -l "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa"
+          test -s "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: CFI-iOS-v0.2.1-beta1-build3
-          path: ${{ runner.temp }}/CFI-iOS-v0.2.1-beta1-build3-unsigned.ipa
+          name: CFI-iOS-v0.2.2-beta1-build4
+          path: ${{ runner.temp }}/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
