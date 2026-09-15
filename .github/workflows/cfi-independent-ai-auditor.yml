@@ -1,18 +1,7 @@
 name: CFI Independent AI Auditor V1
 
 on:
-  workflow_run:
-    workflows: ["CFI Tests"]
-    types: [completed]
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/cfi-independent-ai-auditor.yml'
-      - '.github/cfi-independent-ai-review.md'
-      - 'tools/cfi-independent-ai-auditor.mjs'
-      - 'tools/cfi-publish-ai-audit-status.mjs'
-      - 'tools/cfi-resolve-associated-pr.mjs'
-      - 'research/independent-ai-promotion-gate.mjs'
+  workflow_dispatch:
 
 concurrency:
   group: cfi-independent-ai-auditor-${{ github.event.workflow_run.id || github.run_id }}
