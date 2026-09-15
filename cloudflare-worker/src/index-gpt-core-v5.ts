@@ -15,6 +15,91 @@ const THRESHOLD_TARGETS=['3+ HT','7+ FT','Other HT','Other FT'] as const;
 async function readJson(response:Response){try{return await response.clone().json()}catch{return null}}
 const finite=(value:any)=>Number.isFinite(Number(value))?Number(value):null;
 
+function contextFixture(row:any){
+  const matchDate=String(row?.match_date??row?.matchDate??'').slice(0,10);
+  const homeTeam=String(row?.home_name??row?.homeTeam??row?.home_team??'').trim();
+  const awayTeam=String(row?.away_name??row?.awayTeam??row?.away_team??'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(matchDate)||!homeTeam||!awayTeam)return null;
+  const score=(h:any,a:any)=>{
+    const hh=finite(h),aa=finite(a);
+    return hh===null||aa===null?null:{home:hh,away:aa};
+  };
+  return{
+    id:String(row?.fixture_id??row?.id??[matchDate,homeTeam,awayTeam].join('|')),
+    matchDate,homeTeam,awayTeam,
+    competition:String(row?.competition_name??row?.competition_key??'').trim()||null,
+    country:String(row?.country??'').trim()||null,
+    season:String(row?.season??'').trim()||null,
+    ht:score(row?.ht_home,row?.ht_away),
+    ft:score(row?.ft_home,row?.ft_away)
+  };
+}
+
+function contextTeamSummary(team:string,rows:any[]){
+  const key=team.toLowerCase();
+  const normalized=rows.map(contextFixture).filter(Boolean).sort((a:any,b:any)=>b.matchDate.localeCompare(a.matchDate));
+  let wins=0,draws=0,losses=0,gf=0,ga=0,htGf=0,htGa=0,ftN=0,htN=0,btts=0,over25=0,cleanSheets=0,scored=0;
+  const form:string[]=[];
+  for(const row of normalized){
+    const isHome=String(row.homeTeam).toLowerCase()===key;
+    if(row.ft){
+      const f=isHome?row.ft.home:row.ft.away,a=isHome?row.ft.away:row.ft.home;
+      gf+=f;ga+=a;ftN++;
+      if(f>a){wins++;form.push('W')}else if(f===a){draws++;form.push('D')}else{losses++;form.push('L')}
+      if(f>0)scored++;if(a===0)cleanSheets++;if(f>0&&a>0)btts++;if(f+a>=3)over25++;
+    }
+    if(row.ht){
+      htGf+=isHome?row.ht.home:row.ht.away;
+      htGa+=isHome?row.ht.away:row.ht.home;
+      htN++;
+    }
+  }
+  const pct=(n:number,d:number)=>d?Math.round((n/d)*1000)/10:null;
+  const avg=(n:number,d:number)=>d?Math.round((n/d)*100)/100:null;
+  return{
+    fixtures:normalized.length,completed:ftN,wins,draws,losses,
+    avgGoalsFor:avg(gf,ftN),avgGoalsAgainst:avg(ga,ftN),
+    avgHtGoalsFor:avg(htGf,htN),avgHtGoalsAgainst:avg(htGa,htN),
+    scoringRate:pct(scored,ftN),cleanSheetRate:pct(cleanSheets,ftN),
+    bttsRate:pct(btts,ftN),over25Rate:pct(over25,ftN),
+    form:form.slice(0,5),recent:normalized.slice(0,10)
+  };
+}
+
+async function matchContext(request:Request,env:Env){
+  if(!env.CFI_DB_BASE_URL||!env.CFI_DB_KEY)return Response.json({status:'CONFIG_REQUIRED',error:'BIGDB_CONTEXT_UNAVAILABLE'},{status:503});
+  let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
+  const home=String(input?.home??'').trim(),away=String(input?.away??'').trim(),targetDate=String(input?.target_date??'').slice(0,10);
+  if(!home||!away)return Response.json({status:'INVALID_REQUEST',error:'HOME_AWAY_REQUIRED'},{status:400});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return Response.json({status:'INVALID_REQUEST',error:'TARGET_DATE_INVALID'},{status:400});
+  const url=env.CFI_DB_BASE_URL.replace(/\/cfi-db\/?$/,'/cfi-bigdb-retrieval');
+  let response:Response;
+  try{
+    response=await fetch(url,{method:'POST',headers:{'content-type':'application/json','x-cfi-key':env.CFI_DB_KEY},body:JSON.stringify({home,away,target_date:targetDate}),signal:AbortSignal.timeout(9000)});
+  }catch(error:any){
+    return Response.json({status:'UPSTREAM_UNAVAILABLE',error:'BIGDB_CONTEXT_FETCH_FAILED',message:String(error?.message||error)},{status:503});
+  }
+  const big:any=await readJson(response);
+  if(!response.ok||big?.status!=='OK'){
+    return Response.json({status:'UPSTREAM_ERROR',error:'BIGDB_CONTEXT_REJECTED',upstreamStatus:response.status,upstreamError:big?.error??null,message:big?.message??null},{status:response.status===402?503:502});
+  }
+  const homeRows=Array.isArray(big?.fixtures?.home)?big.fixtures.home:[];
+  const awayRows=Array.isArray(big?.fixtures?.away)?big.fixtures.away:[];
+  const h2hRows=Array.isArray(big?.fixtures?.h2h)?big.fixtures.h2h:[];
+  const homeCanonical=String(big?.identity?.homeCanonical??home);
+  const awayCanonical=String(big?.identity?.awayCanonical??away);
+  const h2h=h2hRows.map(contextFixture).filter(Boolean).sort((a:any,b:any)=>b.matchDate.localeCompare(a.matchDate)).slice(0,10);
+  return Response.json({
+    status:'OK',action:'CFI_MATCH_CONTEXT',readOnly:true,strictPrior:true,
+    target:{home:homeCanonical,away:awayCanonical,date:targetDate},
+    identity:big?.identity??null,temporalAudit:big?.temporalAudit??null,exactTeam:big?.exactTeam??null,
+    home:contextTeamSummary(homeCanonical,homeRows),
+    away:contextTeamSummary(awayCanonical,awayRows),
+    h2h:{fixtures:h2hRows.length,recent:h2h},
+    provenance:{source:'CFI_BIG_DB_RETRIEVAL',futureEvidenceExcluded:true,sameDateExcluded:true}
+  });
+}
+
 function patchRuntimeTelemetry(body:any){
   if(!body||typeof body!=='object')return body;
   body.engine=FINAL_VERSION;
@@ -205,6 +290,8 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
+    if(url.pathname==='/api/match-context'&&request.method==='POST')return matchContext(request,env);
+
     if(url.pathname==='/api/discover'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
       if(Array.isArray(input?.fixture_candidates))return suppliedDiscovery(input,env,ctx);
