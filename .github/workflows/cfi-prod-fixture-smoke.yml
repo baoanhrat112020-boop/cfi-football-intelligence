@@ -1,4 +1,4 @@
-name: CFI Fixture Source Probe
+name: CFI BongdaWap Preview Smoke
 
 on:
   push:
@@ -9,28 +9,33 @@ permissions:
   contents: read
 
 jobs:
-  probe:
+  smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Probe public fixture sources
+      - name: POST preview fixtures-day
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import requests
-          urls=[
-            "https://www.aiscore.com/today-matches",
-            "https://vnm.aiscore.com/",
-            "https://bongdawap.com/lich-thi-dau-bong-da-ngay-15-09-2026.html",
-            "https://www.soccerway.com/matches/2026/09/15/",
-            "https://www.flashscore.com/"
-          ]
-          for url in urls:
-              try:
-                  r=requests.get(url,timeout=8,headers={"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"})
-                  print("\nURL",url,"STATUS",r.status_code,"LEN",len(r.content),"CT",r.headers.get("content-type"))
-                  print(r.text[:1000].replace("\n"," ") if r.text else "")
-              except Exception as e:
-                  print("\nURL",url,"ERR",repr(e))
-          PY
+          URL='https://fix-bongdawap-fixture-source-cfi-football-intelligence.baoanhrat112020.workers.dev/api/fixtures-day'
+          START=$(date +%s)
+          HTTP=$(curl -sS --max-time 10 -o /tmp/fixtures.json -w '%{http_code}'             -X POST "$URL"             -H 'content-type: application/json'             --data '{"target_date":"2026-09-15","timezone":"Asia/Ho_Chi_Minh"}')
+          END=$(date +%s)
+          echo "http=$HTTP elapsed=$((END-START))s"
+          cat /tmp/fixtures.json > /tmp/raw.json
+          test "$HTTP" = "200"
+          node - <<'NODE'
+          const fs=require('fs');
+          const body=JSON.parse(fs.readFileSync('/tmp/fixtures.json','utf8'));
+          console.log(JSON.stringify({
+            status:body.status,
+            source:body.source,
+            providers:body.providers,
+            fixtures:Array.isArray(body.rows)?body.rows.length:null,
+            sample:(body.rows||[]).slice(0,10).map(x=>({time:x.kickoffLocal,home:x.home,away:x.away,competition:x.competition,provider:x.provider})),
+            bongdaWapAttempt:(body.attempts||[]).find(x=>x.provider==='BONGDAWAP')
+          },null,2));
+          if(body.status!=='OK') throw new Error('status='+body.status);
+          if(!Array.isArray(body.rows)||body.rows.length<10) throw new Error('fixture coverage too low: '+(body.rows||[]).length);
+          if(!(body.providers||[]).includes('BONGDAWAP')) throw new Error('BongdaWap not active');
+          NODE
