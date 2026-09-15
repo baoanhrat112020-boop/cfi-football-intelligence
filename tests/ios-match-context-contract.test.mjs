@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {
   buildMatchContextPayload,
   bigDbContextHttpStatus,
-  normalizeMatchContextFixture
+  normalizeMatchContextFixture,
+  localDateInTimeZone,
+  strictPriorRetrievalCutoff,
+  verifyMatchContextTemporalAudit
 } from '../src/runtime/match-context.ts';
 
 test('match-context payload is read-only, strict-prior and sanitizes BigDB rows', () => {
@@ -76,4 +79,35 @@ test('context fixture normalization excludes raw provenance and preserves scores
 test('upstream 402 maps to service unavailable for match-context', () => {
   assert.equal(bigDbContextHttpStatus(402), 503);
   assert.equal(bigDbContextHttpStatus(500), 502);
+});
+
+
+test('future match context cutoff never advances beyond current local date', () => {
+  const now=Date.parse('2026-09-15T06:00:00Z'); // 13:00 Asia/Ho_Chi_Minh
+  assert.equal(localDateInTimeZone(now,'Asia/Ho_Chi_Minh'),'2026-09-15');
+  assert.equal(strictPriorRetrievalCutoff('2026-09-20',now,'Asia/Ho_Chi_Minh'),'2026-09-15');
+  assert.equal(strictPriorRetrievalCutoff('2026-09-10',now,'Asia/Ho_Chi_Minh'),'2026-09-10');
+});
+
+test('match context temporal audit fails closed on leakage', () => {
+  const ok=verifyMatchContextTemporalAudit(
+    {verified:true,maxEvidenceDate:'2026-09-14',futureEvidenceCount:0,sameDateEvidenceCount:0},
+    '2026-09-20',
+    '2026-09-15'
+  );
+  assert.equal(ok.verified,true);
+
+  const future=verifyMatchContextTemporalAudit(
+    {verified:true,maxEvidenceDate:'2026-09-16',futureEvidenceCount:0,sameDateEvidenceCount:0},
+    '2026-09-20',
+    '2026-09-15'
+  );
+  assert.equal(future.verified,false);
+
+  const sameDateLeak=verifyMatchContextTemporalAudit(
+    {verified:true,maxEvidenceDate:'2026-09-14',futureEvidenceCount:0,sameDateEvidenceCount:1},
+    '2026-09-20',
+    '2026-09-15'
+  );
+  assert.equal(sameDateLeak.verified,false);
 });
