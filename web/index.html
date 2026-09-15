@@ -445,23 +445,19 @@
       $("fixtureCount").textContent="Đang tải…";
     }
 
-    var serverRows=[],nativeRows=[],sources=[];
     try{
       var sr=await api("/api/fixtures-day","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
-      var sd=sr.data||{};serverRows=Array.isArray(sd.rows)?sd.rows:[];if(sd.source)sources.push(sd.source);
-    }catch(e){}
-
-    if(serverRows.length<25){
-      try{
-        var nr=await api("/native/today-fixtures","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
-        var nd=nr.data||{};nativeRows=Array.isArray(nd.rows)?nd.rows:[];if(nd.source)sources.push(nd.source);
-      }catch(e){}
+      var sd=sr.data||{},rows=Array.isArray(sd.rows)?sd.rows:[];
+      renderTodayFixtures(rows,sd.source||"CFI SERVER DISCOVERY");
+      if(rows.length){toast("Đã tải "+rows.length+" trận");}
+      else{toast("Không lấy được fixture từ các nguồn hiện có.");}
+    }catch(e){
+      if(!(cached&&Array.isArray(cached.rows)&&cached.rows.length)){
+        $("fixtureList").innerHTML='<div class="fixture-empty">Fixture discovery lỗi: '+esc((e.data&&e.data.error)||e.message)+'</div>';
+        $("fixtureCount").textContent="Lỗi";
+      }
+      toast("Fixture: "+((e.data&&e.data.error)||e.message));
     }
-
-    var rows=mergeFixtureRows([serverRows,nativeRows]);
-    renderTodayFixtures(rows,sources.filter(Boolean).join(" + ")||"MULTI_SOURCE");
-    if(rows.length){toast("Đã tải "+rows.length+" trận");}
-    else{toast("Không lấy được fixture từ các nguồn hiện có.");}
   }
   $("manualModeBtn").onclick=function(){setSearchMode("manual")};
   $("todayModeBtn").onclick=function(){setSearchMode("today")};
