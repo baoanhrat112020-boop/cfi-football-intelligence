@@ -12,20 +12,20 @@ jobs:
       - name: One discovery, context and strict-prior prediction
         run: |
           python -u - <<'PY'
-          import json,urllib.request,urllib.error,datetime,time
+          import json,subprocess,datetime,time
           from zoneinfo import ZoneInfo
           base="https://cfi-football-intelligence.baoanhrat112020.workers.dev"
           now=datetime.datetime.now(datetime.timezone.utc)
           day=now.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date().isoformat()
           def call(path,payload,timeout):
            t=time.monotonic()
-           req=urllib.request.Request(base+path,data=json.dumps(payload).encode(),headers={"Content-Type":"application/json","Accept":"application/json"})
-           try:
-            with urllib.request.urlopen(req,timeout=timeout) as r: code=r.status; raw=r.read()
-           except urllib.error.HTTPError as e: code=e.code;raw=e.read()
+           r=subprocess.run(["curl","--silent","--show-error","--max-time",str(timeout),"-w","\\n%{http_code}",base+path,"-H","Content-Type: application/json","-H","Accept: application/json","--data",json.dumps(payload)],capture_output=True,text=True)
+           raw,sep,status=r.stdout.rpartition("\n");code=int(status) if status.isdigit() else 0
+           if r.returncode: print("TRANSPORT_ERROR "+r.stderr,flush=True)
            try: body=json.loads(raw)
-           except Exception: body={"error":"NON_JSON_RESPONSE"}
+           except Exception: body={"error":"NON_JSON_RESPONSE","preview":raw[:500]}
            print("REQUEST "+json.dumps({"path":path,"http":code,"latencyMs":round((time.monotonic()-t)*1000)}),flush=True)
+           if code!=200: print("ENDPOINT_ERROR "+json.dumps(body,ensure_ascii=False),flush=True)
            return code,body
           code,b=call("/api/fixtures-day",{"target_date":day,"timezone":"Asia/Ho_Chi_Minh"},12)
           print("DISCOVERY "+json.dumps({"date":day,"status":b.get("status"),"count":len(b.get("rows",[])),"sources":b.get("attempts")}),flush=True)
