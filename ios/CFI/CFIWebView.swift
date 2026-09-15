@@ -55,6 +55,8 @@ struct CFIWebView: UIViewRepresentable {
             "/api/results"
         ]
 
+        private let nativeTodayFixturesPath = "/native/today-fixtures"
+
         func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
@@ -65,9 +67,15 @@ struct CFIWebView: UIViewRepresentable {
                 let requestID = payload["id"] as? String,
                 let path = payload["path"] as? String,
                 let method = payload["method"] as? String,
-                allowedPaths.contains(path),
+                (allowedPaths.contains(path) || path == nativeTodayFixturesPath),
                 ["GET", "POST"].contains(method.uppercased())
             else {
+                return
+            }
+
+            if path == nativeTodayFixturesPath {
+                let body = payload["body"] as? [String: Any] ?? [:]
+                fetchTodayFixtures(requestID: requestID, body: body)
                 return
             }
 
@@ -127,6 +135,173 @@ struct CFIWebView: UIViewRepresentable {
                     data: responseData
                 )
             }.resume()
+        }
+
+        private func fetchTodayFixtures(
+            requestID: String,
+            body: [String: Any]
+        ) {
+            let targetDate = String(describing: body["target_date"] ?? "")
+            guard targetDate.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else {
+                complete(
+                    requestID: requestID,
+                    ok: false,
+                    status: 400,
+                    data: Self.jsonData(["message": "TARGET_DATE_INVALID"])
+                )
+                return
+            }
+
+            let utcFormatter = DateFormatter()
+            utcFormatter.locale = Locale(identifier: "en_US_POSIX")
+            utcFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+            utcFormatter.dateFormat = "yyyy-MM-dd"
+
+            guard let baseDate = utcFormatter.date(from: targetDate) else {
+                complete(
+                    requestID: requestID,
+                    ok: false,
+                    status: 400,
+                    data: Self.jsonData(["message": "TARGET_DATE_INVALID"])
+                )
+                return
+            }
+
+            let calendar = Calendar(identifier: .gregorian)
+            let queryDates = [-1, 0, 1].compactMap { offset -> String? in
+                guard let date = calendar.date(byAdding: .day, value: offset, to: baseDate) else { return nil }
+                return utcFormatter.string(from: date)
+            }
+
+            let group = DispatchGroup()
+            let lock = NSLock()
+            var events: [[String: Any]] = []
+            var successfulRequests = 0
+
+            for date in queryDates {
+                for host in ["www.sofascore.com", "api.sofascore.com"] {
+                    guard let url = URL(string: "https://\(host)/api/v1/sport/football/scheduled-events/\(date)") else { continue }
+                    group.enter()
+
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 12
+                    request.setValue("application/json", forHTTPHeaderField: "Accept")
+                    request.setValue("CFI-iOS/0.2", forHTTPHeaderField: "User-Agent")
+
+                    URLSession.shared.dataTask(with: request) { data, response, _ in
+                        defer { group.leave() }
+
+                        guard
+                            let http = response as? HTTPURLResponse,
+                            (200...299).contains(http.statusCode),
+                            let data,
+                            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                            let rows = object["events"] as? [[String: Any]]
+                        else {
+                            return
+                        }
+
+                        lock.lock()
+                        successfulRequests += 1
+                        events.append(contentsOf: rows)
+                        lock.unlock()
+                    }.resume()
+                }
+            }
+
+            group.notify(queue: .global(qos: .userInitiated)) { [weak self] in
+                guard let self else { return }
+
+                let localZone = TimeZone(identifier: "Asia/Ho_Chi_Minh") ?? .current
+                let localDateFormatter = DateFormatter()
+                localDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+                localDateFormatter.timeZone = localZone
+                localDateFormatter.dateFormat = "yyyy-MM-dd"
+
+                let localTimeFormatter = DateFormatter()
+                localTimeFormatter.locale = Locale(identifier: "en_US_POSIX")
+                localTimeFormatter.timeZone = localZone
+                localTimeFormatter.dateFormat = "HH:mm"
+
+                let now = Date()
+                let todayLocal = localDateFormatter.string(from: now)
+                let terminal: Set<String> = [
+                    "finished", "inprogress", "canceled", "cancelled",
+                    "postponed", "abandoned", "match finished", "ft", "in"
+                ]
+
+                var seen = Set<String>()
+                var rows: [[String: Any]] = []
+
+                for event in events {
+                    guard
+                        let homeTeam = event["homeTeam"] as? [String: Any],
+                        let awayTeam = event["awayTeam"] as? [String: Any],
+                        let home = homeTeam["name"] as? String,
+                        let away = awayTeam["name"] as? String,
+                        let timestamp = event["startTimestamp"] as? NSNumber
+                    else {
+                        continue
+                    }
+
+                    let kickoff = Date(timeIntervalSince1970: timestamp.doubleValue)
+                    guard localDateFormatter.string(from: kickoff) == targetDate else { continue }
+                    if targetDate == todayLocal && kickoff <= now { continue }
+
+                    let statusObject = event["status"] as? [String: Any]
+                    let status = String(describing: statusObject?["type"] ?? statusObject?["description"] ?? "scheduled").lowercased()
+                    if terminal.contains(status) { continue }
+
+                    let tournament = event["tournament"] as? [String: Any]
+                    let category = tournament?["category"] as? [String: Any]
+                    let countryObject = category?["country"] as? [String: Any]
+                    let competition = (tournament?["name"] as? String) ?? "Unknown competition"
+                    let country = (countryObject?["name"] as? String) ?? (category?["name"] as? String) ?? ""
+                    let providerID = String(describing: event["id"] ?? "\(home)-\(away)-\(timestamp)")
+                    let key = "\(home.lowercased())|\(away.lowercased())|\(Int(timestamp.doubleValue))"
+                    guard seen.insert(key).inserted else { continue }
+
+                    rows.append([
+                        "provider": "SOFASCORE",
+                        "providerId": providerID,
+                        "home": home,
+                        "away": away,
+                        "competition": competition,
+                        "country": country,
+                        "kickoff": Int(timestamp.doubleValue * 1000),
+                        "kickoffIso": ISO8601DateFormatter().string(from: kickoff),
+                        "kickoffLocal": localTimeFormatter.string(from: kickoff),
+                        "targetDate": targetDate,
+                        "status": status
+                    ])
+                }
+
+                rows.sort {
+                    let lhs = ($0["kickoff"] as? Int) ?? Int.max
+                    let rhs = ($1["kickoff"] as? Int) ?? Int.max
+                    return lhs < rhs
+                }
+
+                let payload: [String: Any] = [
+                    "status": "OK",
+                    "action": "CFI_TODAY_FIXTURES",
+                    "source": rows.isEmpty ? (successfulRequests > 0 ? "SOFASCORE_EMPTY" : "SOFASCORE_UNAVAILABLE") : "SOFASCORE",
+                    "targetDate": targetDate,
+                    "timeZone": "Asia/Ho_Chi_Minh",
+                    "counts": [
+                        "fixtures": rows.count,
+                        "providerRequestsSucceeded": successfulRequests
+                    ],
+                    "rows": rows
+                ]
+
+                self.complete(
+                    requestID: requestID,
+                    ok: true,
+                    status: 200,
+                    data: Self.jsonData(payload)
+                )
+            }
         }
 
         private func complete(
