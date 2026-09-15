@@ -60,7 +60,12 @@
     .crest.home{color:#44e39b}.crest.away{color:#ff6f74}.match-team{font-size:14px;font-weight:800;line-height:1.2}.match-vs{font-weight:900;color:#7894a8}
     .match-meta{border-top:1px solid #153b55;padding:12px 15px;color:#a5b9c8;font-size:12px;display:grid;gap:7px}
     .row{display:flex;align-items:center;gap:9px}.row svg{flex:0 0 auto}
-    .source-list{display:grid;gap:0}.source{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #12384f}.source:last-child{border-bottom:0}
+    .selected-panel{display:none;margin-top:12px}.selected-panel.active{display:block}
+    .context-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.context-team{padding:13px;border:1px solid #174a68;border-radius:12px;background:#082238}.context-team h3{margin:0 0 10px;font-size:14px}.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{padding:9px;border-radius:9px;background:#071c2e;border:1px solid #153c56}.metric span{display:block;color:#7898ad;font-size:10px;margin-bottom:3px}.metric b{font-size:14px}
+    .form-line{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.form-chip{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:11px;font-weight:900;background:#153448;color:#a7bdcb}.form-chip.W{background:#0e5d3d;color:#4ff09e}.form-chip.D{background:#50471a;color:#ffd85c}.form-chip.L{background:#5d2730;color:#ff7d85}
+    .history-list{display:grid;gap:7px}.history-row{padding:10px 11px;border:1px solid #17435e;border-radius:10px;background:#081e30}.history-top{display:flex;justify-content:space-between;gap:8px;color:#8ea8ba;font-size:10px;margin-bottom:5px}.history-match{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px}.history-match .home{text-align:right}.history-score{font-weight:900;color:#eef8ff}.context-state{padding:20px;border:1px dashed #245774;border-radius:12px;text-align:center;color:#86a4b8;font-size:12px;line-height:1.5}
+    @media(max-width:390px){.context-grid{grid-template-columns:1fr}}
+        .source-list{display:grid;gap:0}.source{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #12384f}.source:last-child{border-bottom:0}
     .source-left{display:flex;align-items:center;gap:10px}.source-icon{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:#1164c5;color:white;font-size:11px;font-weight:900}
     .source small{display:block;color:#6f8da3;margin-top:2px}.status{display:flex;align-items:center;gap:6px;font-size:12px;color:#9cb2c2}.dot{width:8px;height:8px;border-radius:50%;background:#6d8190}
     .dot.ok{background:var(--green)}.dot.warn{background:var(--amber)}.dot.bad{background:var(--red)}
@@ -148,12 +153,13 @@
     </section>
 
     <section id="screenSelected" class="screen">
-      <div class="tabs">
+      <div class="tabs" id="selectedTabs">
         <button class="tab active" data-tab="overview">Overview</button>
         <button class="tab" data-tab="stats">Team Stats</button>
         <button class="tab" data-tab="h2h">H2H</button>
         <button class="tab" data-tab="form">Form</button>
       </div>
+
       <div class="card" style="margin-top:12px">
         <div class="match-head">
           <div><div class="crest home" id="homeCrest">H</div><div class="match-team" id="homeName">Home</div></div>
@@ -165,15 +171,43 @@
           <div class="row"><span>🗓</span><span id="dateText">—</span></div>
         </div>
       </div>
-      <div class="card pad">
-        <h2 class="section-title">Data Preparation</h2>
-        <div class="source-list">
-          <div class="source"><div class="source-left"><div class="source-icon">API</div><div><b>CFI Runtime</b><small>Production worker</small></div></div><div class="status"><i id="runtimeDot" class="dot"></i><span id="runtimeStatus">Checking…</span></div></div>
-          <div class="source"><div class="source-left"><div class="source-icon">DB</div><div><b>Persistent DB</b><small>Historical evidence</small></div></div><div class="status"><i id="dbDot" class="dot"></i><span id="dbStatus">Checking…</span></div></div>
-          <div class="source"><div class="source-left"><div class="source-icon">SP</div><div><b>Strict-Prior Guard</b><small>Verified on prediction run</small></div></div><div class="status"><i class="dot warn"></i><span>Pending</span></div></div>
-          <div class="source"><div class="source-left"><div class="source-icon">MK</div><div><b>Market Engine</b><small>Multi-market / Champion</small></div></div><div class="status"><i class="dot warn"></i><span>Pending</span></div></div>
+
+      <div class="selected-panel active" data-panel="overview">
+        <div class="card pad">
+          <h2 class="section-title">Data Preparation</h2>
+          <div class="source-list">
+            <div class="source"><div class="source-left"><div class="source-icon">API</div><div><b>CFI Runtime</b><small>Production worker</small></div></div><div class="status"><i id="runtimeDot" class="dot"></i><span id="runtimeStatus">Checking…</span></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">DB</div><div><b>Persistent DB</b><small>Historical evidence</small></div></div><div class="status"><i id="dbDot" class="dot"></i><span id="dbStatus">Checking…</span></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">SP</div><div><b>Strict-Prior Guard</b><small>Context before match date</small></div></div><div class="status"><i id="strictDot" class="dot warn"></i><span id="strictStatus">Pending</span></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">MK</div><div><b>Market Engine</b><small>Multi-market / Champion</small></div></div><div class="status"><i class="dot warn"></i><span>Run prediction</span></div></div>
+          </div>
         </div>
       </div>
+
+      <div class="selected-panel" data-panel="stats">
+        <div class="card pad">
+          <h2 class="section-title">Team Stats</h2>
+          <p class="section-sub">Strict-prior historical summary from CFI BigDB.</p>
+          <div id="statsContent" class="context-state">Đang tải dữ liệu đội…</div>
+        </div>
+      </div>
+
+      <div class="selected-panel" data-panel="h2h">
+        <div class="card pad">
+          <h2 class="section-title">Head to Head</h2>
+          <p class="section-sub">Các lần đối đầu trước ngày trận hiện tại.</p>
+          <div id="h2hContent" class="context-state">Đang tải H2H…</div>
+        </div>
+      </div>
+
+      <div class="selected-panel" data-panel="form">
+        <div class="card pad">
+          <h2 class="section-title">Recent Form</h2>
+          <p class="section-sub">10 trận gần nhất có trong CFI BigDB, chỉ dùng dữ liệu trước ngày trận.</p>
+          <div id="formContent" class="context-state">Đang tải phong độ…</div>
+        </div>
+      </div>
+
       <button id="continueBtn" class="primary">Continue</button>
     </section>
 
@@ -265,7 +299,7 @@
 
 <script>
 (function(){
-  var state={match:null,status:null,prediction:null,current:"search",pending:{},searchMode:"manual",todayFixtures:[]};
+  var state={match:null,status:null,prediction:null,current:"search",pending:{},searchMode:"manual",todayFixtures:[],context:null,contextLoading:false,contextError:null};
   var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult")};
 
   function $(id){return document.getElementById(id)}
@@ -346,7 +380,7 @@
         var date=$("todayDateInput").value;
         state.match={home:f.home,away:f.away,date:f.targetDate||date,league:league,kickoff:f.kickoffIso||null,provider:f.provider||source||null};
         $("homeInput").value=f.home;$("awayInput").value=f.away;$("dateInput").value=state.match.date;$("leagueInput").value=league;
-        syncMatch();showScreen("selected");refreshStatus(true);
+        syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
       };
       frag.appendChild(b);
     });
@@ -370,6 +404,85 @@
   $("todayRefreshBtn").onclick=loadTodayFixtures;
   $("todayDateInput").addEventListener("change",loadTodayFixtures);
 
+
+  function fmtNum(v,d){
+    var n=Number(v);if(!Number.isFinite(n))return "—";
+    return n.toFixed(d==null?2:d);
+  }
+  function fmtPct(v){
+    var n=Number(v);return Number.isFinite(n)?n.toFixed(1)+"%":"—";
+  }
+  function formChips(form){
+    if(!Array.isArray(form)||!form.length)return '<span style="color:#7898ad">No completed form</span>';
+    return form.map(function(x){var k=String(x||"").toUpperCase();return '<span class="form-chip '+esc(k)+'">'+esc(k)+'</span>'}).join("");
+  }
+  function historyRows(rows){
+    if(!Array.isArray(rows)||!rows.length)return '<div class="context-state">Không có fixture phù hợp.</div>';
+    return '<div class="history-list">'+rows.map(function(r){
+      var score=r.ft?(r.ft.home+"-"+r.ft.away):"—";
+      var comp=r.competition||"";
+      return '<div class="history-row"><div class="history-top"><span>'+esc(r.matchDate||"")+'</span><span>'+esc(comp)+'</span></div><div class="history-match"><span class="home">'+esc(r.homeTeam||"")+'</span><span class="history-score">'+esc(score)+'</span><span>'+esc(r.awayTeam||"")+'</span></div></div>';
+    }).join("")+'</div>';
+  }
+  function teamSummaryCard(name,s){
+    s=s||{};
+    return '<div class="context-team"><h3>'+esc(name)+'</h3><div class="form-line">'+formChips(s.form)+'</div><div class="metric-grid">'+
+      '<div class="metric"><span>Matches</span><b>'+esc(s.completed==null?"—":s.completed)+'</b></div>'+
+      '<div class="metric"><span>W-D-L</span><b>'+esc((s.wins||0)+"-"+(s.draws||0)+"-"+(s.losses||0))+'</b></div>'+
+      '<div class="metric"><span>Avg GF</span><b>'+fmtNum(s.avgGoalsFor,2)+'</b></div>'+
+      '<div class="metric"><span>Avg GA</span><b>'+fmtNum(s.avgGoalsAgainst,2)+'</b></div>'+
+      '<div class="metric"><span>HT GF</span><b>'+fmtNum(s.avgHtGoalsFor,2)+'</b></div>'+
+      '<div class="metric"><span>HT GA</span><b>'+fmtNum(s.avgHtGoalsAgainst,2)+'</b></div>'+
+      '<div class="metric"><span>BTTS</span><b>'+fmtPct(s.bttsRate)+'</b></div>'+
+      '<div class="metric"><span>Over 2.5</span><b>'+fmtPct(s.over25Rate)+'</b></div>'+
+      '<div class="metric"><span>Scoring</span><b>'+fmtPct(s.scoringRate)+'</b></div>'+
+      '<div class="metric"><span>Clean sheet</span><b>'+fmtPct(s.cleanSheetRate)+'</b></div>'+
+    '</div></div>';
+  }
+  function renderContext(){
+    var stats=$("statsContent"),h2h=$("h2hContent"),form=$("formContent");
+    if(state.contextLoading){
+      var loading='<div class="context-state"><span class="loading"><i></i><i></i><i></i></span> Đang tải strict-prior context…</div>';
+      stats.innerHTML=loading;h2h.innerHTML=loading;form.innerHTML=loading;return;
+    }
+    if(state.contextError||!state.context){
+      var e=state.contextError||{message:"Context unavailable"};
+      var code=e.upstreamStatus?(" · upstream "+e.upstreamStatus):"";
+      var err='<div class="context-state">Không lấy được CFI context'+esc(code)+'.<br>'+esc(e.message||e.error||"")+'</div>';
+      stats.innerHTML=err;h2h.innerHTML=err;form.innerHTML=err;return;
+    }
+    var d=state.context;
+    stats.className="context-grid";
+    stats.innerHTML=teamSummaryCard(d.target&&d.target.home||state.match.home,d.home)+teamSummaryCard(d.target&&d.target.away||state.match.away,d.away);
+    h2h.className="";
+    h2h.innerHTML='<div class="info-strip"><span>ⓘ</span><span>'+esc((d.h2h&&d.h2h.fixtures)||0)+' H2H fixture(s) trước '+esc(state.match.date)+'.</span></div>'+historyRows(d.h2h&&d.h2h.recent);
+    form.className="context-grid";
+    form.innerHTML='<div class="context-team"><h3>'+esc(d.target&&d.target.home||state.match.home)+'</h3>'+historyRows(d.home&&d.home.recent)+'</div>'+
+      '<div class="context-team"><h3>'+esc(d.target&&d.target.away||state.match.away)+'</h3>'+historyRows(d.away&&d.away.recent)+'</div>';
+  }
+  async function loadMatchContext(silent){
+    if(!state.match)return;
+    state.context=null;state.contextError=null;state.contextLoading=true;renderContext();
+    setStatus("dbDot","dbStatus","","Checking…");
+    $("strictDot").className="dot warn";$("strictStatus").textContent="Checking…";
+    try{
+      var r=await api("/api/match-context","POST",{home:state.match.home,away:state.match.away,target_date:state.match.date});
+      state.context=r.data||null;state.contextLoading=false;
+      setStatus("dbDot","dbStatus","ok","Ready");
+      var verified=state.context&&state.context.temporalAudit&&state.context.temporalAudit.verified===true;
+      $("strictDot").className="dot "+(verified?"ok":"warn");$("strictStatus").textContent=verified?"Verified":"Check on run";
+      renderContext();
+      if(!silent)toast("Team context loaded");
+    }catch(e){
+      state.contextLoading=false;state.contextError=e.data||{message:e.message,status:e.status};
+      var upstream=state.contextError.upstreamStatus||e.status||"";
+      setStatus("dbDot","dbStatus","bad",upstream?("Upstream "+upstream):"Unavailable");
+      $("strictDot").className="dot warn";$("strictStatus").textContent="Unavailable";
+      renderContext();
+      if(!silent)toast("Context: "+(state.contextError.message||state.contextError.upstreamError||e.message));
+    }
+  }
+
   function parseQuickSearch(){
     var q=$("quickSearch").value.trim();if(!q)return;
     var parts=q.split(/\s+(?:vs\.?|v)\s+/i);if(parts.length>=2){$("homeInput").value=parts[0].trim();$("awayInput").value=parts.slice(1).join(" vs ").trim()}
@@ -381,7 +494,7 @@
     parseQuickSearch();
     var home=$("homeInput").value.trim(),away=$("awayInput").value.trim(),date=$("dateInput").value,league=$("leagueInput").value.trim();
     if(!home||!away||!date){toast("Nhập đội nhà, đội khách và ngày thi đấu.");return}
-    state.match={home:home,away:away,date:date,league:league};syncMatch();showScreen("selected");await refreshStatus(true);
+    state.match={home:home,away:away,date:date,league:league};syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
   };
   $("continueBtn").onclick=function(){showScreen("ready")};
   $("refreshBtn").onclick=function(){refreshStatus(false)};
@@ -443,7 +556,10 @@
 
   document.querySelectorAll(".tab").forEach(function(btn){btn.onclick=function(){
     var group=btn.parentElement;group.querySelectorAll(".tab").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
-    if(btn.dataset.tab&&btn.dataset.tab!=="overview")toast(btn.textContent+" sẽ dùng dữ liệu từ CFI backend khi module tương ứng được trả về.");
+    if(group.id==="selectedTabs"&&btn.dataset.tab){
+      document.querySelectorAll("#screenSelected .selected-panel").forEach(function(p){p.classList.toggle("active",p.dataset.panel===btn.dataset.tab)});
+      if(btn.dataset.tab!=="overview"&&!state.context&&!state.contextLoading)loadMatchContext(false);
+    }
     if(btn.dataset.resulttab)toast(btn.textContent+" view đang được nối vào output CFI.");
   }});
   document.querySelectorAll(".nav-btn").forEach(function(btn){btn.onclick=function(){
