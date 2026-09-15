@@ -249,7 +249,7 @@ async function bongdaWapDay(window:Window,fetchFn:FetchLike){
     headers:{accept:'text/html,application/xhtml+xml','user-agent':'Mozilla/5.0'}
   });
   const rows=result.ok?parseBongdaWapSchedule(result.text||'',window):[];
-  return{rows,attempt:{stage:'BONGDAWAP_FALLBACK',provider:'BONGDAWAP',ok:result.ok,httpStatus:result.status??null,rows:rows.length,error:result.error??null}};
+  return{rows,attempt:{stage:'BONGDAWAP_COVERAGE',provider:'BONGDAWAP',ok:result.ok,httpStatus:result.status??null,rows:rows.length,error:result.error??null}};
 }
 
 function htmlCell(raw:string){
@@ -276,7 +276,7 @@ export function parseBongdaWapSchedule(html:string,window:Window):DayFixtureRow[
       provider:'BONGDAWAP',providerId:['BDW',window.targetDate,padded,home,away].join('-'),
       home,away,competition:league||null,country:null,kickoff,kickoffIso:iso,kickoffLocal:padded,
       targetDate:window.targetDate,status:/^\d+\s*-\s*\d+$/.test(score)?'finished':'scheduled',
-      provenance:'BONGDAWAP_FALLBACK'
+      provenance:'BONGDAWAP_COVERAGE'
     });
   }
   return mergeRows(out);
