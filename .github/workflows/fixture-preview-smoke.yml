@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: fixture-preview-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -19,7 +23,7 @@ jobs:
           URL="https://fix-fixtures-day-latency-v021-cfi-football-intelligence.baoanhrat112020.workers.dev/api/fixtures-day"
           DATE="$(TZ=Asia/Ho_Chi_Minh date +%F)"
           ok=0
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3; do
             echo "Attempt $attempt: $DATE"
             start="$(date +%s%3N)"
             if body="$(curl --fail-with-body --silent --show-error --max-time 12               -H 'content-type: application/json'               -H 'accept: application/json'               --data "{\"target_date\":\"$DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\"}"               "$URL")"; then
@@ -39,11 +43,18 @@ jobs:
                 if(body.status!=="OK"||body.action!=="CFI_FIXTURES_DAY"||!Array.isArray(body.rows)) process.exit(2);
                 if(body.version!=="CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY") process.exit(4);
                 if(body.rows.length<20) process.exit(3);
+                const primary=(body.attempts||[]).find(x=>x.stage==="BIGDB"&&x.provider==="CFI_BIGDB");
+                if(!primary||primary.ok!==true||primary.httpStatus!==200||primary.rows<1) process.exit(5);
+                if(!body.rows.some(x=>x.provider==="CFI_BIGDB"&&x.canonicalHomeTeamId&&x.canonicalAwayTeamId&&x.provenance==="PERSISTENT_DB_CANONICAL_FIXTURE")) process.exit(6);
+                const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Ho_Chi_Minh"}).format(new Date());
+                if(body.targetDate!==today||body.timeZone!=="Asia/Ho_Chi_Minh"||body.rows.some(x=>x.targetDate!==today)) process.exit(7);
+                if(!body.freshness||!Number.isFinite(Date.parse(body.freshness.generatedAt))) process.exit(8);
+                if(body.rows.some(x=>!x.home||!x.away||!x.provenance||!Array.isArray(x.sourceProviders)||!x.sourceProviders.includes(x.provider))) process.exit(9);
               ' "$body" && test "$elapsed" -lt 12000; then
                 ok=1
                 break
               fi
             fi
-            sleep 5
+            if test "$attempt" -lt 3; then sleep "$((attempt*5))"; fi
           done
           test "$ok" -eq 1

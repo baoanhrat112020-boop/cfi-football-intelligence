@@ -86,14 +86,27 @@ function fixtureKey(row:DayFixtureRow){
 
 function mergeRows(rows:DayFixtureRow[]){
   const map=new Map<string,DayFixtureRow>();
+  // Link names only when they identify a single canonical fixture. Conflicting
+  // canonical IDs must remain separate, even if their display names match.
+  const nameKey=(row:DayFixtureRow)=>[fold(row.home),fold(row.away),row.targetDate].join('|');
+  const canonicalNames=new Map<string,Set<string>>();
+  for(const row of rows){
+    if(!row.canonicalHomeTeamId||!row.canonicalAwayTeamId)continue;
+    const name=nameKey(row),keys=canonicalNames.get(name)||new Set<string>();
+    keys.add(fixtureKey(row));
+    canonicalNames.set(name,keys);
+  }
   for(const row of rows){
     if(!row.home||!row.away)continue;
-    const key=fixtureKey(row),prev=map.get(key);
+    const candidates=canonicalNames.get(nameKey(row));
+    const key=!row.canonicalHomeTeamId&&!row.canonicalAwayTeamId&&candidates?.size===1
+      ? [...candidates][0] : fixtureKey(row);
+    const prev=map.get(key);
     if(!prev){
-      map.set(key,{...row,sourceProviders:[row.provider]});
+      map.set(key,{...row,sourceProviders:[...new Set([row.provider,...(row.sourceProviders||[])])]});
       continue;
     }
-    const providers=[...new Set([...(prev.sourceProviders||[prev.provider]),row.provider])];
+    const providers=[...new Set([...(prev.sourceProviders||[prev.provider]),row.provider,...(row.sourceProviders||[])])];
     map.set(key,{
       ...prev,
       competition:prev.competition||row.competition||null,
@@ -230,8 +243,11 @@ async function bigDbDay(window:Window,env:FixtureDayEnv,fetchFn:FetchLike){
     method:'GET',
     headers:{accept:'application/json','x-cfi-key':env.CFI_DB_KEY}
   });
-  const rows=result.ok?parseBigDbRows(result.payload,window):[];
-  return{rows,attempt:{stage:'BIGDB',provider:'CFI_BIGDB',ok:result.ok,httpStatus:result.status??null,rows:rows.length,error:result.error??null}};
+  const valid=result.ok&&result.payload?.status==='OK'
+    &&result.payload?.version==='CFI_DB_FIXTURES_DAY_V2_AISCORE_BRIDGE'
+    &&Array.isArray(result.payload?.rows);
+  const rows=valid?parseBigDbRows(result.payload,window):[];
+  return{rows,attempt:{stage:'BIGDB',provider:'CFI_BIGDB',ok:valid,httpStatus:result.status??null,rows:rows.length,error:result.error??(valid?null:'BIGDB_INVALID_CONTRACT')}};
 }
 
 async function footballDataDay(window:Window,fetchFn:FetchLike){
@@ -317,6 +333,34 @@ export async function discoverDayFixturesFast(
   };
 }
 
+// Browse-only, per-isolate cache: never used by prediction or settlement.
+// Pending requests are shared and degraded results are immediately evicted.
+const browseCaches=new WeakMap<FetchLike,Map<string,{
+  startedAt:number;promise:ReturnType<typeof discoverDayFixturesFast>
+}>>();
+async function cachedBrowse(window:Window,env:FixtureDayEnv,fetchFn:FetchLike,nowMs:number){
+  let cache=browseCaches.get(fetchFn);
+  if(!cache){cache=new Map();browseCaches.set(fetchFn,cache);}
+  const key=JSON.stringify([window.targetDate,window.timeZone,env.CFI_DB_BASE_URL,env.CFI_DB_KEY]);
+  const previous=cache.get(key);
+  if(previous&&nowMs>=previous.startedAt&&nowMs-previous.startedAt<30_000){
+    return{found:await previous.promise,generatedAt:previous.startedAt,cacheHit:true};
+  }
+  if(cache.size>=32)cache.delete(cache.keys().next().value!);
+  const entry={startedAt:nowMs,promise:discoverDayFixturesFast(window,env,fetchFn)};
+  cache.set(key,entry);
+  try{
+    const found=await entry.promise;
+    if(!found.rows.length||!found.attempts.every(x=>x.ok)){
+      if(cache.get(key)===entry)cache.delete(key);
+    }
+    return{found,generatedAt:nowMs,cacheHit:false};
+  }catch(error){
+    if(cache.get(key)===entry)cache.delete(key);
+    throw error;
+  }
+}
+
 export async function handleFixturesDayRequest(
   request:Request,
   env:FixtureDayEnv={},
@@ -327,13 +371,18 @@ export async function handleFixturesDayRequest(
   try{input=await request.clone().json()}catch{
     return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});
   }
-  const targetDate=String(input?.target_date??'').slice(0,10);
+  const targetDate=String(input?.target_date??'');
   const timeZone=String(input?.timezone??'Asia/Ho_Chi_Minh');
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)
+    ||!Number.isFinite(Date.parse(targetDate+'T00:00:00Z'))
+    ||new Date(targetDate+'T00:00:00Z').toISOString().slice(0,10)!==targetDate){
     return Response.json({status:'INVALID_REQUEST',error:'TARGET_DATE_INVALID'},{status:400});
   }
 
-  const found=await discoverDayFixturesFast({targetDate,timeZone,nowMs},env,fetchFn);
+  try{new Intl.DateTimeFormat('en',{timeZone}).format(0)}catch{
+    return Response.json({status:'INVALID_REQUEST',error:'TIMEZONE_INVALID'},{status:400});
+  }
+  const {found,generatedAt,cacheHit}=await cachedBrowse({targetDate,timeZone,nowMs},env,fetchFn,nowMs);
   return Response.json({
     status:'OK',
     action:'CFI_FIXTURES_DAY',
@@ -341,6 +390,7 @@ export async function handleFixturesDayRequest(
     source:found.provider,
     providers:found.providers,
     targetDate,timeZone,
+    freshness:{generatedAt:new Date(generatedAt).toISOString(),cacheHit,maxCacheAgeSeconds:30},
     counts:{fixtures:found.rows.length,targetRows:found.targetRows},
     rows:found.rows,
     attempts:found.attempts,
