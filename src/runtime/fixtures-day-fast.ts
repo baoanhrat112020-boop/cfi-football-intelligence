@@ -67,16 +67,27 @@ function vnKickoff(targetDate:string,time:string,timeZone:string){
   return Number.isFinite(ms)?ms:null;
 }
 
+function addDays(date:string,days:number){
+  const ms=Date.parse(`${date}T00:00:00Z`);
+  return new Date(ms+days*86400000).toISOString().slice(0,10);
+}
+
 export function parseBongdaWapSchedule(html:string,window:DiscoveryWindow):DiscoveredFixture[]{
   const out:DiscoveredFixture[]=[];
   const now=Number(window.nowMs??Date.now());
-  const today=localDateNow(window.timeZone,now);
   const blocks=html.split(/<div\s+class=["']tran1\b[^"']*["'][^>]*>/i).slice(1);
+  let dayOffset=0;
+  let lastMinutes:number|null=null;
   for(const block of blocks){
     const timeRaw=block.match(/class=["']ngaygio["'][^>]*>([\s\S]*?)<\/p>/i)?.[1]??'';
     const time=decodeHtml(timeRaw).padStart(5,'0');
     if(!/^\d{2}:\d{2}$/.test(time))continue;
     if(!/class=["']tyso["'][\s\S]*?<b>\s*vs\s*<\/b>/i.test(block))continue;
+
+    const [hh,mm]=time.split(':').map(Number);
+    const minutes=hh*60+mm;
+    if(dayOffset===0&&lastMinutes!==null&&lastMinutes>=12*60&&minutes<=11*60&&minutes<lastMinutes)dayOffset=1;
+    lastMinutes=minutes;
 
     const teamMatches=[...block.matchAll(/class=["']tendb["'][^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/gi)];
     if(teamMatches.length<2)continue;
@@ -86,19 +97,19 @@ export function parseBongdaWapSchedule(html:string,window:DiscoveryWindow):Disco
 
     const competitionMatch=block.match(/class=["']tengiai["'][^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i);
     const competition=competitionMatch?decodeHtml(competitionMatch[1]):null;
-    const kickoff=vnKickoff(window.targetDate,time,window.timeZone);
-    if(kickoff===null)continue;
-    if(window.targetDate===today&&kickoff<=now)continue;
+    const actualDate=addDays(window.targetDate,dayOffset);
+    const kickoff=vnKickoff(actualDate,time,window.timeZone);
+    if(kickoff===null||kickoff<=now)continue;
 
     const idMatch=block.match(/soi-keo-[^"']+-(\d+)\.html/i);
     out.push({
       provider:'BONGDAWAP',
-      providerId:idMatch?.[1]?`BDW-${idMatch[1]}`:`BDW-${window.targetDate}-${time}-${home}-${away}`,
+      providerId:idMatch?.[1]?`BDW-${idMatch[1]}`:`BDW-${actualDate}-${time}-${home}-${away}`,
       home,away,competition:competition||null,country:null,
       kickoff,
       kickoffIso:new Date(kickoff).toISOString(),
       kickoffLocal:time,
-      targetDate:window.targetDate,
+      targetDate:actualDate,
       status:'scheduled'
     });
   }
