@@ -66,16 +66,13 @@ test('Football-Data parser keeps target date and normalizes known kickoff timezo
   assert.match(rows[0].kickoffLocal,/^\d{2}:\d{2}$/);
 });
 
-test('BigDB, AiScore and Football-Data are the primary daily sources', async()=>{
+test('BigDB and Football-Data are primary, with AiScore supplied through BigDB PC bridge', async()=>{
   const calls=[];
   const fetchFn=async(url,init={})=>{
     calls.push(String(url));
     if(String(url).includes('/cfi-db/fixtures-day')){
       assert.equal(init.headers['x-cfi-key'],'secret');
-      return Response.json(bigDbPayload(13));
-    }
-    if(String(url).includes('aiscore.com/today-matches')){
-      return new Response(aiHtml,{status:200,headers:{'content-type':'text/html'}});
+      return Response.json(bigDbPayload(13,true));
     }
     if(String(url).includes('football-data.co.uk/fixtures.csv')){
       return new Response(footballCsv,{status:200,headers:{'content-type':'text/csv'}});
@@ -84,15 +81,18 @@ test('BigDB, AiScore and Football-Data are the primary daily sources', async()=>
   };
 
   const out=await discoverDayFixturesFast({targetDate,timeZone,nowMs},env,fetchFn);
-  assert.equal(calls.length,3);
-  assert.ok(out.rows.length>=17);
-  assert.deepEqual(out.primarySources,['CFI_BIGDB','AISCORE','FOOTBALL_DATA']);
-  assert.equal(out.attempts.find(x=>x.provider==='CFI_BIGDB').rows,13);
-  assert.equal(out.attempts.find(x=>x.provider==='AISCORE').rows,2);
+  assert.equal(calls.length,2);
+  assert.ok(out.rows.length>=16);
+  assert.deepEqual(out.primarySources,['CFI_BIGDB_WITH_AISCORE_PC_BRIDGE','FOOTBALL_DATA']);
+  assert.equal(out.attempts.find(x=>x.provider==='CFI_BIGDB').rows,14);
   assert.equal(out.attempts.find(x=>x.provider==='FOOTBALL_DATA').rows,2);
   assert.ok(out.providers.includes('CFI_BIGDB'));
   assert.ok(out.providers.includes('AISCORE'));
   assert.ok(out.providers.includes('FOOTBALL_DATA'));
+  const ai=out.rows.find(x=>x.provider==='AISCORE');
+  assert.ok(ai);
+  assert.equal(ai.kickoffLocal,'20:00');
+  assert.equal(ai.provenance,'PC_NODE_AISCORE_BRIDGE');
 });
 
 test('fallback is used only when primary coverage is below target', async()=>{
@@ -104,7 +104,6 @@ test('fallback is used only when primary coverage is below target', async()=>{
   const fetchFn=async(url)=>{
     const s=String(url);
     if(s.includes('/cfi-db/fixtures-day'))return Response.json(bigDbPayload(1));
-    if(s.includes('aiscore.com/today-matches'))return new Response('',{status:200});
     if(s.includes('football-data.co.uk/fixtures.csv'))return new Response('Div,Date,Time,HomeTeam,AwayTeam\n',{status:200});
     if(s.includes('bongdawap.com')){fallbackCalls++;return new Response(html,{status:200});}
     throw new Error('unexpected '+url);
@@ -117,8 +116,7 @@ test('fallback is used only when primary coverage is below target', async()=>{
 test('fixtures-day HTTP response exposes source policy', async()=>{
   const fetchFn=async(url)=>{
     const s=String(url);
-    if(s.includes('/cfi-db/fixtures-day'))return Response.json(bigDbPayload(13));
-    if(s.includes('aiscore.com/today-matches'))return new Response(aiHtml,{status:200});
+    if(s.includes('/cfi-db/fixtures-day'))return Response.json(bigDbPayload(13,true));
     if(s.includes('football-data.co.uk/fixtures.csv'))return new Response(footballCsv,{status:200});
     throw new Error('unexpected '+url);
   };
@@ -131,11 +129,11 @@ test('fixtures-day HTTP response exposes source policy', async()=>{
   assert.equal(response.status,200);
   const body=await response.json();
   assert.equal(body.status,'OK');
-  assert.equal(body.version,'CFI_FIXTURES_DAY_V3_BIGDB_AISCORE_FOOTBALLDATA');
-  assert.equal(body.sourcePolicy.primary[0],'CFI_BIGDB');
-  assert.equal(body.sourcePolicy.primary[1],'AISCORE');
-  assert.equal(body.sourcePolicy.primary[2],'FOOTBALL_DATA');
-  assert.ok(body.counts.fixtures>=17);
+  assert.equal(body.version,'CFI_FIXTURES_DAY_V4_BIGDB_AISCORE_BRIDGE_FOOTBALLDATA');
+  assert.equal(body.sourcePolicy.primary[0],'CFI_BIGDB_WITH_AISCORE_PC_BRIDGE');
+  assert.equal(body.sourcePolicy.primary[1],'FOOTBALL_DATA');
+  assert.ok(body.counts.fixtures>=16);
+  assert.ok(body.rows.some(x=>x.provider==='AISCORE'));
 });
 
 test('BongdaWap all-day parser keeps scheduled and completed rows', ()=>{
