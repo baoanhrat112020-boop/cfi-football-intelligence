@@ -4,6 +4,7 @@ import { FINAL_VERSION } from '../../src/prediction/final-engine.ts';
 import { THREE_PLUS_HT_SAFETY_VERSION } from '../../src/prediction/three-plus-ht-safety.ts';
 import { SEVEN_PLUS_FT_SAFETY_VERSION } from '../../src/prediction/seven-plus-ft-safety.ts';
 import { MARKET_COHERENCE_VERSION } from '../../src/prediction/market-coherence.ts';
+import { handleDayFixtures, handleMatchContext } from '../../src/runtime/ios-api-routes.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 type FeedRow={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string;sourceUrls?:string[];discoveredAt?:string};
@@ -205,6 +206,9 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
+    if(url.pathname==='/api/match-context'&&request.method==='POST')return handleMatchContext(request,env);
+    if(url.pathname==='/api/fixtures-day'&&request.method==='POST')return handleDayFixtures(request);
+
     if(url.pathname==='/api/discover'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
       if(Array.isArray(input?.fixture_candidates))return suppliedDiscovery(input,env,ctx);
