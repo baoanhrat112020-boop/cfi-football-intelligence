@@ -86,3 +86,78 @@ test('Fusion and Insights are functional result panels, not placeholder tabs',()
   assert.ok(html.includes('function renderInsights(out)'));
   assert.ok(html.includes('renderFusion(out);renderInsights(out);'));
 });
+
+
+test('probText never guesses an isolated value or treats missing data as zero',()=>{
+  const probText=new Function(extractFunction('makeScaler')+extractFunction('probText')+';return probText')();
+  assert.equal(probText(0.8),'—');
+  assert.equal(probText(0.008),'—');
+  assert.equal(probText(0.8,[0.8,8,71]),'0.8%');
+  assert.equal(probText(0.008,null,'fraction'),'0.8%');
+  assert.equal(probText(0.8,null,'percent'),'0.8%');
+  for(const x of [null,undefined,'',true,{},-1,101])assert.equal(probText(x,null,'percent'),'—');
+});
+
+function clientLogic(extra=''){
+  const names=['makeScaler','payloadUnit','marketTier','collectMarkets','collectCore','signal','probText','weightHtml','renderFusion','renderInsights','renderMulti','renderDNA'];
+  const boxes={};
+  const $=id=>boxes[id]||(boxes[id]={innerHTML:''});
+  const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return new Function('$','esc','var TIER_CHAMPION="CHAMPION",TIER_SHADOW="SHADOW",TIER_RESEARCH="RESEARCH",CORE_MARKETS=["3+ HT","7+ FT","Other HT","Other FT"];'+names.map(extractFunction).join('\n')+extra+';return {'+names.join(',')+'};')($,esc);
+}
+
+test('reads all branches, keeps provenance and blocks conflicting champion sources',()=>{
+  const c=clientLogic();
+  const out={probabilityUnit:'percent',champion:{thresholds:[{market:'3+ HT',probability:12,tier:'CHAMPION',decision:'BET',decisionUse:true}]},ranking:[{target:'7+ FT',probability:0.8,tier:'CHAMPION',decisionUse:true}],markets:{'3+ HT':{final:25,tier:'CHAMPION',decision:'BET',decisionUse:true},'Other FT':{final:3,tier:'CHAMPION',decisionUse:true}}};
+  const rows=c.collectCore(out);
+  assert.equal(rows.length,3);
+  assert.equal(rows.find(r=>r.market==='7+ FT').p,0.8);
+  const conflict=rows.find(r=>r.market==='3+ HT');
+  assert.equal(conflict.p,25);
+  assert.deepEqual(conflict.sources.map(x=>x.source),['champion.thresholds','markets']);
+  assert.equal(conflict.decisionUse,false);
+  assert.equal(c.signal(conflict)[0],'CONFLICT');
+});
+
+test('shadow and research cannot fill a champion gap or inherit a BET decision',()=>{
+  const c=clientLogic();
+  const rows=c.collectMarkets({probabilityUnit:'fraction',champion:{thresholds:[{market:'3+ HT',probability:null,decision:'BET',decisionUse:true}]},markets:{'3+ HT':{final:0.9,tier:'SHADOW',decision:'BET',decisionUse:true},'Other HT':{final:0.8,tier:'RESEARCH',decision:'BET'}}});
+  assert.equal(rows.find(r=>r.tier==='CHAMPION').p,null);
+  assert.equal(c.signal(rows.find(r=>r.tier==='SHADOW'))[0],'SHADOW');
+  assert.equal(c.signal(rows.find(r=>r.tier==='RESEARCH'))[0],'RESEARCH');
+  assert.equal(c.marketTier({tier:'CHAMPION',researchState:'SHADOW'},'markets'),'SHADOW');
+});
+
+test('source groups use their own units and V3 honors fraction producer contract',()=>{
+  const c=clientLogic();
+  const rows=c.collectMarkets({champion:{thresholds:[{market:'3+ HT',probability:0.008,probabilityUnit:'fraction'},{market:'7+ FT',probability:0.02,probabilityUnit:'fraction'}]},markets:{'Other HT':{probability:0.8,probabilityUnit:'percent'}}});
+  assert.equal(rows[0].p,0.8);assert.equal(rows[2].p,0.8);
+  assert.equal(c.collectCore({version:'CFI_PRACTICAL_OUTPUT_V3',champion:{thresholds:[{market:'3+ HT',probability:0.008}]}})[0].p,0.8);
+  assert.equal(c.probText(null,[0.1,0.4]),'—');
+});
+
+test('actual renderers honor units, unavailable states and escape payload text',()=>{
+  const boxes={};const $=id=>boxes[id]||(boxes[id]={innerHTML:''});
+  const esc=v=>String(v??'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const names=['makeScaler','payloadUnit','marketTier','collectMarkets','signal','probText','weightHtml','renderFusion','renderInsights','renderMulti','renderDNA'];
+  const c=new Function('$','esc','var TIER_CHAMPION="CHAMPION",TIER_SHADOW="SHADOW",TIER_RESEARCH="RESEARCH",CORE_MARKETS=["3+ HT","7+ FT","Other HT","Other FT"];'+names.map(extractFunction).join('\n')+';return {renderFusion,renderInsights,renderMulti,renderDNA};')($,esc);
+  c.renderFusion({probabilityUnit:'percent',championFusion:{uncertainty:{confidence:0.8},gating:{ht:{weights:{a:0.8,b:99.2}}}}});
+  assert.match(boxes.fusionContent.innerHTML,/0\.8%/);
+  assert.doesNotMatch(boxes.fusionContent.innerHTML,/80\.0%/);
+  c.renderInsights({});assert.match(boxes.insightsContent.innerHTML,/Fixture identity<\/span><b>—/);
+  c.renderMulti({version:'CFI_PRACTICAL_OUTPUT_V3',multiMarket:{oneXTwo:[{market:'HT 1',probability:0.8,decision:'BET',decisionUse:true}]}});
+  assert.match(boxes.multiContent.innerHTML,/SHADOW/);assert.doesNotMatch(boxes.multiContent.innerHTML,/BET/);
+  assert.match(boxes.multiContent.innerHTML,/BTTS/);
+  c.renderDNA({});assert.match(boxes.dnaContent.innerHTML,/DỮ LIỆU KHÔNG CÓ/);
+  c.renderDNA({version:'CFI_PRACTICAL_OUTPUT_V3',champion:{path:'<script>',top3HT:[{score:'1-0',probability:0.008}]}});
+  assert.match(boxes.dnaContent.innerHTML,/0\.8%/);assert.match(boxes.dnaContent.innerHTML,/&lt;script&gt;/);
+});
+
+test('health updates runtime alone; four subsystem states stay independent',async()=>{
+  const state={subsystems:{runtime:'UNAVAILABLE',db:'CACHED',strict:'BLOCKED',market:'UPSTREAM'}};
+  const code='var SUBSYSTEMS=["runtime","db","strict","market"],SUB_STATE={ONLINE:"ok",READY:"ok",CACHED:"warn",CHECKING:"warn",UPSTREAM:"bad",UNAVAILABLE:"bad",BLOCKED:"bad"};';
+  const refresh=new Function('state','api','setStatus','toast',code+extractFunction('setSubsystem')+'async '+extractFunction('refreshStatus')+';return refreshStatus;')(state,async()=>({data:{status:'OK'}}),()=>{},()=>{});
+  await refresh(true);
+  assert.deepEqual(state.subsystems,{runtime:'ONLINE',db:'CACHED',strict:'BLOCKED',market:'UPSTREAM'});
+  for(const panel of ['multi','dna','raw'])assert.ok(html.includes('data-resultpanel="'+panel+'"'));
+});

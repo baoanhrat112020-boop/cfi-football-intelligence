@@ -83,7 +83,7 @@
     .nav-btn{border:0;background:transparent;color:#7896aa;display:grid;place-items:center;align-content:center;gap:2px;font-size:10px}.nav-btn.active{color:#49aeff}.nav-btn svg{width:20px;height:20px}
     .toast{position:fixed;left:50%;bottom:82px;transform:translate(-50%,14px);width:min(460px,calc(100% - 32px));padding:12px 14px;background:#102b40;border:1px solid #2a6b91;border-radius:11px;color:#dbeaf3;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:60;box-shadow:var(--shadow)}.toast.show{opacity:1;transform:translate(-50%,0)}
     .modal-wrap{position:fixed;inset:0;background:rgba(0,8,14,.72);backdrop-filter:blur(8px);display:none;align-items:flex-end;z-index:80}.modal-wrap.show{display:flex}.modal{width:min(540px,100%);max-height:72vh;overflow:auto;background:#092136;border:1px solid #216084;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -16px 50px rgba(0,0,0,.4)}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.modal h3{margin:0}.modal pre{white-space:pre-wrap;word-break:break-word;color:#9db5c6;font-size:11px;line-height:1.5;background:#061725;border:1px solid #173b53;border-radius:10px;padding:12px}
-    .loading{display:inline-flex;gap:5px;align-items:center}.loading i{width:6px;height:6px;border-radius:50%;background:currentColor;animation:b 1s infinite}.loading i:nth-child(2){animation-delay:.15s}.loading i:nth-child(3){animation-delay:.3s}@keyframes b{0%,70%,100%{opacity:.3;transform:scale(.8)}35%{opacity:1;transform:scale(1)}} 
+    .loading{display:inline-flex;gap:5px;align-items:center}.loading i{width:6px;height:6px;border-radius:50%;background:currentColor;animation:b 1s infinite}.loading i:nth-child(2){animation-delay:.15s}.loading i:nth-child(3){animation-delay:.3s}@keyframes b{0%,70%,100%{opacity:.3;transform:scale(.8)}35%{opacity:1;transform:scale(1)}}
     @media(min-width:700px){.app{padding-top:18px}.header{border-radius:16px 16px 0 0}.bottom-nav{border-radius:0 0 16px 16px}}
   </style>
 </head>
@@ -181,7 +181,7 @@
             <div class="source"><div class="source-left"><div class="source-icon">API</div><div><b>CFI Runtime</b><small>Production worker</small></div></div><div class="status"><i id="runtimeDot" class="dot"></i><span id="runtimeStatus">Checking…</span></div></div>
             <div class="source"><div class="source-left"><div class="source-icon">DB</div><div><b>Persistent DB</b><small>Historical evidence</small></div></div><div class="status"><i id="dbDot" class="dot"></i><span id="dbStatus">Checking…</span></div></div>
             <div class="source"><div class="source-left"><div class="source-icon">SP</div><div><b>Strict-Prior Guard</b><small>Context before match date</small></div></div><div class="status"><i id="strictDot" class="dot warn"></i><span id="strictStatus">Pending</span></div></div>
-            <div class="source"><div class="source-left"><div class="source-icon">MK</div><div><b>Market Engine</b><small>Multi-market / Champion</small></div></div><div class="status"><i class="dot warn"></i><span>Run prediction</span></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">MK</div><div><b>Market Engine</b><small>Multi-market / Champion</small></div></div><div class="status"><i id="marketDot" class="dot"></i><span id="marketStatus">UNAVAILABLE</span></div></div>
           </div>
         </div>
       </div>
@@ -263,7 +263,7 @@
       <div class="tabs" id="resultTabs">
         <button class="tab active" data-resulttab="markets">Markets</button>
         <button class="tab" data-resulttab="fusion">Fusion</button>
-        <button class="tab" data-resulttab="insights">Insights</button>
+        <button class="tab" data-resulttab="insights">Insights</button><button class="tab" data-resulttab="multi">Multi-market</button><button class="tab" data-resulttab="dna">Match DNA</button><button class="tab" data-resulttab="raw">Raw</button>
       </div>
       <div class="card result-hero" style="margin-top:12px">
         <div class="score-ring" id="scoreRing"><strong id="topProbability">—</strong></div>
@@ -302,6 +302,9 @@
         </div>
       </div>
 
+      <div class="result-panel" data-resultpanel="multi"><div class="card pad" id="multiContent"></div></div>
+      <div class="result-panel" data-resultpanel="dna"><div class="card pad" id="dnaContent"></div></div>
+      <div class="result-panel" data-resultpanel="raw"><div class="card pad"><pre id="rawContent"></pre></div></div>
       <button id="newMatchBtn" class="primary" style="background:#123e5b">New Match</button>
     </section>
   </main>
@@ -337,6 +340,7 @@
   function initials(name){return String(name||"?").trim().split(/\s+/).slice(0,2).map(function(x){return x[0]||""}).join("").toUpperCase()}
   function prettyDate(v){if(!v)return "—";var d=new Date(v+"T12:00:00");return isNaN(d)?v:d.toLocaleDateString("vi-VN",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"})}
   function syncMatch(){
+    state.prediction=null;setSubsystem("strict","UNAVAILABLE");setSubsystem("market","UNAVAILABLE");
     if(!state.match)return;
     $("homeName").textContent=state.match.home;$("awayName").textContent=state.match.away;$("homeCrest").textContent=initials(state.match.home);$("awayCrest").textContent=initials(state.match.away);
     $("leagueText").textContent=state.match.league||"Competition not supplied";$("dateText").textContent=prettyDate(state.match.date);
@@ -367,19 +371,26 @@
     return Promise.reject(new Error("Native CFI API bridge unavailable in this preview"));
   }
 
+  var SUBSYSTEMS=["runtime","db","strict","market"];
+  var SUB_STATE={ONLINE:"ok",READY:"ok",CACHED:"warn",CHECKING:"warn",UPSTREAM:"bad",UNAVAILABLE:"bad",BLOCKED:"bad"};
+  state.subsystems={runtime:"UNAVAILABLE",db:"UNAVAILABLE",strict:"UNAVAILABLE",market:"UNAVAILABLE"};
+  function setSubsystem(key,value){
+    if(SUBSYSTEMS.indexOf(key)<0||!Object.prototype.hasOwnProperty.call(SUB_STATE,value))return;
+    state.subsystems[key]=value;setStatus(key+"Dot",key+"Status",SUB_STATE[value],value);
+  }
   function statusText(obj){try{return JSON.stringify(obj).toLowerCase()}catch(e){return ""}}
   function setStatus(dotId,textId,kind,label){$(dotId).className="dot "+kind;$(textId).textContent=label}
   async function refreshStatus(silent){
-    setStatus("runtimeDot","runtimeStatus","","Checking…");
-    setStatus("dbDot","dbStatus","warn","Check on run");
+    setSubsystem("runtime","CHECKING");
+
     try{
       var r=await api("/health","GET");state.status=r.data;
-      setStatus("runtimeDot","runtimeStatus","ok","Online");
-      if(!silent)toast("CFI runtime online");
-      return true;
+      setSubsystem("runtime",r.data&&r.data.status==="OK"?"ONLINE":"UNAVAILABLE");
+      if(!silent)toast("CFI runtime: "+state.subsystems.runtime);
+      return state.subsystems.runtime==="ONLINE";
     }catch(e){
-      setStatus("runtimeDot","runtimeStatus","bad","Offline");
-      setStatus("dbDot","dbStatus","warn","Not checked");
+      setSubsystem("runtime","UPSTREAM");
+
       if(!silent)toast("Runtime: "+e.message);return false;
     }
   }
@@ -537,14 +548,14 @@
     var key=contextCacheKey(state.match),cached=cacheGet(key,10*60*1000);
     if(cached){
       state.context=cached;state.contextError=null;state.contextLoading=false;renderContext();
-      setStatus("dbDot","dbStatus","ok","Cached");
+      setSubsystem("db","CACHED");
       var cv=cached.temporalAudit&&cached.temporalAudit.verified===true;
-      $("strictDot").className="dot "+(cv?"ok":"warn");$("strictStatus").textContent=cv?"Verified":"Check on run";
+      setSubsystem("strict",cv?"CACHED":"UNAVAILABLE");
     }else{
       state.context=null;state.contextError=null;state.contextLoading=true;renderContext();
     }
-    setStatus("dbDot","dbStatus","","Checking…");
-    $("strictDot").className="dot warn";$("strictStatus").textContent="Checking…";
+    setSubsystem("db","CHECKING");
+    setSubsystem("strict","CHECKING");
     try{
       var r=await api("/api/match-context","POST",{home:state.match.home,away:state.match.away,target_date:state.match.date});
       state.context=r.data||null;state.contextLoading=false;
@@ -553,16 +564,16 @@
         if(state.context.target&&state.context.target.home)state.match.canonicalHome=state.context.target.home;
         if(state.context.target&&state.context.target.away)state.match.canonicalAway=state.context.target.away;
       }
-      setStatus("dbDot","dbStatus","ok","Ready");
+      setSubsystem("db",state.context&&state.context.target?"READY":"UNAVAILABLE");
       var verified=state.context&&state.context.temporalAudit&&state.context.temporalAudit.verified===true;
-      $("strictDot").className="dot "+(verified?"ok":"warn");$("strictStatus").textContent=verified?"Verified":"Check on run";
+      setSubsystem("strict",verified?"READY":"BLOCKED");
       renderContext();
       if(!silent)toast("Team context loaded");
     }catch(e){
       state.contextLoading=false;state.contextError=e.data||{message:e.message,status:e.status};
       var upstream=state.contextError.upstreamStatus||e.status||"";
-      setStatus("dbDot","dbStatus","bad",upstream?("Upstream "+upstream):"Unavailable");
-      $("strictDot").className="dot warn";$("strictStatus").textContent="Unavailable";
+      setSubsystem("db",upstream?"UPSTREAM":"UNAVAILABLE");
+      setSubsystem("strict","UNAVAILABLE");
       renderContext();
       if(!silent)toast("Context: "+(state.contextError.message||state.contextError.upstreamError||e.message));
     }
@@ -586,13 +597,7 @@
   $("evidenceBtn").onclick=function(){
     modal("Evidence",'<p class="section-sub">Trạng thái backend gần nhất. Không có xác suất nào được dựng ở client.</p><pre>'+esc(JSON.stringify(state.status||{status:"Not loaded"},null,2))+"</pre>");
   };
-  $("dnaBtn").onclick=function(){
-    var out=state.prediction;
-    if(!out){modal("Match DNA",'<p class="section-sub">Chưa có prediction. CFI không tạo dữ liệu DNA mẫu.</p>');return}
-    var ch=out.champion||{},ex=out.explosionScenario||{};
-    var ht=Array.isArray(ch.top3HT)?ch.top3HT.slice(0,3):[],ft=Array.isArray(ch.top3FT)?ch.top3FT.slice(0,3):[];
-    modal("Match DNA",'<div class="source-list"><div class="source"><span>Most likely path</span><b>'+esc(ch.path||"—")+'</b></div><div class="source"><span>Explosion level</span><b>'+esc(ex.level||"—")+'</b></div></div><pre>'+esc(JSON.stringify({top3HT:ht,top3FT:ft,thresholds:ex.thresholds||null},null,2))+'</pre>');
-  };
+  $("dnaBtn").onclick=function(){renderDNA(state.prediction||{});modal("Match DNA",$("dnaContent").innerHTML)};
   $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.2 Beta 1 · Build 4</b></div></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
@@ -603,25 +608,62 @@
     if(d.body&&d.body.outputV3)return d.body.outputV3;
     return d;
   }
-  function makeScaler(values){
-    var nums=(values||[]).map(Number).filter(function(v){return Number.isFinite(v)&&v>=0});
-    var fraction=nums.length>0&&nums.every(function(v){return v>=0&&v<=1});
+  var TIER_CHAMPION="CHAMPION",TIER_SHADOW="SHADOW",TIER_RESEARCH="RESEARCH";
+  var CORE_MARKETS=["3+ HT","7+ FT","Other HT","Other FT"];
+  function makeScaler(values,unit){
+    function number(v){return (typeof v==="number"||(typeof v==="string"&&v.trim()!==""))&&Number.isFinite(Number(v))?Number(v):null}
+    var nums=(Array.isArray(values)?values:[]).map(number).filter(function(v){return v!==null&&v>=0&&v<=100});
+    var known=unit==="fraction"||unit==="percent";
+    var fraction=unit==="fraction"||(!known&&nums.length>1&&nums.every(function(v){return v<=1}));
     return function(v){
-      var n=Number(v);if(!Number.isFinite(n)||n<0)return null;
+      var n=number(v);if(n===null||n<0||n>(fraction?1:100)||(!known&&(!!unit||nums.length<2)))return null;
       return fraction?n*100:n;
     };
   }
+  function payloadUnit(out){
+    return out&&out.probabilityUnit||(out&&out.version==="CFI_PRACTICAL_OUTPUT_V3"?"fraction":null);
+  }
+  function marketTier(row,source){
+    var tags=[row.tier,row.classification,row.researchState,row.mode,row.decision].join(" ").toUpperCase();
+    if(/RESEARCH/.test(tags)||row.researchOnly===true)return TIER_RESEARCH;
+    if(/SHADOW/.test(tags))return TIER_SHADOW;
+    if(row.tier&&row.tier!==TIER_CHAMPION)return TIER_SHADOW;
+    if(row.researchState&&row.researchState!==TIER_CHAMPION)return TIER_SHADOW;
+    return row.tier===TIER_CHAMPION||row.researchState===TIER_CHAMPION||source==="champion.thresholds"?TIER_CHAMPION:TIER_SHADOW;
+  }
+  function collectMarkets(out){
+    out=out||{};var byKey={};
+    function branch(entries,source){
+      var vals=entries.map(function(x){return x.probability!=null?x.probability:x.final});
+      entries.forEach(function(x){
+        var market=x.market||x.target;if(!market)return;
+        var raw=x.probability!=null?x.probability:x.final;
+        var unit=x.probabilityUnit||payloadUnit(out),tier=marketTier(x,source);
+        var candidate={market:market,pRaw:raw,p:makeScaler(vals,unit)(raw),decision:x.decision||"",decisionUse:x.decisionUse===true,tier:tier,source:source,probabilityUnit:unit||"group",confidence:x.confidence||null};
+        candidate.decisionUse=candidate.decisionUse&&tier===TIER_CHAMPION&&candidate.p!==null;
+        var key=market+"|"+tier,prev=byKey[key];
+        var sources=prev?prev.sources.concat([candidate]):[candidate];
+        var conflict=!!prev&&(prev.conflict||prev.p!==candidate.p||prev.decision!==candidate.decision||prev.decisionUse!==candidate.decisionUse);
+        byKey[key]=Object.assign({},candidate,{sources:sources,conflict:conflict});
+        if(conflict)byKey[key].decisionUse=false;
+      });
+    }
+    branch(Array.isArray(out.champion&&out.champion.thresholds)?out.champion.thresholds:[],"champion.thresholds");
+    branch(Array.isArray(out.ranking)?out.ranking:[],"ranking");
+    branch(Array.isArray(out.markets)?out.markets:Object.keys(out.markets||{}).map(function(k){var v=out.markets[k];return Object.assign({},v&&typeof v==="object"?v:{final:v},{market:k})}),"markets");
+    var mm=out.multiMarket||{};
+    ["oneXTwo","overUnder","asianHandicap","btts"].forEach(function(k){
+      branch(Array.isArray(mm[k])?mm[k].map(function(x){return Object.assign({},x,{tier:TIER_SHADOW,decisionUse:false})}):[],"multiMarket."+k);
+    });
+    return Object.keys(byKey).map(function(k){return byKey[k]});
+  }
   function collectCore(out){
-    var rows=[];
-    var thresholds=out&&out.champion&&Array.isArray(out.champion.thresholds)?out.champion.thresholds:[];
-    thresholds.forEach(function(x){if(["3+ HT","7+ FT","Other HT","Other FT"].indexOf(x.market)>=0)rows.push({market:x.market,pRaw:x.probability,decision:x.decision||"",confidence:x.confidence||null})});
-    if(!rows.length&&Array.isArray(out.ranking))out.ranking.forEach(function(x){var m=x.target||x.market;if(["3+ HT","7+ FT","Other HT","Other FT"].indexOf(m)>=0)rows.push({market:m,pRaw:x.probability,decision:x.decision||"",confidence:x.confidence||null})});
-    if(!rows.length&&out.markets)Object.keys(out.markets).forEach(function(k){if(["3+ HT","7+ FT","Other HT","Other FT"].indexOf(k)>=0){var v=out.markets[k];rows.push({market:k,pRaw:v.final!=null?v.final:(v.probability!=null?v.probability:v),decision:v.decision||""})}});
-    var scale=makeScaler(rows.map(function(r){return r.pRaw}));
-    rows.forEach(function(r){r.p=scale(r.pRaw)});
-    return rows.sort(function(a,b){return["3+ HT","7+ FT","Other HT","Other FT"].indexOf(a.market)-["3+ HT","7+ FT","Other HT","Other FT"].indexOf(b.market)});
+    return collectMarkets(out).filter(function(r){return r.tier===TIER_CHAMPION&&CORE_MARKETS.indexOf(r.market)>=0}).sort(function(a,b){return CORE_MARKETS.indexOf(a.market)-CORE_MARKETS.indexOf(b.market)});
   }
   function signal(row){
+    if(row.conflict)return ["CONFLICT", "sig-block"];
+    if(row.tier&&row.tier!=="CHAMPION")return [row.tier,"sig-block"];
+    if(row.decisionUse===false)return ["AUDIT ONLY","sig-block"];
     var raw=String(row.decision||"").trim(),d=raw.toUpperCase().replace(/[ -]+/g,"_");
     if(d==="BET"||d==="LEAN"||d==="STRONG"||d==="PLAY")return["STRONG","sig-strong"];
     if(d==="WATCH"||d==="MONITOR"||d==="CONSIDER")return["WATCH","sig-watch"];
@@ -629,13 +671,13 @@
     if(!d||d==="PASS"||d==="SKIP"||d==="AVOID"||d==="NO_BET")return["PASS","sig-pass"];
     return["UNKNOWN · "+raw,"sig-block"];
   }
-  function probText(v,group){
-    var n=makeScaler(Array.isArray(group)?group:[v])(v);
+  function probText(v,group,unit){
+    var n=makeScaler(group,unit)(v);
     return Number.isFinite(n)?n.toFixed(1)+"%":"—";
   }
-  function weightHtml(weights){
+  function weightHtml(weights,unit){
     if(!weights||typeof weights!=="object")return '<div class="context-state">Không có expert weights.</div>';
-    return '<div class="weights">'+Object.keys(weights).map(function(k){var v=Number(weights[k])||0;return '<div class="weight-row"><span>'+esc(k)+'</span><b>'+probText(v)+'</b><div class="weight-bar"><i style="width:'+Math.max(0,Math.min(100,v*100))+'%"></i></div></div>'}).join("")+'</div>';
+    return '<div class="weights">'+Object.keys(weights).map(function(k){var v=weights[k];return '<div class="weight-row"><span>'+esc(k)+'</span><b>'+probText(v,Object.values(weights),unit)+'</b><div class="weight-bar"><i style="width:'+Math.max(0,Math.min(100,(makeScaler(Object.values(weights),unit)(v)||0)))+'%"></i></div></div>'}).join("")+'</div>';
   }
   function renderFusion(out){
     var box=$("fusionContent"),f=out&&out.championFusion;
@@ -645,11 +687,11 @@
     var fusionVals=["3+ HT","7+ FT","Other HT","Other FT"].map(function(k){return thresholds[k]});
     var marketVals=[ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelProbability,ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelProbability];
     box.innerHTML=
-      '<div class="fusion-card"><h3>Status</h3><div class="kv"><span>State</span><b>'+esc(f.status||"—")+'</b></div><div class="kv"><span>Research only</span><b>'+(f.researchOnly!==false?"YES":"NO")+'</b></div><div class="kv"><span>Decision use</span><b>'+(f.decisionUse===true?"YES":"NO")+'</b></div><div class="kv"><span>Confidence</span><b>'+probText(u.confidence)+'</b></div><div class="kv"><span>Abstain</span><b>'+(u.abstain===true?"YES":"NO")+'</b></div></div>'+
-      '<div class="fusion-card"><h3>Fusion thresholds</h3><div class="kv"><span>3+ HT</span><b>'+probText(thresholds["3+ HT"],fusionVals)+'</b></div><div class="kv"><span>7+ FT</span><b>'+probText(thresholds["7+ FT"],fusionVals)+'</b></div><div class="kv"><span>Other HT</span><b>'+probText(thresholds["Other HT"],fusionVals)+'</b></div><div class="kv"><span>Other FT</span><b>'+probText(thresholds["Other FT"],fusionVals)+'</b></div></div>'+
-      '<div class="fusion-card"><h3>HT expert weights</h3>'+weightHtml(g.ht&&g.ht.weights)+'</div>'+
-      '<div class="fusion-card"><h3>FT expert weights</h3>'+weightHtml(g.ft&&g.ft.weights)+'</div>'+
-      '<div class="fusion-card"><h3>Market center</h3><div class="kv"><span>HT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelProbability,marketVals)+'</b></div><div class="kv"><span>FT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelProbability,marketVals)+'</b></div><div class="kv"><span>FT O/U</span><b>'+esc(ms.overUnder&&ms.overUnder.ft&&ms.overUnder.ft.modelLean||"—")+'</b></div><div class="kv"><span>FT AH</span><b>'+esc(ms.asianHandicap&&ms.asianHandicap.ft&&ms.asianHandicap.ft.modelLean||"—")+'</b></div></div>'+
+      '<div class="fusion-card"><h3>Status</h3><div class="kv"><span>State</span><b>'+esc(f.status||"—")+'</b></div><div class="kv"><span>Research only</span><b>'+(f.researchOnly!==false?"YES":"NO")+'</b></div><div class="kv"><span>Decision use</span><b>'+(f.decisionUse===true?"YES":"NO")+'</b></div><div class="kv"><span>Confidence</span><b>'+probText(u.confidence,null,payloadUnit(out))+'</b></div><div class="kv"><span>Abstain</span><b>'+(u.abstain===true?"YES":"NO")+'</b></div></div>'+
+      '<div class="fusion-card"><h3>Fusion thresholds</h3><div class="kv"><span>3+ HT</span><b>'+probText(thresholds["3+ HT"],fusionVals,payloadUnit(out))+'</b></div><div class="kv"><span>7+ FT</span><b>'+probText(thresholds["7+ FT"],fusionVals,payloadUnit(out))+'</b></div><div class="kv"><span>Other HT</span><b>'+probText(thresholds["Other HT"],fusionVals,payloadUnit(out))+'</b></div><div class="kv"><span>Other FT</span><b>'+probText(thresholds["Other FT"],fusionVals,payloadUnit(out))+'</b></div></div>'+
+      '<div class="fusion-card"><h3>HT expert weights</h3>'+weightHtml(g.ht&&g.ht.weights,payloadUnit(out))+'</div>'+
+      '<div class="fusion-card"><h3>FT expert weights</h3>'+weightHtml(g.ft&&g.ft.weights,payloadUnit(out))+'</div>'+
+      '<div class="fusion-card"><h3>Market center</h3><div class="kv"><span>HT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelProbability,marketVals,payloadUnit(out))+'</b></div><div class="kv"><span>FT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelProbability,marketVals,payloadUnit(out))+'</b></div><div class="kv"><span>FT O/U</span><b>'+esc(ms.overUnder&&ms.overUnder.ft&&ms.overUnder.ft.modelLean||"—")+'</b></div><div class="kv"><span>FT AH</span><b>'+esc(ms.asianHandicap&&ms.asianHandicap.ft&&ms.asianHandicap.ft.modelLean||"—")+'</b></div></div>'+
       ((Array.isArray(u.reasons)&&u.reasons.length)?'<div class="fusion-card"><h3>Abstain reasons</h3><div class="pill-line">'+u.reasons.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"");
   }
   function renderInsights(out){
@@ -659,32 +701,62 @@
     var decisionVals=td.map(function(x){return x.probability});
     box.innerHTML=
       '<div class="insight-card"><h3>Evidence</h3><div class="kv"><span>Status</span><b>'+esc(ev.status||"—")+'</b></div><div class="kv"><span>Home fixtures</span><b>'+esc(ev.homeFixtures==null?"—":ev.homeFixtures)+'</b></div><div class="kv"><span>Away fixtures</span><b>'+esc(ev.awayFixtures==null?"—":ev.awayFixtures)+'</b></div><div class="kv"><span>H2H fixtures</span><b>'+esc(ev.h2hFixtures==null?"—":ev.h2hFixtures)+'</b></div></div>'+
-      '<div class="insight-card"><h3>Explosion scenario</h3><div class="kv"><span>Level</span><b>'+esc(ex.level||"—")+'</b></div><div class="kv"><span>HT 3+</span><b>'+probText(ht["3Plus"],explosionVals)+'</b></div><div class="kv"><span>FT 4+</span><b>'+probText(ft["4Plus"],explosionVals)+'</b></div><div class="kv"><span>FT 5+</span><b>'+probText(ft["5Plus"],explosionVals)+'</b></div><div class="kv"><span>FT 6+</span><b>'+probText(ft["6Plus"],explosionVals)+'</b></div></div>'+
-      '<div class="insight-card"><h3>Integrity gates</h3><div class="kv"><span>Strict-prior</span><b>'+(g.strictPrior===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Evidence</span><b>'+(g.evidenceSufficient===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Consistency</span><b>'+(g.consistency===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Fixture identity</span><b>'+(g.fixtureIdentityVerified===false?"FAIL":"PASS")+'</b></div></div>'+
-      '<div class="insight-card"><h3>Top decisions</h3>'+(td.length?td.slice(0,5).map(function(x){return '<div class="kv"><span>'+esc(x.market||x.target||"—")+'</span><b>'+esc(x.decision||"—")+' · '+probText(x.probability,decisionVals)+'</b></div>'}).join(""):'<div class="context-state">Không có actionable decision.</div>')+'</div>'+
+      '<div class="insight-card"><h3>Explosion scenario</h3><div class="kv"><span>Level</span><b>'+esc(ex.level||"—")+'</b></div><div class="kv"><span>HT 3+</span><b>'+probText(ht["3Plus"],explosionVals,payloadUnit(out))+'</b></div><div class="kv"><span>FT 4+</span><b>'+probText(ft["4Plus"],explosionVals,payloadUnit(out))+'</b></div><div class="kv"><span>FT 5+</span><b>'+probText(ft["5Plus"],explosionVals,payloadUnit(out))+'</b></div><div class="kv"><span>FT 6+</span><b>'+probText(ft["6Plus"],explosionVals,payloadUnit(out))+'</b></div></div>'+
+      '<div class="insight-card"><h3>Integrity gates</h3><div class="kv"><span>Strict-prior</span><b>'+(g.strictPrior===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Evidence</span><b>'+(g.evidenceSufficient===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Consistency</span><b>'+(g.consistency===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Fixture identity</span><b>'+(g.fixtureIdentityVerified===true?"PASS":g.fixtureIdentityVerified===false?"FAIL":"—")+'</b></div></div>'+
+      '<div class="insight-card"><h3>Top decisions</h3>'+(td.length?td.slice(0,5).map(function(x){return '<div class="kv"><span>'+esc(x.market||x.target||"—")+'</span><b>'+esc(signal({decision:x.decision,decisionUse:x.decisionUse===true,tier:marketTier(x,"topDecisions")})[0])+' · '+probText(x.probability,decisionVals,payloadUnit(out))+'</b></div>'}).join(""):'<div class="context-state">Không có actionable decision.</div>')+'</div>'+
       ((Array.isArray(ex.triggers)&&ex.triggers.length)?'<div class="insight-card"><h3>Triggers</h3><div class="pill-line">'+ex.triggers.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"")+
       ((Array.isArray(ex.contraSignals)&&ex.contraSignals.length)?'<div class="insight-card"><h3>Contra signals</h3><div class="pill-line">'+ex.contraSignals.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"");
   }
 
+  function renderMulti(out){
+    var rows=collectMarkets(out).filter(function(r){return r.tier!==TIER_CHAMPION||CORE_MARKETS.indexOf(r.market)<0});
+    var ms=out.marketSummary||{};
+    var html='<p class="section-sub">SHADOW / RESEARCH · Không dùng để quyết định.</p>';
+    [["1X2","oneXTwo"],["Tài/Xỉu","overUnder"],["Kèo châu Á","asianHandicap"],["BTTS","btts"]].forEach(function(g){
+      html+='<h3>'+g[0]+'</h3>';
+      ["ht","ft"].forEach(function(period){var x=ms[g[1]]&&ms[g[1]][period]||{};
+        var vals=["ht","ft"].map(function(p){return ms[g[1]]&&ms[g[1]][p]&&ms[g[1]][p].modelProbability});
+        html+='<div class="kv"><span>'+period.toUpperCase()+' · SHADOW</span><b>'+esc(x.modelPick||x.modelLean||"DỮ LIỆU KHÔNG CÓ")+' · '+probText(x.modelProbability,vals,payloadUnit(out))+'</b></div>';
+      });
+    });
+    html+=rows.map(function(r){return '<div class="kv"><span>'+esc(r.market)+' · '+esc(r.tier===TIER_RESEARCH?TIER_RESEARCH:TIER_SHADOW)+'</span><b>'+(r.p===null?'—':r.p.toFixed(1)+'%')+'</b></div>'}).join("");
+    $("multiContent").innerHTML=html;
+  }
+  function renderDNA(out){
+    var ch=out.champion||{},ex=out.explosionScenario||{},dna=out.matchDNA||{};
+    var flags=Array.isArray(out.riskFlags)?out.riskFlags:Array.isArray(ex.contraSignals)?ex.contraSignals:[];
+    var html='<h3>Match DNA</h3><p class="section-sub">Chỉ hiển thị dữ liệu backend; không dựng kịch bản.</p>';
+    [["Most likely path",dna.path||ch.path],["Explosion level",ex.level]].forEach(function(x){html+='<div class="kv"><span>'+x[0]+'</span><b>'+esc(x[1]||"DỮ LIỆU KHÔNG CÓ")+'</b></div>'});
+    ["HT","FT"].forEach(function(period){var rows=Array.isArray(ch["top3"+period])?ch["top3"+period]:[],vals=rows.map(function(r){return r.probability});
+      html+='<h3>'+period+'</h3>'+(rows.length?rows.map(function(r){return '<div class="kv"><span>'+esc(r.score||r.path||r.scoreline||"—")+'</span><b>'+probText(r.probability,vals,payloadUnit(out))+'</b></div>'}).join(""):'<p>DỮ LIỆU KHÔNG CÓ</p>');
+    });
+    if(flags.length)html+='<p>'+esc(flags.join(" · "))+'</p>';
+    $("dnaContent").innerHTML=html;
+  }
+
   function renderPrediction(data){
     var out=unwrap(data);state.prediction=out;var rows=collectCore(out);var list=$("marketList");list.innerHTML="";
-    if(!rows.length){list.innerHTML='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
-    rows.forEach(function(r){var s=signal(r);var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(r.market)+"</b><div class='prob'>"+(r.p==null?"—":r.p.toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)});
-    var valid=rows.map(function(r){return r.p}).filter(function(x){return x!=null});var top=valid.length?Math.max.apply(Math,valid):null;
+    if(!rows.length){list.innerHTML='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở tab Raw để kiểm tra provenance và response.</span></div>'}
+    rows.forEach(function(r){var s=signal(r);var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(r.market)+"</b><div class='prob'>"+(r.p==null?"—":r.p.toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+esc(s[0])+"</div>";list.appendChild(el)});
+    var valid=rows.filter(function(r){return r.decisionUse&&!r.conflict}).map(function(r){return r.p}).filter(function(x){return x!=null});var top=valid.length?Math.max.apply(Math,valid):null;
     $("topProbability").textContent=top==null?"—":top.toFixed(0)+"%";$("scoreRing").style.setProperty("--p",(top||0)+"%");
     $("resultTitle").textContent=(out.match&&out.match.home?out.match.home:state.match.home)+" vs "+(out.match&&out.match.away?out.match.away:state.match.away);
     var gates=out.gates||{};$("gateStrict").textContent=gates.strictPrior===true?"PASS":(gates.strictPrior===false?"FAIL":"—");
     $("gateEvidence").textContent=gates.evidenceSufficient===true?"PASS":(gates.evidenceSufficient===false?"FAIL":(out.evidenceSufficiency&&out.evidenceSufficiency.status)||"—");
-    $("gateConsistency").textContent=gates.consistency===true?"PASS":(gates.consistency===false?"FAIL":"—");$("finalDecision").textContent=out.final||"—";
-    renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
+    $("gateConsistency").textContent=gates.consistency===true?"PASS":(gates.consistency===false?"FAIL":"—");$("finalDecision").textContent=rows.some(function(r){return r.conflict})?"BLOCKED · CONFLICT":out.final||"—";
+    renderFusion(out);renderInsights(out);renderMulti(out);renderDNA(out);$("rawContent").textContent=JSON.stringify({markets:collectMarkets(out),payload:out},null,2);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
   }
 
   $("predictBtn").onclick=async function(){
+    setSubsystem("market","CHECKING");
     var btn=$("predictBtn");btn.disabled=true;btn.innerHTML='<span class="loading"><i></i><i></i><i></i></span> Running CFI';
     try{
       var r=await api("/api/predict","POST",{home:state.match.canonicalHome||state.match.home,away:state.match.canonicalAway||state.match.away,target_date:state.match.date,language:"vi",input_mode:"SINGLE_MATCH"});
       renderPrediction(r.data);
+      setSubsystem("market",state.prediction.final==="BLOCKED"?"BLOCKED":collectMarkets(state.prediction).length?"READY":"UNAVAILABLE");
+      setSubsystem("strict",state.prediction.gates&&state.prediction.gates.strictPrior===true?"READY":"BLOCKED");
     }catch(e){
+      setSubsystem("market",e.status===422?"BLOCKED":"UPSTREAM");
       var payload=e.data||{};var msg=(payload&&payload.message)||(payload&&payload.error)||e.message||"Prediction rejected";
       $("blockedReason").textContent=String(msg);$("blockedSummary").textContent=e.status===422?"Evidence/identity gate rejected this prediction.":"CFI engine did not return an accepted prediction.";showScreen("blocked");
     }finally{btn.disabled=false;btn.innerHTML="▶ &nbsp; RUN CFI PREDICTION"}
@@ -709,6 +781,7 @@
     else toast(btn.textContent+" đã nhận thao tác; module này sẽ dùng endpoint CFI tương ứng.");
   }});
 
+  SUBSYSTEMS.forEach(function(k){setSubsystem(k,"UNAVAILABLE")});
   setToday();
 })();
 </script>
