@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { authorizeCfiDbRequest } from "../_shared/cfi-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,17 +23,15 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Private key used only between CFI GPT Action and this function.
-  const expectedKey = Deno.env.get("CFI_ACTION_KEY");
+  // Every route in this function, including fixtures-day, is private.
+  // Authenticate before creating the service-role client or reading any data.
+  const auth = authorizeCfiDbRequest(
+    req.headers.get("x-cfi-key"),
+    Deno.env.get("CFI_ACTION_KEY")
+  );
 
-  if (!expectedKey) {
-    return json({ error: "SERVER_KEY_NOT_CONFIGURED" }, 500);
-  }
-
-  const suppliedKey = req.headers.get("x-cfi-key");
-
-  if (suppliedKey !== expectedKey) {
-    return json({ error: "UNAUTHORIZED" }, 401);
+  if (!auth.ok) {
+    return json({ error: auth.error }, auth.status);
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

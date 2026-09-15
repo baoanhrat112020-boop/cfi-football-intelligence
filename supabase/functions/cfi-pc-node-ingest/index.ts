@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { authorizePcNodeAction } from "../_shared/cfi-auth.ts";
 
 const cors={
   "Access-Control-Allow-Origin":"*",
@@ -275,15 +276,14 @@ Deno.serve(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
   if(req.method!=="POST")return json({error:"POST_REQUIRED"},405);
   const body=await req.json().catch(()=>({})),action=String(body?.action??"HEALTH").toUpperCase();
-  const nodeExpected=Deno.env.get("CFI_PC_NODE_KEY");
-  const bridgeExpected=Deno.env.get("CFI_CLOUD_BRIDGE_KEY");
-  if(action==="URGENT_FIXTURE_QUEUE"||action==="URGENT_FIXTURE_PEEK"||action==="PC_NODE_PRESENCE"){
-    if(!bridgeExpected)return json({error:"BRIDGE_KEY_NOT_CONFIGURED"},500);
-    if(req.headers.get("x-cfi-bridge-key")!==bridgeExpected)return json({error:"UNAUTHORIZED_BRIDGE"},401);
-  }else{
-    if(!nodeExpected)return json({error:"NODE_KEY_NOT_CONFIGURED"},500);
-    if(req.headers.get("x-cfi-node-key")!==nodeExpected)return json({error:"UNAUTHORIZED"},401);
-  }
+  const auth=authorizePcNodeAction(
+    action,
+    req.headers.get("x-cfi-node-key"),
+    Deno.env.get("CFI_PC_NODE_KEY"),
+    req.headers.get("x-cfi-bridge-key"),
+    Deno.env.get("CFI_CLOUD_BRIDGE_KEY")
+  );
+  if(!auth.ok)return json({error:auth.error},auth.status);
   const su=Deno.env.get("SUPABASE_URL"),sr=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");if(!su||!sr)return json({error:"SERVER_SECRET_MISSING"},500);
   const db=createClient(su,sr,{auth:{persistSession:false,autoRefreshToken:false}});
   if(action==="PC_NODE_HEARTBEAT"){
