@@ -28,7 +28,6 @@ jobs:
           if(body.status!=='OK') throw new Error('status='+body.status);
           if(body.action!=='CFI_FIXTURES_DAY') throw new Error('action='+body.action);
           if(!Array.isArray(body.rows)) throw new Error('rows missing');
-          if(body.rows.length<1) throw new Error('no fixtures returned');
           console.log(JSON.stringify({
             status:body.status,
             source:body.source,
@@ -36,4 +35,6 @@ jobs:
             fixtures:body.rows.length,
             sample:body.rows.slice(0,5).map(x=>({time:x.kickoffLocal,home:x.home,away:x.away,competition:x.competition}))
           },null,2));
+          console.log(JSON.stringify(body.attempts||[],null,2));
+          if(body.rows.length<1) throw new Error('no fixtures returned');
           NODE
