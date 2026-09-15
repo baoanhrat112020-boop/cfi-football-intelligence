@@ -32,6 +32,37 @@ mkdir -p "$WORK_DIR/Payload"
 rm -rf "$WORK_DIR/Payload/CFI.app/_CodeSignature"
 rm -f "$WORK_DIR/Payload/CFI.app/embedded.mobileprovision"
 
+BUNDLE="$WORK_DIR/Payload/CFI.app"
+test -s "$BUNDLE/Info.plist" || { echo "IPA validation failed: Info.plist missing" >&2; exit 65; }
+test -s "$BUNDLE/index.html" || { echo "IPA validation failed: bundled index.html missing" >&2; exit 65; }
+test -s "$BUNDLE/CFI" || { echo "IPA validation failed: executable missing" >&2; exit 65; }
+
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUNDLE/Info.plist")"
+BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUNDLE/Info.plist")"
+[[ "$VERSION" == "0.2.2" && "$BUILD" == "4" ]] || {
+  echo "IPA validation failed: expected 0.2.2 build 4, got $VERSION build $BUILD" >&2
+  exit 65
+}
+
+grep -q 'v0.2.2 Beta 1 · Build 4' "$BUNDLE/index.html" || {
+  echo "IPA validation failed: bundled UI version does not match 0.2.2 build 4" >&2
+  exit 65
+}
+
+for icon in "$BUNDLE"/AppIcon*.png "$BUNDLE"/iTunesArtwork.png; do
+  [[ -f "$icon" ]] || { echo "IPA validation failed: icon missing" >&2; exit 65; }
+  MAGIC="$(head -c4 "$icon" | od -An -tx1 | tr -d ' \n')"
+  [[ "$MAGIC" == "89504e47" ]] || {
+    echo "IPA validation failed: icon is not PNG: $icon ($MAGIC)" >&2
+    exit 65
+  }
+done
+
+if grep -RIEq 'SUPABASE_SERVICE_ROLE_KEY|CLOUDFLARE_API_TOKEN|CFI_PC_NODE_KEY|CFI_ACTION_KEY[[:space:]]*=' "$BUNDLE"; then
+  echo "IPA validation failed: secret marker found in app bundle" >&2
+  exit 65
+fi
+
 rm -f "$OUTPUT_PATH"
 (
   cd "$WORK_DIR"
