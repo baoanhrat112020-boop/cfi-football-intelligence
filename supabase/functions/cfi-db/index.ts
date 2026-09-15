@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
 
-      const fixtures = (rows || []).map((row: any) => ({
+      const canonicalFixtures = (rows || []).map((row: any) => ({
         provider: "CFI_BIGDB",
         providerId: String(row.fixture_id),
         home: row.home?.canonical_name || "",
@@ -141,17 +141,103 @@ Deno.serve(async (req) => {
         canonicalHomeTeamId: row.home_team_id || null,
         canonicalAwayTeamId: row.away_team_id || null,
         season: row.season || null,
-        provenance: "PERSISTENT_DB_CANONICAL_FIXTURE"
+        provenance: "PERSISTENT_DB_CANONICAL_FIXTURE",
+        sourceProviders: ["CFI_BIGDB"]
       })).filter((row: any) => row.home && row.away);
+
+      let bridgeFixtures: any[] = [];
+      let bridgeFresh = false;
+      let bridgeGeneratedAt: string | null = null;
+
+      try {
+        const path = `runtime/fixture-discovery-AISCORE-${requestedDate}.json`;
+        const { data: blob, error: bridgeError } = await supabase.storage
+          .from("cfi-pc-bridge-v1")
+          .download(path);
+
+        if (!bridgeError && blob) {
+          const manifest = JSON.parse(await blob.text());
+          bridgeGeneratedAt = String(manifest?.generatedAt || "");
+          const ageMs = Date.now() - Date.parse(bridgeGeneratedAt);
+          bridgeFresh = Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 45 * 60 * 1000;
+
+          if (
+            bridgeFresh &&
+            String(manifest?.targetDate || "") === requestedDate &&
+            Array.isArray(manifest?.fixtures)
+          ) {
+            bridgeFixtures = manifest.fixtures.slice(0, 500).map((row: any) => ({
+              provider: "AISCORE",
+              providerId: String(row?.providerId || ""),
+              home: String(row?.home || "").trim(),
+              away: String(row?.away || "").trim(),
+              competition: row?.competition ? String(row.competition) : null,
+              country: row?.country ? String(row.country) : null,
+              targetDate: requestedDate,
+              kickoffIso: row?.kickoffIso ? String(row.kickoffIso) : null,
+              kickoffLocal: row?.kickoffLocal ? String(row.kickoffLocal) : null,
+              status: String(row?.status || "scheduled"),
+              canonicalHomeTeamId: null,
+              canonicalAwayTeamId: null,
+              provenance: "PC_NODE_AISCORE_BRIDGE",
+              sourceUrls: Array.isArray(row?.sourceUrls) ? row.sourceUrls.slice(0, 6) : [],
+              sourceProviders: ["AISCORE"]
+            })).filter((row: any) => row.providerId && row.home && row.away);
+          }
+        }
+      } catch {
+        bridgeFixtures = [];
+      }
+
+      const merged = new Map<string, any>();
+      const keyOf = (row: any) => [
+        foldName(String(row?.home || "")),
+        foldName(String(row?.away || "")),
+        requestedDate
+      ].join("|");
+
+      for (const row of canonicalFixtures) {
+        merged.set(keyOf(row), row);
+      }
+
+      for (const row of bridgeFixtures) {
+        const key = keyOf(row);
+        const current = merged.get(key);
+
+        if (!current) {
+          merged.set(key, row);
+          continue;
+        }
+
+        merged.set(key, {
+          ...current,
+          kickoffIso: current.kickoffIso || row.kickoffIso || null,
+          kickoffLocal: current.kickoffLocal || row.kickoffLocal || null,
+          competition: current.competition || row.competition || null,
+          country: current.country || row.country || null,
+          sourceProviders: [...new Set([...(current.sourceProviders || [current.provider]), "AISCORE"])],
+          sourceUrls: row.sourceUrls || []
+        });
+      }
+
+      const fixtures = [...merged.values()].sort((a: any, b: any) =>
+        String(a.kickoffLocal || "99:99").localeCompare(String(b.kickoffLocal || "99:99"))
+        || String(a.home).localeCompare(String(b.home))
+      );
 
       return json({
         status: "OK",
-        version: "CFI_DB_FIXTURES_DAY_V1",
+        version: "CFI_DB_FIXTURES_DAY_V2_AISCORE_BRIDGE",
         targetDate: requestedDate,
-        source: "CFI_BIGDB",
+        source: bridgeFixtures.length ? "CFI_BIGDB_PLUS_AISCORE_BRIDGE" : "CFI_BIGDB",
         count: fixtures.length,
+        canonicalCount: canonicalFixtures.length,
+        aiScoreBridgeCount: bridgeFixtures.length,
+        aiScoreBridgeFresh: bridgeFresh,
+        aiScoreBridgeGeneratedAt: bridgeGeneratedAt,
         rows: fixtures,
-        readOnly: true
+        readOnly: true,
+        canonicalWriteAttempted: false
       });
     }
 
