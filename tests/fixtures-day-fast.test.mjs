@@ -2,72 +2,78 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { discoverDayFixturesFast, handleFixturesDayRequest } from '../src/runtime/fixtures-day-fast.ts';
 
-const NOW=Date.parse('2026-09-15T05:00:00Z');
+const targetDate='2026-09-15';
+const timeZone='Asia/Ho_Chi_Minh';
+const nowMs=Date.parse('2026-09-15T00:00:00Z');
 
-function sofaPayload(){
-  return {events:[
-    {id:1,startTimestamp:(NOW+3600000)/1000,status:{type:'notstarted'},homeTeam:{name:'Alpha FC'},awayTeam:{name:'Beta FC'},tournament:{name:'League A',category:{country:{name:'X'}}}},
-    {id:2,startTimestamp:(NOW+7200000)/1000,status:{type:'notstarted'},homeTeam:{name:'Gamma FC'},awayTeam:{name:'Delta FC'},tournament:{name:'League A',category:{country:{name:'X'}}}}
-  ]};
-}
-
-function espnPayload(){
-  return {events:[{
-    id:'e1',
-    date:new Date(NOW+10800000).toISOString(),
-    status:{type:{state:'pre'}},
-    name:'League B',
-    competitions:[{competitors:[
-      {homeAway:'home',team:{displayName:'Home ESPN'}},
-      {homeAway:'away',team:{displayName:'Away ESPN'}}
-    ]}]
-  }]};
+function sofaPayload(count=50){
+  const base=Date.parse('2026-09-15T12:00:00Z')/1000;
+  return{
+    events:Array.from({length:count},(_,i)=>({
+      id:1000+i,
+      homeTeam:{name:`Home ${i}`},
+      awayTeam:{name:`Away ${i}`},
+      startTimestamp:base+i*60,
+      status:{type:'notstarted'},
+      tournament:{name:'Test League',category:{country:{name:'Test'}}}
+    }))
+  };
 }
 
 test('fixtures-day validates target date', async()=>{
   const r=await handleFixturesDayRequest(new Request('https://cfi.local/api/fixtures-day',{
-    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({target_date:'bad'})
-  }),async()=>{throw new Error('should not fetch')},NOW);
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({target_date:'bad'})
+  }),async()=>{throw new Error('should not fetch')},nowMs);
   assert.equal(r.status,400);
   assert.equal((await r.json()).error,'TARGET_DATE_INVALID');
 });
 
-test('fast daily discovery fans out providers and dedupes rows', async()=>{
-  let calls=0;
-  const fakeFetch=async url=>{
-    calls++;
-    const u=String(url);
-    if(u.includes('sofascore.com')&&u.endsWith('/2026-09-15'))return Response.json(sofaPayload());
-    if(u.includes('site.api.espn.com')&&u.includes('/eng.1/'))return Response.json(espnPayload());
-    return new Response('{}',{status:503,headers:{'content-type':'application/json'}});
+test('fast fixture discovery stops after broad primary source succeeds', async()=>{
+  let calls=0,active=0,maxActive=0;
+  const fetchFn=async()=>{
+    calls++;active++;maxActive=Math.max(maxActive,active);
+    await new Promise(r=>setTimeout(r,5));
+    active--;
+    return Response.json(sofaPayload(50));
   };
-  const result=await discoverDayFixturesFast({
-    targetDate:'2026-09-15',
-    timeZone:'Asia/Ho_Chi_Minh',
-    nowMs:NOW
-  },fakeFetch);
-  assert.ok(calls>30);
-  assert.equal(result.rows.length,3);
-  assert.deepEqual(result.providers.sort(),['ESPN','SOFASCORE']);
-  assert.equal(result.provider,'MULTI_SOURCE');
-  assert.equal(result.timeoutMs,3200);
+  const out=await discoverDayFixturesFast({targetDate,timeZone,nowMs},fetchFn);
+  assert.ok(out.rows.length>=40);
+  assert.equal(calls,6);
+  assert.ok(maxActive<=6);
+  assert.equal(out.latencyMode,'PRIMARY_SOFA');
+  assert.deepEqual(out.providers,['SOFASCORE']);
 });
 
-test('fixtures-day HTTP response exposes rows without prediction side effects', async()=>{
-  const fakeFetch=async url=>{
-    const u=String(url);
-    if(u.includes('sofascore.com')&&u.endsWith('/2026-09-15'))return Response.json(sofaPayload());
-    return new Response('{}',{status:503,headers:{'content-type':'application/json'}});
+test('fast fixture discovery never exceeds six concurrent upstream requests', async()=>{
+  let calls=0,active=0,maxActive=0;
+  const fetchFn=async()=>{
+    calls++;active++;maxActive=Math.max(maxActive,active);
+    await new Promise(r=>setTimeout(r,10));
+    active--;
+    return Response.json({events:[]});
   };
-  const r=await handleFixturesDayRequest(new Request('https://cfi.local/api/fixtures-day',{
-    method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({target_date:'2026-09-15',timezone:'Asia/Ho_Chi_Minh'})
-  }),fakeFetch,NOW);
-  assert.equal(r.status,200);
-  const body=await r.json();
+  const out=await discoverDayFixturesFast({targetDate,timeZone,nowMs},fetchFn);
+  assert.equal(out.rows.length,0);
+  assert.equal(calls,35);
+  assert.ok(maxActive<=6);
+  assert.equal(out.maxConcurrent,6);
+  assert.equal(out.latencyMode,'STAGED_MULTI_SOURCE');
+});
+
+test('fixtures-day HTTP response exposes bounded latency policy', async()=>{
+  const fetchFn=async()=>Response.json({events:[]});
+  const request=new Request('https://cfi.local/api/fixtures-day',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({target_date:targetDate,timezone:timeZone})
+  });
+  const response=await handleFixturesDayRequest(request,fetchFn,nowMs);
+  assert.equal(response.status,200);
+  const body=await response.json();
   assert.equal(body.status,'OK');
   assert.equal(body.action,'CFI_FIXTURES_DAY');
-  assert.equal(body.counts.fixtures,2);
-  assert.equal(body.rows[0].home,'Alpha FC');
-  assert.equal(body.latencyPolicy.fanout,'parallel');
+  assert.equal(body.latencyPolicy.maxConcurrent,6);
+  assert.equal(body.counts.targetRows,40);
 });
