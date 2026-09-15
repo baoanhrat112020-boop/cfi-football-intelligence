@@ -1,215 +1,312 @@
-import {
-  dedupeFixtures,
-  parseEspnScoreboard,
-  parseSofascoreScheduled,
-  parseTheSportsDbEvents,
-  providerQueryDates,
-  type DiscoveredFixture,
-  type DiscoveryWindow,
-} from '../discovery/cfi-discovery.ts';
-
 type FetchLike=typeof fetch;
 
-const ESPN_LEAGUES=[
-  'uefa.champions','uefa.europa','uefa.europa.conf','eng.1','eng.2','eng.3',
-  'esp.1','esp.2','ger.1','ger.2','ita.1','ita.2',
-  'fra.1','fra.2','ned.1','por.1','bel.1','sco.1',
-  'tur.1','usa.1','mex.1','bra.1','arg.1','col.1',
-] as const;
-const TSDB_NEXT=['4480','4481','5071','4328'] as const;
+export type FixtureDayEnv={
+  CFI_DB_BASE_URL?:string;
+  CFI_DB_KEY?:string;
+};
 
-const MAX_CONCURRENT=6;
-const TARGET_ROWS=40;
-const PRIMARY_TIMEOUT_MS=1800;
-const ESPN_TIMEOUT_MS=1500;
-const TSDB_TIMEOUT_MS=1400;
+export type DayFixtureRow={
+  provider:string;
+  providerId:string;
+  home:string;
+  away:string;
+  competition:string|null;
+  country:string|null;
+  kickoff:number|null;
+  kickoffIso:string|null;
+  kickoffLocal:string|null;
+  targetDate:string;
+  status:string;
+  canonicalHomeTeamId?:string|null;
+  canonicalAwayTeamId?:string|null;
+  provenance?:string|null;
+  sourceProviders?:string[];
+};
 
-async function getJson(fetchFn:FetchLike,url:string,timeoutMs:number){
+type Window={targetDate:string;timeZone:string;nowMs?:number};
+
+const TARGET_ROWS=10;
+const PRIMARY_TIMEOUT_MS=2500;
+const FALLBACK_TIMEOUT_MS=1800;
+
+const FOOTBALL_DATA_URL='https://www.football-data.co.uk/fixtures.csv';
+const FOOTBALL_DATA_TZ:Record<string,string>={
+  EC:'Europe/London',
+  E0:'Europe/London',E1:'Europe/London',E2:'Europe/London',E3:'Europe/London',
+  SC0:'Europe/London',SC1:'Europe/London',SC2:'Europe/London',SC3:'Europe/London',
+  D1:'Europe/Berlin',D2:'Europe/Berlin',
+  I1:'Europe/Rome',I2:'Europe/Rome',
+  SP1:'Europe/Madrid',SP2:'Europe/Madrid',
+  F1:'Europe/Paris',F2:'Europe/Paris',
+  N1:'Europe/Amsterdam',
+  P1:'Europe/Lisbon',
+  B1:'Europe/Brussels',
+  T1:'Europe/Istanbul'
+};
+
+async function getJson(fetchFn:FetchLike,url:string,timeoutMs:number,init:RequestInit={}){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-    const response=await fetchFn(url,{
-      headers:{accept:'application/json','user-agent':'CFI-Football-Intelligence/1.3'},
-      signal:controller.signal
-    });
-    if(!response.ok)return{ok:false,status:response.status,payload:null};
-    return{ok:true,status:response.status,payload:await response.json()};
+    const response=await fetchFn(url,{...init,signal:controller.signal});
+    if(!response.ok)return{ok:false,status:response.status,payload:null,error:`HTTP_${response.status}`};
+    return{ok:true,status:response.status,payload:await response.json(),error:null};
   }catch(error:any){
     return{ok:false,status:null,payload:null,error:String(error?.message||error)};
-  }finally{
-    clearTimeout(timer);
-  }
+  }finally{clearTimeout(timer);}
 }
 
-async function getText(fetchFn:FetchLike,url:string,timeoutMs:number){
+async function getText(fetchFn:FetchLike,url:string,timeoutMs:number,init:RequestInit={}){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-    const response=await fetchFn(url,{
-      headers:{
-        accept:'text/html,application/xhtml+xml',
-        'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1'
-      },
-      signal:controller.signal
-    });
-    if(!response.ok)return{ok:false,status:response.status,text:null};
-    return{ok:true,status:response.status,text:await response.text()};
+    const response=await fetchFn(url,{...init,signal:controller.signal});
+    if(!response.ok)return{ok:false,status:response.status,text:null,error:`HTTP_${response.status}`};
+    return{ok:true,status:response.status,text:await response.text(),error:null};
   }catch(error:any){
     return{ok:false,status:null,text:null,error:String(error?.message||error)};
   }finally{clearTimeout(timer);}
 }
 
-function htmlCell(raw:string){
-  return raw
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi,' ')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi,' ')
-    .replace(/<[^>]+>/g,' ')
-    .replace(/&nbsp;|&#160;/gi,' ')
-    .replace(/&amp;/gi,'&')
-    .replace(/&quot;/gi,'"')
-    .replace(/&#39;|&apos;/gi,"'")
-    .replace(/\s+/g,' ')
-    .trim();
+const clean=(value:any)=>String(value??'').trim();
+const fold=(value:string)=>clean(value)
+  .normalize('NFKD').replace(/\p{M}+/gu,'').toLowerCase()
+  .replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ')
+  .replace(/\b(fc|cf|afc|ac|sc|fk|sk|club|football|soccer)\b/g,' ')
+  .replace(/\s+/g,' ').trim();
+
+function fixtureKey(row:DayFixtureRow){
+  const home=clean(row.canonicalHomeTeamId)||fold(row.home);
+  const away=clean(row.canonicalAwayTeamId)||fold(row.away);
+  return `${home}|${away}|${row.targetDate}`;
 }
 
-function teamName(raw:string){
-  return raw
-    .replace(/^\[[^\]]+\]\s*/,'')
-    .replace(/\s*\[[^\]]+\]$/,'')
-    .replace(/\s+/g,' ')
-    .trim();
-}
-
-export function parseBongdaWapSchedule(html:string,window:DiscoveryWindow):DiscoveredFixture[]{
-  const out:DiscoveredFixture[]=[];
-  const rowRe=/<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rowMatch:RegExpExecArray|null;
-  while((rowMatch=rowRe.exec(html))){
-    const cells:string[]=[];
-    const cellRe=/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-    let cell:RegExpExecArray|null;
-    while((cell=cellRe.exec(rowMatch[1])))cells.push(htmlCell(cell[1]));
-    if(cells.length<6)continue;
-    const league=cells[0],time=cells[1],home=teamName(cells[3]),score=cells[4],away=teamName(cells[5]);
-    if(!/^\d{1,2}:\d{2}$/.test(time)||!home||!away)continue;
-    const padded=time.padStart(5,'0');
-    const kickoff=Date.parse(window.targetDate+'T'+padded+':00+07:00');
-    if(!Number.isFinite(kickoff))continue;
-    const finished=/^\d+\s*-\s*\d+$/.test(score);
-    out.push({
-      provider:'BONGDAWAP',
-      providerId:['BDW',window.targetDate,padded,home,away].join('-'),
-      home,away,competition:league||null,country:null,kickoff,
-      kickoffIso:new Date(kickoff).toISOString(),kickoffLocal:padded,
-      targetDate:window.targetDate,status:finished?'finished':'scheduled'
+function mergeRows(rows:DayFixtureRow[]){
+  const map=new Map<string,DayFixtureRow>();
+  for(const row of rows){
+    if(!row.home||!row.away)continue;
+    const key=fixtureKey(row),prev=map.get(key);
+    if(!prev){
+      map.set(key,{...row,sourceProviders:[row.provider]});
+      continue;
+    }
+    const providers=[...new Set([...(prev.sourceProviders||[prev.provider]),row.provider])];
+    map.set(key,{
+      ...prev,
+      competition:prev.competition||row.competition||null,
+      country:prev.country||row.country||null,
+      kickoff:prev.kickoff??row.kickoff??null,
+      kickoffIso:prev.kickoffIso||row.kickoffIso||null,
+      kickoffLocal:prev.kickoffLocal||row.kickoffLocal||null,
+      canonicalHomeTeamId:prev.canonicalHomeTeamId||row.canonicalHomeTeamId||null,
+      canonicalAwayTeamId:prev.canonicalAwayTeamId||row.canonicalAwayTeamId||null,
+      sourceProviders:providers
     });
   }
-  return dedupeFixtures(out).sort((a,b)=>a.kickoff-b.kickoff);
+  return [...map.values()].sort((a,b)=>{
+    const at=a.kickoffLocal||'99:99',bt=b.kickoffLocal||'99:99';
+    return at.localeCompare(bt)||a.home.localeCompare(b.home);
+  });
 }
+
+function localParts(iso:string,timeZone:string){
+  const p=new Intl.DateTimeFormat('en-CA',{
+    timeZone,year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+  }).formatToParts(new Date(iso));
+  const g=(t:string)=>p.find(x=>x.type===t)?.value??'';
+  return{date:`${g('year')}-${g('month')}-${g('day')}`,time:`${g('hour')}:${g('minute')}`};
+}
+
+function getTimeZoneOffsetMs(date:Date,timeZone:string){
+  const parts=new Intl.DateTimeFormat('en-US',{
+    timeZone,year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+  }).formatToParts(date);
+  const values=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+  const representedAsUtc=Date.UTC(
+    Number(values.year),Number(values.month)-1,Number(values.day),
+    Number(values.hour),Number(values.minute),Number(values.second)
+  );
+  return representedAsUtc-date.getTime();
+}
+
+function zonedLocalToUtc(localIso:string,timeZone:string){
+  const m=localIso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+  if(!m)return null;
+  const [,y,mo,d,h,mi,s]=m;
+  const wall=Date.UTC(Number(y),Number(mo)-1,Number(d),Number(h),Number(mi),Number(s));
+  let guess=wall;
+  for(let i=0;i<3;i++)guess=wall-getTimeZoneOffsetMs(new Date(guess),timeZone);
+  return new Date(guess).toISOString();
+}
+
+function splitCsvLine(line:string){
+  const out:string[]=[];let value='',quoted=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(quoted&&line[i+1]==='"'){value+='"';i++;}
+      else quoted=!quoted;
+    }else if(ch===','&&!quoted){out.push(value);value='';}
+    else value+=ch;
+  }
+  out.push(value);return out;
+}
+
+export function parseFootballDataFixturesCsv(csv:string,window:Window):DayFixtureRow[]{
+  const lines=String(csv||'').replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
+  if(lines.length<2)return[];
+  const headers=splitCsvLine(lines[0]).map(x=>x.trim());
+  const index=Object.fromEntries(headers.map((h,i)=>[h,i]));
+  if(index.Date===undefined||index.HomeTeam===undefined||index.AwayTeam===undefined)return[];
+  const out:DayFixtureRow[]=[];
+  for(const line of lines.slice(1)){
+    const row=splitCsvLine(line);
+    const rawDate=clean(row[index.Date]);
+    const m=rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if(!m)continue;
+    const matchDate=`${m[3]}-${m[2]}-${m[1]}`;
+    if(matchDate!==window.targetDate)continue;
+    const home=clean(row[index.HomeTeam]),away=clean(row[index.AwayTeam]);
+    if(!home||!away)continue;
+    const div=index.Div===undefined?'':clean(row[index.Div]);
+    const time=index.Time===undefined?'':clean(row[index.Time]);
+    let kickoffIso:string|null=null,kickoffLocal:string|null=null,kickoff:number|null=null;
+    const sourceTz=FOOTBALL_DATA_TZ[div];
+    if(sourceTz&&/^\d{1,2}:\d{2}$/.test(time)){
+      const hhmm=time.padStart(5,'0');
+      kickoffIso=zonedLocalToUtc(`${matchDate}T${hhmm}:00`,sourceTz);
+      if(kickoffIso){
+        kickoff=Date.parse(kickoffIso);
+        kickoffLocal=localParts(kickoffIso,window.timeZone).time;
+      }
+    }
+    out.push({
+      provider:'FOOTBALL_DATA',
+      providerId:['FD',div,matchDate,home,away].join('-'),
+      home,away,competition:div||null,country:null,
+      kickoff,kickoffIso,kickoffLocal,targetDate:window.targetDate,
+      status:'scheduled',provenance:'FOOTBALL_DATA_FIXTURES_CSV'
+    });
+  }
+  return mergeRows(out);
+}
+
+function parseBigDbRows(payload:any,window:Window):DayFixtureRow[]{
+  return (Array.isArray(payload?.rows)?payload.rows:[]).map((row:any)=>({
+    provider:'CFI_BIGDB',
+    providerId:clean(row?.providerId)||clean(row?.fixture_id),
+    home:clean(row?.home),
+    away:clean(row?.away),
+    competition:clean(row?.competition)||null,
+    country:clean(row?.country)||null,
+    kickoff:null,
+    kickoffIso:null,
+    kickoffLocal:null,
+    targetDate:window.targetDate,
+    status:clean(row?.status)||'CANONICAL',
+    canonicalHomeTeamId:clean(row?.canonicalHomeTeamId)||null,
+    canonicalAwayTeamId:clean(row?.canonicalAwayTeamId)||null,
+    provenance:'PERSISTENT_DB_CANONICAL_FIXTURE'
+  })).filter((row:DayFixtureRow)=>row.providerId&&row.home&&row.away);
+}
+
+async function bigDbDay(window:Window,env:FixtureDayEnv,fetchFn:FetchLike){
+  if(!env.CFI_DB_BASE_URL||!env.CFI_DB_KEY){
+    return{rows:[] as DayFixtureRow[],attempt:{stage:'BIGDB',provider:'CFI_BIGDB',ok:false,rows:0,error:'BIGDB_CONFIG_MISSING'}};
+  }
+  const base=env.CFI_DB_BASE_URL.replace(/\/$/,'');
+  const url=`${base}/fixtures-day?target_date=${encodeURIComponent(window.targetDate)}`;
+  const result:any=await getJson(fetchFn,url,PRIMARY_TIMEOUT_MS,{
+    method:'GET',
+    headers:{accept:'application/json','x-cfi-key':env.CFI_DB_KEY}
+  });
+  const rows=result.ok?parseBigDbRows(result.payload,window):[];
+  return{rows,attempt:{stage:'BIGDB',provider:'CFI_BIGDB',ok:result.ok,httpStatus:result.status??null,rows:rows.length,error:result.error??null}};
+}
+
+async function footballDataDay(window:Window,fetchFn:FetchLike){
+  const result:any=await getText(fetchFn,FOOTBALL_DATA_URL,PRIMARY_TIMEOUT_MS,{
+    headers:{accept:'text/csv,text/plain,*/*','user-agent':'CFI-Football-Intelligence/1.4'}
+  });
+  const rows=result.ok?parseFootballDataFixturesCsv(result.text||'',window):[];
+  return{rows,attempt:{stage:'FOOTBALL_DATA',provider:'FOOTBALL_DATA',ok:result.ok,httpStatus:result.status??null,rows:rows.length,error:result.error??null}};
+}
+
+async function bongdaWapDay(window:Window,fetchFn:FetchLike){
+  const [year,month,day]=window.targetDate.split('-');
+  const url=`https://bongdawap.com/lich-thi-dau-bong-da-ngay-${day}-${month}-${year}.html`;
+  const result:any=await getText(fetchFn,url,FALLBACK_TIMEOUT_MS,{
+    headers:{accept:'text/html,application/xhtml+xml','user-agent':'Mozilla/5.0'}
+  });
+  const rows=result.ok?parseBongdaWapSchedule(result.text||'',window):[];
+  return{rows,attempt:{stage:'BONGDAWAP_FALLBACK',provider:'BONGDAWAP',ok:result.ok,httpStatus:result.status??null,rows:rows.length,error:result.error??null}};
+}
+
+function htmlCell(raw:string){
+  return raw.replace(/<script[^>]*>[\s\S]*?<\/script>/gi,' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi,' ')
+    .replace(/<[^>]+>/g,' ').replace(/&nbsp;|&#160;/gi,' ')
+    .replace(/&amp;/gi,'&').replace(/&quot;/gi,'"')
+    .replace(/&#39;|&apos;/gi,"'").replace(/\s+/g,' ').trim();
+}
+
+export function parseBongdaWapSchedule(html:string,window:Window):DayFixtureRow[]{
+  const out:DayFixtureRow[]=[];
+  const rowRe=/<tr[^>]*>([\s\S]*?)<\/tr>/gi;let rowMatch:RegExpExecArray|null;
+  while((rowMatch=rowRe.exec(html))){
+    const cells:string[]=[];const cellRe=/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;let cell:RegExpExecArray|null;
+    while((cell=cellRe.exec(rowMatch[1])))cells.push(htmlCell(cell[1]));
+    if(cells.length<6)continue;
+    const league=cells[0],time=cells[1],home=cells[3].replace(/^\[[^\]]+\]\s*/,'').trim(),score=cells[4],away=cells[5].replace(/\s*\[[^\]]+\]$/,'').trim();
+    if(!/^\d{1,2}:\d{2}$/.test(time)||!home||!away)continue;
+    const padded=time.padStart(5,'0');
+    const iso=zonedLocalToUtc(`${window.targetDate}T${padded}:00`,'Asia/Ho_Chi_Minh');
+    const kickoff=iso?Date.parse(iso):null;
+    out.push({
+      provider:'BONGDAWAP',providerId:['BDW',window.targetDate,padded,home,away].join('-'),
+      home,away,competition:league||null,country:null,kickoff,kickoffIso:iso,kickoffLocal:padded,
+      targetDate:window.targetDate,status:/^\d+\s*-\s*\d+$/.test(score)?'finished':'scheduled',
+      provenance:'BONGDAWAP_FALLBACK'
+    });
+  }
+  return mergeRows(out);
+}
+
 export async function discoverDayFixturesFast(
-  window:DiscoveryWindow,
+  window:Window,
+  env:FixtureDayEnv={},
   fetchFn:FetchLike=fetch
 ){
   const attempts:any[]=[];
-  const rows:DiscoveredFixture[]=[];
+  const [big,fd]=await Promise.all([
+    bigDbDay(window,env,fetchFn),
+    footballDataDay(window,fetchFn)
+  ]);
+  attempts.push(big.attempt,fd.attempt);
+  let rows=mergeRows([...big.rows,...fd.rows]);
 
-  const runBatch=async(
-    stage:string,
-    jobs:Array<{
-      provider:string;
-      url:string;
-      timeoutMs:number;
-      parser:(payload:any,window:DiscoveryWindow)=>DiscoveredFixture[];
-    }>
-  )=>{
-    await Promise.allSettled(jobs.slice(0,MAX_CONCURRENT).map(async job=>{
-      const result:any=await getJson(fetchFn,job.url,job.timeoutMs);
-      if(!result.ok){
-        attempts.push({stage,provider:job.provider,url:job.url,ok:false,httpStatus:result.status??null,error:result.error??null,rows:0});
-        return;
-      }
-      const parsed=job.parser(result.payload,window);
-      attempts.push({stage,provider:job.provider,url:job.url,ok:true,httpStatus:result.status,rows:parsed.length});
-      rows.push(...parsed);
-    }));
-  };
-
-  const merged=()=>dedupeFixtures(rows).sort((a,b)=>a.kickoff-b.kickoff);
-
-  // Stage 0: one Vietnam-local all-day schedule page. Unlike the
-  // prediction filter, this intentionally keeps the whole day's fixtures so
-  // the UI does not shrink to only a few not-yet-started matches.
-  const dateParts=window.targetDate.split('-');
-  const bongdaUrl='https://bongdawap.com/lich-thi-dau-bong-da-ngay-'+dateParts[2]+'-'+dateParts[1]+'-'+dateParts[0]+'.html';
-  const bongda:any=await getText(fetchFn,bongdaUrl,PRIMARY_TIMEOUT_MS);
-  if(bongda.ok&&typeof bongda.text==='string'){
-    const parsed=parseBongdaWapSchedule(bongda.text,window);
-    attempts.push({stage:'BONGDAWAP_ALL_DAY',provider:'BONGDAWAP',url:bongdaUrl,ok:true,httpStatus:bongda.status,rows:parsed.length});
-    rows.push(...parsed);
-    if(merged().length>=TARGET_ROWS)return finish(merged(),attempts,'BONGDAWAP_ALL_DAY');
-  }else{
-    attempts.push({stage:'BONGDAWAP_ALL_DAY',provider:'BONGDAWAP',url:bongdaUrl,ok:false,httpStatus:bongda.status??null,error:bongda.error??null,rows:0});
-  }
-  // Stage 1: the two Sofascore hosts across the three UTC-adjacent dates.
-  // This is intentionally capped at six concurrent fetches, matching the
-  // Worker connection ceiling instead of queueing dozens of requests.
-  const sofaJobs:Array<any>=[];
-  for(const date of providerQueryDates(window.targetDate)){
-    sofaJobs.push(
-      {provider:'SOFASCORE',url:`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,timeoutMs:PRIMARY_TIMEOUT_MS,parser:parseSofascoreScheduled},
-      {provider:'SOFASCORE',url:`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,timeoutMs:PRIMARY_TIMEOUT_MS,parser:parseSofascoreScheduled},
-    );
-  }
-  await runBatch('PRIMARY_SOFA',sofaJobs);
-  if(merged().length>=TARGET_ROWS)return finish(merged(),attempts,'PRIMARY_SOFA');
-
-  // Stage 2: ESPN in fixed batches of six. Stop as soon as coverage is useful;
-  // do not fan out the whole league catalog at once.
-  const espnDate=window.targetDate.replaceAll('-','');
-  for(let i=0;i<ESPN_LEAGUES.length;i+=MAX_CONCURRENT){
-    const jobs=ESPN_LEAGUES.slice(i,i+MAX_CONCURRENT).map(league=>({
-      provider:'ESPN',
-      url:`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${espnDate}&limit=1000`,
-      timeoutMs:ESPN_TIMEOUT_MS,
-      parser:parseEspnScoreboard
-    }));
-    await runBatch(`ESPN_BATCH_${Math.floor(i/MAX_CONCURRENT)+1}`,jobs);
-    if(merged().length>=TARGET_ROWS)break;
+  if(rows.length<TARGET_ROWS){
+    const bdw=await bongdaWapDay(window,fetchFn);
+    attempts.push(bdw.attempt);
+    rows=mergeRows([...rows,...bdw.rows]);
   }
 
-  // Stage 3: small independent fallback only when broad providers are sparse.
-  if(merged().length<12){
-    const tsdbJobs:Array<any>=[
-      {provider:'THESPORTSDB',url:`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${window.targetDate}&s=Soccer`,timeoutMs:TSDB_TIMEOUT_MS,parser:parseTheSportsDbEvents},
-      ...TSDB_NEXT.map(leagueId=>({
-        provider:'THESPORTSDB',
-        url:`https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=${leagueId}`,
-        timeoutMs:TSDB_TIMEOUT_MS,
-        parser:parseTheSportsDbEvents
-      }))
-    ];
-    await runBatch('TSDB_FALLBACK',tsdbJobs);
-  }
-
-  return finish(merged(),attempts,'STAGED_MULTI_SOURCE');
-}
-
-function finish(rows:DiscoveredFixture[],attempts:any[],latencyMode:string){
-  const providers=[...new Set(rows.map(row=>row.provider))];
+  const providers=[...new Set(rows.flatMap(row=>row.sourceProviders||[row.provider]))];
   return{
     provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',
-    providers,
-    rows:rows.slice(0,400),
-    attempts,
-    timeoutMs:Math.max(PRIMARY_TIMEOUT_MS,ESPN_TIMEOUT_MS,TSDB_TIMEOUT_MS),
-    latencyMode,
+    providers,rows:rows.slice(0,500),attempts,
+    latencyMode:'BIGDB_FOOTBALLDATA_THEN_FALLBACK',
     targetRows:TARGET_ROWS,
-    maxConcurrent:MAX_CONCURRENT,
+    primarySources:['CFI_BIGDB','FOOTBALL_DATA'],
+    fallbackSources:['BONGDAWAP']
   };
 }
 
 export async function handleFixturesDayRequest(
   request:Request,
+  env:FixtureDayEnv={},
   fetchFn:FetchLike=fetch,
   nowMs=Date.now()
 ){
@@ -223,20 +320,20 @@ export async function handleFixturesDayRequest(
     return Response.json({status:'INVALID_REQUEST',error:'TARGET_DATE_INVALID'},{status:400});
   }
 
-  const found=await discoverDayFixturesFast({targetDate,timeZone,nowMs},fetchFn);
+  const found=await discoverDayFixturesFast({targetDate,timeZone,nowMs},env,fetchFn);
   return Response.json({
     status:'OK',
     action:'CFI_FIXTURES_DAY',
+    version:'CFI_FIXTURES_DAY_V2_BIGDB_FOOTBALLDATA',
     source:found.provider,
     providers:found.providers,
-    targetDate,
-    timeZone,
+    targetDate,timeZone,
     counts:{fixtures:found.rows.length,targetRows:found.targetRows},
     rows:found.rows,
     attempts:found.attempts,
-    latencyPolicy:{
-      perProviderTimeoutMs:found.timeoutMs,
-      maxConcurrent:found.maxConcurrent,
+    sourcePolicy:{
+      primary:found.primarySources,
+      fallback:found.fallbackSources,
       mode:found.latencyMode
     }
   });
