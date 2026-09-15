@@ -1,4 +1,5 @@
 import v4 from './index-gpt-core-v4.ts';
+import { handleMatchContext } from '../../src/runtime/match-context.ts';
 import { fixtureCohort, normalizeAiFixtureCandidates, scorePrediction, CFI_DISCOVERY_VERSION } from '../../src/discovery/cfi-discovery.ts';
 import { FINAL_VERSION } from '../../src/prediction/final-engine.ts';
 import { THREE_PLUS_HT_SAFETY_VERSION } from '../../src/prediction/three-plus-ht-safety.ts';
@@ -206,6 +207,7 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
+    if(url.pathname==='/api/match-context')return handleMatchContext(request,env);
     if(url.pathname==='/api/fixtures-day'&&request.method==='POST')return handleFixturesDayRequest(request,env);
 
     if(url.pathname==='/api/discover'&&request.method==='POST'){
@@ -234,3 +236,4 @@ export default{
     return v4.fetch(request,env,ctx);
   }
 } satisfies ExportedHandler<Env>;
+
