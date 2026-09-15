@@ -39,3 +39,5 @@ jobs:
           if(!Array.isArray(body.rows)||body.rows.length<10) throw new Error('fixture coverage too low: '+(body.rows||[]).length);
           if(!(body.providers||[]).includes('BONGDAWAP')) throw new Error('BongdaWap not active');
           NODE
+
+# overnight-rollover-smoke
