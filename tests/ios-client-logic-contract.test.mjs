@@ -17,7 +17,7 @@ function extractFunction(name){
     const ch=html[i];
     if(quote){
       if(escape){escape=false;continue}
-      if(ch==='\\\\'){escape=true;continue}
+      if(ch==='\\'){escape=true;continue}
       if(ch===quote)quote=null;
       continue;
     }
@@ -60,14 +60,14 @@ test('native bridge is defensive and exposes required production paths',()=>{
   for(const path of ['/api/fixtures-day','/api/discover','/api/match-context','/api/predict']){
     assert.ok(swift.includes('"'+path+'"'),'missing native allowlist path '+path);
   }
-  assert.match(html,/try\\{data=JSON\\.parse\\(text\\)\\}catch\\(parseErr\\)/);
-  assert.match(swift,/let ok = \\(200\\.\\.\\.299\\)\\.contains\\(status\\)/);
-  assert.match(swift,/loadFileURL\\(/);
+  assert.match(html,/try\{data=JSON\.parse\(text\)\}catch\(parseErr\)/);
+  assert.match(swift,/let ok = \(200\.\.\.299\)\.contains\(status\)/);
+  assert.match(swift,/loadFileURL\(/);
 });
 
 test('v0.2.2 build 4 is aligned across UI Xcode and artifact workflow',()=>{
   assert.ok(html.includes('v0.2.2 Beta 1 · Build 4'));
-  assert.equal((pbx.match(/MARKETING_VERSION = 0\\.2\\.2;/g)||[]).length,2);
+  assert.equal((pbx.match(/MARKETING_VERSION = 0\.2\.2;/g)||[]).length,2);
   assert.equal((pbx.match(/CURRENT_PROJECT_VERSION = 4;/g)||[]).length,2);
   assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa'));
   assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build4'));
