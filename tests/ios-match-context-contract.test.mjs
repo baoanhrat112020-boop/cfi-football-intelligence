@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { handleDayFixtures, handleMatchContext, resetIosApiRateLimitForTest } from '../src/runtime/ios-api-routes.ts';
 import {
   buildMatchContextPayload,
   bigDbContextHttpStatus,
@@ -110,4 +111,86 @@ test('match context temporal audit fails closed on leakage', () => {
     '2026-09-15'
   );
   assert.equal(sameDateLeak.verified,false);
+});
+
+
+const NOW=Date.parse('2026-09-15T06:00:00Z');
+const env={CFI_DB_BASE_URL:'https://db.example/functions/v1/cfi-db',CFI_DB_KEY:'secret'};
+const req=(path,body,headers={})=>new Request('https://cfi.local'+path,{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)});
+
+function bigDbOk(){
+  return{
+    status:'OK',
+    identity:{homeCanonical:'Home FC',awayCanonical:'Away FC'},
+    temporalAudit:{verified:true,maxEvidenceDate:'2026-09-14',futureEvidenceCount:0,sameDateEvidenceCount:0},
+    fixtures:{home:[],away:[],h2h:[]},
+    exactTeam:{home:{retrieved:0},away:{retrieved:0},h2h:{retrieved:0}}
+  };
+}
+
+test('HTTP match-context validates config and request', async () => {
+  resetIosApiRateLimitForTest();
+  let r=await handleMatchContext(req('/api/match-context',{home:'A',away:'B',target_date:'2026-09-20'}),{}, {nowMs:NOW});
+  assert.equal(r.status,503);
+  assert.equal((await r.json()).error,'BIGDB_CONTEXT_UNAVAILABLE');
+
+  resetIosApiRateLimitForTest();
+  r=await handleMatchContext(req('/api/match-context',{home:'',away:'B',target_date:'2026-09-20'}),env,{nowMs:NOW});
+  assert.equal(r.status,400);
+  assert.equal((await r.json()).error,'HOME_AWAY_REQUIRED');
+});
+
+test('HTTP match-context uses strict-prior cutoff and returns sanitized context', async () => {
+  resetIosApiRateLimitForTest();
+  const fakeFetch=async (_url,init)=>{
+    const body=JSON.parse(init.body);
+    assert.deepEqual(body,{home:'Home FC',away:'Away FC',target_date:'2026-09-15'});
+    assert.equal(init.headers['x-cfi-key'],'secret');
+    return Response.json(bigDbOk());
+  };
+  const r=await handleMatchContext(
+    req('/api/match-context',{home:'Home FC',away:'Away FC',target_date:'2026-09-20'},{'cf-connecting-ip':'1.2.3.4'}),
+    env,{nowMs:NOW,fetchFn:fakeFetch}
+  );
+  assert.equal(r.status,200);
+  const body=await r.json();
+  assert.equal(body.status,'OK');
+  assert.equal(body.target.date,'2026-09-20');
+  assert.equal(body.retrievalCutoffDate,'2026-09-15');
+  assert.equal(body.temporalAudit.verified,true);
+  assert.equal(body.readOnly,true);
+});
+
+test('HTTP match-context rate limit fails closed', async () => {
+  resetIosApiRateLimitForTest();
+  const fakeFetch=async()=>Response.json(bigDbOk());
+  let last;
+  for(let i=0;i<19;i++){
+    last=await handleMatchContext(
+      req('/api/match-context',{home:'Home FC',away:'Away FC',target_date:'2026-09-20'},{'cf-connecting-ip':'9.9.9.9'}),
+      env,{nowMs:NOW,fetchFn:fakeFetch}
+    );
+  }
+  assert.equal(last.status,429);
+  assert.equal(last.headers.get('retry-after'),'60');
+  assert.equal((await last.json()).error,'MATCH_CONTEXT_RATE_LIMIT');
+});
+
+test('HTTP fixtures-day validates and exposes discovery result only', async () => {
+  let r=await handleDayFixtures(req('/api/fixtures-day',{target_date:'bad'}),{nowMs:NOW});
+  assert.equal(r.status,400);
+  assert.equal((await r.json()).error,'TARGET_DATE_INVALID');
+
+  const rows=[{provider:'ESPN',providerId:'1',home:'A',away:'B',competition:'L',country:null,kickoff:NOW+3600000,kickoffIso:new Date(NOW+3600000).toISOString(),kickoffLocal:'14:00',targetDate:'2026-09-15',status:'pre'}];
+  const discoverFn=async window=>{
+    assert.equal(window.minimumRows,100);
+    assert.equal(window.targetDate,'2026-09-15');
+    return{provider:'ESPN',providers:['ESPN'],rows,attempts:[{provider:'ESPN',ok:true,rows:1}],sourceUrl:null,search:{requestedRows:100,foundRows:1,targetSatisfied:false,espnLeaguesAttempted:1,espnLeagueCatalogSize:1,exhausted:true}};
+  };
+  r=await handleDayFixtures(req('/api/fixtures-day',{target_date:'2026-09-15',timezone:'Asia/Ho_Chi_Minh'}),{nowMs:NOW,discoverFn});
+  assert.equal(r.status,200);
+  const body=await r.json();
+  assert.equal(body.status,'OK');
+  assert.equal(body.counts.fixtures,1);
+  assert.equal(body.rows[0].home,'A');
 });
