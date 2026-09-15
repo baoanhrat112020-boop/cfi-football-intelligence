@@ -37,8 +37,8 @@ jobs:
                   sample:Array.isArray(body.rows)?body.rows.slice(0,5).map(x=>[x.kickoffLocal,x.home,x.away,x.provider]):[]
                 }));
                 if(body.status!=="OK"||body.action!=="CFI_FIXTURES_DAY"||!Array.isArray(body.rows)) process.exit(2);
-                if(body.version!=="CFI_FIXTURES_DAY_V4_BIGDB_AISCORE_BRIDGE_FOOTBALLDATA") process.exit(4);
-                if(body.rows.length<10) process.exit(3);
+                if(body.version!=="CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY") process.exit(4);
+                if(body.rows.length<20) process.exit(3);
               ' "$body" && test "$elapsed" -lt 12000; then
                 ok=1
                 break
