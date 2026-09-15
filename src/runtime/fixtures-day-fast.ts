@@ -49,7 +49,10 @@ async function getJson(fetchFn:FetchLike,url:string,timeoutMs:number,init:Reques
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
     const response=await fetchFn(url,{...init,signal:controller.signal});
-    if(!response.ok)return{ok:false,status:response.status,payload:null,error:`HTTP_${response.status}`};
+    if(!response.ok){
+      const raw=await response.text().catch(()=>'');
+      return{ok:false,status:response.status,payload:null,error:`HTTP_${response.status}:${raw.slice(0,240)}`};
+    }
     return{ok:true,status:response.status,payload:await response.json(),error:null};
   }catch(error:any){
     return{ok:false,status:null,payload:null,error:String(error?.message||error)};
