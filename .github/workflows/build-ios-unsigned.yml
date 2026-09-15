@@ -35,6 +35,33 @@ jobs:
           set -euo pipefail
           xcodebuild             -project ios/CFI.xcodeproj             -scheme CFI             -configuration Release             -sdk iphoneos             -derivedDataPath "$RUNNER_TEMP/cfi-ios-derived"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             build
 
+      - name: Inject CFI app icon
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"
+          ICON_SRC="$RUNNER_TEMP/cfi-icon.jpg"
+          base64 --decode ios/Resources/cfi-icon.jpg.b64 > "$ICON_SRC"
+          sips -z 60 60 "$ICON_SRC" --out "$APP/AppIcon60x60.png" >/dev/null
+          sips -z 120 120 "$ICON_SRC" --out "$APP/AppIcon60x60@2x.png" >/dev/null
+          sips -z 180 180 "$ICON_SRC" --out "$APP/AppIcon60x60@3x.png" >/dev/null
+          sips -z 1024 1024 "$ICON_SRC" --out "$APP/iTunesArtwork.png" >/dev/null
+          python3 - <<'PY'
+          import os, plistlib
+          app=os.environ["RUNNER_TEMP"]+"/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"
+          path=app+"/Info.plist"
+          with open(path,"rb") as fh:
+              p=plistlib.load(fh)
+          p["CFBundleIcons"]={
+              "CFBundlePrimaryIcon":{
+                  "CFBundleIconFiles":["AppIcon60x60","AppIcon60x60@2x","AppIcon60x60@3x"],
+                  "UIPrerenderedIcon":False
+              }
+          }
+          with open(path,"wb") as fh:
+              plistlib.dump(p,fh,sort_keys=False)
+          PY
+          test -s "$APP/AppIcon60x60@3x.png"
+
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
