@@ -75,11 +75,24 @@ test('fixtures-day HTTP response exposes rows without prediction side effects', 
 
 test('BongdaWap HTML parser extracts upcoming fixtures and strips ranking labels', ()=>{
   const html=`
-  <table>
-    <tr><th>Giải</th><th>Giờ</th><th>TT</th><th>Chủ</th><th>Tỷ số</th><th>Khách</th></tr>
-    <tr><td>HQA</td><td>14:30</td><td>-</td><td><a>[11] Bucheon 1995</a></td><td>vs</td><td><a>Jeju Utd [5]</a></td></tr>
-    <tr><td>ANHA</td><td>21:00</td><td>-</td><td><a>[6] Liverpool</a></td><td>vs</td><td><a>Fulham [19]</a></td></tr>
-  </table>`;
+  <div class="tran1 " id="1">
+    <div class="tengiai"><p><a>HQA</a></p></div>
+    <div class="thongtin">
+      <div class="ttgoc"><p class="ngaygio">14:30</p></div>
+      <div class="doi1"><p class="tendb"><a>[11] Bucheon 1995</a></p></div>
+      <div class="tttran"><p class="tyso"><a><b>vs</b></a></p></div>
+      <div class="doi1 doi2"><p class="tendb"><a>Jeju Utd [5]</a></p></div>
+    </div>
+  </div>
+  <div class="tran1 " id="2">
+    <div class="tengiai"><p><a>ANHA</a></p></div>
+    <div class="thongtin">
+      <div class="ttgoc"><p class="ngaygio">21:00</p></div>
+      <div class="doi1"><p class="tendb"><a>[6] Liverpool</a></p></div>
+      <div class="tttran"><p class="tyso"><a href="soi-keo-liverpool-vs-fulham-12345.html"><b>vs</b></a></p></div>
+      <div class="doi1 doi2"><p class="tendb"><a>Fulham [19]</a></p></div>
+    </div>
+  </div>`;
   const rows=parseBongdaWapSchedule(html,{
     targetDate:'2026-09-15',
     timeZone:'Asia/Ho_Chi_Minh',
@@ -94,7 +107,7 @@ test('BongdaWap HTML parser extracts upcoming fixtures and strips ranking labels
 });
 
 test('fast discovery accepts BongdaWap when JSON providers are blocked', async()=>{
-  const html='<table><tr><td>ANHA</td><td>21:00</td><td>-</td><td>[6] Liverpool</td><td>vs</td><td>Fulham [19]</td></tr><tr><td>ITA</td><td>22:30</td><td>-</td><td>Inter</td><td>vs</td><td>Milan</td></tr></table>';
+  const html='<div class="tran1"><div class="tengiai"><a>ANHA</a></div><p class="ngaygio">21:00</p><p class="tendb"><a>[6] Liverpool</a></p><p class="tyso"><b>vs</b></p><p class="tendb"><a>Fulham [19]</a></p></div><div class="tran1"><div class="tengiai"><a>ITA</a></div><p class="ngaygio">22:30</p><p class="tendb"><a>Inter</a></p><p class="tyso"><b>vs</b></p><p class="tendb"><a>Milan</a></p></div>';
   const fakeFetch=async url=>{
     const u=String(url);
     if(u.includes('bongdawap.com'))return new Response(html,{status:200,headers:{'content-type':'text/html'}});
