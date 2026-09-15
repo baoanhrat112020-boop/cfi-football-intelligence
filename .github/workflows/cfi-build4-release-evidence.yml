@@ -1,0 +1,71 @@
+name: CFI Build 4 release evidence
+on:
+  push:
+    branches: [verify/cfi-build4-release-evidence]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cb902cf9a913a4f44acabe3a848ab75a132eaf10
+      - uses: actions/download-artifact@v4
+        with:
+          name: CFI-iOS-v0.2.2-beta1-build4
+          run-id: 34994119622
+          github-token: ${{ github.token }}
+      - name: Verify actual IPA
+        run: |
+          python - <<'PY'
+          import zipfile,plistlib,hashlib,pathlib
+          p=pathlib.Path('CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa')
+          print('IPA_SHA256='+hashlib.sha256(p.read_bytes()).hexdigest())
+          with zipfile.ZipFile(p) as z:
+           root='Payload/CFI.app/'
+           info=plistlib.loads(z.read(root+'Info.plist'))
+           assert info['CFBundleShortVersionString']=='0.2.2'
+           assert info['CFBundleVersion']=='4'
+           assert root+'CFI' in z.namelist()
+           indexes=[n for n in z.namelist() if n.startswith(root) and n.endswith('/index.html')]
+           assert indexes
+           data=z.read(indexes[0])
+           assert data==pathlib.Path('web/index.html').read_bytes()
+           icons=[n for n in z.namelist() if n.startswith(root) and ('AppIcon' in n or 'iTunesArtwork' in n) and n.endswith('.png')]
+           assert icons
+           for n in icons: assert z.read(n)[:4]==bytes.fromhex('89504e47')
+           assert b'v0.2.2 Beta 1' in data and b'Build 4' in data
+           for marker in [b'SUPABASE_SERVICE_ROLE_KEY',b'BEGIN PRIVATE KEY',b'CFI_ACTION_SECRET']:
+            assert marker not in data
+           swift=pathlib.Path('ios/CFI/CFIWebView.swift').read_text()
+           for route in ['/health','/api/status','/api/match-context','/api/fixtures-day','/api/discover','/api/predict','/api/prediction-history','/api/results']:
+            assert '"'+route+'"' in swift
+           print('IPA_VALIDATION=PASS exact merged frontend, executable, versions, PNG icons, allowlist')
+          
+          PY
+      - name: Production cheap smoke
+        run: |
+          python - <<'PY'
+          import subprocess,json,time,datetime,pathlib
+          from zoneinfo import ZoneInfo
+          base='https://cfi-football-intelligence.baoanhrat112020.workers.dev'
+          day=datetime.datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')).date().isoformat()
+          for path in ['/health','/api/fixtures-day']:
+           cmd=['curl','--silent','--show-error','--fail-with-body','--max-time','12',base+path,'-H','Accept: application/json']
+           if path!='/health':cmd+=['-H','Content-Type: application/json','--data',json.dumps({'target_date':day,'timezone':'Asia/Ho_Chi_Minh'})]
+           start=time.monotonic();r=subprocess.run(cmd,capture_output=True,text=True);ms=round((time.monotonic()-start)*1000)
+           if r.returncode:print(json.dumps({'path':path,'pass':False,'error':r.stderr[:300],'latencyMs':ms}));raise SystemExit(1)
+           b=json.loads(r.stdout)
+           pathlib.Path('prod208-'+('health' if path=='/health' else 'fixtures')+'.json').write_text(json.dumps(b,ensure_ascii=False))
+           if path=='/health':print(json.dumps({'path':path,'json':True,'latencyMs':ms,'status':b.get('status')}));continue
+           rows=b.get('rows',[]);attempts=b.get('attempts',[])
+           primary=next((x for x in attempts if x.get('stage')=='BIGDB'),{})
+           passed=b.get('status')=='OK' and b.get('version')=='CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY' and len(rows)>=20 and ms<12000 and primary.get('ok') is True and primary.get('rows',0)>0
+           print(json.dumps({'path':path,'pass':passed,'date':day,'count':len(rows),'latencyMs':ms,'sources':attempts,'sample':rows[:2]},ensure_ascii=False))
+           if not passed:raise SystemExit(1)
+          
+          
+          PY
