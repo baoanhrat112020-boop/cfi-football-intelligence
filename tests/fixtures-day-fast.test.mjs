@@ -6,16 +6,14 @@ import {
   parseBongdaWapSchedule,
   parseFootballDataFixturesCsv
 } from '../src/runtime/fixtures-day-fast.ts';
-import { parseAiScoreTodayHtml } from '../src/runtime/aiscore-today.ts';
 
 const targetDate='2026-09-15';
 const timeZone='Asia/Ho_Chi_Minh';
 const nowMs=Date.parse('2026-09-15T00:00:00Z');
 const env={CFI_DB_BASE_URL:'https://db.example/functions/v1/cfi-db',CFI_DB_KEY:'secret'};
 
-const bigDbPayload=(count=13)=>({
-  status:'OK',
-  rows:Array.from({length:count},(_,i)=>({
+const bigDbPayload=(count=13,withAiBridge=false)=>{
+  const rows=Array.from({length:count},(_,i)=>({
     provider:'CFI_BIGDB',
     providerId:`db-${i}`,
     home:`Home ${i}`,
@@ -24,20 +22,30 @@ const bigDbPayload=(count=13)=>({
     targetDate,
     canonicalHomeTeamId:`h-${i}`,
     canonicalAwayTeamId:`a-${i}`,
-    status:'CANONICAL'
-  }))
-});
+    status:'CANONICAL',
+    sourceProviders:['CFI_BIGDB']
+  }));
+  if(withAiBridge)rows.push({
+    provider:'AISCORE',
+    providerId:'aiscore-live-1',
+    home:'Ai Home',
+    away:'Ai Away',
+    competition:'Ai League',
+    targetDate,
+    kickoffIso:'2026-09-15T13:00:00.000Z',
+    kickoffLocal:'20:00',
+    status:'scheduled',
+    provenance:'PC_NODE_AISCORE_BRIDGE',
+    sourceProviders:['AISCORE']
+  });
+  return{status:'OK',version:'CFI_DB_FIXTURES_DAY_V2_AISCORE_BRIDGE',rows};
+};
 
 const footballCsv=`Div,Date,Time,HomeTeam,AwayTeam
 EC,15/09/2026,19:45,Boreham Wood,Boston Utd
 SP1,15/09/2026,20:00,Valencia,Betis
 SP1,16/09/2026,20:00,Real Madrid,Sociedad
 `;
-
-const aiHtml=`<h1>Football Today’s Matches</h1>
-<div>England: English U21 Premier League</div>
-<div>19:00</div><a>Blackburn Rovers U21</a><span>VS</span><a>Reading U21</a><a>H2H</a><a>Live</a>
-<div>20:00</div><span>FT</span><a>Team A</a><span>2 - 1</span><a>Team B</a><a>H2H</a>`;
 
 test('fixtures-day validates target date', async()=>{
   const r=await handleFixturesDayRequest(new Request('https://cfi.local/api/fixtures-day',{
@@ -56,15 +64,6 @@ test('Football-Data parser keeps target date and normalizes known kickoff timezo
   assert.equal(rows[0].targetDate,targetDate);
   assert.ok(rows[0].kickoffIso);
   assert.match(rows[0].kickoffLocal,/^\d{2}:\d{2}$/);
-});
-
-test('AiScore parser reads all-day scheduled and completed matches', ()=>{
-  const rows=parseAiScoreTodayHtml(aiHtml,{targetDate,timeZone,nowMs});
-  assert.equal(rows.length,2);
-  assert.equal(rows[0].provider,'AISCORE');
-  assert.equal(rows[0].home,'Blackburn Rovers U21');
-  assert.equal(rows[0].away,'Reading U21');
-  assert.equal(rows[1].status,'finished');
 });
 
 test('BigDB, AiScore and Football-Data are the primary daily sources', async()=>{
