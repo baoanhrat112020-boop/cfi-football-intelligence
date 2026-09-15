@@ -1,0 +1,56 @@
+name: CFI one real prematch trial
+on:
+  push:
+    branches: [verify/cfi-one-prematch-20260915]
+permissions:
+  contents: read
+jobs:
+  trial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: One discovery, context and strict-prior prediction
+        run: |
+          python -u - <<'PY'
+          import json,urllib.request,urllib.error,datetime,time
+          from zoneinfo import ZoneInfo
+          base="https://cfi-football-intelligence.baoanhrat112020.workers.dev"
+          now=datetime.datetime.now(datetime.timezone.utc)
+          day=now.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date().isoformat()
+          def call(path,payload,timeout):
+           t=time.monotonic()
+           req=urllib.request.Request(base+path,data=json.dumps(payload).encode(),headers={"Content-Type":"application/json","Accept":"application/json"})
+           try:
+            with urllib.request.urlopen(req,timeout=timeout) as r: code=r.status; raw=r.read()
+           except urllib.error.HTTPError as e: code=e.code;raw=e.read()
+           try: body=json.loads(raw)
+           except Exception: body={"error":"NON_JSON_RESPONSE"}
+           print("REQUEST "+json.dumps({"path":path,"http":code,"latencyMs":round((time.monotonic()-t)*1000)}),flush=True)
+           return code,body
+          code,b=call("/api/fixtures-day",{"target_date":day,"timezone":"Asia/Ho_Chi_Minh"},12)
+          print("DISCOVERY "+json.dumps({"date":day,"status":b.get("status"),"count":len(b.get("rows",[])),"sources":b.get("attempts")}),flush=True)
+          rows=[]
+          for r in b.get("rows",[]):
+           try: kick=datetime.datetime.fromisoformat(r["kickoffIso"].replace("Z","+00:00"))
+           except Exception: continue
+           if kick>now+datetime.timedelta(minutes=10) and kick.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date().isoformat()==day and str(r.get("status","")).lower() in ["scheduled","not_started","ns","upcoming"]:
+            rows.append(r)
+          rows.sort(key=lambda r:("BIGDB" not in str(r.get("provider","")),r["kickoffIso"]))
+          if not rows:
+           print("RESULT BLOCKED: no verified future kickoff candidate for today's local date");raise SystemExit(0)
+          r=rows[0]
+          print("FIXTURE "+json.dumps(r,ensure_ascii=False),flush=True)
+          payload={"home":r["home"],"away":r["away"],"target_date":day}
+          code,ctx=call("/api/match-context",payload,45)
+          print("CONTEXT "+json.dumps(ctx,ensure_ascii=False),flush=True)
+          if code!=200 or not isinstance(ctx.get("target"),dict):
+           print("RESULT BLOCKED: match-context rejected; no prediction requested");raise SystemExit(0)
+          payload.update({"home":ctx["target"].get("home") or r["home"],"away":ctx["target"].get("away") or r["away"],"language":"vi","input_mode":"SINGLE_MATCH"})
+          if datetime.datetime.now(datetime.timezone.utc)>=datetime.datetime.fromisoformat(r["kickoffIso"].replace("Z","+00:00")):
+           print("RESULT BLOCKED: kickoff reached");raise SystemExit(0)
+          code,pred=call("/api/predict",payload,120)
+          body=pred.get("body",pred)
+          out=body.get("outputV3",body)
+          print("PREDICTION "+json.dumps({"http":code,"output":out},ensure_ascii=False),flush=True)
+          
+          PY
