@@ -49,6 +49,7 @@ struct CFIWebView: UIViewRepresentable {
 
         private let baseURL = URL(string: "https://cfi-football-intelligence.baoanhrat112020.workers.dev")!
         private let allowedPaths: Set<String> = [
+            "/health",
             "/api/status",
             "/api/predict",
             "/api/prediction-history",
@@ -158,7 +159,7 @@ struct CFIWebView: UIViewRepresentable {
             dateFormatter.timeZone = timeZone
             dateFormatter.dateFormat = "yyyy-MM-dd"
 
-            guard let baseDate = dateFormatter.date(from: targetDate) else {
+            guard dateFormatter.date(from: targetDate) != nil else {
                 complete(
                     requestID: requestID,
                     ok: false,
@@ -170,72 +171,176 @@ struct CFIWebView: UIViewRepresentable {
 
             let now = Date()
             let todayLocal = dateFormatter.string(from: now)
-            let calendar = Calendar(identifier: .gregorian)
-            let queryDates = [-1, 0, 1].compactMap { offset -> String? in
-                guard let date = calendar.date(byAdding: .day, value: offset, to: baseDate) else { return nil }
-                return dateFormatter.string(from: date)
-            }
-
-            let group = DispatchGroup()
             let lock = NSLock()
             var collected: [[String: Any]] = []
             var providersWithRows = Set<String>()
-            var providerRequestSuccesses: [String: Int] = [:]
-            var providerRequestFailures: [String: Int] = [:]
+            var successes: [String: Int] = [:]
+            var failures: [String: Int] = [:]
+            var completed = false
+
+            func timeFormatter() -> DateFormatter {
+                let f = DateFormatter()
+                f.locale = Locale(identifier: "en_US_POSIX")
+                f.timeZone = timeZone
+                f.dateFormat = "HH:mm"
+                return f
+            }
+
+            func localKickoff(_ time: String) -> Date? {
+                let f = DateFormatter()
+                f.locale = Locale(identifier: "en_US_POSIX")
+                f.timeZone = timeZone
+                f.dateFormat = "yyyy-MM-dd HH:mm"
+                return f.date(from: "\(targetDate) \(time)")
+            }
+
+            func row(
+                provider: String,
+                providerId: String,
+                home: String,
+                away: String,
+                competition: String,
+                country: String,
+                kickoff: Date?,
+                localTime: String,
+                status: String
+            ) -> [String: Any]? {
+                let h = Self.cleanTeamName(home)
+                let a = Self.cleanTeamName(away)
+                guard !h.isEmpty, !a.isEmpty, h.lowercased() != "h2h", a.lowercased() != "h2h" else { return nil }
+
+                let resolvedKickoff = kickoff ?? localKickoff(localTime)
+                let kickoffMs = resolvedKickoff.map { Int($0.timeIntervalSince1970 * 1000) } ?? 0
+                let kickoffIso = resolvedKickoff.map { ISO8601DateFormatter().string(from: $0) } ?? ""
+
+                return [
+                    "provider": provider,
+                    "providerId": providerId,
+                    "home": h,
+                    "away": a,
+                    "competition": competition.isEmpty ? "Unknown competition" : competition,
+                    "country": country,
+                    "kickoff": kickoffMs,
+                    "kickoffIso": kickoffIso,
+                    "kickoffLocal": localTime,
+                    "targetDate": targetDate,
+                    "status": status
+                ]
+            }
+
+            func dedupe(_ rows: [[String: Any]]) -> [[String: Any]] {
+                var seen = Set<String>()
+                var out: [[String: Any]] = []
+
+                for item in rows {
+                    let home = String(describing: item["home"] ?? "")
+                        .lowercased()
+                        .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespaces)
+                    let away = String(describing: item["away"] ?? "")
+                        .lowercased()
+                        .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespaces)
+                    let time = String(describing: item["kickoffLocal"] ?? "")
+                    let key = "\(home)|\(away)|\(time)"
+                    guard !home.isEmpty, !away.isEmpty, seen.insert(key).inserted else { continue }
+                    out.append(item)
+                }
+
+                out.sort {
+                    let lt = String(describing: $0["kickoffLocal"] ?? "99:99")
+                    let rt = String(describing: $1["kickoffLocal"] ?? "99:99")
+                    if lt == rt {
+                        return String(describing: $0["competition"] ?? "") < String(describing: $1["competition"] ?? "")
+                    }
+                    return lt < rt
+                }
+                return out
+            }
+
+            func finish(force: Bool = false) {
+                lock.lock()
+                if completed {
+                    lock.unlock()
+                    return
+                }
+                let rows = dedupe(collected)
+                if !force && rows.count < 20 {
+                    lock.unlock()
+                    return
+                }
+                completed = true
+                let providerNames = providersWithRows.sorted()
+                let successMap = successes
+                let failureMap = failures
+                lock.unlock()
+
+                let source: String
+                if !providerNames.isEmpty {
+                    source = providerNames.joined(separator: " + ")
+                } else if successMap.values.reduce(0, +) > 0 {
+                    source = "MULTI_SOURCE_EMPTY"
+                } else {
+                    source = "MULTI_SOURCE_UNAVAILABLE"
+                }
+
+                complete(
+                    requestID: requestID,
+                    ok: true,
+                    status: 200,
+                    data: Self.jsonData([
+                        "status": "OK",
+                        "action": "CFI_TODAY_FIXTURES",
+                        "source": source,
+                        "providers": providerNames,
+                        "targetDate": targetDate,
+                        "timeZone": "Asia/Ho_Chi_Minh",
+                        "counts": [
+                            "fixtures": rows.count,
+                            "providerRequestSuccesses": successMap,
+                            "providerRequestFailures": failureMap
+                        ],
+                        "rows": Array(rows.prefix(400))
+                    ])
+                )
+            }
 
             func record(provider: String, rows: [[String: Any]], success: Bool) {
                 lock.lock()
-                defer { lock.unlock() }
+                if completed {
+                    lock.unlock()
+                    return
+                }
                 if success {
-                    providerRequestSuccesses[provider, default: 0] += 1
+                    successes[provider, default: 0] += 1
                 } else {
-                    providerRequestFailures[provider, default: 0] += 1
+                    failures[provider, default: 0] += 1
                 }
                 if !rows.isEmpty {
                     providersWithRows.insert(provider)
                     collected.append(contentsOf: rows)
                 }
+                let currentCount = dedupe(collected).count
+                lock.unlock()
+
+                if currentCount >= 20 {
+                    finish()
+                }
             }
 
-            func performJSON(
+            func requestHTML(
                 provider: String,
                 url: URL,
-                parser: @escaping (Any) -> [[String: Any]]
-            ) {
-                group.enter()
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 12
-                request.setValue("application/json", forHTTPHeaderField: "Accept")
-                request.setValue("Mozilla/5.0 CFI-iOS/0.3", forHTTPHeaderField: "User-Agent")
-
-                URLSession.shared.dataTask(with: request) { data, response, _ in
-                    defer { group.leave() }
-                    guard
-                        let http = response as? HTTPURLResponse,
-                        (200...299).contains(http.statusCode),
-                        let data,
-                        let object = try? JSONSerialization.jsonObject(with: data)
-                    else {
-                        record(provider: provider, rows: [], success: false)
-                        return
-                    }
-                    record(provider: provider, rows: parser(object), success: true)
-                }.resume()
-            }
-
-            func performHTML(
-                provider: String,
-                url: URL,
+                timeout: TimeInterval = 5,
                 parser: @escaping (String) -> [[String: Any]]
             ) {
-                group.enter()
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 12
-                request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-                request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 CFI/0.3", forHTTPHeaderField: "User-Agent")
+                var req = URLRequest(url: url)
+                req.timeoutInterval = timeout
+                req.cachePolicy = .reloadIgnoringLocalCacheData
+                req.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+                req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
 
-                URLSession.shared.dataTask(with: request) { data, response, _ in
-                    defer { group.leave() }
+                URLSession.shared.dataTask(with: req) { data, response, _ in
                     guard
                         let http = response as? HTTPURLResponse,
                         (200...299).contains(http.statusCode),
@@ -249,393 +354,329 @@ struct CFIWebView: UIViewRepresentable {
                 }.resume()
             }
 
-            func localKickoff(_ date: String, _ time: String) -> Date? {
-                let f = DateFormatter()
-                f.locale = Locale(identifier: "en_US_POSIX")
-                f.timeZone = timeZone
-                f.dateFormat = "yyyy-MM-dd HH:mm"
-                return f.date(from: "\(date) \(time)")
-            }
-
-            func eligibleKickoff(_ kickoff: Date) -> Bool {
-                guard dateFormatter.string(from: kickoff) == targetDate else { return false }
-                if targetDate == todayLocal && kickoff <= now { return false }
-                return true
-            }
-
-            func fixtureRow(
+            func requestJSON(
                 provider: String,
-                providerId: String,
-                home: String,
-                away: String,
-                competition: String,
-                country: String,
-                kickoff: Date,
-                status: String
-            ) -> [String: Any]? {
-                let h = home.trimmingCharacters(in: .whitespacesAndNewlines)
-                let a = away.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !h.isEmpty, !a.isEmpty, eligibleKickoff(kickoff) else { return nil }
+                url: URL,
+                timeout: TimeInterval = 5,
+                parser: @escaping (Any) -> [[String: Any]]
+            ) {
+                var req = URLRequest(url: url)
+                req.timeoutInterval = timeout
+                req.cachePolicy = .reloadIgnoringLocalCacheData
+                req.setValue("application/json", forHTTPHeaderField: "Accept")
+                req.setValue("CFI-iOS/0.4", forHTTPHeaderField: "User-Agent")
 
-                let time = DateFormatter()
-                time.locale = Locale(identifier: "en_US_POSIX")
-                time.timeZone = timeZone
-                time.dateFormat = "HH:mm"
-
-                return [
-                    "provider": provider,
-                    "providerId": providerId,
-                    "home": h,
-                    "away": a,
-                    "competition": competition.isEmpty ? "Unknown competition" : competition,
-                    "country": country,
-                    "kickoff": Int(kickoff.timeIntervalSince1970 * 1000),
-                    "kickoffIso": ISO8601DateFormatter().string(from: kickoff),
-                    "kickoffLocal": time.string(from: kickoff),
-                    "targetDate": targetDate,
-                    "status": status
-                ]
+                URLSession.shared.dataTask(with: req) { data, response, _ in
+                    guard
+                        let http = response as? HTTPURLResponse,
+                        (200...299).contains(http.statusCode),
+                        let data,
+                        let object = try? JSONSerialization.jsonObject(with: data)
+                    else {
+                        record(provider: provider, rows: [], success: false)
+                        return
+                    }
+                    record(provider: provider, rows: parser(object), success: true)
+                }.resume()
             }
 
-            // 1) Sofascore — useful when its public schedule endpoint is reachable.
-            for date in queryDates {
-                for host in ["www.sofascore.com", "api.sofascore.com"] {
-                    guard let url = URL(string: "https://\(host)/api/v1/sport/football/scheduled-events/\(date)") else { continue }
-                    performJSON(provider: "SOFASCORE", url: url) { object in
+            func parseAiScore(_ html: String) -> [[String: Any]] {
+                let lines = Self.plainTextFromHTML(html)
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+
+                var rows: [[String: Any]] = []
+                var competition = "AiScore"
+                var i = 0
+
+                func isNoise(_ value: String) -> Bool {
+                    let lower = value.lowercased()
+                    return [
+                        "h2h","prediction","live","football","basketball","tennis",
+                        "cricket","baseball","esports","volleyball","hockey","favorites",
+                        "figure legends","lineups","live stream","goals","penalty",
+                        "own goal","substitution","whistle","red card","yellow card"
+                    ].contains(lower)
+                }
+
+                while i < lines.count {
+                    let value = lines[i]
+
+                    if value.contains(":"),
+                       value.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) == nil,
+                       value.count < 120,
+                       !isNoise(value) {
+                        competition = value
+                    }
+
+                    if value.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil {
+                        let time = value
+                        var cursor = i + 1
+                        var home: String?
+                        var away: String?
+                        var sawVS = false
+
+                        while cursor < min(lines.count, i + 12) {
+                            let candidate = lines[cursor]
+                            if candidate.uppercased() == "FT" || candidate.range(of: #"\d+\s*-\s*\d+"#, options: .regularExpression) != nil {
+                                break
+                            }
+                            if candidate.uppercased() == "VS" {
+                                sawVS = true
+                                cursor += 1
+                                continue
+                            }
+                            if !isNoise(candidate) && candidate.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) == nil {
+                                if home == nil {
+                                    home = candidate
+                                } else if sawVS && away == nil {
+                                    away = candidate
+                                    break
+                                }
+                            }
+                            cursor += 1
+                        }
+
+                        if let home, let away,
+                           let item = row(
+                               provider: "AISCORE",
+                               providerId: "AIS-\(targetDate)-\(time)-\(home)-\(away)",
+                               home: home,
+                               away: away,
+                               competition: competition,
+                               country: "",
+                               kickoff: localKickoff(time),
+                               localTime: time,
+                               status: "scheduled"
+                           ) {
+                            rows.append(item)
+                        }
+                    }
+                    i += 1
+                }
+                return rows
+            }
+
+            func parseBongdaWap(_ html: String) -> [[String: Any]] {
+                let text = Self.plainTextFromHTML(html)
+                let lines = text
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+
+                var rows: [[String: Any]] = []
+                var competition = "BongdaWap"
+                var i = 0
+
+                while i < lines.count {
+                    let value = lines[i]
+                    if value.count < 80,
+                       value.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) == nil,
+                       !value.lowercased().contains("lịch thi đấu"),
+                       !value.lowercased().contains("bảng xếp hạng") {
+                        competition = value
+                    }
+
+                    if value.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil,
+                       i >= 1, i + 1 < lines.count {
+                        let time = value
+                        let home = lines[i - 1]
+                        let away = lines[i + 1]
+
+                        if let item = row(
+                            provider: "BONGDAWAP",
+                            providerId: "BDW-\(targetDate)-\(time)-\(home)-\(away)",
+                            home: home,
+                            away: away,
+                            competition: competition,
+                            country: "",
+                            kickoff: localKickoff(time),
+                            localTime: time,
+                            status: "scheduled"
+                        ) {
+                            rows.append(item)
+                        }
+                    }
+                    i += 1
+                }
+                return rows
+            }
+
+            // Hard latency budget. The UI gets whatever truthful fixture rows have
+            // arrived within 5.5s instead of waiting for every provider.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5.5) {
+                finish(force: true)
+            }
+
+            // Fast lane: AiScore exposes a very broad "today matches" page. Try
+            // localized and desktop variants in parallel and return immediately
+            // once at least 20 distinct fixtures are parsed.
+            if targetDate == todayLocal {
+                [
+                    "https://www.aiscore.com/today-matches",
+                    "https://vnm.aiscore.com/",
+                    "https://www.aiscore.com/?theme=black&width=1380"
+                ].compactMap(URL.init(string:)).forEach { url in
+                    requestHTML(provider: "AISCORE", url: url, timeout: 4.5, parser: parseAiScore)
+                }
+            }
+
+            // BongdaWap dated page is useful for Vietnam-local schedule coverage.
+            let parts = targetDate.split(separator: "-")
+            if parts.count == 3,
+               let url = URL(string: "https://bongdawap.com/lich-thi-dau-bong-da-ngay-\(parts[2])-\(parts[1])-\(parts[0]).html") {
+                requestHTML(provider: "BONGDAWAP", url: url, timeout: 4.5, parser: parseBongdaWap)
+            }
+
+            // Sofascore is a single fallback request now; no longer a blocking
+            // dependency and no duplicated hosts/adjacent-date fanout.
+            if let sofaURL = URL(string: "https://www.sofascore.com/api/v1/sport/football/scheduled-events/\(targetDate)") {
+                requestJSON(provider: "SOFASCORE", url: sofaURL, timeout: 4.5) { object in
+                    guard
+                        let root = object as? [String: Any],
+                        let events = root["events"] as? [[String: Any]]
+                    else { return [] }
+
+                    let tf = timeFormatter()
+                    var rows: [[String: Any]] = []
+                    for event in events {
+                        guard
+                            let homeTeam = event["homeTeam"] as? [String: Any],
+                            let awayTeam = event["awayTeam"] as? [String: Any],
+                            let home = homeTeam["name"] as? String,
+                            let away = awayTeam["name"] as? String,
+                            let timestamp = event["startTimestamp"] as? NSNumber
+                        else { continue }
+
+                        let kickoff = Date(timeIntervalSince1970: timestamp.doubleValue)
+                        guard dateFormatter.string(from: kickoff) == targetDate else { continue }
+
+                        let statusObject = event["status"] as? [String: Any]
+                        let status = String(describing: statusObject?["type"] ?? "scheduled").lowercased()
+                        if ["finished","inprogress","canceled","cancelled","postponed","abandoned"].contains(status) {
+                            continue
+                        }
+
+                        let tournament = event["tournament"] as? [String: Any]
+                        let category = tournament?["category"] as? [String: Any]
+                        let countryObject = category?["country"] as? [String: Any]
+
+                        if let item = row(
+                            provider: "SOFASCORE",
+                            providerId: String(describing: event["id"] ?? "\(home)-\(away)-\(timestamp)"),
+                            home: home,
+                            away: away,
+                            competition: tournament?["name"] as? String ?? "",
+                            country: countryObject?["name"] as? String ?? category?["name"] as? String ?? "",
+                            kickoff: kickoff,
+                            localTime: tf.string(from: kickoff),
+                            status: status
+                        ) {
+                            rows.append(item)
+                        }
+                    }
+                    return rows
+                }
+            }
+
+            // Lightweight independent fallback.
+            if let sportsDbURL = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=\(targetDate)&s=Soccer") {
+                requestJSON(provider: "THESPORTSDB", url: sportsDbURL, timeout: 4.5) { object in
+                    guard
+                        let root = object as? [String: Any],
+                        let events = root["events"] as? [[String: Any]]
+                    else { return [] }
+
+                    var rows: [[String: Any]] = []
+                    for event in events {
+                        let home = event["strHomeTeam"] as? String ?? ""
+                        let away = event["strAwayTeam"] as? String ?? ""
+                        let time = String((event["strTime"] as? String ?? "00:00").prefix(5))
+                        if let item = row(
+                            provider: "THESPORTSDB",
+                            providerId: String(describing: event["idEvent"] ?? "\(home)-\(away)-\(time)"),
+                            home: home,
+                            away: away,
+                            competition: event["strLeague"] as? String ?? "",
+                            country: event["strCountry"] as? String ?? "",
+                            kickoff: localKickoff(time),
+                            localTime: time,
+                            status: String(describing: event["strStatus"] ?? "scheduled")
+                        ) {
+                            rows.append(item)
+                        }
+                    }
+                    return rows
+                }
+            }
+
+            // ESPN fallback is delayed slightly and limited to a compact catalog so
+            // it never dominates startup latency. It mainly covers popular leagues
+            // when broad pages are blocked.
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.8) {
+                let leagues = [
+                    "eng.1","eng.2","eng.3","eng.4","eng.5",
+                    "esp.1","esp.2","ger.1","ita.1","fra.1",
+                    "ned.1","por.1","bel.1","sco.1","usa.1",
+                    "mex.1","bra.1","arg.1","jpn.1","kor.1",
+                    "eng.w.1","usa.nwsl"
+                ]
+                let espnDate = targetDate.replacingOccurrences(of: "-", with: "")
+                for league in leagues {
+                    lock.lock()
+                    let alreadyDone = completed
+                    lock.unlock()
+                    if alreadyDone { break }
+
+                    guard let url = URL(string: "https://site.api.espn.com/apis/site/v2/sports/soccer/\(league)/scoreboard?dates=\(espnDate)&limit=1000") else { continue }
+
+                    requestJSON(provider: "ESPN", url: url, timeout: 3.5) { object in
                         guard
                             let root = object as? [String: Any],
                             let events = root["events"] as? [[String: Any]]
                         else { return [] }
 
-                        let terminal: Set<String> = [
-                            "finished", "inprogress", "canceled", "cancelled",
-                            "postponed", "abandoned", "match finished", "ft", "in"
-                        ]
+                        let tf = timeFormatter()
                         var rows: [[String: Any]] = []
-
                         for event in events {
                             guard
-                                let homeTeam = event["homeTeam"] as? [String: Any],
-                                let awayTeam = event["awayTeam"] as? [String: Any],
-                                let home = homeTeam["name"] as? String,
-                                let away = awayTeam["name"] as? String,
-                                let timestamp = event["startTimestamp"] as? NSNumber
+                                let dateString = event["date"] as? String,
+                                let kickoff = ISO8601DateFormatter().date(from: dateString),
+                                dateFormatter.string(from: kickoff) == targetDate,
+                                let competitions = event["competitions"] as? [[String: Any]],
+                                let competition = competitions.first,
+                                let competitors = competition["competitors"] as? [[String: Any]]
                             else { continue }
 
-                            let kickoff = Date(timeIntervalSince1970: timestamp.doubleValue)
-                            let statusObject = event["status"] as? [String: Any]
-                            let status = String(describing: statusObject?["type"] ?? statusObject?["description"] ?? "scheduled").lowercased()
-                            if terminal.contains(status) { continue }
+                            let homeRow = competitors.first { ($0["homeAway"] as? String) == "home" }
+                            let awayRow = competitors.first { ($0["homeAway"] as? String) == "away" }
+                            let homeTeam = homeRow?["team"] as? [String: Any]
+                            let awayTeam = awayRow?["team"] as? [String: Any]
+                            let home = homeTeam?["displayName"] as? String ?? homeTeam?["name"] as? String ?? ""
+                            let away = awayTeam?["displayName"] as? String ?? awayTeam?["name"] as? String ?? ""
+                            let statusRoot = event["status"] as? [String: Any]
+                            let statusType = statusRoot?["type"] as? [String: Any]
+                            let status = String(describing: statusType?["state"] ?? "pre").lowercased()
+                            if status == "post" || status == "in" { continue }
 
-                            let tournament = event["tournament"] as? [String: Any]
-                            let category = tournament?["category"] as? [String: Any]
-                            let countryObject = category?["country"] as? [String: Any]
-                            let competition = (tournament?["name"] as? String) ?? ""
-                            let country = (countryObject?["name"] as? String) ?? (category?["name"] as? String) ?? ""
-                            let providerID = String(describing: event["id"] ?? "\(home)-\(away)-\(timestamp)")
-
-                            if let row = fixtureRow(
-                                provider: "SOFASCORE",
-                                providerId: providerID,
+                            if let item = row(
+                                provider: "ESPN",
+                                providerId: String(describing: event["id"] ?? "\(home)-\(away)-\(dateString)"),
                                 home: home,
                                 away: away,
-                                competition: competition,
-                                country: country,
-                                kickoff: kickoff,
-                                status: status
-                            ) {
-                                rows.append(row)
-                            }
-                        }
-                        return rows
-                    }
-                }
-            }
-
-            // 2) ESPN — broad, stable JSON scoreboards across many leagues.
-            let espnLeagues = [
-                "uefa.champions","uefa.europa","uefa.europa.conf",
-                "eng.1","eng.2","eng.3","eng.4","eng.5",
-                "esp.1","esp.2","ger.1","ger.2","ita.1","ita.2",
-                "fra.1","fra.2","ned.1","por.1","bel.1","sco.1",
-                "tur.1","usa.1","mex.1","bra.1","arg.1","col.1",
-                "aus.1","jpn.1","kor.1","eng.w.1","usa.nwsl","uefa.wchampions"
-            ]
-            let espnDate = targetDate.replacingOccurrences(of: "-", with: "")
-            for league in espnLeagues {
-                guard let url = URL(string: "https://site.api.espn.com/apis/site/v2/sports/soccer/\(league)/scoreboard?dates=\(espnDate)&limit=1000") else { continue }
-                performJSON(provider: "ESPN", url: url) { object in
-                    guard
-                        let root = object as? [String: Any],
-                        let events = root["events"] as? [[String: Any]]
-                    else { return [] }
-
-                    var rows: [[String: Any]] = []
-                    for event in events {
-                        guard
-                            let dateString = event["date"] as? String,
-                            let kickoff = ISO8601DateFormatter().date(from: dateString),
-                            let competitions = event["competitions"] as? [[String: Any]],
-                            let competition = competitions.first,
-                            let competitors = competition["competitors"] as? [[String: Any]]
-                        else { continue }
-
-                        let homeRow = competitors.first { ($0["homeAway"] as? String) == "home" }
-                        let awayRow = competitors.first { ($0["homeAway"] as? String) == "away" }
-                        let homeTeam = homeRow?["team"] as? [String: Any]
-                        let awayTeam = awayRow?["team"] as? [String: Any]
-                        let home = (homeTeam?["displayName"] as? String) ?? (homeTeam?["name"] as? String) ?? ""
-                        let away = (awayTeam?["displayName"] as? String) ?? (awayTeam?["name"] as? String) ?? ""
-
-                        let statusRoot = event["status"] as? [String: Any]
-                        let statusType = statusRoot?["type"] as? [String: Any]
-                        let status = String(describing: statusType?["state"] ?? statusType?["name"] ?? "pre").lowercased()
-                        if ["post","in","finished"].contains(status) { continue }
-
-                        let leagueName = (event["name"] as? String) ?? league
-                        let providerID = String(describing: event["id"] ?? "\(home)-\(away)-\(dateString)")
-
-                        if let row = fixtureRow(
-                            provider: "ESPN",
-                            providerId: providerID,
-                            home: home,
-                            away: away,
-                            competition: leagueName,
-                            country: "",
-                            kickoff: kickoff,
-                            status: status
-                        ) {
-                            rows.append(row)
-                        }
-                    }
-                    return rows
-                }
-            }
-
-            // 3) TheSportsDB — small free feed, still valuable as an independent fallback.
-            for date in queryDates {
-                guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=\(date)&s=Soccer") else { continue }
-                performJSON(provider: "THESPORTSDB", url: url) { object in
-                    guard
-                        let root = object as? [String: Any],
-                        let events = root["events"] as? [[String: Any]]
-                    else { return [] }
-
-                    var rows: [[String: Any]] = []
-                    let iso = ISO8601DateFormatter()
-
-                    for event in events {
-                        let home = event["strHomeTeam"] as? String ?? ""
-                        let away = event["strAwayTeam"] as? String ?? ""
-                        let status = String(describing: event["strStatus"] ?? "scheduled").lowercased()
-                        if status.contains("finish") || status.contains("postpon") || status.contains("cancel") { continue }
-
-                        var kickoff: Date?
-                        if let timestamp = event["strTimestamp"] as? String, !timestamp.isEmpty {
-                            kickoff = iso.date(from: timestamp)
-                        }
-                        if kickoff == nil {
-                            let eventDate = event["dateEvent"] as? String ?? date
-                            let eventTime = String((event["strTime"] as? String ?? "00:00").prefix(5))
-                            kickoff = localKickoff(eventDate, eventTime)
-                        }
-                        guard let kickoff else { continue }
-
-                        let leagueName = event["strLeague"] as? String ?? ""
-                        let country = event["strCountry"] as? String ?? ""
-                        let providerID = String(describing: event["idEvent"] ?? "\(home)-\(away)-\(kickoff.timeIntervalSince1970)")
-
-                        if let row = fixtureRow(
-                            provider: "THESPORTSDB",
-                            providerId: providerID,
-                            home: home,
-                            away: away,
-                            competition: leagueName,
-                            country: country,
-                            kickoff: kickoff,
-                            status: status
-                        ) {
-                            rows.append(row)
-                        }
-                    }
-                    return rows
-                }
-            }
-
-            // 4) BongdaWap — static dated fixture table; independent from JSON providers.
-            let vnDate = targetDate.split(separator: "-")
-            if vnDate.count == 3 {
-                let bdwDate = "\(vnDate[2])-\(vnDate[1])-\(vnDate[0])"
-                if let url = URL(string: "https://bongdawap.com/lich-thi-dau-bong-da-ngay-\(bdwDate).html") {
-                    performHTML(provider: "BONGDAWAP", url: url) { html in
-                        let rowRegex = try? NSRegularExpression(pattern: #"(?is)<tr[^>]*>(.*?)</tr>"#)
-                        let cellRegex = try? NSRegularExpression(pattern: #"(?is)<t[dh][^>]*>(.*?)</t[dh]>"#)
-                        guard let rowRegex, let cellRegex else { return [] }
-
-                        let ns = html as NSString
-                        let rowMatches = rowRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
-                        var rows: [[String: Any]] = []
-
-                        for rowMatch in rowMatches {
-                            guard rowMatch.numberOfRanges > 1 else { continue }
-                            let fragment = ns.substring(with: rowMatch.range(at: 1))
-                            let fns = fragment as NSString
-                            let cellMatches = cellRegex.matches(in: fragment, range: NSRange(location: 0, length: fns.length))
-                            let cells = cellMatches.compactMap { match -> String? in
-                                guard match.numberOfRanges > 1 else { return nil }
-                                return Self.cleanHTMLCell(fns.substring(with: match.range(at: 1)))
-                            }
-
-                            guard cells.count >= 6 else { continue }
-                            let time = cells[1]
-                            guard time.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil else { continue }
-                            guard let kickoff = localKickoff(targetDate, time) else { continue }
-
-                            let competition = cells[0]
-                            let home = Self.cleanTeamName(cells[3])
-                            let away = Self.cleanTeamName(cells[5])
-                            let scoreCell = cells[4].lowercased()
-                            if scoreCell != "vs" && scoreCell.range(of: #"\d+\s*-\s*\d+"#, options: .regularExpression) != nil {
-                                continue
-                            }
-
-                            if let row = fixtureRow(
-                                provider: "BONGDAWAP",
-                                providerId: "BDW-\(targetDate)-\(time)-\(home)-\(away)",
-                                home: home,
-                                away: away,
-                                competition: competition,
+                                competition: event["name"] as? String ?? league,
                                 country: "",
                                 kickoff: kickoff,
-                                status: "scheduled"
+                                localTime: tf.string(from: kickoff),
+                                status: status
                             ) {
-                                rows.append(row)
+                                rows.append(item)
                             }
                         }
                         return rows
                     }
                 }
-            }
-
-            // 5) AiScore — public "today matches" page. It is dynamic, so this is
-            // best-effort and never blocks the other providers.
-            if targetDate == todayLocal, let url = URL(string: "https://www.aiscore.com/today-matches") {
-                performHTML(provider: "AISCORE", url: url) { html in
-                    let text = Self.plainTextFromHTML(html)
-                    let lines = text
-                        .components(separatedBy: .newlines)
-                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .filter { !$0.isEmpty }
-
-                    var rows: [[String: Any]] = []
-                    var lastCompetition = "AiScore"
-                    var index = 0
-
-                    while index < lines.count {
-                        let line = lines[index]
-                        if line.contains(":"),
-                           line.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) == nil,
-                           line.count < 100 {
-                            lastCompetition = line
-                        }
-
-                        if line.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil,
-                           index + 3 < lines.count {
-                            let home = lines[index + 1]
-                            let vs = lines[index + 2].uppercased()
-                            let away = lines[index + 3]
-
-                            if vs == "VS",
-                               !home.isEmpty,
-                               !away.isEmpty,
-                               let kickoff = localKickoff(targetDate, line),
-                               let row = fixtureRow(
-                                   provider: "AISCORE",
-                                   providerId: "AIS-\(targetDate)-\(line)-\(home)-\(away)",
-                                   home: home,
-                                   away: away,
-                                   competition: lastCompetition,
-                                   country: "",
-                                   kickoff: kickoff,
-                                   status: "scheduled"
-                               ) {
-                                rows.append(row)
-                                index += 4
-                                continue
-                            }
-                        }
-                        index += 1
-                    }
-                    return rows
-                }
-            }
-
-            group.notify(queue: .global(qos: .userInitiated)) { [weak self] in
-                guard let self else { return }
-
-                lock.lock()
-                let rawRows = collected
-                let providerNames = providersWithRows.sorted()
-                let successMap = providerRequestSuccesses
-                let failureMap = providerRequestFailures
-                lock.unlock()
-
-                var seen = Set<String>()
-                var rows: [[String: Any]] = []
-
-                for row in rawRows {
-                    let home = String(describing: row["home"] ?? "").lowercased()
-                        .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
-                        .trimmingCharacters(in: .whitespaces)
-                    let away = String(describing: row["away"] ?? "").lowercased()
-                        .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
-                        .trimmingCharacters(in: .whitespaces)
-                    let kickoff = (row["kickoff"] as? NSNumber)?.int64Value ?? Int64(row["kickoff"] as? Int ?? 0)
-                    let bucket = kickoff / 300_000
-                    let key = "\(home)|\(away)|\(bucket)"
-                    if seen.insert(key).inserted {
-                        rows.append(row)
-                    }
-                }
-
-                rows.sort {
-                    let lhs = ($0["kickoff"] as? NSNumber)?.int64Value ?? Int64($0["kickoff"] as? Int ?? Int.max)
-                    let rhs = ($1["kickoff"] as? NSNumber)?.int64Value ?? Int64($1["kickoff"] as? Int ?? Int.max)
-                    return lhs < rhs
-                }
-
-                let totalSuccesses = successMap.values.reduce(0, +)
-                let source: String
-                if !providerNames.isEmpty {
-                    source = providerNames.joined(separator: " + ")
-                } else if totalSuccesses > 0 {
-                    source = "MULTI_SOURCE_EMPTY"
-                } else {
-                    source = "MULTI_SOURCE_UNAVAILABLE"
-                }
-
-                let payload: [String: Any] = [
-                    "status": "OK",
-                    "action": "CFI_TODAY_FIXTURES",
-                    "source": source,
-                    "providers": providerNames,
-                    "targetDate": targetDate,
-                    "timeZone": "Asia/Ho_Chi_Minh",
-                    "counts": [
-                        "fixtures": rows.count,
-                        "providerRequestsSucceeded": totalSuccesses,
-                        "providerRequestSuccesses": successMap,
-                        "providerRequestFailures": failureMap
-                    ],
-                    "rows": rows
-                ]
-
-                self.complete(
-                    requestID: requestID,
-                    ok: true,
-                    status: 200,
-                    data: Self.jsonData(payload)
-                )
             }
         }
 
