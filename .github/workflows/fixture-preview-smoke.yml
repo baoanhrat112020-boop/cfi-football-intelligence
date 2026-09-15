@@ -28,7 +28,8 @@ jobs:
               node -e '
                 const body=JSON.parse(process.argv[1]);
                 if(body.status!=="OK"||body.action!=="CFI_FIXTURES_DAY"||!Array.isArray(body.rows)) process.exit(2);
-                console.log(JSON.stringify({status:"PASS",fixtures:body.rows.length,source:body.source,latencyPolicy:body.latencyPolicy}));
+                if(body.rows.length<10) throw new Error("INSUFFICIENT_FIXTURE_COVERAGE:"+body.rows.length);
+                console.log(JSON.stringify({status:"PASS",fixtures:body.rows.length,source:body.source,latencyPolicy:body.latencyPolicy,sample:body.rows.slice(0,3).map(x=>[x.kickoffLocal,x.home,x.away])}));
               ' "$body"
               echo "elapsed_ms=$elapsed"
               test "$elapsed" -lt 12000
