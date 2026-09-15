@@ -190,9 +190,18 @@ Deno.serve(async (req) => {
       }
 
       const merged = new Map<string, any>();
+      const fixtureFold = (value: any) => String(value ?? "")
+        .normalize("NFKD")
+        .replace(/\p{M}+/gu, "")
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
       const keyOf = (row: any) => [
-        foldName(String(row?.home || "")),
-        foldName(String(row?.away || "")),
+        fixtureFold(row?.home),
+        fixtureFold(row?.away),
         requestedDate
       ].join("|");
 
