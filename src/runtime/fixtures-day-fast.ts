@@ -11,20 +11,25 @@ import {
 type FetchLike=typeof fetch;
 
 const ESPN_LEAGUES=[
-  'uefa.champions','uefa.europa','uefa.europa.conf','eng.1','eng.2','eng.3','eng.4','eng.5',
-  'esp.1','esp.2','ger.1','ger.2','ita.1','ita.2','fra.1','fra.2','ned.1','por.1',
-  'bel.1','sco.1','tur.1','usa.1','mex.1','bra.1','arg.1','col.1','aus.1','jpn.1',
-  'kor.1','eng.w.1','usa.nwsl','uefa.wchampions',
+  'uefa.champions','uefa.europa','uefa.europa.conf','eng.1','eng.2','eng.3',
+  'esp.1','esp.2','ger.1','ger.2','ita.1','ita.2',
+  'fra.1','fra.2','ned.1','por.1','bel.1','sco.1',
+  'tur.1','usa.1','mex.1','bra.1','arg.1','col.1',
 ] as const;
 const TSDB_NEXT=['4480','4481','5071','4328'] as const;
-const REQUEST_TIMEOUT_MS=3200;
 
-async function getJson(fetchFn:FetchLike,url:string){
+const MAX_CONCURRENT=6;
+const TARGET_ROWS=40;
+const PRIMARY_TIMEOUT_MS=1800;
+const ESPN_TIMEOUT_MS=1500;
+const TSDB_TIMEOUT_MS=1400;
+
+async function getJson(fetchFn:FetchLike,url:string,timeoutMs:number){
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS);
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
     const response=await fetchFn(url,{
-      headers:{accept:'application/json','user-agent':'CFI-Football-Intelligence/1.2'},
+      headers:{accept:'application/json','user-agent':'CFI-Football-Intelligence/1.3'},
       signal:controller.signal
     });
     if(!response.ok)return{ok:false,status:response.status,payload:null};
@@ -42,50 +47,85 @@ export async function discoverDayFixturesFast(
 ){
   const attempts:any[]=[];
   const rows:DiscoveredFixture[]=[];
-  const jobs:Array<Promise<void>>=[];
 
-  const add=(
-    provider:string,
-    url:string,
-    parser:(payload:any,window:DiscoveryWindow)=>DiscoveredFixture[]
+  const runBatch=async(
+    stage:string,
+    jobs:Array<{
+      provider:string;
+      url:string;
+      timeoutMs:number;
+      parser:(payload:any,window:DiscoveryWindow)=>DiscoveredFixture[];
+    }>
   )=>{
-    jobs.push((async()=>{
-      const result:any=await getJson(fetchFn,url);
+    await Promise.allSettled(jobs.slice(0,MAX_CONCURRENT).map(async job=>{
+      const result:any=await getJson(fetchFn,job.url,job.timeoutMs);
       if(!result.ok){
-        attempts.push({provider,url,ok:false,httpStatus:result.status??null,error:result.error??null,rows:0});
+        attempts.push({stage,provider:job.provider,url:job.url,ok:false,httpStatus:result.status??null,error:result.error??null,rows:0});
         return;
       }
-      const parsed=parser(result.payload,window);
-      attempts.push({provider,url,ok:true,httpStatus:result.status,rows:parsed.length});
+      const parsed=job.parser(result.payload,window);
+      attempts.push({stage,provider:job.provider,url:job.url,ok:true,httpStatus:result.status,rows:parsed.length});
       rows.push(...parsed);
-    })());
+    }));
   };
 
+  const merged=()=>dedupeFixtures(rows).sort((a,b)=>a.kickoff-b.kickoff);
+
+  // Stage 1: the two Sofascore hosts across the three UTC-adjacent dates.
+  // This is intentionally capped at six concurrent fetches, matching the
+  // Worker connection ceiling instead of queueing dozens of requests.
+  const sofaJobs:Array<any>=[];
   for(const date of providerQueryDates(window.targetDate)){
-    add('SOFASCORE',`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,parseSofascoreScheduled);
-    add('SOFASCORE',`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,parseSofascoreScheduled);
-    add('THESPORTSDB',`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${date}&s=Soccer`,parseTheSportsDbEvents);
+    sofaJobs.push(
+      {provider:'SOFASCORE',url:`https://www.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,timeoutMs:PRIMARY_TIMEOUT_MS,parser:parseSofascoreScheduled},
+      {provider:'SOFASCORE',url:`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${date}`,timeoutMs:PRIMARY_TIMEOUT_MS,parser:parseSofascoreScheduled},
+    );
   }
+  await runBatch('PRIMARY_SOFA',sofaJobs);
+  if(merged().length>=TARGET_ROWS)return finish(merged(),attempts,'PRIMARY_SOFA');
 
-  for(const leagueId of TSDB_NEXT){
-    add('THESPORTSDB',`https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=${leagueId}`,parseTheSportsDbEvents);
-  }
-
+  // Stage 2: ESPN in fixed batches of six. Stop as soon as coverage is useful;
+  // do not fan out the whole league catalog at once.
   const espnDate=window.targetDate.replaceAll('-','');
-  for(const league of ESPN_LEAGUES){
-    add('ESPN',`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${espnDate}&limit=1000`,parseEspnScoreboard);
+  for(let i=0;i<ESPN_LEAGUES.length;i+=MAX_CONCURRENT){
+    const jobs=ESPN_LEAGUES.slice(i,i+MAX_CONCURRENT).map(league=>({
+      provider:'ESPN',
+      url:`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${espnDate}&limit=1000`,
+      timeoutMs:ESPN_TIMEOUT_MS,
+      parser:parseEspnScoreboard
+    }));
+    await runBatch(`ESPN_BATCH_${Math.floor(i/MAX_CONCURRENT)+1}`,jobs);
+    if(merged().length>=TARGET_ROWS)break;
   }
 
-  await Promise.allSettled(jobs);
+  // Stage 3: small independent fallback only when broad providers are sparse.
+  if(merged().length<12){
+    const tsdbJobs:Array<any>=[
+      {provider:'THESPORTSDB',url:`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${window.targetDate}&s=Soccer`,timeoutMs:TSDB_TIMEOUT_MS,parser:parseTheSportsDbEvents},
+      ...TSDB_NEXT.map(leagueId=>({
+        provider:'THESPORTSDB',
+        url:`https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=${leagueId}`,
+        timeoutMs:TSDB_TIMEOUT_MS,
+        parser:parseTheSportsDbEvents
+      }))
+    ];
+    await runBatch('TSDB_FALLBACK',tsdbJobs);
+  }
 
-  const merged=dedupeFixtures(rows).sort((a,b)=>a.kickoff-b.kickoff);
-  const providers=[...new Set(merged.map(row=>row.provider))];
+  return finish(merged(),attempts,'STAGED_MULTI_SOURCE');
+}
+
+function finish(rows:DiscoveredFixture[],attempts:any[],latencyMode:string){
+  const providers=[...new Set(rows.map(row=>row.provider))];
   return{
-    provider:merged.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',
+    provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',
     providers,
-    rows:merged.slice(0,400),
+    rows:rows.slice(0,400),
     attempts,
-    timeoutMs:REQUEST_TIMEOUT_MS,
+    timeoutMs:Math.max(PRIMARY_TIMEOUT_MS,ESPN_TIMEOUT_MS,TSDB_TIMEOUT_MS),
+    latencyMode,
+    targetRows:TARGET_ROWS,
+    maxConcurrent:MAX_CONCURRENT,
   };
 }
 
@@ -112,9 +152,13 @@ export async function handleFixturesDayRequest(
     providers:found.providers,
     targetDate,
     timeZone,
-    counts:{fixtures:found.rows.length},
+    counts:{fixtures:found.rows.length,targetRows:found.targetRows},
     rows:found.rows,
     attempts:found.attempts,
-    latencyPolicy:{perProviderTimeoutMs:found.timeoutMs,fanout:'parallel'}
+    latencyPolicy:{
+      perProviderTimeoutMs:found.timeoutMs,
+      maxConcurrent:found.maxConcurrent,
+      mode:found.latencyMode
+    }
   });
 }
