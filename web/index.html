@@ -349,7 +349,8 @@
     var item=state.pending[id];if(!item)return;delete state.pending[id];
     try{
       var bin=atob(b64||"");var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
-      var text=new TextDecoder().decode(bytes);var data=text?JSON.parse(text):{};
+      var text=new TextDecoder().decode(bytes),data={};
+      if(text){try{data=JSON.parse(text)}catch(parseErr){data={message:text.trim()||("HTTP "+status),raw:text,nonJson:true}}}
       if(ok)item.resolve({status:status,data:data});else{var err=new Error((data&&data.message)||("HTTP "+status));err.status=status;err.data=data;item.reject(err)}
     }catch(e){item.reject(e)}
   };
@@ -446,17 +447,26 @@
     }
 
     try{
-      var sr=await api("/api/fixtures-day","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
-      var sd=sr.data||{},rows=Array.isArray(sd.rows)?sd.rows:[];
-      renderTodayFixtures(rows,sd.source||"CFI SERVER DISCOVERY");
+      var rows=[],source="";
+      try{
+        var sr=await api("/api/fixtures-day","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
+        var sd=sr.data||{};rows=Array.isArray(sd.rows)?sd.rows:[];source=sd.source||"CFI SERVER DISCOVERY";
+      }catch(primaryErr){
+        var dr=await api("/api/discover","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh",max_matches:100,scan_limit:100,response_mode:"compact",internal_provider_diagnostics:true});
+        var dd=dr.data||{},board=Array.isArray(dd.board)?dd.board:[];
+        rows=board.map(function(x,i){return{provider:x.provider||dd.provider||"CFI_DISCOVER",providerId:(x.fixtureProvenance&&x.fixtureProvenance.providerId)||("DISC-"+i),home:x.home||(x.match&&x.match.home)||"",away:x.away||(x.match&&x.match.away)||"",competition:x.competition||"",country:x.country||"",kickoff:x.kickoff||0,kickoffIso:x.kickoff?new Date(x.kickoff).toISOString():"",kickoffLocal:x.kickoffLocal||"",targetDate:date,status:"scheduled"}});
+        source=(dd.provider||dd.source||"CFI_DISCOVER")+" · fallback";
+      }
+      rows=mergeFixtureRows([rows]);
+      renderTodayFixtures(rows,source);
       if(rows.length){toast("Đã tải "+rows.length+" trận");}
-      else{toast("Không lấy được fixture từ các nguồn hiện có.");}
+      else{toast("Không lấy được fixture từ production discovery.");}
     }catch(e){
       if(!(cached&&Array.isArray(cached.rows)&&cached.rows.length)){
-        $("fixtureList").innerHTML='<div class="fixture-empty">Fixture discovery lỗi: '+esc((e.data&&e.data.error)||e.message)+'</div>';
+        $("fixtureList").innerHTML='<div class="fixture-empty">Không lấy được lịch thi đấu. '+esc((e.data&&((e.data.error||e.data.message)))||e.message)+'</div>';
         $("fixtureCount").textContent="Lỗi";
       }
-      toast("Fixture: "+((e.data&&e.data.error)||e.message));
+      toast("Fixture: "+((e.data&&(e.data.error||e.data.message))||e.message));
     }
   }
   $("manualModeBtn").onclick=function(){setSearchMode("manual")};
@@ -583,7 +593,7 @@
     var ht=Array.isArray(ch.top3HT)?ch.top3HT.slice(0,3):[],ft=Array.isArray(ch.top3FT)?ch.top3FT.slice(0,3):[];
     modal("Match DNA",'<div class="source-list"><div class="source"><span>Most likely path</span><b>'+esc(ch.path||"—")+'</b></div><div class="source"><span>Explosion level</span><b>'+esc(ex.level||"—")+'</b></div></div><pre>'+esc(JSON.stringify({top3HT:ht,top3FT:ft,thresholds:ex.thresholds||null},null,2))+'</pre>');
   };
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.0 Beta 1 · Build 2</b></div></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.1 Beta 1 · Build 3</b></div></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
