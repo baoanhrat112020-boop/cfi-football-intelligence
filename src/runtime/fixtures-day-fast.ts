@@ -1,3 +1,5 @@
+import { fetchAiScoreToday } from './aiscore-today.ts';
+
 type FetchLike=typeof fetch;
 
 export type FixtureDayEnv={
@@ -280,12 +282,17 @@ export async function discoverDayFixturesFast(
   fetchFn:FetchLike=fetch
 ){
   const attempts:any[]=[];
-  const [big,fd]=await Promise.all([
+  const [big,ai,fd]=await Promise.all([
     bigDbDay(window,env,fetchFn),
+    fetchAiScoreToday(window,fetchFn,PRIMARY_TIMEOUT_MS),
     footballDataDay(window,fetchFn)
   ]);
-  attempts.push(big.attempt,fd.attempt);
-  let rows=mergeRows([...big.rows,...fd.rows]);
+  attempts.push(big.attempt,ai.attempt,fd.attempt);
+  let rows=mergeRows([
+    ...big.rows,
+    ...ai.rows.map(row=>({...row,sourceProviders:['AISCORE']})),
+    ...fd.rows
+  ]);
 
   if(rows.length<TARGET_ROWS){
     const bdw=await bongdaWapDay(window,fetchFn);
@@ -299,7 +306,7 @@ export async function discoverDayFixturesFast(
     providers,rows:rows.slice(0,500),attempts,
     latencyMode:'BIGDB_FOOTBALLDATA_THEN_FALLBACK',
     targetRows:TARGET_ROWS,
-    primarySources:['CFI_BIGDB','FOOTBALL_DATA'],
+    primarySources:['CFI_BIGDB','AISCORE','FOOTBALL_DATA'],
     fallbackSources:['BONGDAWAP']
   };
 }
@@ -324,7 +331,7 @@ export async function handleFixturesDayRequest(
   return Response.json({
     status:'OK',
     action:'CFI_FIXTURES_DAY',
-    version:'CFI_FIXTURES_DAY_V2_BIGDB_FOOTBALLDATA',
+    version:'CFI_FIXTURES_DAY_V3_BIGDB_AISCORE_FOOTBALLDATA',
     source:found.provider,
     providers:found.providers,
     targetDate,timeZone,
