@@ -309,17 +309,17 @@
   function statusText(obj){try{return JSON.stringify(obj).toLowerCase()}catch(e){return ""}}
   function setStatus(dotId,textId,kind,label){$(dotId).className="dot "+kind;$(textId).textContent=label}
   async function refreshStatus(silent){
-    setStatus("runtimeDot","runtimeStatus","","Checking…");setStatus("dbDot","dbStatus","","Checking…");
+    setStatus("runtimeDot","runtimeStatus","","Checking…");
+    setStatus("dbDot","dbStatus","warn","Check on run");
     try{
-      var r=await api("/api/status","GET");state.status=r.data;var tx=statusText(r.data);
-      var configNeeded=tx.indexOf("config_required")>=0||tx.indexOf("not configured")>=0;
-      if(configNeeded){setStatus("runtimeDot","runtimeStatus","ok","Connected");setStatus("dbDot","dbStatus","warn","Needs config")}
-      else{setStatus("runtimeDot","runtimeStatus","ok","Connected");setStatus("dbDot","dbStatus","ok","Reachable")}
-      if(!silent)toast("Data status refreshed");
-      return !configNeeded;
+      var r=await api("/health","GET");state.status=r.data;
+      setStatus("runtimeDot","runtimeStatus","ok","Online");
+      if(!silent)toast("CFI runtime online");
+      return true;
     }catch(e){
-      setStatus("runtimeDot","runtimeStatus","bad","Offline");setStatus("dbDot","dbStatus","bad","Unavailable");
-      if(!silent)toast(e.message);return false;
+      setStatus("runtimeDot","runtimeStatus","bad","Offline");
+      setStatus("dbDot","dbStatus","warn","Not checked");
+      if(!silent)toast("Runtime: "+e.message);return false;
     }
   }
 
@@ -337,18 +337,20 @@
     $("fixtureCount").textContent=state.todayFixtures.length+" trận";
     var list=$("fixtureList");list.innerHTML="";
     if(!state.todayFixtures.length){list.innerHTML='<div class="fixture-empty">Không tìm thấy trận chưa bắt đầu cho ngày này. Có thể thử Refresh hoặc đổi ngày.</div>';return}
-    state.todayFixtures.forEach(function(f,idx){
+    var frag=document.createDocumentFragment();
+    state.todayFixtures.forEach(function(f){
       var b=document.createElement("button");b.className="fixture";b.type="button";
       var time=f.kickoffLocal||f.time||"—",league=f.competition||f.league||"Unknown competition";
-      b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span><span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc(f.country||f.provider||"")+'</div>';
+      b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span><span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc((f.provider||"")+(f.country?" · "+f.country:""))+'</div>';
       b.onclick=function(){
         var date=$("todayDateInput").value;
         state.match={home:f.home,away:f.away,date:f.targetDate||date,league:league,kickoff:f.kickoffIso||null,provider:f.provider||source||null};
         $("homeInput").value=f.home;$("awayInput").value=f.away;$("dateInput").value=state.match.date;$("leagueInput").value=league;
         syncMatch();showScreen("selected");refreshStatus(true);
       };
-      list.appendChild(b);
+      frag.appendChild(b);
     });
+    list.appendChild(frag);
   }
   async function loadTodayFixtures(){
     var date=$("todayDateInput").value;if(!date){toast("Chọn ngày cần tìm trận.");return}
@@ -357,7 +359,8 @@
     try{
       var r=await api("/native/today-fixtures","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
       var d=r.data||{};renderTodayFixtures(d.rows||[],d.source||"AUTO");
-      if(!Array.isArray(d.rows)||!d.rows.length)toast("Không có trận chưa bắt đầu trong ngày đã chọn.");
+      if(Array.isArray(d.rows)&&d.rows.length){toast("Đã tải "+d.rows.length+" trận");}
+      else{toast("Không tìm thấy fixture từ các nguồn hiện có.");}
     }catch(e){
       $("fixtureList").innerHTML='<div class="fixture-empty">Không tải được lịch thi đấu: '+esc(e.message)+'</div>';$("fixtureCount").textContent="Lỗi";toast(e.message);
     }
