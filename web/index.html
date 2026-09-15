@@ -23,6 +23,20 @@
     .icon-btn{width:38px;height:38px;border:0;background:transparent;color:#dceaf4;border-radius:10px;display:grid;place-items:center}
     .icon-btn:active{background:#103149}
     .screen{display:none;padding:14px 16px 24px}.screen.active{display:block}
+    .mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 14px;padding:4px;background:#071c2c;border:1px solid #174563;border-radius:12px}
+    .mode-btn{height:42px;border:0;border-radius:9px;background:transparent;color:#8ea8ba;font-weight:750}
+    .mode-btn.active{background:#103852;color:#5fc1ff;box-shadow:inset 0 0 0 1px #23698f}
+    .today-panel{display:none}.today-panel.active{display:block}.manual-panel.hidden{display:none}
+    .today-toolbar{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:end;margin-bottom:12px}
+    .today-toolbar .field{margin:0}.refresh-today{height:44px;padding:0 14px;border:1px solid #23698f;border-radius:10px;background:#0b2b42;color:#6ac4ff;font-weight:800}
+    .fixture-summary{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:4px 2px 10px;color:#8fa9bb;font-size:11px}
+    .fixture-list{display:grid;gap:9px}
+    .fixture{width:100%;border:1px solid #1d4f6d;border-radius:12px;background:linear-gradient(180deg,#0b2940,#082136);color:#eef7fc;padding:12px;text-align:left}
+    .fixture:active{transform:translateY(1px);background:#10334d}
+    .fixture-top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px}
+    .fixture-time{font-weight:900;color:#64c2ff;font-size:14px}.fixture-league{font-size:10px;color:#7898ad;max-width:68%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fixture-teams{font-size:13px;font-weight:800;line-height:1.35}.fixture-meta{margin-top:6px;font-size:10px;color:#7895a9}
+    .fixture-empty{padding:22px 14px;border:1px dashed #21526f;border-radius:12px;text-align:center;color:#829fb3;font-size:12px;line-height:1.5}
     .search-wrap{position:relative;margin-bottom:14px}.search-wrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#83a0b6}
     .search{width:100%;height:48px;border:1px solid var(--line2);border-radius:12px;background:#0a2032;color:white;padding:0 14px 0 44px;outline:none;font-size:15px}
     .search:focus,.field input:focus{border-color:#3da8f5;box-shadow:0 0 0 3px rgba(41,151,255,.12)}
@@ -77,6 +91,11 @@
 
   <main>
     <section id="screenSearch" class="screen active">
+      <div class="mode-switch">
+        <button id="manualModeBtn" class="mode-btn active">Nhập trận</button>
+        <button id="todayModeBtn" class="mode-btn">⚽ Trận hôm nay</button>
+      </div>
+      <div id="manualPanel" class="manual-panel">
       <div class="search-wrap">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="quickSearch" class="search" placeholder="Nhập Home vs Away..." autocomplete="off">
@@ -109,6 +128,21 @@
         <div class="hint">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
           <span>CFI chỉ tạo prediction sau khi backend phản hồi và các gate strict-prior được kiểm tra.</span>
+        </div>
+      </div>
+      </div>
+      <div id="todayPanel" class="today-panel">
+        <div class="card pad">
+          <h1 class="section-title">TRẬN TRONG NGÀY</h1>
+          <p class="section-sub">Tự lấy lịch thi đấu. Chọn một trận rồi CFI mới kiểm tra BigDB/strict-prior và chạy prediction.</p>
+          <div class="today-toolbar">
+            <div class="field"><label>Ngày</label><input id="todayDateInput" type="date"></div>
+            <button id="todayRefreshBtn" class="refresh-today">↻ Refresh</button>
+          </div>
+          <div class="fixture-summary"><span id="fixtureSource">Nguồn: —</span><span id="fixtureCount">0 trận</span></div>
+          <div id="fixtureList" class="fixture-list">
+            <div class="fixture-empty">Bấm “Refresh” để tự tìm các trận chưa bắt đầu trong ngày.</div>
+          </div>
         </div>
       </div>
     </section>
@@ -231,7 +265,7 @@
 
 <script>
 (function(){
-  var state={match:null,status:null,prediction:null,current:"search",pending:{}};
+  var state={match:null,status:null,prediction:null,current:"search",pending:{},searchMode:"manual",todayFixtures:[]};
   var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult")};
 
   function $(id){return document.getElementById(id)}
@@ -239,7 +273,7 @@
   function showScreen(name){Object.keys(screens).forEach(function(k){screens[k].classList.toggle("active",k===name)});state.current=name;window.scrollTo({top:0,behavior:"instant"})}
   function toast(msg){var t=$("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._timer);t._timer=setTimeout(function(){t.classList.remove("show")},2400)}
   function modal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modalWrap").classList.add("show")}
-  function setToday(){var d=new Date();var local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);$("dateInput").value=local}
+  function setToday(){var d=new Date();var local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);$("dateInput").value=local;$("todayDateInput").value=local}
   function initials(name){return String(name||"?").trim().split(/\s+/).slice(0,2).map(function(x){return x[0]||""}).join("").toUpperCase()}
   function prettyDate(v){if(!v)return "—";var d=new Date(v+"T12:00:00");return isNaN(d)?v:d.toLocaleDateString("vi-VN",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"})}
   function syncMatch(){
@@ -288,6 +322,50 @@
       if(!silent)toast(e.message);return false;
     }
   }
+
+  function setSearchMode(mode){
+    state.searchMode=mode;
+    $("manualModeBtn").classList.toggle("active",mode==="manual");
+    $("todayModeBtn").classList.toggle("active",mode==="today");
+    $("manualPanel").classList.toggle("hidden",mode!=="manual");
+    $("todayPanel").classList.toggle("active",mode==="today");
+    if(mode==="today"&&!state.todayFixtures.length)loadTodayFixtures();
+  }
+  function renderTodayFixtures(rows,source){
+    state.todayFixtures=Array.isArray(rows)?rows:[];
+    $("fixtureSource").textContent="Nguồn: "+(source||"CFI fixture discovery");
+    $("fixtureCount").textContent=state.todayFixtures.length+" trận";
+    var list=$("fixtureList");list.innerHTML="";
+    if(!state.todayFixtures.length){list.innerHTML='<div class="fixture-empty">Không tìm thấy trận chưa bắt đầu cho ngày này. Có thể thử Refresh hoặc đổi ngày.</div>';return}
+    state.todayFixtures.forEach(function(f,idx){
+      var b=document.createElement("button");b.className="fixture";b.type="button";
+      var time=f.kickoffLocal||f.time||"—",league=f.competition||f.league||"Unknown competition";
+      b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span><span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc(f.country||f.provider||"")+'</div>';
+      b.onclick=function(){
+        var date=$("todayDateInput").value;
+        state.match={home:f.home,away:f.away,date:f.targetDate||date,league:league,kickoff:f.kickoffIso||null,provider:f.provider||source||null};
+        $("homeInput").value=f.home;$("awayInput").value=f.away;$("dateInput").value=state.match.date;$("leagueInput").value=league;
+        syncMatch();showScreen("selected");refreshStatus(true);
+      };
+      list.appendChild(b);
+    });
+  }
+  async function loadTodayFixtures(){
+    var date=$("todayDateInput").value;if(!date){toast("Chọn ngày cần tìm trận.");return}
+    $("fixtureList").innerHTML='<div class="fixture-empty"><span class="loading"><i></i><i></i><i></i></span> Đang tìm lịch thi đấu…</div>';
+    $("fixtureCount").textContent="Đang tải…";
+    try{
+      var r=await api("/native/today-fixtures","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
+      var d=r.data||{};renderTodayFixtures(d.rows||[],d.source||"AUTO");
+      if(!Array.isArray(d.rows)||!d.rows.length)toast("Không có trận chưa bắt đầu trong ngày đã chọn.");
+    }catch(e){
+      $("fixtureList").innerHTML='<div class="fixture-empty">Không tải được lịch thi đấu: '+esc(e.message)+'</div>';$("fixtureCount").textContent="Lỗi";toast(e.message);
+    }
+  }
+  $("manualModeBtn").onclick=function(){setSearchMode("manual")};
+  $("todayModeBtn").onclick=function(){setSearchMode("today")};
+  $("todayRefreshBtn").onclick=loadTodayFixtures;
+  $("todayDateInput").addEventListener("change",loadTodayFixtures);
 
   function parseQuickSearch(){
     var q=$("quickSearch").value.trim();if(!q)return;
@@ -367,7 +445,8 @@
   }});
   document.querySelectorAll(".nav-btn").forEach(function(btn){btn.onclick=function(){
     document.querySelectorAll(".nav-btn").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
-    if(btn.dataset.nav==="home")showScreen(state.match?state.current==="result"?"result":"search":"search");
+    if(btn.dataset.nav==="home"){showScreen("search");setSearchMode("manual")}
+    else if(btn.dataset.nav==="discover"){showScreen("search");setSearchMode("today")}
     else toast(btn.textContent+" đã nhận thao tác; module này sẽ dùng endpoint CFI tương ứng.");
   }});
 
