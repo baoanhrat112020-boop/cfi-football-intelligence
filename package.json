@@ -19,6 +19,7 @@
     "cfi:browser:soccerway": "node local-node/browser/fixture-collector/soccerway-adapter.mjs",
     "cfi:browser:sofascore-probe": "node local-node/browser/fixture-collector/sofascore-probe.mjs",
     "cfi:browser:sofascore": "node local-node/browser/fixture-collector/sofascore-adapter.mjs",
+    "cfi:browser:aiscore": "node local-node/browser/fixture-collector/aiscore-adapter.mjs",
     "cfi:browser:cross-verify": "node local-node/browser/fixture-collector/cross-verify.mjs",
     "cfi:canonical:merge": "node local-node/canonical/canonical-merge.mjs",
     "cfi:bigdb:dry-run": "node local-node/canonical/bigdb-dry-run.mjs",
