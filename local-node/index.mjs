@@ -409,7 +409,7 @@ async function runCycle() {
     await progress(
       30,
       "BROWSER",
-      "Refreshing Soccerway + Sofascore in parallel"
+      "Refreshing Soccerway + Sofascore + AiScore in parallel"
     );
 
     await Promise.all([
@@ -421,6 +421,11 @@ async function runCycle() {
       runStage(
         "SOFASCORE",
         "local-node/browser/fixture-collector/sofascore-adapter.mjs"
+      ),
+
+      runStage(
+        "AISCORE",
+        "local-node/browser/fixture-collector/aiscore-adapter.mjs"
       )
     ]);
 
