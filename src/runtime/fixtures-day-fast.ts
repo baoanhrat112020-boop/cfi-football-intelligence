@@ -71,30 +71,30 @@ export function parseBongdaWapSchedule(html:string,window:DiscoveryWindow):Disco
   const out:DiscoveredFixture[]=[];
   const now=Number(window.nowMs??Date.now());
   const today=localDateNow(window.timeZone,now);
-  const rowRegex=/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
-  let match:RegExpExecArray|null;
-  while((match=rowRegex.exec(html))){
-    const fragment=match[1];
-    const cells:string[]=[];
-    const cellRegex=/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi;
-    let cell:RegExpExecArray|null;
-    while((cell=cellRegex.exec(fragment)))cells.push(decodeHtml(cell[1]));
-    if(cells.length<5)continue;
-    const timeIndex=cells.findIndex(v=>/^\d{1,2}:\d{2}$/.test(v));
-    const vsIndex=cells.findIndex(v=>/^vs$/i.test(v));
-    if(timeIndex<0||vsIndex<=0||vsIndex>=cells.length-1)continue;
-    const time=cells[timeIndex].padStart(5,'0');
-    const home=cleanTeam(cells[vsIndex-1]);
-    const away=cleanTeam(cells[vsIndex+1]);
+  const blocks=html.split(/<div\s+class=["']tran1\b[^"']*["'][^>]*>/i).slice(1);
+  for(const block of blocks){
+    const timeRaw=block.match(/class=["']ngaygio["'][^>]*>([\s\S]*?)<\/p>/i)?.[1]??'';
+    const time=decodeHtml(timeRaw).padStart(5,'0');
+    if(!/^\d{2}:\d{2}$/.test(time))continue;
+    if(!/class=["']tyso["'][\s\S]*?<b>\s*vs\s*<\/b>/i.test(block))continue;
+
+    const teamMatches=[...block.matchAll(/class=["']tendb["'][^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/gi)];
+    if(teamMatches.length<2)continue;
+    const home=cleanTeam(teamMatches[0][1]);
+    const away=cleanTeam(teamMatches[1][1]);
     if(!home||!away)continue;
+
+    const competitionMatch=block.match(/class=["']tengiai["'][^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i);
+    const competition=competitionMatch?decodeHtml(competitionMatch[1]):null;
     const kickoff=vnKickoff(window.targetDate,time,window.timeZone);
     if(kickoff===null)continue;
     if(window.targetDate===today&&kickoff<=now)continue;
-    const competition=decodeHtml(cells[0])||null;
+
+    const idMatch=block.match(/soi-keo-[^"']+-(\d+)\.html/i);
     out.push({
       provider:'BONGDAWAP',
-      providerId:`BDW-${window.targetDate}-${time}-${home}-${away}`,
-      home,away,competition,country:null,
+      providerId:idMatch?.[1]?`BDW-${idMatch[1]}`:`BDW-${window.targetDate}-${time}-${home}-${away}`,
+      home,away,competition:competition||null,country:null,
       kickoff,
       kickoffIso:new Date(kickoff).toISOString(),
       kickoffLocal:time,
@@ -104,7 +104,6 @@ export function parseBongdaWapSchedule(html:string,window:DiscoveryWindow):Disco
   }
   return dedupeFixtures(out).sort((a,b)=>a.kickoff-b.kickoff);
 }
-
 async function getHtml(fetchFn:FetchLike,url:string){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS);
