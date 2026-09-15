@@ -51,6 +51,7 @@ struct CFIWebView: UIViewRepresentable {
         private let allowedPaths: Set<String> = [
             "/health",
             "/api/status",
+            "/api/match-context",
             "/api/predict",
             "/api/prediction-history",
             "/api/results"
