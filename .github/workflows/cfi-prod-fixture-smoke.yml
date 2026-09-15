@@ -1,0 +1,39 @@
+name: CFI Production Fixture Smoke
+
+on:
+  push:
+    branches:
+      - test/fixtures-prod-smoke
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: POST production fixtures-day
+        shell: bash
+        run: |
+          set -euo pipefail
+          START=$(date +%s)
+          HTTP=$(curl -sS --max-time 10 -o /tmp/fixtures.json -w '%{http_code}'             -X POST 'https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/fixtures-day'             -H 'content-type: application/json'             --data '{"target_date":"2026-09-15","timezone":"Asia/Ho_Chi_Minh"}')
+          END=$(date +%s)
+          echo "http=$HTTP elapsed=$((END-START))s"
+          test "$HTTP" = "200"
+          node - <<'NODE'
+          const fs=require('fs');
+          const body=JSON.parse(fs.readFileSync('/tmp/fixtures.json','utf8'));
+          if(body.status!=='OK') throw new Error('status='+body.status);
+          if(body.action!=='CFI_FIXTURES_DAY') throw new Error('action='+body.action);
+          if(!Array.isArray(body.rows)) throw new Error('rows missing');
+          if(body.rows.length<1) throw new Error('no fixtures returned');
+          console.log(JSON.stringify({
+            status:body.status,
+            source:body.source,
+            providers:body.providers,
+            fixtures:body.rows.length,
+            sample:body.rows.slice(0,5).map(x=>({time:x.kickoffLocal,home:x.home,away:x.away,competition:x.competition}))
+          },null,2));
+          NODE
