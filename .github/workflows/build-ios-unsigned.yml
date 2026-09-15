@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           APP="$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"
           ICON_SRC="$RUNNER_TEMP/cfi-icon.jpg"
-          base64 -D ios/Resources/cfi-icon.jpg.b64 > "$ICON_SRC"
+          base64 -D -i ios/Resources/cfi-icon.jpg.b64 -o "$ICON_SRC"
           sips -z 60 60 "$ICON_SRC" --out "$APP/AppIcon60x60.png" >/dev/null
           sips -z 120 120 "$ICON_SRC" --out "$APP/AppIcon60x60@2x.png" >/dev/null
           sips -z 180 180 "$ICON_SRC" --out "$APP/AppIcon60x60@3x.png" >/dev/null
