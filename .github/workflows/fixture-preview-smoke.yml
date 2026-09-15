@@ -28,16 +28,19 @@ jobs:
               echo "elapsed_ms=$elapsed"
               if node -e '
                 const body=JSON.parse(process.argv[1]);
+                const ai=(body.attempts||[]).find(x=>x.provider==="AISCORE");
                 console.log(JSON.stringify({
                   status:body.status,
+                  version:body.version,
                   fixtures:Array.isArray(body.rows)?body.rows.length:null,
                   source:body.source,
-                  latencyPolicy:body.latencyPolicy,
-                  attempts:(body.attempts||[]).map(x=>({stage:x.stage,provider:x.provider,ok:x.ok,httpStatus:x.httpStatus,rows:x.rows,error:x.error})),
-                  sample:Array.isArray(body.rows)?body.rows.slice(0,3).map(x=>[x.kickoffLocal,x.home,x.away]):[]
+                  attempts:(body.attempts||[]).map(x=>({stage:x.stage,provider:x.provider,ok:x.ok,httpStatus:x.httpStatus,rows:x.rows,error:x.error,skipped:x.skipped})),
+                  sample:Array.isArray(body.rows)?body.rows.slice(0,5).map(x=>[x.kickoffLocal,x.home,x.away,x.provider]):[]
                 }));
                 if(body.status!=="OK"||body.action!=="CFI_FIXTURES_DAY"||!Array.isArray(body.rows)) process.exit(2);
+                if(body.version!=="CFI_FIXTURES_DAY_V3_BIGDB_AISCORE_FOOTBALLDATA") process.exit(4);
                 if(body.rows.length<10) process.exit(3);
+                if(!ai||ai.ok!==true||Number(ai.rows)<1) process.exit(5);
               ' "$body" && test "$elapsed" -lt 12000; then
                 ok=1
                 break
