@@ -1,0 +1,40 @@
+name: Fixture Preview Smoke
+
+on:
+  push:
+    branches: [fix/fixtures-day-latency-v021]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wait for Cloudflare preview and smoke fixture endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://fix-fixtures-day-latency-v021-cfi-football-intelligence.baoanhrat112020.workers.dev/api/fixtures-day"
+          DATE="$(TZ=Asia/Ho_Chi_Minh date +%F)"
+          ok=0
+          for attempt in 1 2 3 4 5 6; do
+            echo "Attempt $attempt: $DATE"
+            start="$(date +%s%3N)"
+            if body="$(curl --fail-with-body --silent --show-error --max-time 12               -H 'content-type: application/json'               -H 'accept: application/json'               --data "{\"target_date\":\"$DATE\",\"timezone\":\"Asia/Ho_Chi_Minh\"}"               "$URL")"; then
+              end="$(date +%s%3N)"
+              elapsed="$((end-start))"
+              node -e '
+                const body=JSON.parse(process.argv[1]);
+                if(body.status!=="OK"||body.action!=="CFI_FIXTURES_DAY"||!Array.isArray(body.rows)) process.exit(2);
+                console.log(JSON.stringify({status:"PASS",fixtures:body.rows.length,source:body.source,latencyPolicy:body.latencyPolicy}));
+              ' "$body"
+              echo "elapsed_ms=$elapsed"
+              test "$elapsed" -lt 12000
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          test "$ok" -eq 1
