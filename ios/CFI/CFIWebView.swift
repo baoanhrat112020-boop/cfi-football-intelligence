@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Foundation
 
 struct CFIWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
@@ -148,7 +149,7 @@ struct CFIWebView: UIViewRepresentable {
                 let encoded = String(data: data, encoding: .utf8),
                 encoded.count >= 2
             else {
-                return "\""\""
+                return "\"\""
             }
             return String(encoded.dropFirst().dropLast())
         }
