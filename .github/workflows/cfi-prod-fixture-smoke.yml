@@ -1,4 +1,4 @@
-name: CFI BongdaWap Preview Smoke
+name: CFI BongdaWap HTML Probe
 
 on:
   push:
@@ -9,33 +9,28 @@ permissions:
   contents: read
 
 jobs:
-  smoke:
+  probe:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: POST preview fixtures-day
+      - name: Inspect BongdaWap match markup
         shell: bash
         run: |
           set -euo pipefail
-          URL='https://fix-bongdawap-fixture-source-cfi-football-intelligence.baoanhrat112020.workers.dev/api/fixtures-day'
-          START=$(date +%s)
-          HTTP=$(curl -sS --max-time 10 -o /tmp/fixtures.json -w '%{http_code}'             -X POST "$URL"             -H 'content-type: application/json'             --data '{"target_date":"2026-09-15","timezone":"Asia/Ho_Chi_Minh"}')
-          END=$(date +%s)
-          echo "http=$HTTP elapsed=$((END-START))s"
-          cat /tmp/fixtures.json > /tmp/raw.json
-          test "$HTTP" = "200"
-          node - <<'NODE'
-          const fs=require('fs');
-          const body=JSON.parse(fs.readFileSync('/tmp/fixtures.json','utf8'));
-          console.log(JSON.stringify({
-            status:body.status,
-            source:body.source,
-            providers:body.providers,
-            fixtures:Array.isArray(body.rows)?body.rows.length:null,
-            sample:(body.rows||[]).slice(0,10).map(x=>({time:x.kickoffLocal,home:x.home,away:x.away,competition:x.competition,provider:x.provider})),
-            bongdaWapAttempt:(body.attempts||[]).find(x=>x.provider==='BONGDAWAP')
-          },null,2));
-          if(body.status!=='OK') throw new Error('status='+body.status);
-          if(!Array.isArray(body.rows)||body.rows.length<10) throw new Error('fixture coverage too low: '+(body.rows||[]).length);
-          if(!(body.providers||[]).includes('BONGDAWAP')) throw new Error('BongdaWap not active');
-          NODE
+          python3 - <<'PY'
+          import requests,re,html
+          url="https://bongdawap.com/lich-thi-dau-bong-da-ngay-15-09-2026.html"
+          r=requests.get(url,timeout=10,headers={"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"})
+          print("STATUS",r.status_code,"LEN",len(r.text))
+          text=r.text
+          rows=re.findall(r'(?is)<tr\b[^>]*>.*?</tr>',text)
+          print("TR_COUNT",len(rows))
+          hits=[x for x in rows if re.search(r'(?i)>\s*vs\s*<',x)]
+          print("VS_TR_COUNT",len(hits))
+          for i,row in enumerate(hits[:8]):
+              print("\nROW",i,html.unescape(re.sub(r'\s+',' ',row))[:2500])
+          print("\nVS_TEXT_COUNT",len(re.findall(r'(?i)\bvs\b',text)))
+          for m in list(re.finditer(r'(?i)\bvs\b',text))[:5]:
+              s=max(0,m.start()-700);e=min(len(text),m.end()+900)
+              print("\nCTX",html.unescape(re.sub(r'\s+',' ',text[s:e])))
+          PY
