@@ -122,3 +122,17 @@ test('fast discovery accepts BongdaWap when JSON providers are blocked', async()
   assert.deepEqual(result.providers,['BONGDAWAP']);
   assert.equal(result.provider,'BONGDAWAP');
 });
+
+
+test('BongdaWap parser rolls post-midnight fixtures to the next calendar date', ()=>{
+  const html='<div class="tran1"><div class="tengiai"><a>ACL</a></div><p class="ngaygio">23:30</p><p class="tendb"><a>Evening Home</a></p><p class="tyso"><b>vs</b></p><p class="tendb"><a>Evening Away</a></p></div><div class="tran1"><div class="tengiai"><a>ARG</a></div><p class="ngaygio">00:30</p><p class="tendb"><a>Night Home</a></p><p class="tyso"><b>vs</b></p><p class="tendb"><a>Night Away</a></p></div>';
+  const rows=parseBongdaWapSchedule(html,{
+    targetDate:'2026-09-15',
+    timeZone:'Asia/Ho_Chi_Minh',
+    nowMs:Date.parse('2026-09-15T09:00:00Z')
+  });
+  assert.equal(rows.length,2);
+  assert.equal(rows[0].targetDate,'2026-09-15');
+  assert.equal(rows[1].targetDate,'2026-09-16');
+  assert.equal(rows[1].kickoffLocal,'00:30');
+});
