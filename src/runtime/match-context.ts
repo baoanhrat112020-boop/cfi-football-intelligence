@@ -119,3 +119,33 @@ export function buildMatchContextPayload(big:any,home:string,away:string,targetD
     provenance:{source:'CFI_BIG_DB_RETRIEVAL',futureEvidenceExcluded:true,sameDateExcluded:true}
   };
 }
+
+
+export function localDateInTimeZone(nowMs=Date.now(),timeZone='Asia/Ho_Chi_Minh'){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(nowMs));
+  const get=(type:string)=>parts.find(x=>x.type===type)?.value??'';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+export function strictPriorRetrievalCutoff(targetDate:string,nowMs=Date.now(),timeZone='Asia/Ho_Chi_Minh'){
+  const today=localDateInTimeZone(nowMs,timeZone);
+  return targetDate<today?targetDate:today;
+}
+
+export function verifyMatchContextTemporalAudit(audit:any,requestedTargetDate:string,retrievalCutoffDate:string){
+  const maxEvidence=String(audit?.maxEvidenceDate??'').slice(0,10);
+  const futureCount=Number(audit?.futureEvidenceCount??0);
+  const sameDateCount=Number(audit?.sameDateEvidenceCount??0);
+  const valid=/^\d{4}-\d{2}-\d{2}$/.test(maxEvidence);
+  const strictBeforeRequested=valid&&maxEvidence<requestedTargetDate;
+  const strictBeforeCutoff=valid&&maxEvidence<retrievalCutoffDate;
+  const noLeakage=futureCount===0&&sameDateCount===0;
+  return{
+    verified:Boolean(audit?.verified===true&&strictBeforeRequested&&strictBeforeCutoff&&noLeakage),
+    maxEvidenceDate:valid?maxEvidence:null,
+    requestedTargetDate,
+    retrievalCutoffDate,
+    futureEvidenceCount:futureCount,
+    sameDateEvidenceCount:sameDateCount
+  };
+}
