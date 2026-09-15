@@ -41,6 +41,71 @@ async function getJson(fetchFn:FetchLike,url:string,timeoutMs:number){
   }
 }
 
+async function getText(fetchFn:FetchLike,url:string,timeoutMs:number){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const response=await fetchFn(url,{
+      headers:{
+        accept:'text/html,application/xhtml+xml',
+        'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1'
+      },
+      signal:controller.signal
+    });
+    if(!response.ok)return{ok:false,status:response.status,text:null};
+    return{ok:true,status:response.status,text:await response.text()};
+  }catch(error:any){
+    return{ok:false,status:null,text:null,error:String(error?.message||error)};
+  }finally{clearTimeout(timer);}
+}
+
+function htmlCell(raw:string){
+  return raw
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi,' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi,' ')
+    .replace(/<[^>]+>/g,' ')
+    .replace(/&nbsp;|&#160;/gi,' ')
+    .replace(/&amp;/gi,'&')
+    .replace(/&quot;/gi,'"')
+    .replace(/&#39;|&apos;/gi,"'")
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function teamName(raw:string){
+  return raw
+    .replace(/^\[[^\]]+\]\s*/,'')
+    .replace(/\s*\[[^\]]+\]$/,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+export function parseBongdaWapSchedule(html:string,window:DiscoveryWindow):DiscoveredFixture[]{
+  const out:DiscoveredFixture[]=[];
+  const rowRe=/<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch:RegExpExecArray|null;
+  while((rowMatch=rowRe.exec(html))){
+    const cells:string[]=[];
+    const cellRe=/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    let cell:RegExpExecArray|null;
+    while((cell=cellRe.exec(rowMatch[1])))cells.push(htmlCell(cell[1]));
+    if(cells.length<6)continue;
+    const league=cells[0],time=cells[1],home=teamName(cells[3]),score=cells[4],away=teamName(cells[5]);
+    if(!/^\d{1,2}:\d{2}$/.test(time)||!home||!away)continue;
+    const padded=time.padStart(5,'0');
+    const kickoff=Date.parse(window.targetDate+'T'+padded+':00+07:00');
+    if(!Number.isFinite(kickoff))continue;
+    const finished=/^\d+\s*-\s*\d+$/.test(score);
+    out.push({
+      provider:'BONGDAWAP',
+      providerId:['BDW',window.targetDate,padded,home,away].join('-'),
+      home,away,competition:league||null,country:null,kickoff,
+      kickoffIso:new Date(kickoff).toISOString(),kickoffLocal:padded,
+      targetDate:window.targetDate,status:finished?'finished':'scheduled'
+    });
+  }
+  return dedupeFixtures(out).sort((a,b)=>a.kickoff-b.kickoff);
+}
 export async function discoverDayFixturesFast(
   window:DiscoveryWindow,
   fetchFn:FetchLike=fetch
@@ -71,6 +136,20 @@ export async function discoverDayFixturesFast(
 
   const merged=()=>dedupeFixtures(rows).sort((a,b)=>a.kickoff-b.kickoff);
 
+  // Stage 0: one Vietnam-local all-day schedule page. Unlike the
+  // prediction filter, this intentionally keeps the whole day's fixtures so
+  // the UI does not shrink to only a few not-yet-started matches.
+  const dateParts=window.targetDate.split('-');
+  const bongdaUrl='https://bongdawap.com/lich-thi-dau-bong-da-ngay-'+dateParts[2]+'-'+dateParts[1]+'-'+dateParts[0]+'.html';
+  const bongda:any=await getText(fetchFn,bongdaUrl,PRIMARY_TIMEOUT_MS);
+  if(bongda.ok&&typeof bongda.text==='string'){
+    const parsed=parseBongdaWapSchedule(bongda.text,window);
+    attempts.push({stage:'BONGDAWAP_ALL_DAY',provider:'BONGDAWAP',url:bongdaUrl,ok:true,httpStatus:bongda.status,rows:parsed.length});
+    rows.push(...parsed);
+    if(merged().length>=TARGET_ROWS)return finish(merged(),attempts,'BONGDAWAP_ALL_DAY');
+  }else{
+    attempts.push({stage:'BONGDAWAP_ALL_DAY',provider:'BONGDAWAP',url:bongdaUrl,ok:false,httpStatus:bongda.status??null,error:bongda.error??null,rows:0});
+  }
   // Stage 1: the two Sofascore hosts across the three UTC-adjacent dates.
   // This is intentionally capped at six concurrent fetches, matching the
   // Worker connection ceiling instead of queueing dozens of requests.
