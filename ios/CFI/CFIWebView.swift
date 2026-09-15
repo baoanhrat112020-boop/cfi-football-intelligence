@@ -504,15 +504,10 @@ struct CFIWebView: UIViewRepresentable {
                 return rows
             }
 
-            // Hard latency budget. The UI gets whatever truthful fixture rows have
-            // arrived within 5.5s instead of waiting for every provider.
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5.5) {
                 finish(force: true)
             }
 
-            // Fast lane: AiScore exposes a very broad "today matches" page. Try
-            // localized and desktop variants in parallel and return immediately
-            // once at least 20 distinct fixtures are parsed.
             if targetDate == todayLocal {
                 [
                     "https://www.aiscore.com/today-matches",
@@ -523,15 +518,12 @@ struct CFIWebView: UIViewRepresentable {
                 }
             }
 
-            // BongdaWap dated page is useful for Vietnam-local schedule coverage.
             let parts = targetDate.split(separator: "-")
             if parts.count == 3,
                let url = URL(string: "https://bongdawap.com/lich-thi-dau-bong-da-ngay-\(parts[2])-\(parts[1])-\(parts[0]).html") {
                 requestHTML(provider: "BONGDAWAP", url: url, timeout: 4.5, parser: parseBongdaWap)
             }
 
-            // Sofascore is a single fallback request now; no longer a blocking
-            // dependency and no duplicated hosts/adjacent-date fanout.
             if let sofaURL = URL(string: "https://www.sofascore.com/api/v1/sport/football/scheduled-events/\(targetDate)") {
                 requestJSON(provider: "SOFASCORE", url: sofaURL, timeout: 4.5) { object in
                     guard
@@ -581,7 +573,6 @@ struct CFIWebView: UIViewRepresentable {
                 }
             }
 
-            // Lightweight independent fallback.
             if let sportsDbURL = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=\(targetDate)&s=Soccer") {
                 requestJSON(provider: "THESPORTSDB", url: sportsDbURL, timeout: 4.5) { object in
                     guard
@@ -612,9 +603,6 @@ struct CFIWebView: UIViewRepresentable {
                 }
             }
 
-            // ESPN fallback is delayed slightly and limited to a compact catalog so
-            // it never dominates startup latency. It mainly covers popular leagues
-            // when broad pages are blocked.
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.8) {
                 let leagues = [
                     "eng.1","eng.2","eng.3","eng.4","eng.5",
