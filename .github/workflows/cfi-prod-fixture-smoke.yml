@@ -1,4 +1,4 @@
-name: CFI BongdaWap HTML Probe
+name: CFI BongdaWap Preview Smoke 2
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Inspect BongdaWap match markup
+      - name: POST preview fixtures-day after parser fix
         shell: bash
         run: |
           set -euo pipefail
@@ -34,3 +34,5 @@ jobs:
               s=max(0,m.start()-700);e=min(len(text),m.end()+900)
               print("\nCTX",html.unescape(re.sub(r'\s+',' ',text[s:e])))
           PY
+
+# parser-fix-smoke
