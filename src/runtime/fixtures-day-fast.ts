@@ -25,7 +25,7 @@ export type DayFixtureRow={
 
 type Window={targetDate:string;timeZone:string;nowMs?:number};
 
-const TARGET_ROWS=10;
+const TARGET_ROWS=20;
 const PRIMARY_TIMEOUT_MS=2500;
 const FALLBACK_TIMEOUT_MS=1800;
 
@@ -288,27 +288,32 @@ export async function discoverDayFixturesFast(
   fetchFn:FetchLike=fetch
 ){
   const attempts:any[]=[];
-  const [big,fd]=await Promise.all([
+  const [big,fd,bdw]=await Promise.all([
     bigDbDay(window,env,fetchFn),
-    footballDataDay(window,fetchFn)
+    footballDataDay(window,fetchFn),
+    bongdaWapDay(window,fetchFn)
   ]);
-  attempts.push(big.attempt,fd.attempt);
-  let rows=mergeRows([...big.rows,...fd.rows]);
 
-  if(rows.length<TARGET_ROWS){
-    const bdw=await bongdaWapDay(window,fetchFn);
-    attempts.push(bdw.attempt);
-    rows=mergeRows([...rows,...bdw.rows]);
-  }
+  attempts.push(big.attempt,fd.attempt,bdw.attempt);
+
+  // Daily fixture discovery is a browse surface, not a prediction gate.
+  // Use every available read-only source in parallel so BigDB remains canonical
+  // while public fixture feeds expand coverage instead of being skipped once a
+  // small minimum has been reached.
+  const rows=mergeRows([
+    ...big.rows,
+    ...fd.rows,
+    ...bdw.rows
+  ]);
 
   const providers=[...new Set(rows.flatMap(row=>row.sourceProviders||[row.provider]))];
   return{
     provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',
     providers,rows:rows.slice(0,500),attempts,
-    latencyMode:'BIGDB_FOOTBALLDATA_THEN_FALLBACK',
+    latencyMode:'PARALLEL_ALL_DAY_MULTI_SOURCE',
     targetRows:TARGET_ROWS,
     primarySources:['CFI_BIGDB_WITH_AISCORE_PC_BRIDGE','FOOTBALL_DATA'],
-    fallbackSources:['BONGDAWAP']
+    coverageSources:['BONGDAWAP']
   };
 }
 
@@ -332,7 +337,7 @@ export async function handleFixturesDayRequest(
   return Response.json({
     status:'OK',
     action:'CFI_FIXTURES_DAY',
-    version:'CFI_FIXTURES_DAY_V4_BIGDB_AISCORE_BRIDGE_FOOTBALLDATA',
+    version:'CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY',
     source:found.provider,
     providers:found.providers,
     targetDate,timeZone,
@@ -341,7 +346,7 @@ export async function handleFixturesDayRequest(
     attempts:found.attempts,
     sourcePolicy:{
       primary:found.primarySources,
-      fallback:found.fallbackSources,
+      coverage:found.coverageSources,
       mode:found.latencyMode
     }
   });
