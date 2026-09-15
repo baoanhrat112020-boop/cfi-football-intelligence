@@ -1,0 +1,55 @@
+name: CFI iOS Unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/cfi-ios-shell
+    paths:
+      - "ios/**"
+      - "web/**"
+      - ".github/workflows/build-ios-unsigned.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build unsigned iPhone IPA
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Validate project
+        run: xcodebuild -list -project ios/CFI.xcodeproj
+
+      - name: Build CFI.app without signing
+        run: |
+          set -euo pipefail
+          xcodebuild             -project ios/CFI.xcodeproj             -scheme CFI             -configuration Release             -sdk iphoneos             -derivedDataPath "$RUNNER_TEMP/cfi-ios-derived"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          bash ios/scripts/package-unsigned-ipa.sh             "$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"             "$RUNNER_TEMP/CFI-iOS-unsigned.ipa"
+
+      - name: Inspect IPA
+        run: |
+          set -euo pipefail
+          unzip -l "$RUNNER_TEMP/CFI-iOS-unsigned.ipa"
+          test -s "$RUNNER_TEMP/CFI-iOS-unsigned.ipa"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFI-iOS-unsigned
+          path: ${{ runner.temp }}/CFI-iOS-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
