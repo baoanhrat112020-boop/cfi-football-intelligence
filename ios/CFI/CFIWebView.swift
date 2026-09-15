@@ -92,7 +92,7 @@ struct CFIWebView: UIViewRepresentable {
 
             var request = URLRequest(url: url)
             request.httpMethod = method.uppercased()
-            request.timeoutInterval = 25
+            request.timeoutInterval = path == "/health" ? 4 : 25
             request.setValue("application/json", forHTTPHeaderField: "Accept")
 
             if request.httpMethod == "POST" {
