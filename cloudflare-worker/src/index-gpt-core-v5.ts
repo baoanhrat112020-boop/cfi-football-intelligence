@@ -206,7 +206,7 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
-    if(url.pathname==='/api/fixtures-day'&&request.method==='POST')return handleFixturesDayRequest(request);
+    if(url.pathname==='/api/fixtures-day'&&request.method==='POST')return handleFixturesDayRequest(request,env);
 
     if(url.pathname==='/api/discover'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}

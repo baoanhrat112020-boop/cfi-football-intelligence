@@ -183,8 +183,53 @@ Deno.serve(async(req)=>{
   const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
 
   const body=await req.json().catch(()=>({}));
-  const home=String(body?.home||'').trim(),away=String(body?.away||'').trim();
+  const mode=String(body?.mode||'').trim().toUpperCase();
   const targetDate=String(body?.target_date||body?.matchDate||'').slice(0,10)||null;
+
+  if(mode==='FIXTURES_BY_DATE'){
+    if(!targetDate||!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return json({error:'TARGET_DATE_REQUIRED'},400);
+    const limit=Math.max(1,Math.min(400,Number(body?.limit??200)||200));
+    const {data,error}=await db.from('fixtures')
+      .select(`
+        fixture_id,
+        match_date,
+        status,
+        competition_key,
+        competition_name,
+        country,
+        season,
+        competition_segment,
+        home:teams!fixtures_home_team_id_fkey(team_id,canonical_name),
+        away:teams!fixtures_away_team_id_fkey(team_id,canonical_name)
+      `)
+      .eq('match_date',targetDate)
+      .order('fixture_id',{ascending:true})
+      .limit(limit);
+    if(error)return json({error:'FIXTURES_BY_DATE_FAILED',message:error.message},500);
+    const rows=(data||[]).map((r:any)=>({
+      fixtureId:r.fixture_id,
+      targetDate:String(r.match_date).slice(0,10),
+      home:String(r.home?.canonical_name||''),
+      away:String(r.away?.canonical_name||''),
+      homeTeamId:r.home?.team_id??null,
+      awayTeamId:r.away?.team_id??null,
+      competition:r.competition_name??r.competition_key??null,
+      country:r.country??null,
+      season:r.season??null,
+      segment:r.competition_segment??null,
+      status:r.status??null
+    })).filter((r:any)=>r.home&&r.away);
+    return json({
+      status:'OK',
+      version:'CFI_BIG_DB_FIXTURES_BY_DATE_V1',
+      source:'BIGDB_CANONICAL',
+      targetDate,
+      count:rows.length,
+      rows
+    });
+  }
+
+  const home=String(body?.home||'').trim(),away=String(body?.away||'').trim();
   if(!home||!away)return json({error:'HOME_AWAY_REQUIRED'},400);
   if(!targetDate)return json({error:'TARGET_DATE_REQUIRED'},400);
 

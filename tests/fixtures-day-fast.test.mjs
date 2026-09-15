@@ -1,73 +1,170 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { discoverDayFixturesFast, handleFixturesDayRequest } from '../src/runtime/fixtures-day-fast.ts';
+import {
+  discoverDayFixturesFast,
+  handleFixturesDayRequest,
+  parseBongdaWapSchedule,
+  parseFootballDataFixturesCsv
+} from '../src/runtime/fixtures-day-fast.ts';
 
-const NOW=Date.parse('2026-09-15T05:00:00Z');
+const targetDate='2026-09-15';
+const timeZone='Asia/Ho_Chi_Minh';
+const nowMs=Date.parse('2026-09-15T00:00:00Z');
+const env={CFI_DB_BASE_URL:'https://db.example/functions/v1/cfi-db',CFI_DB_KEY:'secret'};
 
-function sofaPayload(){
-  return {events:[
-    {id:1,startTimestamp:(NOW+3600000)/1000,status:{type:'notstarted'},homeTeam:{name:'Alpha FC'},awayTeam:{name:'Beta FC'},tournament:{name:'League A',category:{country:{name:'X'}}}},
-    {id:2,startTimestamp:(NOW+7200000)/1000,status:{type:'notstarted'},homeTeam:{name:'Gamma FC'},awayTeam:{name:'Delta FC'},tournament:{name:'League A',category:{country:{name:'X'}}}}
-  ]};
-}
+const bigDbPayload=(count=13,withAiBridge=false)=>{
+  const rows=Array.from({length:count},(_,i)=>({
+    provider:'CFI_BIGDB',
+    providerId:`db-${i}`,
+    home:`Home ${i}`,
+    away:`Away ${i}`,
+    competition:'Canonical League',
+    targetDate,
+    canonicalHomeTeamId:`h-${i}`,
+    canonicalAwayTeamId:`a-${i}`,
+    status:'CANONICAL',
+    sourceProviders:['CFI_BIGDB']
+  }));
+  if(withAiBridge)rows.push({
+    provider:'AISCORE',
+    providerId:'aiscore-live-1',
+    home:'Ai Home',
+    away:'Ai Away',
+    competition:'Ai League',
+    targetDate,
+    kickoffIso:'2026-09-15T13:00:00.000Z',
+    kickoffLocal:'20:00',
+    status:'scheduled',
+    provenance:'PC_NODE_AISCORE_BRIDGE',
+    sourceProviders:['AISCORE']
+  });
+  return{status:'OK',version:'CFI_DB_FIXTURES_DAY_V2_AISCORE_BRIDGE',rows};
+};
 
-function espnPayload(){
-  return {events:[{
-    id:'e1',
-    date:new Date(NOW+10800000).toISOString(),
-    status:{type:{state:'pre'}},
-    name:'League B',
-    competitions:[{competitors:[
-      {homeAway:'home',team:{displayName:'Home ESPN'}},
-      {homeAway:'away',team:{displayName:'Away ESPN'}}
-    ]}]
-  }]};
-}
+const footballCsv=`Div,Date,Time,HomeTeam,AwayTeam
+EC,15/09/2026,19:45,Boreham Wood,Boston Utd
+SP1,15/09/2026,20:00,Valencia,Betis
+SP1,16/09/2026,20:00,Real Madrid,Sociedad
+`;
+
+const coverageHtml=`
+  <table>
+    <tr><td>HQA</td><td>14:30</td><td>-</td><td>[11] Bucheon 1995</td><td>vs</td><td>Jeju Utd [5]</td><td></td><td>-</td></tr>
+    <tr><td>ENG</td><td>20:00</td><td>-</td><td>Alpha FC</td><td>vs</td><td>Beta FC</td><td></td><td>-</td></tr>
+  </table>`;
 
 test('fixtures-day validates target date', async()=>{
   const r=await handleFixturesDayRequest(new Request('https://cfi.local/api/fixtures-day',{
-    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({target_date:'bad'})
-  }),async()=>{throw new Error('should not fetch')},NOW);
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({target_date:'bad'})
+  }),env,async()=>{throw new Error('should not fetch')},nowMs);
   assert.equal(r.status,400);
   assert.equal((await r.json()).error,'TARGET_DATE_INVALID');
 });
 
-test('fast daily discovery fans out providers and dedupes rows', async()=>{
-  let calls=0;
-  const fakeFetch=async url=>{
-    calls++;
-    const u=String(url);
-    if(u.includes('sofascore.com')&&u.endsWith('/2026-09-15'))return Response.json(sofaPayload());
-    if(u.includes('site.api.espn.com')&&u.includes('/eng.1/'))return Response.json(espnPayload());
-    return new Response('{}',{status:503,headers:{'content-type':'application/json'}});
-  };
-  const result=await discoverDayFixturesFast({
-    targetDate:'2026-09-15',
-    timeZone:'Asia/Ho_Chi_Minh',
-    nowMs:NOW
-  },fakeFetch);
-  assert.ok(calls>30);
-  assert.equal(result.rows.length,3);
-  assert.deepEqual(result.providers.sort(),['ESPN','SOFASCORE']);
-  assert.equal(result.provider,'MULTI_SOURCE');
-  assert.equal(result.timeoutMs,3200);
+test('Football-Data parser keeps target date and normalizes known kickoff timezone', ()=>{
+  const rows=parseFootballDataFixturesCsv(footballCsv,{targetDate,timeZone,nowMs});
+  assert.equal(rows.length,2);
+  assert.equal(rows[0].provider,'FOOTBALL_DATA');
+  assert.equal(rows[0].targetDate,targetDate);
+  assert.ok(rows[0].kickoffIso);
+  assert.match(rows[0].kickoffLocal,/^\d{2}:\d{2}$/);
 });
 
-test('fixtures-day HTTP response exposes rows without prediction side effects', async()=>{
-  const fakeFetch=async url=>{
-    const u=String(url);
-    if(u.includes('sofascore.com')&&u.endsWith('/2026-09-15'))return Response.json(sofaPayload());
-    return new Response('{}',{status:503,headers:{'content-type':'application/json'}});
+test('daily discovery merges BigDB, AiScore bridge, Football-Data and coverage feed in parallel', async()=>{
+  const calls=[];
+  const fetchFn=async(url,init={})=>{
+    calls.push(String(url));
+    if(String(url).includes('/cfi-db/fixtures-day')){
+      assert.equal(init.headers['x-cfi-key'],'secret');
+      return Response.json(bigDbPayload(13,true));
+    }
+    if(String(url).includes('football-data.co.uk/fixtures.csv')){
+      return new Response(footballCsv,{status:200,headers:{'content-type':'text/csv'}});
+    }
+    if(String(url).includes('bongdawap.com')){
+      return new Response(coverageHtml,{status:200,headers:{'content-type':'text/html'}});
+    }
+    throw new Error('unexpected fixture fetch '+url);
   };
-  const r=await handleFixturesDayRequest(new Request('https://cfi.local/api/fixtures-day',{
-    method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({target_date:'2026-09-15',timezone:'Asia/Ho_Chi_Minh'})
-  }),fakeFetch,NOW);
-  assert.equal(r.status,200);
-  const body=await r.json();
+
+  const out=await discoverDayFixturesFast({targetDate,timeZone,nowMs},env,fetchFn);
+  assert.equal(calls.length,3);
+  assert.ok(out.rows.length>=18);
+  assert.deepEqual(out.primarySources,['CFI_BIGDB_WITH_AISCORE_PC_BRIDGE','FOOTBALL_DATA']);
+  assert.deepEqual(out.coverageSources,['BONGDAWAP']);
+  assert.equal(out.latencyMode,'PARALLEL_ALL_DAY_MULTI_SOURCE');
+  assert.equal(out.attempts.find(x=>x.provider==='CFI_BIGDB').rows,14);
+  assert.equal(out.attempts.find(x=>x.provider==='FOOTBALL_DATA').rows,2);
+  assert.equal(out.attempts.find(x=>x.provider==='BONGDAWAP').rows,2);
+  assert.ok(out.providers.includes('CFI_BIGDB'));
+  assert.ok(out.providers.includes('AISCORE'));
+  assert.ok(out.providers.includes('FOOTBALL_DATA'));
+  assert.ok(out.providers.includes('BONGDAWAP'));
+  const ai=out.rows.find(x=>x.provider==='AISCORE');
+  assert.ok(ai);
+  assert.equal(ai.kickoffLocal,'20:00');
+  assert.equal(ai.provenance,'PC_NODE_AISCORE_BRIDGE');
+});
+
+test('coverage feed is queried even when BigDB already exceeds the old minimum', async()=>{
+  let coverageCalls=0;
+  const fetchFn=async(url)=>{
+    const s=String(url);
+    if(s.includes('/cfi-db/fixtures-day'))return Response.json(bigDbPayload(13,true));
+    if(s.includes('football-data.co.uk/fixtures.csv'))return new Response(footballCsv,{status:200});
+    if(s.includes('bongdawap.com')){
+      coverageCalls++;
+      return new Response(coverageHtml,{status:200});
+    }
+    throw new Error('unexpected '+url);
+  };
+
+  const out=await discoverDayFixturesFast({targetDate,timeZone,nowMs},env,fetchFn);
+
+  assert.equal(coverageCalls,1);
+  assert.ok(out.rows.some(x=>x.provider==='BONGDAWAP'));
+  assert.ok(out.rows.length>=18);
+});
+
+test('fixtures-day HTTP response exposes source policy', async()=>{
+  const fetchFn=async(url)=>{
+    const s=String(url);
+    if(s.includes('/cfi-db/fixtures-day'))return Response.json(bigDbPayload(13,true));
+    if(s.includes('football-data.co.uk/fixtures.csv'))return new Response(footballCsv,{status:200});
+    if(s.includes('bongdawap.com'))return new Response(coverageHtml,{status:200});
+    throw new Error('unexpected '+url);
+  };
+  const request=new Request('https://cfi.local/api/fixtures-day',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({target_date:targetDate,timezone:timeZone})
+  });
+  const response=await handleFixturesDayRequest(request,env,fetchFn,nowMs);
+  assert.equal(response.status,200);
+  const body=await response.json();
   assert.equal(body.status,'OK');
-  assert.equal(body.action,'CFI_FIXTURES_DAY');
-  assert.equal(body.counts.fixtures,2);
-  assert.equal(body.rows[0].home,'Alpha FC');
-  assert.equal(body.latencyPolicy.fanout,'parallel');
+  assert.equal(body.version,'CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY');
+  assert.equal(body.sourcePolicy.primary[0],'CFI_BIGDB_WITH_AISCORE_PC_BRIDGE');
+  assert.equal(body.sourcePolicy.primary[1],'FOOTBALL_DATA');
+  assert.equal(body.sourcePolicy.coverage[0],'BONGDAWAP');
+  assert.equal(body.sourcePolicy.mode,'PARALLEL_ALL_DAY_MULTI_SOURCE');
+  assert.equal(body.counts.targetRows,20);
+  assert.ok(body.counts.fixtures>=18);
+  assert.ok(body.rows.some(x=>x.provider==='AISCORE'));
+});
+
+test('BongdaWap all-day parser keeps scheduled and completed rows', ()=>{
+  const html=`
+    <table>
+      <tr><td>HQA</td><td>14:30</td><td>-</td><td>[11] Bucheon 1995</td><td>vs</td><td>Jeju Utd [5]</td><td></td><td>-</td></tr>
+      <tr><td>ENG</td><td>20:00</td><td>-</td><td>Alpha FC</td><td>2 - 1</td><td>Beta FC</td><td></td><td>1-0</td></tr>
+    </table>`;
+  const rows=parseBongdaWapSchedule(html,{targetDate,timeZone,nowMs});
+  assert.equal(rows.length,2);
+  assert.equal(rows[0].home,'Bucheon 1995');
+  assert.equal(rows[0].away,'Jeju Utd');
+  assert.equal(rows[0].status,'scheduled');
+  assert.equal(rows[1].status,'finished');
 });
