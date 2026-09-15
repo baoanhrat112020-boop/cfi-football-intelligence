@@ -1,10 +1,10 @@
 import v4 from './index-gpt-core-v4.ts';
-import { discoverFixtures, fixtureCohort, normalizeAiFixtureCandidates, scorePrediction, CFI_DISCOVERY_VERSION } from '../../src/discovery/cfi-discovery.ts';
+import { fixtureCohort, normalizeAiFixtureCandidates, scorePrediction, CFI_DISCOVERY_VERSION } from '../../src/discovery/cfi-discovery.ts';
 import { FINAL_VERSION } from '../../src/prediction/final-engine.ts';
 import { THREE_PLUS_HT_SAFETY_VERSION } from '../../src/prediction/three-plus-ht-safety.ts';
 import { SEVEN_PLUS_FT_SAFETY_VERSION } from '../../src/prediction/seven-plus-ft-safety.ts';
 import { MARKET_COHERENCE_VERSION } from '../../src/prediction/market-coherence.ts';
-import { buildMatchContextPayload, bigDbContextHttpStatus, strictPriorRetrievalCutoff, verifyMatchContextTemporalAudit } from '../../src/runtime/match-context.ts';
+import { handleDayFixtures, handleMatchContext } from '../../src/runtime/ios-api-routes.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 type FeedRow={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string;sourceUrls?:string[];discoveredAt?:string};
@@ -13,81 +13,8 @@ const GPT_PRODUCTION_HOST='cfi-football-intelligence.baoanhrat112020.workers.dev
 const COMPACT_CONTRACT='CFI_GPT_PREDICT_COMPACT_V2_EXTREME_THRESHOLD_SAFETY';
 const THRESHOLD_TARGETS=['3+ HT','7+ FT','Other HT','Other FT'] as const;
 
-const CONTEXT_RATE_WINDOW_MS=60_000;
-const CONTEXT_RATE_LIMIT=18;
-const contextRate=new Map<string,{startedAt:number;count:number}>();
-
-function contextRateAllowed(request:Request,now=Date.now()){
-  const key=request.headers.get('cf-connecting-ip')||request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()||'unknown';
-  const current=contextRate.get(key);
-  if(!current||now-current.startedAt>=CONTEXT_RATE_WINDOW_MS){
-    contextRate.set(key,{startedAt:now,count:1});
-    return true;
-  }
-  current.count+=1;
-  if(contextRate.size>500){
-    for(const [k,v] of contextRate)if(now-v.startedAt>=CONTEXT_RATE_WINDOW_MS)contextRate.delete(k);
-  }
-  return current.count<=CONTEXT_RATE_LIMIT;
-}
-
 async function readJson(response:Response){try{return await response.clone().json()}catch{return null}}
 const finite=(value:any)=>Number.isFinite(Number(value))?Number(value):null;
-
-async function matchContext(request:Request,env:Env){
-  if(!contextRateAllowed(request))return Response.json({status:'RATE_LIMITED',error:'MATCH_CONTEXT_RATE_LIMIT'},{status:429,headers:{'retry-after':'60'}});
-  if(!env.CFI_DB_BASE_URL||!env.CFI_DB_KEY)return Response.json({status:'CONFIG_REQUIRED',error:'BIGDB_CONTEXT_UNAVAILABLE'},{status:503});
-  let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
-  const home=String(input?.home??'').trim(),away=String(input?.away??'').trim(),targetDate=String(input?.target_date??'').slice(0,10);
-  if(!home||!away)return Response.json({status:'INVALID_REQUEST',error:'HOME_AWAY_REQUIRED'},{status:400});
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return Response.json({status:'INVALID_REQUEST',error:'TARGET_DATE_INVALID'},{status:400});
-
-  const cutoffDate=strictPriorRetrievalCutoff(targetDate,Date.now(),'Asia/Ho_Chi_Minh');
-  const url=env.CFI_DB_BASE_URL.replace(/\/cfi-db\/?$/,'/cfi-bigdb-retrieval');
-  let response:Response;
-  try{
-    response=await fetch(url,{method:'POST',headers:{'content-type':'application/json','x-cfi-key':env.CFI_DB_KEY},body:JSON.stringify({home,away,target_date:cutoffDate}),signal:AbortSignal.timeout(9000)});
-  }catch(error:any){
-    return Response.json({status:'UPSTREAM_UNAVAILABLE',error:'BIGDB_CONTEXT_FETCH_FAILED',message:String(error?.message||error)},{status:503});
-  }
-  const big:any=await readJson(response);
-  if(!response.ok||big?.status!=='OK'){
-    return Response.json({status:'UPSTREAM_ERROR',error:'BIGDB_CONTEXT_REJECTED',upstreamStatus:response.status,upstreamError:big?.error??null,message:big?.message??null},{status:bigDbContextHttpStatus(response.status)});
-  }
-
-  const temporal=verifyMatchContextTemporalAudit(big?.temporalAudit,targetDate,cutoffDate);
-  if(!temporal.verified){
-    return Response.json({status:'TEMPORAL_REJECTED',error:'MATCH_CONTEXT_STRICT_PRIOR_FAILED',temporalAudit:temporal},{status:422});
-  }
-
-  const payload:any=buildMatchContextPayload(big,home,away,targetDate);
-  payload.temporalAudit={...payload.temporalAudit,...temporal};
-  payload.retrievalCutoffDate=cutoffDate;
-  return Response.json(payload);
-}
-
-async function dayFixtures(request:Request){
-  let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
-  const targetDate=String(input?.target_date??'').slice(0,10);
-  const timeZone=String(input?.timezone??'Asia/Ho_Chi_Minh');
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return Response.json({status:'INVALID_REQUEST',error:'TARGET_DATE_INVALID'},{status:400});
-  try{
-    const found=await discoverFixtures({targetDate,timeZone,minimumRows:100,nowMs:Date.now()},fetch);
-    return Response.json({
-      status:'OK',
-      action:'CFI_FIXTURES_DAY',
-      source:found.provider,
-      providers:found.providers,
-      targetDate,
-      timeZone,
-      counts:{fixtures:found.rows.length,requestedRows:100},
-      rows:found.rows.slice(0,400),
-      attempts:found.attempts
-    });
-  }catch(error:any){
-    return Response.json({status:'UPSTREAM_UNAVAILABLE',error:'FIXTURE_DISCOVERY_FAILED',message:String(error?.message||error)},{status:503});
-  }
-}
 
 function patchRuntimeTelemetry(body:any){
   if(!body||typeof body!=='object')return body;
@@ -279,8 +206,8 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
-    if(url.pathname==='/api/match-context'&&request.method==='POST')return matchContext(request,env);
-    if(url.pathname==='/api/fixtures-day'&&request.method==='POST')return dayFixtures(request);
+    if(url.pathname==='/api/match-context'&&request.method==='POST')return handleMatchContext(request,env);
+    if(url.pathname==='/api/fixtures-day'&&request.method==='POST')return handleDayFixtures(request);
 
     if(url.pathname==='/api/discover'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
