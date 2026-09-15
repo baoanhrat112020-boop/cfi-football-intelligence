@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { discoverDayFixturesFast, handleFixturesDayRequest } from '../src/runtime/fixtures-day-fast.ts';
+import { discoverDayFixturesFast, handleFixturesDayRequest, parseBongdaWapSchedule } from '../src/runtime/fixtures-day-fast.ts';
 
 const targetDate='2026-09-15';
 const timeZone='Asia/Ho_Chi_Minh';
@@ -76,4 +76,19 @@ test('fixtures-day HTTP response exposes bounded latency policy', async()=>{
   assert.equal(body.action,'CFI_FIXTURES_DAY');
   assert.equal(body.latencyPolicy.maxConcurrent,6);
   assert.equal(body.counts.targetRows,40);
+});
+
+
+test('BongdaWap all-day parser keeps scheduled and completed rows', ()=>{
+  const html=`
+    <table>
+      <tr><td>HQA</td><td>14:30</td><td>-</td><td>[11] Bucheon 1995</td><td>vs</td><td>Jeju Utd [5]</td><td></td><td>-</td></tr>
+      <tr><td>ENG</td><td>20:00</td><td>-</td><td>Alpha FC</td><td>2 - 1</td><td>Beta FC</td><td></td><td>1-0</td></tr>
+    </table>`;
+  const rows=parseBongdaWapSchedule(html,{targetDate,timeZone,nowMs});
+  assert.equal(rows.length,2);
+  assert.equal(rows[0].home,'Bucheon 1995');
+  assert.equal(rows[0].away,'Jeju Utd');
+  assert.equal(rows[0].status,'scheduled');
+  assert.equal(rows[1].status,'finished');
 });
