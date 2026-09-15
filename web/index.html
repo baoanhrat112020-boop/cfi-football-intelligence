@@ -77,6 +77,8 @@
     .issue{display:flex;text-align:left;gap:10px;padding:10px 0;border-top:1px solid rgba(204,168,48,.22)}.issue:first-of-type{border-top:0}.issue b{font-size:12px;display:block}.issue span{font-size:11px;color:#aca98f}
     .result-hero{padding:16px;display:grid;grid-template-columns:92px 1fr;gap:14px;align-items:center}.score-ring{width:88px;height:88px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--green) var(--p,0%),#17394d 0);position:relative}.score-ring:after{content:"";position:absolute;inset:9px;border-radius:50%;background:#082236}.score-ring strong{position:relative;z-index:1;font-size:22px}.result-hero h2{font-size:17px;margin:0 0 6px}.result-hero p{font-size:12px;color:#8fa8b8;margin:0;line-height:1.5}
     .markets{display:grid;gap:8px}.market{display:grid;grid-template-columns:1.2fr .8fr .75fr;align-items:center;padding:11px 12px;border:1px solid #16425e;border-radius:10px;background:#092237}.market b{font-size:13px}.prob{font-size:15px;font-weight:900;text-align:right}.signal{text-align:right;font-size:10px;font-weight:800}.sig-strong{color:var(--green)}.sig-watch{color:var(--amber)}.sig-pass{color:#829aaa}.sig-block{color:var(--red)}
+    .result-panel{display:none}.result-panel.active{display:block}.fusion-grid,.insight-grid{display:grid;gap:10px}.fusion-card,.insight-card{padding:13px;border:1px solid #174863;border-radius:11px;background:#082238}.fusion-card h3,.insight-card h3{margin:0 0 8px;font-size:13px;color:#d9edf8}.kv{display:flex;justify-content:space-between;gap:14px;padding:6px 0;border-top:1px solid #12384f;font-size:11px}.kv:first-of-type{border-top:0}.kv span{color:#7f9daf}.kv b{text-align:right}.weights{display:grid;gap:6px}.weight-row{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11px}.weight-bar{grid-column:1/-1;height:5px;border-radius:999px;background:#12384f;overflow:hidden}.weight-bar i{display:block;height:100%;background:#2aa8ff}.pill-line{display:flex;gap:6px;flex-wrap:wrap}.pill{padding:5px 8px;border:1px solid #245572;border-radius:999px;font-size:10px;color:#9ec3d8;background:#071d2f}
+
     .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
     .nav-btn{border:0;background:transparent;color:#7896aa;display:grid;place-items:center;align-content:center;gap:2px;font-size:10px}.nav-btn.active{color:#49aeff}.nav-btn svg{width:20px;height:20px}
     .toast{position:fixed;left:50%;bottom:82px;transform:translate(-50%,14px);width:min(460px,calc(100% - 32px));padding:12px 14px;background:#102b40;border:1px solid #2a6b91;border-radius:11px;color:#dbeaf3;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:60;box-shadow:var(--shadow)}.toast.show{opacity:1;transform:translate(-50%,0)}
@@ -258,24 +260,48 @@
     </section>
 
     <section id="screenResult" class="screen">
-      <div class="tabs"><button class="tab active">Markets</button><button class="tab" data-resulttab="fusion">Fusion</button><button class="tab" data-resulttab="insights">Insights</button></div>
+      <div class="tabs" id="resultTabs">
+        <button class="tab active" data-resulttab="markets">Markets</button>
+        <button class="tab" data-resulttab="fusion">Fusion</button>
+        <button class="tab" data-resulttab="insights">Insights</button>
+      </div>
       <div class="card result-hero" style="margin-top:12px">
         <div class="score-ring" id="scoreRing"><strong id="topProbability">—</strong></div>
         <div><h2 id="resultTitle">CFI Prediction</h2><p id="resultMeta">Strict-prior result from production engine.</p></div>
       </div>
-      <div class="card pad">
-        <h2 class="section-title">Prediction Output</h2>
-        <div id="marketList" class="markets"></div>
-      </div>
-      <div class="card pad">
-        <h2 class="section-title">Integrity</h2>
-        <div class="source-list">
-          <div class="source"><span>Strict-Prior</span><b id="gateStrict">—</b></div>
-          <div class="source"><span>Evidence</span><b id="gateEvidence">—</b></div>
-          <div class="source"><span>Consistency</span><b id="gateConsistency">—</b></div>
-          <div class="source"><span>Final decision</span><b id="finalDecision">—</b></div>
+
+      <div class="result-panel active" data-resultpanel="markets">
+        <div class="card pad">
+          <h2 class="section-title">Prediction Output</h2>
+          <div id="marketList" class="markets"></div>
+        </div>
+        <div class="card pad">
+          <h2 class="section-title">Integrity</h2>
+          <div class="source-list">
+            <div class="source"><span>Strict-Prior</span><b id="gateStrict">—</b></div>
+            <div class="source"><span>Evidence</span><b id="gateEvidence">—</b></div>
+            <div class="source"><span>Consistency</span><b id="gateConsistency">—</b></div>
+            <div class="source"><span>Final decision</span><b id="finalDecision">—</b></div>
+          </div>
         </div>
       </div>
+
+      <div class="result-panel" data-resultpanel="fusion">
+        <div class="card pad">
+          <h2 class="section-title">Champion Fusion</h2>
+          <p class="section-sub">Hiển thị trực tiếp từ outputV3.championFusion. Research/shadow không được biến thành BET.</p>
+          <div id="fusionContent" class="fusion-grid"></div>
+        </div>
+      </div>
+
+      <div class="result-panel" data-resultpanel="insights">
+        <div class="card pad">
+          <h2 class="section-title">CFI Insights</h2>
+          <p class="section-sub">Evidence, explosion scenario, multi-market lean và integrity từ chính output prediction.</p>
+          <div id="insightsContent" class="insight-grid"></div>
+        </div>
+      </div>
+
       <button id="newMatchBtn" class="primary" style="background:#123e5b">New Match</button>
     </section>
   </main>
@@ -400,6 +426,14 @@
     list.appendChild(frag);
     var d=$("todayDateInput").value;if(d)cacheSet(fixtureCacheKey(d),{rows:state.todayFixtures,source:source||"CACHE"});
   }
+  function fixtureKey(f){
+    return [String(f.home||"").toLowerCase(),String(f.away||"").toLowerCase(),String(f.kickoffLocal||f.time||"")].join("|");
+  }
+  function mergeFixtureRows(groups){
+    var map=new Map();
+    groups.forEach(function(rows){(Array.isArray(rows)?rows:[]).forEach(function(f){var k=fixtureKey(f);if(!map.has(k))map.set(k,f)})});
+    return Array.from(map.values()).sort(function(a,b){return String(a.kickoffLocal||"99:99").localeCompare(String(b.kickoffLocal||"99:99"))});
+  }
   async function loadTodayFixtures(){
     var date=$("todayDateInput").value;if(!date){toast("Chọn ngày cần tìm trận.");return}
     var cached=cacheGet(fixtureCacheKey(date),5*60*1000);
@@ -410,14 +444,24 @@
       $("fixtureList").innerHTML='<div class="fixture-empty"><span class="loading"><i></i><i></i><i></i></span> Đang tìm lịch thi đấu…</div>';
       $("fixtureCount").textContent="Đang tải…";
     }
+
+    var serverRows=[],nativeRows=[],sources=[];
     try{
-      var r=await api("/native/today-fixtures","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
-      var d=r.data||{};renderTodayFixtures(d.rows||[],d.source||"AUTO");
-      if(Array.isArray(d.rows)&&d.rows.length){toast("Đã tải "+d.rows.length+" trận");}
-      else{toast("Không tìm thấy fixture từ các nguồn hiện có.");}
-    }catch(e){
-      $("fixtureList").innerHTML='<div class="fixture-empty">Không tải được lịch thi đấu: '+esc(e.message)+'</div>';$("fixtureCount").textContent="Lỗi";toast(e.message);
+      var sr=await api("/api/fixtures-day","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
+      var sd=sr.data||{};serverRows=Array.isArray(sd.rows)?sd.rows:[];if(sd.source)sources.push(sd.source);
+    }catch(e){}
+
+    if(serverRows.length<25){
+      try{
+        var nr=await api("/native/today-fixtures","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
+        var nd=nr.data||{};nativeRows=Array.isArray(nd.rows)?nd.rows:[];if(nd.source)sources.push(nd.source);
+      }catch(e){}
     }
+
+    var rows=mergeFixtureRows([serverRows,nativeRows]);
+    renderTodayFixtures(rows,sources.filter(Boolean).join(" + ")||"MULTI_SOURCE");
+    if(rows.length){toast("Đã tải "+rows.length+" trận");}
+    else{toast("Không lấy được fixture từ các nguồn hiện có.");}
   }
   $("manualModeBtn").onclick=function(){setSearchMode("manual")};
   $("todayModeBtn").onclick=function(){setSearchMode("today")};
@@ -498,7 +542,11 @@
     try{
       var r=await api("/api/match-context","POST",{home:state.match.home,away:state.match.away,target_date:state.match.date});
       state.context=r.data||null;state.contextLoading=false;
-      if(state.context)cacheSet(key,state.context);
+      if(state.context){
+        cacheSet(key,state.context);
+        if(state.context.target&&state.context.target.home)state.match.canonicalHome=state.context.target.home;
+        if(state.context.target&&state.context.target.away)state.match.canonicalAway=state.context.target.away;
+      }
       setStatus("dbDot","dbStatus","ok","Ready");
       var verified=state.context&&state.context.temporalAudit&&state.context.temporalAudit.verified===true;
       $("strictDot").className="dot "+(verified?"ok":"warn");$("strictStatus").textContent=verified?"Verified":"Check on run";
@@ -532,7 +580,13 @@
   $("evidenceBtn").onclick=function(){
     modal("Evidence",'<p class="section-sub">Trạng thái backend gần nhất. Không có xác suất nào được dựng ở client.</p><pre>'+esc(JSON.stringify(state.status||{status:"Not loaded"},null,2))+"</pre>");
   };
-  $("dnaBtn").onclick=function(){modal("Match DNA",'<p class="section-sub">Match DNA sẽ hiển thị từ output thật sau khi CFI chạy prediction. App không tạo dữ liệu DNA mẫu.</p>')};
+  $("dnaBtn").onclick=function(){
+    var out=state.prediction;
+    if(!out){modal("Match DNA",'<p class="section-sub">Chưa có prediction. CFI không tạo dữ liệu DNA mẫu.</p>');return}
+    var ch=out.champion||{},ex=out.explosionScenario||{};
+    var ht=Array.isArray(ch.top3HT)?ch.top3HT.slice(0,3):[],ft=Array.isArray(ch.top3FT)?ch.top3FT.slice(0,3):[];
+    modal("Match DNA",'<div class="source-list"><div class="source"><span>Most likely path</span><b>'+esc(ch.path||"—")+'</b></div><div class="source"><span>Explosion level</span><b>'+esc(ex.level||"—")+'</b></div></div><pre>'+esc(JSON.stringify({top3HT:ht,top3FT:ft,thresholds:ex.thresholds||null},null,2))+'</pre>');
+  };
   $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
@@ -559,6 +613,38 @@
     if(d==="BLOCKED")return["BLOCKED","sig-block"];
     return["PASS","sig-pass"];
   }
+  function probText(v){
+    var n=Number(v);if(!Number.isFinite(n))return "—";if(n<=1)n*=100;return n.toFixed(1)+"%";
+  }
+  function weightHtml(weights){
+    if(!weights||typeof weights!=="object")return '<div class="context-state">Không có expert weights.</div>';
+    return '<div class="weights">'+Object.keys(weights).map(function(k){var v=Number(weights[k])||0;return '<div class="weight-row"><span>'+esc(k)+'</span><b>'+probText(v)+'</b><div class="weight-bar"><i style="width:'+Math.max(0,Math.min(100,v*100))+'%"></i></div></div>'}).join("")+'</div>';
+  }
+  function renderFusion(out){
+    var box=$("fusionContent"),f=out&&out.championFusion;
+    if(!f){box.innerHTML='<div class="context-state">Prediction này không trả về Champion Fusion payload.</div>';return}
+    var u=f.uncertainty||{},g=f.gating||{},ch=f.champion||{},ms=out.marketSummary||{};
+    var thresholds=ch.thresholds||ch;
+    box.innerHTML=
+      '<div class="fusion-card"><h3>Status</h3><div class="kv"><span>State</span><b>'+esc(f.status||"—")+'</b></div><div class="kv"><span>Research only</span><b>'+(f.researchOnly!==false?"YES":"NO")+'</b></div><div class="kv"><span>Decision use</span><b>'+(f.decisionUse===true?"YES":"NO")+'</b></div><div class="kv"><span>Confidence</span><b>'+probText(u.confidence)+'</b></div><div class="kv"><span>Abstain</span><b>'+(u.abstain===true?"YES":"NO")+'</b></div></div>'+
+      '<div class="fusion-card"><h3>Fusion thresholds</h3><div class="kv"><span>3+ HT</span><b>'+probText(thresholds["3+ HT"])+'</b></div><div class="kv"><span>7+ FT</span><b>'+probText(thresholds["7+ FT"])+'</b></div><div class="kv"><span>Other HT</span><b>'+probText(thresholds["Other HT"])+'</b></div><div class="kv"><span>Other FT</span><b>'+probText(thresholds["Other FT"])+'</b></div></div>'+
+      '<div class="fusion-card"><h3>HT expert weights</h3>'+weightHtml(g.ht&&g.ht.weights)+'</div>'+
+      '<div class="fusion-card"><h3>FT expert weights</h3>'+weightHtml(g.ft&&g.ft.weights)+'</div>'+
+      '<div class="fusion-card"><h3>Market center</h3><div class="kv"><span>HT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelProbability)+'</b></div><div class="kv"><span>FT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelProbability)+'</b></div><div class="kv"><span>FT O/U</span><b>'+esc(ms.overUnder&&ms.overUnder.ft&&ms.overUnder.ft.modelLean||"—")+'</b></div><div class="kv"><span>FT AH</span><b>'+esc(ms.asianHandicap&&ms.asianHandicap.ft&&ms.asianHandicap.ft.modelLean||"—")+'</b></div></div>'+
+      ((Array.isArray(u.reasons)&&u.reasons.length)?'<div class="fusion-card"><h3>Abstain reasons</h3><div class="pill-line">'+u.reasons.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"");
+  }
+  function renderInsights(out){
+    var box=$("insightsContent"),ex=out&&out.explosionScenario||{},ev=out&&out.evidenceSufficiency||{},g=out&&out.gates||{},td=Array.isArray(out&&out.topDecisions)?out.topDecisions:[];
+    var ft=ex.thresholds&&ex.thresholds.ft||{},ht=ex.thresholds&&ex.thresholds.ht||{};
+    box.innerHTML=
+      '<div class="insight-card"><h3>Evidence</h3><div class="kv"><span>Status</span><b>'+esc(ev.status||"—")+'</b></div><div class="kv"><span>Home fixtures</span><b>'+esc(ev.homeFixtures==null?"—":ev.homeFixtures)+'</b></div><div class="kv"><span>Away fixtures</span><b>'+esc(ev.awayFixtures==null?"—":ev.awayFixtures)+'</b></div><div class="kv"><span>H2H fixtures</span><b>'+esc(ev.h2hFixtures==null?"—":ev.h2hFixtures)+'</b></div></div>'+
+      '<div class="insight-card"><h3>Explosion scenario</h3><div class="kv"><span>Level</span><b>'+esc(ex.level||"—")+'</b></div><div class="kv"><span>HT 3+</span><b>'+probText(ht["3Plus"])+'</b></div><div class="kv"><span>FT 4+</span><b>'+probText(ft["4Plus"])+'</b></div><div class="kv"><span>FT 5+</span><b>'+probText(ft["5Plus"])+'</b></div><div class="kv"><span>FT 6+</span><b>'+probText(ft["6Plus"])+'</b></div></div>'+
+      '<div class="insight-card"><h3>Integrity gates</h3><div class="kv"><span>Strict-prior</span><b>'+(g.strictPrior===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Evidence</span><b>'+(g.evidenceSufficient===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Consistency</span><b>'+(g.consistency===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Fixture identity</span><b>'+(g.fixtureIdentityVerified===false?"FAIL":"PASS")+'</b></div></div>'+
+      '<div class="insight-card"><h3>Top decisions</h3>'+(td.length?td.slice(0,5).map(function(x){return '<div class="kv"><span>'+esc(x.market||x.target||"—")+'</span><b>'+esc(x.decision||"—")+' · '+probText(x.probability)+'</b></div>'}).join(""):'<div class="context-state">Không có actionable decision.</div>')+'</div>'+
+      ((Array.isArray(ex.triggers)&&ex.triggers.length)?'<div class="insight-card"><h3>Triggers</h3><div class="pill-line">'+ex.triggers.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"")+
+      ((Array.isArray(ex.contraSignals)&&ex.contraSignals.length)?'<div class="insight-card"><h3>Contra signals</h3><div class="pill-line">'+ex.contraSignals.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"");
+  }
+
   function renderPrediction(data){
     var out=unwrap(data);state.prediction=out;var rows=collectCore(out);var list=$("marketList");list.innerHTML="";
     if(!rows.length){list.innerHTML='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
@@ -569,13 +655,13 @@
     var gates=out.gates||{};$("gateStrict").textContent=gates.strictPrior===true?"PASS":(gates.strictPrior===false?"FAIL":"—");
     $("gateEvidence").textContent=gates.evidenceSufficient===true?"PASS":(gates.evidenceSufficient===false?"FAIL":(out.evidenceSufficiency&&out.evidenceSufficiency.status)||"—");
     $("gateConsistency").textContent=gates.consistency===true?"PASS":(gates.consistency===false?"FAIL":"—");$("finalDecision").textContent=out.final||"—";
-    $("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
+    renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
   }
 
   $("predictBtn").onclick=async function(){
     var btn=$("predictBtn");btn.disabled=true;btn.innerHTML='<span class="loading"><i></i><i></i><i></i></span> Running CFI';
     try{
-      var r=await api("/api/predict","POST",{home:state.match.home,away:state.match.away,target_date:state.match.date,language:"vi",input_mode:"SINGLE_MATCH"});
+      var r=await api("/api/predict","POST",{home:state.match.canonicalHome||state.match.home,away:state.match.canonicalAway||state.match.away,target_date:state.match.date,language:"vi",input_mode:"SINGLE_MATCH"});
       renderPrediction(r.data);
     }catch(e){
       var payload=e.data||{};var msg=(payload&&payload.message)||(payload&&payload.error)||e.message||"Prediction rejected";
@@ -591,7 +677,9 @@
       document.querySelectorAll("#screenSelected .selected-panel").forEach(function(p){p.classList.toggle("active",p.dataset.panel===btn.dataset.tab)});
       if(btn.dataset.tab!=="overview"&&!state.context&&!state.contextLoading)loadMatchContext(false);
     }
-    if(btn.dataset.resulttab)toast(btn.textContent+" view đang được nối vào output CFI.");
+    if(group.id==="resultTabs"&&btn.dataset.resulttab){
+      document.querySelectorAll("#screenResult .result-panel").forEach(function(p){p.classList.toggle("active",p.dataset.resultpanel===btn.dataset.resulttab)});
+    }
   }});
   document.querySelectorAll(".nav-btn").forEach(function(btn){btn.onclick=function(){
     document.querySelectorAll(".nav-btn").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
