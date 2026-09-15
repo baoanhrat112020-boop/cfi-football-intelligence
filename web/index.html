@@ -357,6 +357,19 @@
     }
   }
 
+  function cacheGet(key,maxAgeMs){
+    try{
+      var raw=localStorage.getItem(key);if(!raw)return null;
+      var parsed=JSON.parse(raw);if(!parsed||!parsed.ts||Date.now()-parsed.ts>maxAgeMs)return null;
+      return parsed.value;
+    }catch(e){return null}
+  }
+  function cacheSet(key,value){
+    try{localStorage.setItem(key,JSON.stringify({ts:Date.now(),value:value}))}catch(e){}
+  }
+  function fixtureCacheKey(date){return "cfi:fixtures:"+date}
+  function contextCacheKey(m){return "cfi:context:"+[m.date,m.home.toLowerCase(),m.away.toLowerCase()].join("|")}
+
   function setSearchMode(mode){
     state.searchMode=mode;
     $("manualModeBtn").classList.toggle("active",mode==="manual");
@@ -385,11 +398,18 @@
       frag.appendChild(b);
     });
     list.appendChild(frag);
+    var d=$("todayDateInput").value;if(d)cacheSet(fixtureCacheKey(d),{rows:state.todayFixtures,source:source||"CACHE"});
   }
   async function loadTodayFixtures(){
     var date=$("todayDateInput").value;if(!date){toast("Chọn ngày cần tìm trận.");return}
-    $("fixtureList").innerHTML='<div class="fixture-empty"><span class="loading"><i></i><i></i><i></i></span> Đang tìm lịch thi đấu…</div>';
-    $("fixtureCount").textContent="Đang tải…";
+    var cached=cacheGet(fixtureCacheKey(date),5*60*1000);
+    if(cached&&Array.isArray(cached.rows)&&cached.rows.length){
+      renderTodayFixtures(cached.rows,cached.source||"CACHE");
+      $("fixtureSource").textContent="Nguồn: cache · đang refresh…";
+    }else{
+      $("fixtureList").innerHTML='<div class="fixture-empty"><span class="loading"><i></i><i></i><i></i></span> Đang tìm lịch thi đấu…</div>';
+      $("fixtureCount").textContent="Đang tải…";
+    }
     try{
       var r=await api("/native/today-fixtures","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
       var d=r.data||{};renderTodayFixtures(d.rows||[],d.source||"AUTO");
@@ -464,12 +484,21 @@
   }
   async function loadMatchContext(silent){
     if(!state.match)return;
-    state.context=null;state.contextError=null;state.contextLoading=true;renderContext();
+    var key=contextCacheKey(state.match),cached=cacheGet(key,10*60*1000);
+    if(cached){
+      state.context=cached;state.contextError=null;state.contextLoading=false;renderContext();
+      setStatus("dbDot","dbStatus","ok","Cached");
+      var cv=cached.temporalAudit&&cached.temporalAudit.verified===true;
+      $("strictDot").className="dot "+(cv?"ok":"warn");$("strictStatus").textContent=cv?"Verified":"Check on run";
+    }else{
+      state.context=null;state.contextError=null;state.contextLoading=true;renderContext();
+    }
     setStatus("dbDot","dbStatus","","Checking…");
     $("strictDot").className="dot warn";$("strictStatus").textContent="Checking…";
     try{
       var r=await api("/api/match-context","POST",{home:state.match.home,away:state.match.away,target_date:state.match.date});
       state.context=r.data||null;state.contextLoading=false;
+      if(state.context)cacheSet(key,state.context);
       setStatus("dbDot","dbStatus","ok","Ready");
       var verified=state.context&&state.context.temporalAudit&&state.context.temporalAudit.verified===true;
       $("strictDot").className="dot "+(verified?"ok":"warn");$("strictStatus").textContent=verified?"Verified":"Check on run";
