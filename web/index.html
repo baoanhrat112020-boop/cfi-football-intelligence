@@ -1,40 +1,701 @@
 <!doctype html>
 <html lang="vi">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#061522">
   <title>CFI Football Intelligence</title>
   <style>
-    :root{--bg:#08111f;--panel:#101c2e;--panel2:#142237;--line:#26364f;--text:#eef5ff;--muted:#93a4bb;--green:#35df79;--amber:#f6c542;--red:#ff5b69;--violet:#a889ff}
-    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 40% 0,#14243a 0,#08111f 42%,#050b14 100%);color:var(--text);font:14px Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
-    .app{display:grid;grid-template-columns:230px 1fr 290px;min-height:100vh}.sidebar{padding:22px 16px;border-right:1px solid var(--line);background:#091321cc}.brand{font-size:30px;font-weight:900;display:flex;gap:10px;align-items:center}.badge{font-size:11px;background:#164e32;color:#a7f3d0;padding:5px 8px;border-radius:8px}.sub{color:var(--muted);font-size:12px}.nav{margin-top:22px;display:grid;gap:8px}.nav div{padding:12px;border-radius:10px;color:#b9c5d6}.nav .active{background:#123b2a;border:1px solid #226a49;color:#caffdd}.main{padding:18px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.lang,.status-pill{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.green{color:var(--green)}.amber{color:var(--amber)}.red{color:var(--red)}.grid{display:grid;gap:14px}.panel{background:linear-gradient(180deg,#111e31,#0d1727);border:1px solid var(--line);border-radius:13px;padding:16px;box-shadow:0 12px 30px #0004}.title{font-size:12px;color:#b7a7ff;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px}.inputs{display:grid;grid-template-columns:1fr 70px 1fr;gap:10px}.input{background:#17263b;border:1px solid #31435f;border-radius:9px;padding:13px}.vs{display:grid;place-items:center;color:#9db0c7}.smallgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px}.btn{background:linear-gradient(135deg,#2fd574,#45ef93);color:#052213;font-weight:900;text-align:center;cursor:pointer}.markets{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.market{background:#132136;border:1px solid #334760;border-radius:12px;padding:14px}.market h3{margin:0 0 8px;font-size:18px}.pct{font-size:28px;font-weight:900;color:var(--green)}.option{margin-top:10px;padding:9px;background:#0d1828;border-radius:8px;border:1px solid #26384e}.option b{display:block;font-size:11px;color:#a9bad0}.bar{height:7px;background:#243349;border-radius:9px;overflow:hidden;margin:10px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#7dffab)}.result{display:grid;grid-template-columns:1.2fr .8fr;gap:10px}.callout{background:#0d241b;border:1px solid #24744d;border-radius:10px;padding:15px}.callout strong{color:var(--green);font-size:16px}.right{padding:18px 16px;border-left:1px solid var(--line);background:#09132199}.kv{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #223148}.quality{color:#7df0a5}.action-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.action{font-size:11px;text-align:center;background:#101c2e;border:1px solid #253852;padding:9px;border-radius:8px}.chips{display:flex;flex-wrap:wrap;gap:7px}.chip{background:#17263b;border:1px solid #324863;padding:7px 9px;border-radius:999px;font-weight:700}.alert{border:1px solid #8b2630;background:#2a1118}.alert strong{color:#ff8290}.factor{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.factor div{background:#0d1828;border:1px solid #26384e;border-radius:8px;padding:9px}.footer{margin-top:15px;color:#667a94;font-size:11px;text-align:center}@media(max-width:1100px){.app{grid-template-columns:1fr}.sidebar,.right{display:none}.markets{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.markets,.smallgrid,.result,.factor{grid-template-columns:1fr}.inputs{grid-template-columns:1fr}.vs{display:none}}
+    :root{
+      --bg:#061522;--bg2:#081d2d;--surface:#0a2133;--surface2:#0d2940;--surface3:#102f49;
+      --line:#174563;--line2:#216184;--text:#f4f8fc;--muted:#87a2b8;--blue:#2997ff;
+      --cyan:#47b7ff;--green:#20e07d;--green2:#0b6d43;--amber:#ffbd28;--red:#ff5e66;
+      --shadow:0 14px 40px rgba(0,0,0,.28);--radius:16px
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
+    body{background:radial-gradient(circle at 50% -10%,#0e3854 0,#061522 40%,#04101a 100%);padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+    button,input{font:inherit}
+    button{cursor:pointer;touch-action:manipulation}
+    .app{min-height:100dvh;max-width:540px;margin:0 auto;position:relative;padding-bottom:82px}
+    .header{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid rgba(47,114,151,.35);background:rgba(5,20,33,.94);backdrop-filter:blur(14px);position:sticky;top:0;z-index:20}
+    .brand{display:flex;align-items:baseline;gap:8px}.brand strong{font-size:24px;letter-spacing:-.8px}.brand span{font-size:11px;color:#a7b7c5}
+    .icon-btn{width:38px;height:38px;border:0;background:transparent;color:#dceaf4;border-radius:10px;display:grid;place-items:center}
+    .icon-btn:active{background:#103149}
+    .screen{display:none;padding:14px 16px 24px}.screen.active{display:block}
+    .mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 14px;padding:4px;background:#071c2c;border:1px solid #174563;border-radius:12px}
+    .mode-btn{height:42px;border:0;border-radius:9px;background:transparent;color:#8ea8ba;font-weight:750}
+    .mode-btn.active{background:#103852;color:#5fc1ff;box-shadow:inset 0 0 0 1px #23698f}
+    .today-panel{display:none}.today-panel.active{display:block}.manual-panel.hidden{display:none}
+    .today-toolbar{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:end;margin-bottom:12px}
+    .today-toolbar .field{margin:0}.refresh-today{height:44px;padding:0 14px;border:1px solid #23698f;border-radius:10px;background:#0b2b42;color:#6ac4ff;font-weight:800}
+    .fixture-summary{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:4px 2px 10px;color:#8fa9bb;font-size:11px}
+    .fixture-list{display:grid;gap:9px}
+    .fixture{width:100%;border:1px solid #1d4f6d;border-radius:12px;background:linear-gradient(180deg,#0b2940,#082136);color:#eef7fc;padding:12px;text-align:left}
+    .fixture:active{transform:translateY(1px);background:#10334d}
+    .fixture-top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px}
+    .fixture-time{font-weight:900;color:#64c2ff;font-size:14px}.fixture-league{font-size:10px;color:#7898ad;max-width:68%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fixture-teams{font-size:13px;font-weight:800;line-height:1.35}.fixture-meta{margin-top:6px;font-size:10px;color:#7895a9}
+    .fixture-empty{padding:22px 14px;border:1px dashed #21526f;border-radius:12px;text-align:center;color:#829fb3;font-size:12px;line-height:1.5}
+    .search-wrap{position:relative;margin-bottom:14px}.search-wrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#83a0b6}
+    .search{width:100%;height:48px;border:1px solid var(--line2);border-radius:12px;background:#0a2032;color:white;padding:0 14px 0 44px;outline:none;font-size:15px}
+    .search:focus,.field input:focus{border-color:#3da8f5;box-shadow:0 0 0 3px rgba(41,151,255,.12)}
+    .card{background:linear-gradient(180deg,rgba(10,34,52,.98),rgba(7,27,42,.98));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+    .card + .card{margin-top:12px}.pad{padding:16px}
+    .section-title{font-size:16px;font-weight:800;color:#69bfff;letter-spacing:.1px;margin:0 0 4px}
+    .section-sub{font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.45}
+    .teams{display:grid;grid-template-columns:1fr 46px 1fr;gap:9px;align-items:center}
+    .team-box{min-width:0;text-align:center}.shirt{height:70px;display:grid;place-items:center}
+    .shirt svg{width:58px;height:58px}.shirt.home{color:#28a76a}.shirt.away{color:#ec4b4f}
+    .team-label{font-size:13px;font-weight:700;margin-bottom:7px}.team-input{width:100%;height:42px;border:1px solid #24526f;border-radius:10px;background:#0a2032;color:#fff;padding:0 10px;text-align:center;outline:none}
+    .vs{font-size:12px;color:#a7bac8;font-weight:800;text-align:center}
+    .meta-form{display:grid;gap:10px;margin-top:16px}.field label{display:block;font-size:11px;color:#7f9aae;margin:0 0 6px 2px}
+    .field input{width:100%;height:44px;border:1px solid #24526f;border-radius:10px;background:#0a2032;color:#fff;padding:0 12px;outline:none}
+    .primary{width:100%;height:50px;border:0;border-radius:11px;background:linear-gradient(180deg,#2f9fff,#147de7);color:#fff;font-weight:800;margin-top:14px;box-shadow:0 8px 20px rgba(21,125,231,.28)}
+    .primary.green{background:linear-gradient(180deg,#2af58a,#18c96c);color:#042617;box-shadow:0 8px 20px rgba(24,201,108,.2)}
+    .primary:disabled{opacity:.38;box-shadow:none}.primary:active{transform:translateY(1px)}
+    .hint{display:flex;gap:9px;align-items:flex-start;color:#8ea6b9;font-size:12px;margin:14px 3px 2px;line-height:1.45}
+    .match-head{padding:14px 15px 13px;display:grid;grid-template-columns:1fr 40px 1fr;align-items:center;text-align:center}
+    .crest{width:62px;height:62px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;border:1px solid #2c6584;background:#0b2a3f;font-weight:900;font-size:19px}
+    .crest.home{color:#44e39b}.crest.away{color:#ff6f74}.match-team{font-size:14px;font-weight:800;line-height:1.2}.match-vs{font-weight:900;color:#7894a8}
+    .match-meta{border-top:1px solid #153b55;padding:12px 15px;color:#a5b9c8;font-size:12px;display:grid;gap:7px}
+    .row{display:flex;align-items:center;gap:9px}.row svg{flex:0 0 auto}
+    .selected-panel{display:none;margin-top:12px}.selected-panel.active{display:block}
+    .context-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.context-team{padding:13px;border:1px solid #174a68;border-radius:12px;background:#082238}.context-team h3{margin:0 0 10px;font-size:14px}.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{padding:9px;border-radius:9px;background:#071c2e;border:1px solid #153c56}.metric span{display:block;color:#7898ad;font-size:10px;margin-bottom:3px}.metric b{font-size:14px}
+    .form-line{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.form-chip{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:11px;font-weight:900;background:#153448;color:#a7bdcb}.form-chip.W{background:#0e5d3d;color:#4ff09e}.form-chip.D{background:#50471a;color:#ffd85c}.form-chip.L{background:#5d2730;color:#ff7d85}
+    .history-list{display:grid;gap:7px}.history-row{padding:10px 11px;border:1px solid #17435e;border-radius:10px;background:#081e30}.history-top{display:flex;justify-content:space-between;gap:8px;color:#8ea8ba;font-size:10px;margin-bottom:5px}.history-match{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px}.history-match .home{text-align:right}.history-score{font-weight:900;color:#eef8ff}.context-state{padding:20px;border:1px dashed #245774;border-radius:12px;text-align:center;color:#86a4b8;font-size:12px;line-height:1.5}
+    @media(max-width:390px){.context-grid{grid-template-columns:1fr}}
+        .source-list{display:grid;gap:0}.source{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #12384f}.source:last-child{border-bottom:0}
+    .source-left{display:flex;align-items:center;gap:10px}.source-icon{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:#1164c5;color:white;font-size:11px;font-weight:900}
+    .source small{display:block;color:#6f8da3;margin-top:2px}.status{display:flex;align-items:center;gap:6px;font-size:12px;color:#9cb2c2}.dot{width:8px;height:8px;border-radius:50%;background:#6d8190}
+    .dot.ok{background:var(--green)}.dot.warn{background:var(--amber)}.dot.bad{background:var(--red)}
+    .tabs{display:flex;border-bottom:1px solid #17415c;overflow:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tab{height:43px;padding:0 14px;border:0;background:transparent;color:#8ea8ba;font-size:12px;white-space:nowrap;border-bottom:2px solid transparent}.tab.active{color:#62bbff;border-bottom-color:#289bff;background:rgba(31,129,202,.06)}
+    .empty{padding:34px 20px;text-align:center}.pulse-icon{width:62px;height:62px;border-radius:50%;border:1px solid #245d80;display:grid;place-items:center;margin:0 auto 15px;color:#59b9ff;background:#08263b}.empty h2{font-size:16px;margin:0 0 8px}.empty p{font-size:12px;color:#8ca5b8;line-height:1.5;margin:0 auto;max-width:290px}
+    .quick-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:10px}.quick{height:70px;border:1px solid #1f5272;border-radius:11px;background:#09253a;color:#cbe0ed;font-size:11px;display:grid;place-items:center;gap:4px;padding:8px}.quick svg{color:#54b6ff}
+    .info-strip{margin-top:10px;border:1px solid #1b5d8b;border-radius:10px;background:#08253c;padding:10px 12px;color:#83b9db;font-size:11px;display:flex;gap:8px;line-height:1.45}
+    .block-card{border-color:#8a6c13;background:linear-gradient(180deg,#2c2a15,#1a201b);padding:22px 16px;text-align:center}.block-icon{color:var(--amber);margin-bottom:8px}.block-card h2{margin:0;color:#ffd23f;font-size:17px}.block-card>p{font-size:12px;color:#c7c2a6;line-height:1.5}
+    .issue{display:flex;text-align:left;gap:10px;padding:10px 0;border-top:1px solid rgba(204,168,48,.22)}.issue:first-of-type{border-top:0}.issue b{font-size:12px;display:block}.issue span{font-size:11px;color:#aca98f}
+    .result-hero{padding:16px;display:grid;grid-template-columns:92px 1fr;gap:14px;align-items:center}.score-ring{width:88px;height:88px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--green) var(--p,0%),#17394d 0);position:relative}.score-ring:after{content:"";position:absolute;inset:9px;border-radius:50%;background:#082236}.score-ring strong{position:relative;z-index:1;font-size:22px}.result-hero h2{font-size:17px;margin:0 0 6px}.result-hero p{font-size:12px;color:#8fa8b8;margin:0;line-height:1.5}
+    .markets{display:grid;gap:8px}.market{display:grid;grid-template-columns:1.2fr .8fr .75fr;align-items:center;padding:11px 12px;border:1px solid #16425e;border-radius:10px;background:#092237}.market b{font-size:13px}.prob{font-size:15px;font-weight:900;text-align:right}.signal{text-align:right;font-size:10px;font-weight:800}.sig-strong{color:var(--green)}.sig-watch{color:var(--amber)}.sig-pass{color:#829aaa}.sig-block{color:var(--red)}
+    .result-panel{display:none}.result-panel.active{display:block}.fusion-grid,.insight-grid{display:grid;gap:10px}.fusion-card,.insight-card{padding:13px;border:1px solid #174863;border-radius:11px;background:#082238}.fusion-card h3,.insight-card h3{margin:0 0 8px;font-size:13px;color:#d9edf8}.kv{display:flex;justify-content:space-between;gap:14px;padding:6px 0;border-top:1px solid #12384f;font-size:11px}.kv:first-of-type{border-top:0}.kv span{color:#7f9daf}.kv b{text-align:right}.weights{display:grid;gap:6px}.weight-row{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11px}.weight-bar{grid-column:1/-1;height:5px;border-radius:999px;background:#12384f;overflow:hidden}.weight-bar i{display:block;height:100%;background:#2aa8ff}.pill-line{display:flex;gap:6px;flex-wrap:wrap}.pill{padding:5px 8px;border:1px solid #245572;border-radius:999px;font-size:10px;color:#9ec3d8;background:#071d2f}
+
+    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
+    .nav-btn{border:0;background:transparent;color:#7896aa;display:grid;place-items:center;align-content:center;gap:2px;font-size:10px}.nav-btn.active{color:#49aeff}.nav-btn svg{width:20px;height:20px}
+    .toast{position:fixed;left:50%;bottom:82px;transform:translate(-50%,14px);width:min(460px,calc(100% - 32px));padding:12px 14px;background:#102b40;border:1px solid #2a6b91;border-radius:11px;color:#dbeaf3;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:60;box-shadow:var(--shadow)}.toast.show{opacity:1;transform:translate(-50%,0)}
+    .modal-wrap{position:fixed;inset:0;background:rgba(0,8,14,.72);backdrop-filter:blur(8px);display:none;align-items:flex-end;z-index:80}.modal-wrap.show{display:flex}.modal{width:min(540px,100%);max-height:72vh;overflow:auto;background:#092136;border:1px solid #216084;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -16px 50px rgba(0,0,0,.4)}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.modal h3{margin:0}.modal pre{white-space:pre-wrap;word-break:break-word;color:#9db5c6;font-size:11px;line-height:1.5;background:#061725;border:1px solid #173b53;border-radius:10px;padding:12px}
+    .loading{display:inline-flex;gap:5px;align-items:center}.loading i{width:6px;height:6px;border-radius:50%;background:currentColor;animation:b 1s infinite}.loading i:nth-child(2){animation-delay:.15s}.loading i:nth-child(3){animation-delay:.3s}@keyframes b{0%,70%,100%{opacity:.3;transform:scale(.8)}35%{opacity:1;transform:scale(1)}} 
+    @media(min-width:700px){.app{padding-top:18px}.header{border-radius:16px 16px 0 0}.bottom-nav{border-radius:0 0 16px 16px}}
   </style>
 </head>
 <body>
 <div class="app">
-  <aside class="sidebar"><div class="brand">🧠 CFI <span class="badge">v3.1</span></div><div class="sub">Persistent Intelligence</div><div class="nav"><div class="active">⌂ Dự đoán & Phân tích</div><div>◉ Lịch sử đội bóng</div><div>⌘ H2H - Đối đầu</div><div>▰ Database toàn cầu</div><div>◎ Giải đấu & BXH</div><div>☆ Watch List</div><div>◌ Market Odds</div><div>⚙ Cài đặt hệ thống</div></div><div class="nav" style="margin-top:25px"><div>▣ Ingestion</div><div>▧ Screenshot Merge</div><div>◇ Data Quality</div><div>⚡ Live Events</div><div>☷ Logs & Activities</div></div></aside>
-  <main class="main">
-    <div class="top"><div class="lang">Ngôn ngữ: 🇻🇳 <b>Tiếng Việt</b></div><div class="status-pill"><span class="green">● AI hoạt động</span> · DB Connected · Auto Update ON</div></div>
-    <div class="grid">
-      <section class="panel"><div class="title">Nhập trận đấu</div><div class="inputs"><div class="input">ĐỘI NHÀ<br><b>Wallern</b></div><div class="vs">VS</div><div class="input">ĐỘI KHÁCH<br><b>Union Dietach</b></div></div><div class="smallgrid"><div class="input">Ngày: 15/08/2026</div><div class="input">Giải: Österreich Landesliga</div><div class="input">Nguồn: Persistent DB</div><div class="input btn" id="analyze">⚡ PHÂN TÍCH NGAY</div></div></section>
-      <section class="panel"><div class="title">Trending tỷ số & bối cảnh đội bóng</div><div class="result"><div><b>Wallern — score fingerprint</b><div class="chips" style="margin-top:10px"><span class="chip">3-1</span><span class="chip">2-1</span><span class="chip">5-2</span><span class="chip">1-0</span></div><div class="factor"><div>Phong độ sân nhà<br><b class="green">Tích cực</b></div><div>Vị trí BXH<br><b>3 / 18</b></div><div>Đội hình xác minh<br><b>72%</b></div><div>Biến động/ngẫu nhiên<br><b>2.5% + uncertainty band</b></div></div></div><div><b>Union Dietach — score fingerprint</b><div class="chips" style="margin-top:10px"><span class="chip">2-1</span><span class="chip">2-2</span><span class="chip">1-1</span><span class="chip">3-2</span></div><div class="factor"><div>Phong độ sân khách<br><b class="amber">Trung bình</b></div><div>Vị trí BXH<br><b>8 / 18</b></div><div>Đội hình xác minh<br><b>64%</b></div><div>Context influence<br><b>Bounded</b></div></div></div></div></section>
-      <section class="panel"><div class="title">Kết quả dự đoán CFI — 2 phương án / market</div><div class="markets" id="markets"></div></section>
-      <section class="panel result"><div><div class="title">Phân tích CFI</div><div class="kv"><span>Strict-prior evidence</span><b>Đã bật</b></div><div class="kv"><span>Walk-forward backtest</span><b>Đã bật</b></div><div class="kv"><span>Model comparison</span><b>Brier score</b></div><div class="kv"><span>Context factors</span><b>Trend + Venue + Lineup + BXH</b></div><div class="kv"><span>Random shock</span><b>2.5%</b></div></div><div class="callout"><div class="title">Kết luận CFI</div><strong>Model chính + context adjustment có giới hạn.</strong><p class="sub">Trending và bối cảnh chỉ điều chỉnh xác suất sau khi hai model A/B đã được backtest. Không được phép lấn át dữ liệu lịch sử chuẩn.</p><div class="badge">CFI RESULT: CONTEXT-CALIBRATED</div></div></section>
-      <section class="panel alert"><div class="title">Live Red-Card Intelligence</div><strong>⚠ LIVE RED-CARD ESCALATION ALERT</strong><p>Ví dụ: AWAY nhận thẻ đỏ phút 31. CFI lập tức kiểm tra lịch sử đội thiếu người và lịch sử đối thủ khi gặp đội thiếu người.</p><div class="factor"><div>Collapse risk đội thiếu người<br><b>66.7%</b></div><div>Opponent surge risk<br><b>100%</b></div><div>7+ FT boost<br><b class="red">+10.8 điểm %</b></div><div>Other FT boost<br><b class="red">+9.5 điểm %</b></div></div><p class="sub">Cảnh báo chỉ phát khi evidence + timing vượt ngưỡng; mẫu nhỏ sẽ tự hạ confidence.</p></section>
-      <section class="panel"><div class="title">Hành động Database</div><div class="action-row"><div class="action">NEW<br><b>Trận mới</b></div><div class="action">DUPLICATE_COMPATIBLE<br><b>Tương thích</b></div><div class="action">COMPLEMENTARY<br><b>Bổ sung</b></div><div class="action">CONFLICT<br><b>Cách ly</b></div><div class="action">REJECTED<br><b>Loại bỏ</b></div></div></section>
-    </div><div class="footer">CFI v3.1 · Persistent Intelligence · Dual-Strategy + Context · Team Trend · Live Red-Card Intelligence</div>
+  <header class="header">
+    <div class="brand"><strong>CFI</strong><span>Football Intelligence</span></div>
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section id="screenSearch" class="screen active">
+      <div class="mode-switch">
+        <button id="manualModeBtn" class="mode-btn active">Nhập trận</button>
+        <button id="todayModeBtn" class="mode-btn">⚽ Trận hôm nay</button>
+      </div>
+      <div id="manualPanel" class="manual-panel">
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="quickSearch" class="search" placeholder="Nhập Home vs Away..." autocomplete="off">
+      </div>
+      <div class="card pad">
+        <h1 class="section-title">SELECT MATCH</h1>
+        <p class="section-sub">Chọn trận để CFI kiểm tra dữ liệu và chuẩn bị prediction.</p>
+        <div class="teams">
+          <div class="team-box">
+            <div class="shirt home">
+              <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 10 12 15 5 28l10 6 5-7v27h24V27l5 7 10-6-7-13-9-5c-2 6-20 6-22 0z"/></svg>
+            </div>
+            <div class="team-label">Home Team</div>
+            <input id="homeInput" class="team-input" placeholder="Đội nhà">
+          </div>
+          <div class="vs">VS</div>
+          <div class="team-box">
+            <div class="shirt away">
+              <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 10 12 15 5 28l10 6 5-7v27h24V27l5 7 10-6-7-13-9-5c-2 6-20 6-22 0z"/></svg>
+            </div>
+            <div class="team-label">Away Team</div>
+            <input id="awayInput" class="team-input" placeholder="Đội khách">
+          </div>
+        </div>
+        <div class="meta-form">
+          <div class="field"><label>Ngày thi đấu</label><input id="dateInput" type="date"></div>
+          <div class="field"><label>Giải đấu (không bắt buộc)</label><input id="leagueInput" placeholder="League / Competition"></div>
+        </div>
+        <button id="findBtn" class="primary">⌕ &nbsp; Find Match</button>
+        <div class="hint">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
+          <span>CFI chỉ tạo prediction sau khi backend phản hồi và các gate strict-prior được kiểm tra.</span>
+        </div>
+      </div>
+      </div>
+      <div id="todayPanel" class="today-panel">
+        <div class="card pad">
+          <h1 class="section-title">TRẬN TRONG NGÀY</h1>
+          <p class="section-sub">Tự lấy lịch thi đấu. Chọn một trận rồi CFI mới kiểm tra BigDB/strict-prior và chạy prediction.</p>
+          <div class="today-toolbar">
+            <div class="field"><label>Ngày</label><input id="todayDateInput" type="date"></div>
+            <button id="todayRefreshBtn" class="refresh-today">↻ Refresh</button>
+          </div>
+          <div class="fixture-summary"><span id="fixtureSource">Nguồn: —</span><span id="fixtureCount">0 trận</span></div>
+          <div id="fixtureList" class="fixture-list">
+            <div class="fixture-empty">Bấm “Refresh” để tự tìm các trận chưa bắt đầu trong ngày.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenSelected" class="screen">
+      <div class="tabs" id="selectedTabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="stats">Team Stats</button>
+        <button class="tab" data-tab="h2h">H2H</button>
+        <button class="tab" data-tab="form">Form</button>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="match-head">
+          <div><div class="crest home" id="homeCrest">H</div><div class="match-team" id="homeName">Home</div></div>
+          <div class="match-vs">VS</div>
+          <div><div class="crest away" id="awayCrest">A</div><div class="match-team" id="awayName">Away</div></div>
+        </div>
+        <div class="match-meta">
+          <div class="row"><span>🏆</span><span id="leagueText">Competition not supplied</span></div>
+          <div class="row"><span>🗓</span><span id="dateText">—</span></div>
+        </div>
+      </div>
+
+      <div class="selected-panel active" data-panel="overview">
+        <div class="card pad">
+          <h2 class="section-title">Data Preparation</h2>
+          <div class="source-list">
+            <div class="source"><div class="source-left"><div class="source-icon">API</div><div><b>CFI Runtime</b><small>Production worker</small></div></div><div class="status"><i id="runtimeDot" class="dot"></i><span id="runtimeStatus">Checking…</span></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">DB</div><div><b>Persistent DB</b><small>Historical evidence</small></div></div><div class="status"><i id="dbDot" class="dot"></i><span id="dbStatus">Checking…</span></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">SP</div><div><b>Strict-Prior Guard</b><small>Context before match date</small></div></div><div class="status"><i id="strictDot" class="dot warn"></i><span id="strictStatus">Pending</span></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">MK</div><div><b>Market Engine</b><small>Multi-market / Champion</small></div></div><div class="status"><i class="dot warn"></i><span>Run prediction</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="selected-panel" data-panel="stats">
+        <div class="card pad">
+          <h2 class="section-title">Team Stats</h2>
+          <p class="section-sub">Strict-prior historical summary from CFI BigDB.</p>
+          <div id="statsContent" class="context-state">Đang tải dữ liệu đội…</div>
+        </div>
+      </div>
+
+      <div class="selected-panel" data-panel="h2h">
+        <div class="card pad">
+          <h2 class="section-title">Head to Head</h2>
+          <p class="section-sub">Các lần đối đầu trước ngày trận hiện tại.</p>
+          <div id="h2hContent" class="context-state">Đang tải H2H…</div>
+        </div>
+      </div>
+
+      <div class="selected-panel" data-panel="form">
+        <div class="card pad">
+          <h2 class="section-title">Recent Form</h2>
+          <p class="section-sub">10 trận gần nhất có trong CFI BigDB, chỉ dùng dữ liệu trước ngày trận.</p>
+          <div id="formContent" class="context-state">Đang tải phong độ…</div>
+        </div>
+      </div>
+
+      <button id="continueBtn" class="primary">Continue</button>
+    </section>
+
+    <section id="screenReady" class="screen">
+      <div class="tabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="stats">Team Stats</button>
+        <button class="tab" data-tab="h2h">H2H</button>
+        <button class="tab" data-tab="form">Form</button>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="match-head">
+          <div><div class="crest home ready-home">H</div><div class="match-team ready-home-name">Home</div></div>
+          <div class="match-vs">VS</div>
+          <div><div class="crest away ready-away">A</div><div class="match-team ready-away-name">Away</div></div>
+        </div>
+        <div class="match-meta"><div class="row"><span>🗓</span><span class="ready-date">—</span></div></div>
+      </div>
+      <div class="card empty">
+        <div class="pulse-icon">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>
+        </div>
+        <h2>No prediction generated yet</h2>
+        <p>CFI sẽ gửi trận tới production engine. Kết quả chỉ hiện khi backend trả về prediction hợp lệ.</p>
+        <button id="predictBtn" class="primary green">▶ &nbsp; RUN CFI PREDICTION</button>
+        <div class="quick-actions">
+          <button id="refreshBtn" class="quick"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><span>Refresh Data</span></button>
+          <button id="evidenceBtn" class="quick"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg><span>Evidence</span></button>
+          <button id="dnaBtn" class="quick"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3c5 3 3 15 8 18M16 3C11 6 13 18 8 21M8 7h8M8 17h8"/></svg><span>Match DNA</span></button>
+        </div>
+        <div class="info-strip"><span>ⓘ</span><span>Dữ liệu được re-validate tại thời điểm bấm Run Prediction; app không tự dựng xác suất nếu backend từ chối.</span></div>
+      </div>
+    </section>
+
+    <section id="screenBlocked" class="screen">
+      <div class="tabs"><button class="tab active">Overview</button><button class="tab">Team Stats</button><button class="tab">H2H</button><button class="tab">Form</button></div>
+      <div class="card block-card" style="margin-top:12px">
+        <div class="block-icon">
+          <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 2.8 20h18.4z"/><path d="M12 9v5M12 17h.01"/></svg>
+        </div>
+        <h2>PREDICTION BLOCKED</h2>
+        <p id="blockedSummary">CFI không tạo prediction vì integrity gate chưa đạt.</p>
+        <div class="issue"><span>⚠️</span><div><b>Backend rejected request</b><span id="blockedReason">Evidence or fixture verification is incomplete.</span></div></div>
+        <div class="issue"><span>◐</span><div><b>No fabricated probability</b><span>App giữ fail-closed thay vì hiển thị số giả.</span></div></div>
+        <div class="issue"><span>⊘</span><div><b>Retry available</b><span>Kiểm tra lại tên đội/ngày rồi chạy lại.</span></div></div>
+      </div>
+      <button id="blockedBackBtn" class="primary" style="background:#163c58">← &nbsp; Back to match</button>
+    </section>
+
+    <section id="screenResult" class="screen">
+      <div class="tabs" id="resultTabs">
+        <button class="tab active" data-resulttab="markets">Markets</button>
+        <button class="tab" data-resulttab="fusion">Fusion</button>
+        <button class="tab" data-resulttab="insights">Insights</button>
+      </div>
+      <div class="card result-hero" style="margin-top:12px">
+        <div class="score-ring" id="scoreRing"><strong id="topProbability">—</strong></div>
+        <div><h2 id="resultTitle">CFI Prediction</h2><p id="resultMeta">Strict-prior result from production engine.</p></div>
+      </div>
+
+      <div class="result-panel active" data-resultpanel="markets">
+        <div class="card pad">
+          <h2 class="section-title">Prediction Output</h2>
+          <div id="marketList" class="markets"></div>
+        </div>
+        <div class="card pad">
+          <h2 class="section-title">Integrity</h2>
+          <div class="source-list">
+            <div class="source"><span>Strict-Prior</span><b id="gateStrict">—</b></div>
+            <div class="source"><span>Evidence</span><b id="gateEvidence">—</b></div>
+            <div class="source"><span>Consistency</span><b id="gateConsistency">—</b></div>
+            <div class="source"><span>Final decision</span><b id="finalDecision">—</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="result-panel" data-resultpanel="fusion">
+        <div class="card pad">
+          <h2 class="section-title">Champion Fusion</h2>
+          <p class="section-sub">Hiển thị trực tiếp từ outputV3.championFusion. Research/shadow không được biến thành BET.</p>
+          <div id="fusionContent" class="fusion-grid"></div>
+        </div>
+      </div>
+
+      <div class="result-panel" data-resultpanel="insights">
+        <div class="card pad">
+          <h2 class="section-title">CFI Insights</h2>
+          <p class="section-sub">Evidence, explosion scenario, multi-market lean và integrity từ chính output prediction.</p>
+          <div id="insightsContent" class="insight-grid"></div>
+        </div>
+      </div>
+
+      <button id="newMatchBtn" class="primary" style="background:#123e5b">New Match</button>
+    </section>
   </main>
-  <aside class="right"><section class="panel"><div class="title">Tóm tắt dữ liệu</div><div class="kv"><span>HOME history</span><b>33</b></div><div class="kv"><span>AWAY history</span><b>20</b></div><div class="kv"><span>H2H</span><b>2</b></div><div class="kv"><span>HT đầy đủ</span><b>100%</b></div><div class="kv"><span>FT đầy đủ</span><b>100%</b></div><div class="kv"><span>Chất lượng</span><b class="quality">TỐT</b></div></section><section class="panel" style="margin-top:14px"><div class="title">AI status</div><div class="kv"><span>Prediction Engine</span><b class="green">● ON</b></div><div class="kv"><span>Trend Engine</span><b class="green">● ON</b></div><div class="kv"><span>Context Engine</span><b class="green">● ON</b></div><div class="kv"><span>Red-card Watch</span><b class="green">● ON</b></div><div class="kv"><span>Auto Refresh</span><b class="green">● ON</b></div></section></aside>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 11 9-8 9 8v10h-6v-6H9v6H3z"/></svg><span>Home</span></button>
+    <button class="nav-btn" data-nav="discover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Discover</span></button>
+    <button class="nav-btn" data-nav="live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 7 8 5-8 5z"/></svg><span>Live</span></button>
+    <button class="nav-btn" data-nav="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v16H4zM8 3v4M16 3v4M4 10h16"/></svg><span>History</span></button>
+    <button class="nav-btn" data-nav="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
+  </nav>
 </div>
+
+<div id="toast" class="toast"></div>
+<div id="modalWrap" class="modal-wrap">
+  <div class="modal">
+    <div class="modal-head"><h3 id="modalTitle">CFI</h3><button id="modalClose" class="icon-btn">✕</button></div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
 <script>
-const demo=[
- {m:'3+ HT',a:0.54,b:0.61,base:0.58,c:0.012,s:0.592,method:'BLEND'},
- {m:'7+ FT',a:0.09,b:0.13,base:0.11,c:0.016,s:0.126,method:'BLEND'},
- {m:'Other HT',a:0.035,b:0.052,base:0.043,c:0.006,s:0.049,method:'EMPIRICAL_BAYES'},
- {m:'Other FT',a:0.10,b:0.14,base:0.12,c:0.014,s:0.134,method:'POISSON_STRUCTURAL'}
-];
-function render(){document.getElementById('markets').innerHTML=demo.map(x=>`<article class="market"><h3>${x.m}</h3><div class="pct">${(x.s*100).toFixed(1)}%</div><div class="bar"><i style="width:${x.s*100}%"></i></div><div class="option"><b>PHƯƠNG ÁN A · Empirical Bayes</b>${(x.a*100).toFixed(1)}%</div><div class="option"><b>PHƯƠNG ÁN B · Poisson Structural</b>${(x.b*100).toFixed(1)}%</div><div class="option"><b>BASE → CONTEXT</b>${(x.base*100).toFixed(1)}% → ${(x.s*100).toFixed(1)}% <span class="green">(${x.c>=0?'+':''}${(x.c*100).toFixed(1)}đ)</span></div><p class="sub">Chọn: ${x.method}</p></article>`).join('')}
-render();document.getElementById('analyze').onclick=()=>{document.getElementById('analyze').textContent='✓ ĐÃ PHÂN TÍCH';setTimeout(()=>document.getElementById('analyze').textContent='⚡ PHÂN TÍCH NGAY',1200)};
+(function(){
+  var state={match:null,status:null,prediction:null,current:"search",pending:{},searchMode:"manual",todayFixtures:[],context:null,contextLoading:false,contextError:null};
+  var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult")};
+
+  function $(id){return document.getElementById(id)}
+  function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
+  function showScreen(name){Object.keys(screens).forEach(function(k){screens[k].classList.toggle("active",k===name)});state.current=name;window.scrollTo({top:0,behavior:"instant"})}
+  function toast(msg){var t=$("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._timer);t._timer=setTimeout(function(){t.classList.remove("show")},2400)}
+  function modal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modalWrap").classList.add("show")}
+  function setToday(){var d=new Date();var local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);$("dateInput").value=local;$("todayDateInput").value=local}
+  function initials(name){return String(name||"?").trim().split(/\s+/).slice(0,2).map(function(x){return x[0]||""}).join("").toUpperCase()}
+  function prettyDate(v){if(!v)return "—";var d=new Date(v+"T12:00:00");return isNaN(d)?v:d.toLocaleDateString("vi-VN",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"})}
+  function syncMatch(){
+    if(!state.match)return;
+    $("homeName").textContent=state.match.home;$("awayName").textContent=state.match.away;$("homeCrest").textContent=initials(state.match.home);$("awayCrest").textContent=initials(state.match.away);
+    $("leagueText").textContent=state.match.league||"Competition not supplied";$("dateText").textContent=prettyDate(state.match.date);
+    document.querySelectorAll(".ready-home-name").forEach(function(e){e.textContent=state.match.home});document.querySelectorAll(".ready-away-name").forEach(function(e){e.textContent=state.match.away});
+    document.querySelectorAll(".ready-home").forEach(function(e){e.textContent=initials(state.match.home)});document.querySelectorAll(".ready-away").forEach(function(e){e.textContent=initials(state.match.away)});
+    document.querySelectorAll(".ready-date").forEach(function(e){e.textContent=prettyDate(state.match.date)});
+  }
+
+  window.__cfiNativeResolve=function(id,ok,status,b64){
+    var item=state.pending[id];if(!item)return;delete state.pending[id];
+    try{
+      var bin=atob(b64||"");var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      var text=new TextDecoder().decode(bytes),data={};
+      if(text){try{data=JSON.parse(text)}catch(parseErr){data={message:text.trim()||("HTTP "+status),raw:text,nonJson:true}}}
+      if(ok)item.resolve({status:status,data:data});else{var err=new Error((data&&data.message)||("HTTP "+status));err.status=status;err.data=data;item.reject(err)}
+    }catch(e){item.reject(e)}
+  };
+
+  function api(path,method,body){
+    method=method||"GET";
+    if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.cfiAPI){
+      return new Promise(function(resolve,reject){
+        var id="r"+Date.now()+Math.floor(Math.random()*100000);state.pending[id]={resolve:resolve,reject:reject};
+        window.webkit.messageHandlers.cfiAPI.postMessage({id:id,path:path,method:method,body:body||null});
+        setTimeout(function(){if(state.pending[id]){delete state.pending[id];reject(new Error("CFI API timeout"))}},30000);
+      });
+    }
+    return Promise.reject(new Error("Native CFI API bridge unavailable in this preview"));
+  }
+
+  function statusText(obj){try{return JSON.stringify(obj).toLowerCase()}catch(e){return ""}}
+  function setStatus(dotId,textId,kind,label){$(dotId).className="dot "+kind;$(textId).textContent=label}
+  async function refreshStatus(silent){
+    setStatus("runtimeDot","runtimeStatus","","Checking…");
+    setStatus("dbDot","dbStatus","warn","Check on run");
+    try{
+      var r=await api("/health","GET");state.status=r.data;
+      setStatus("runtimeDot","runtimeStatus","ok","Online");
+      if(!silent)toast("CFI runtime online");
+      return true;
+    }catch(e){
+      setStatus("runtimeDot","runtimeStatus","bad","Offline");
+      setStatus("dbDot","dbStatus","warn","Not checked");
+      if(!silent)toast("Runtime: "+e.message);return false;
+    }
+  }
+
+  function cacheGet(key,maxAgeMs){
+    try{
+      var raw=localStorage.getItem(key);if(!raw)return null;
+      var parsed=JSON.parse(raw);if(!parsed||!parsed.ts||Date.now()-parsed.ts>maxAgeMs)return null;
+      return parsed.value;
+    }catch(e){return null}
+  }
+  function cacheSet(key,value){
+    try{localStorage.setItem(key,JSON.stringify({ts:Date.now(),value:value}))}catch(e){}
+  }
+  function fixtureCacheKey(date){return "cfi:fixtures:"+date}
+  function contextCacheKey(m){return "cfi:context:"+[m.date,m.home.toLowerCase(),m.away.toLowerCase()].join("|")}
+
+  function setSearchMode(mode){
+    state.searchMode=mode;
+    $("manualModeBtn").classList.toggle("active",mode==="manual");
+    $("todayModeBtn").classList.toggle("active",mode==="today");
+    $("manualPanel").classList.toggle("hidden",mode!=="manual");
+    $("todayPanel").classList.toggle("active",mode==="today");
+    if(mode==="today"&&!state.todayFixtures.length)loadTodayFixtures();
+  }
+  function renderTodayFixtures(rows,source){
+    state.todayFixtures=Array.isArray(rows)?rows:[];
+    $("fixtureSource").textContent="Nguồn: "+(source||"CFI fixture discovery");
+    $("fixtureCount").textContent=state.todayFixtures.length+" trận";
+    var list=$("fixtureList");list.innerHTML="";
+    if(!state.todayFixtures.length){list.innerHTML='<div class="fixture-empty">Không tìm thấy trận chưa bắt đầu cho ngày này. Có thể thử Refresh hoặc đổi ngày.</div>';return}
+    var frag=document.createDocumentFragment();
+    state.todayFixtures.forEach(function(f){
+      var b=document.createElement("button");b.className="fixture";b.type="button";
+      var time=f.kickoffLocal||f.time||"—",league=f.competition||f.league||"Unknown competition";
+      b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span><span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc((f.provider||"")+(f.country?" · "+f.country:""))+'</div>';
+      b.onclick=function(){
+        var date=$("todayDateInput").value;
+        state.match={home:f.home,away:f.away,date:f.targetDate||date,league:league,kickoff:f.kickoffIso||null,provider:f.provider||source||null};
+        $("homeInput").value=f.home;$("awayInput").value=f.away;$("dateInput").value=state.match.date;$("leagueInput").value=league;
+        syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
+      };
+      frag.appendChild(b);
+    });
+    list.appendChild(frag);
+    var d=$("todayDateInput").value;if(d)cacheSet(fixtureCacheKey(d),{rows:state.todayFixtures,source:source||"CACHE"});
+  }
+  function fixtureKey(f){
+    return [String(f.home||"").toLowerCase(),String(f.away||"").toLowerCase(),String(f.kickoffLocal||f.time||"")].join("|");
+  }
+  function mergeFixtureRows(groups){
+    var map=new Map();
+    groups.forEach(function(rows){(Array.isArray(rows)?rows:[]).forEach(function(f){var k=fixtureKey(f);if(!map.has(k))map.set(k,f)})});
+    return Array.from(map.values()).sort(function(a,b){return String(a.kickoffLocal||"99:99").localeCompare(String(b.kickoffLocal||"99:99"))});
+  }
+  async function loadTodayFixtures(){
+    var date=$("todayDateInput").value;if(!date){toast("Chọn ngày cần tìm trận.");return}
+    var cached=cacheGet(fixtureCacheKey(date),5*60*1000);
+    if(cached&&Array.isArray(cached.rows)&&cached.rows.length){
+      renderTodayFixtures(cached.rows,cached.source||"CACHE");
+      $("fixtureSource").textContent="Nguồn: cache · đang refresh…";
+    }else{
+      $("fixtureList").innerHTML='<div class="fixture-empty"><span class="loading"><i></i><i></i><i></i></span> Đang tìm lịch thi đấu…</div>';
+      $("fixtureCount").textContent="Đang tải…";
+    }
+
+    try{
+      var rows=[],source="";
+      try{
+        var sr=await api("/api/fixtures-day","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
+        var sd=sr.data||{};rows=Array.isArray(sd.rows)?sd.rows:[];source=sd.source||"CFI SERVER DISCOVERY";
+      }catch(primaryErr){
+        var dr=await api("/api/discover","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh",max_matches:100,scan_limit:100,response_mode:"compact",internal_provider_diagnostics:true});
+        var dd=dr.data||{},board=Array.isArray(dd.board)?dd.board:[];
+        rows=board.map(function(x,i){return{provider:x.provider||dd.provider||"CFI_DISCOVER",providerId:(x.fixtureProvenance&&x.fixtureProvenance.providerId)||("DISC-"+i),home:x.home||(x.match&&x.match.home)||"",away:x.away||(x.match&&x.match.away)||"",competition:x.competition||"",country:x.country||"",kickoff:x.kickoff||0,kickoffIso:x.kickoff?new Date(x.kickoff).toISOString():"",kickoffLocal:x.kickoffLocal||"",targetDate:date,status:"scheduled"}});
+        source=(dd.provider||dd.source||"CFI_DISCOVER")+" · fallback";
+      }
+      rows=mergeFixtureRows([rows]);
+      renderTodayFixtures(rows,source);
+      if(rows.length){toast("Đã tải "+rows.length+" trận");}
+      else{toast("Không lấy được fixture từ production discovery.");}
+    }catch(e){
+      if(!(cached&&Array.isArray(cached.rows)&&cached.rows.length)){
+        $("fixtureList").innerHTML='<div class="fixture-empty">Không lấy được lịch thi đấu. '+esc((e.data&&((e.data.error||e.data.message)))||e.message)+'</div>';
+        $("fixtureCount").textContent="Lỗi";
+      }
+      toast("Fixture: "+((e.data&&(e.data.error||e.data.message))||e.message));
+    }
+  }
+  $("manualModeBtn").onclick=function(){setSearchMode("manual")};
+  $("todayModeBtn").onclick=function(){setSearchMode("today")};
+  $("todayRefreshBtn").onclick=loadTodayFixtures;
+  $("todayDateInput").addEventListener("change",loadTodayFixtures);
+
+
+  function fmtNum(v,d){
+    var n=Number(v);if(!Number.isFinite(n))return "—";
+    return n.toFixed(d==null?2:d);
+  }
+  function fmtPct(v){
+    var n=Number(v);return Number.isFinite(n)?n.toFixed(1)+"%":"—";
+  }
+  function formChips(form){
+    if(!Array.isArray(form)||!form.length)return '<span style="color:#7898ad">No completed form</span>';
+    return form.map(function(x){var k=String(x||"").toUpperCase();return '<span class="form-chip '+esc(k)+'">'+esc(k)+'</span>'}).join("");
+  }
+  function historyRows(rows){
+    if(!Array.isArray(rows)||!rows.length)return '<div class="context-state">Không có fixture phù hợp.</div>';
+    return '<div class="history-list">'+rows.map(function(r){
+      var score=r.ft?(r.ft.home+"-"+r.ft.away):"—";
+      var comp=r.competition||"";
+      return '<div class="history-row"><div class="history-top"><span>'+esc(r.matchDate||"")+'</span><span>'+esc(comp)+'</span></div><div class="history-match"><span class="home">'+esc(r.homeTeam||"")+'</span><span class="history-score">'+esc(score)+'</span><span>'+esc(r.awayTeam||"")+'</span></div></div>';
+    }).join("")+'</div>';
+  }
+  function teamSummaryCard(name,s){
+    s=s||{};
+    return '<div class="context-team"><h3>'+esc(name)+'</h3><div class="form-line">'+formChips(s.form)+'</div><div class="metric-grid">'+
+      '<div class="metric"><span>Matches</span><b>'+esc(s.completed==null?"—":s.completed)+'</b></div>'+
+      '<div class="metric"><span>W-D-L</span><b>'+esc((s.wins||0)+"-"+(s.draws||0)+"-"+(s.losses||0))+'</b></div>'+
+      '<div class="metric"><span>Avg GF</span><b>'+fmtNum(s.avgGoalsFor,2)+'</b></div>'+
+      '<div class="metric"><span>Avg GA</span><b>'+fmtNum(s.avgGoalsAgainst,2)+'</b></div>'+
+      '<div class="metric"><span>HT GF</span><b>'+fmtNum(s.avgHtGoalsFor,2)+'</b></div>'+
+      '<div class="metric"><span>HT GA</span><b>'+fmtNum(s.avgHtGoalsAgainst,2)+'</b></div>'+
+      '<div class="metric"><span>BTTS</span><b>'+fmtPct(s.bttsRate)+'</b></div>'+
+      '<div class="metric"><span>Over 2.5</span><b>'+fmtPct(s.over25Rate)+'</b></div>'+
+      '<div class="metric"><span>Scoring</span><b>'+fmtPct(s.scoringRate)+'</b></div>'+
+      '<div class="metric"><span>Clean sheet</span><b>'+fmtPct(s.cleanSheetRate)+'</b></div>'+
+    '</div></div>';
+  }
+  function renderContext(){
+    var stats=$("statsContent"),h2h=$("h2hContent"),form=$("formContent");
+    if(state.contextLoading){
+      var loading='<span class="loading"><i></i><i></i><i></i></span> Đang tải strict-prior context…';
+      stats.className="context-state";h2h.className="context-state";form.className="context-state";
+      stats.innerHTML=loading;h2h.innerHTML=loading;form.innerHTML=loading;return;
+    }
+    if(state.contextError||!state.context){
+      var e=state.contextError||{message:"Context unavailable"};
+      var code=e.upstreamStatus?(" · upstream "+e.upstreamStatus):"";
+      var err='Không lấy được CFI context'+esc(code)+'.<br>'+esc(e.message||e.upstreamError||e.error||"");
+      stats.className="context-state";h2h.className="context-state";form.className="context-state";
+      stats.innerHTML=err;h2h.innerHTML=err;form.innerHTML=err;return;
+    }
+    var d=state.context;
+    stats.className="context-grid";
+    stats.innerHTML=teamSummaryCard(d.target&&d.target.home||state.match.home,d.home)+teamSummaryCard(d.target&&d.target.away||state.match.away,d.away);
+    h2h.className="";
+    h2h.innerHTML='<div class="info-strip"><span>ⓘ</span><span>'+esc((d.h2h&&d.h2h.fixtures)||0)+' H2H fixture(s) trước '+esc(state.match.date)+'.</span></div>'+historyRows(d.h2h&&d.h2h.recent);
+    form.className="context-grid";
+    form.innerHTML='<div class="context-team"><h3>'+esc(d.target&&d.target.home||state.match.home)+'</h3>'+historyRows(d.home&&d.home.recent)+'</div>'+
+      '<div class="context-team"><h3>'+esc(d.target&&d.target.away||state.match.away)+'</h3>'+historyRows(d.away&&d.away.recent)+'</div>';
+  }
+  async function loadMatchContext(silent){
+    if(!state.match)return;
+    var key=contextCacheKey(state.match),cached=cacheGet(key,10*60*1000);
+    if(cached){
+      state.context=cached;state.contextError=null;state.contextLoading=false;renderContext();
+      setStatus("dbDot","dbStatus","ok","Cached");
+      var cv=cached.temporalAudit&&cached.temporalAudit.verified===true;
+      $("strictDot").className="dot "+(cv?"ok":"warn");$("strictStatus").textContent=cv?"Verified":"Check on run";
+    }else{
+      state.context=null;state.contextError=null;state.contextLoading=true;renderContext();
+    }
+    setStatus("dbDot","dbStatus","","Checking…");
+    $("strictDot").className="dot warn";$("strictStatus").textContent="Checking…";
+    try{
+      var r=await api("/api/match-context","POST",{home:state.match.home,away:state.match.away,target_date:state.match.date});
+      state.context=r.data||null;state.contextLoading=false;
+      if(state.context){
+        cacheSet(key,state.context);
+        if(state.context.target&&state.context.target.home)state.match.canonicalHome=state.context.target.home;
+        if(state.context.target&&state.context.target.away)state.match.canonicalAway=state.context.target.away;
+      }
+      setStatus("dbDot","dbStatus","ok","Ready");
+      var verified=state.context&&state.context.temporalAudit&&state.context.temporalAudit.verified===true;
+      $("strictDot").className="dot "+(verified?"ok":"warn");$("strictStatus").textContent=verified?"Verified":"Check on run";
+      renderContext();
+      if(!silent)toast("Team context loaded");
+    }catch(e){
+      state.contextLoading=false;state.contextError=e.data||{message:e.message,status:e.status};
+      var upstream=state.contextError.upstreamStatus||e.status||"";
+      setStatus("dbDot","dbStatus","bad",upstream?("Upstream "+upstream):"Unavailable");
+      $("strictDot").className="dot warn";$("strictStatus").textContent="Unavailable";
+      renderContext();
+      if(!silent)toast("Context: "+(state.contextError.message||state.contextError.upstreamError||e.message));
+    }
+  }
+
+  function parseQuickSearch(){
+    var q=$("quickSearch").value.trim();if(!q)return;
+    var parts=q.split(/\s+(?:vs\.?|v)\s+/i);if(parts.length>=2){$("homeInput").value=parts[0].trim();$("awayInput").value=parts.slice(1).join(" vs ").trim()}
+  }
+  $("quickSearch").addEventListener("change",parseQuickSearch);
+  $("quickSearch").addEventListener("keydown",function(e){if(e.key==="Enter"){parseQuickSearch();$("homeInput").focus()}});
+
+  $("findBtn").onclick=async function(){
+    parseQuickSearch();
+    var home=$("homeInput").value.trim(),away=$("awayInput").value.trim(),date=$("dateInput").value,league=$("leagueInput").value.trim();
+    if(!home||!away||!date){toast("Nhập đội nhà, đội khách và ngày thi đấu.");return}
+    state.match={home:home,away:away,date:date,league:league};syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
+  };
+  $("continueBtn").onclick=function(){showScreen("ready")};
+  $("refreshBtn").onclick=function(){refreshStatus(false)};
+  $("evidenceBtn").onclick=function(){
+    modal("Evidence",'<p class="section-sub">Trạng thái backend gần nhất. Không có xác suất nào được dựng ở client.</p><pre>'+esc(JSON.stringify(state.status||{status:"Not loaded"},null,2))+"</pre>");
+  };
+  $("dnaBtn").onclick=function(){
+    var out=state.prediction;
+    if(!out){modal("Match DNA",'<p class="section-sub">Chưa có prediction. CFI không tạo dữ liệu DNA mẫu.</p>');return}
+    var ch=out.champion||{},ex=out.explosionScenario||{};
+    var ht=Array.isArray(ch.top3HT)?ch.top3HT.slice(0,3):[],ft=Array.isArray(ch.top3FT)?ch.top3FT.slice(0,3):[];
+    modal("Match DNA",'<div class="source-list"><div class="source"><span>Most likely path</span><b>'+esc(ch.path||"—")+'</b></div><div class="source"><span>Explosion level</span><b>'+esc(ex.level||"—")+'</b></div></div><pre>'+esc(JSON.stringify({top3HT:ht,top3FT:ft,thresholds:ex.thresholds||null},null,2))+'</pre>');
+  };
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.1 Beta 1 · Build 3</b></div></div>')};
+  $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
+  $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
+
+  function unwrap(data){
+    var d=data||{};if(d.body&&typeof d.body==="object")d=d.body;
+    if(d.outputV3)return d.outputV3;
+    if(d.body&&d.body.outputV3)return d.body.outputV3;
+    return d;
+  }
+  function normalizeP(v){var n=Number(v);if(!Number.isFinite(n))return null;return n>1?n:n*100}
+  function collectCore(out){
+    var rows=[];
+    var thresholds=out&&out.champion&&Array.isArray(out.champion.thresholds)?out.champion.thresholds:[];
+    thresholds.forEach(function(x){if(["3+ HT","7+ FT","Other HT","Other FT"].indexOf(x.market)>=0)rows.push({market:x.market,p:normalizeP(x.probability),decision:x.decision||"—",confidence:x.confidence||null})});
+    if(!rows.length&&Array.isArray(out.ranking))out.ranking.forEach(function(x){var m=x.target||x.market;if(["3+ HT","7+ FT","Other HT","Other FT"].indexOf(m)>=0)rows.push({market:m,p:normalizeP(x.probability),decision:x.decision||"—",confidence:x.confidence||null})});
+    if(!rows.length&&out.markets)Object.keys(out.markets).forEach(function(k){if(["3+ HT","7+ FT","Other HT","Other FT"].indexOf(k)>=0){var v=out.markets[k];rows.push({market:k,p:normalizeP(v.final!=null?v.final:(v.probability!=null?v.probability:v)),decision:v.decision||"—"})}});
+    return rows.sort(function(a,b){return["3+ HT","7+ FT","Other HT","Other FT"].indexOf(a.market)-["3+ HT","7+ FT","Other HT","Other FT"].indexOf(b.market)});
+  }
+  function signal(row){
+    var d=String(row.decision||"").toUpperCase();
+    if(d==="BET"||d==="LEAN")return["STRONG","sig-strong"];
+    if(d==="WATCH")return["WATCH","sig-watch"];
+    if(d==="BLOCKED")return["BLOCKED","sig-block"];
+    return["PASS","sig-pass"];
+  }
+  function probText(v){
+    var n=Number(v);if(!Number.isFinite(n))return "—";if(n<=1)n*=100;return n.toFixed(1)+"%";
+  }
+  function weightHtml(weights){
+    if(!weights||typeof weights!=="object")return '<div class="context-state">Không có expert weights.</div>';
+    return '<div class="weights">'+Object.keys(weights).map(function(k){var v=Number(weights[k])||0;return '<div class="weight-row"><span>'+esc(k)+'</span><b>'+probText(v)+'</b><div class="weight-bar"><i style="width:'+Math.max(0,Math.min(100,v*100))+'%"></i></div></div>'}).join("")+'</div>';
+  }
+  function renderFusion(out){
+    var box=$("fusionContent"),f=out&&out.championFusion;
+    if(!f){box.innerHTML='<div class="context-state">Prediction này không trả về Champion Fusion payload.</div>';return}
+    var u=f.uncertainty||{},g=f.gating||{},ch=f.champion||{},ms=out.marketSummary||{};
+    var thresholds=ch.thresholds||ch;
+    box.innerHTML=
+      '<div class="fusion-card"><h3>Status</h3><div class="kv"><span>State</span><b>'+esc(f.status||"—")+'</b></div><div class="kv"><span>Research only</span><b>'+(f.researchOnly!==false?"YES":"NO")+'</b></div><div class="kv"><span>Decision use</span><b>'+(f.decisionUse===true?"YES":"NO")+'</b></div><div class="kv"><span>Confidence</span><b>'+probText(u.confidence)+'</b></div><div class="kv"><span>Abstain</span><b>'+(u.abstain===true?"YES":"NO")+'</b></div></div>'+
+      '<div class="fusion-card"><h3>Fusion thresholds</h3><div class="kv"><span>3+ HT</span><b>'+probText(thresholds["3+ HT"])+'</b></div><div class="kv"><span>7+ FT</span><b>'+probText(thresholds["7+ FT"])+'</b></div><div class="kv"><span>Other HT</span><b>'+probText(thresholds["Other HT"])+'</b></div><div class="kv"><span>Other FT</span><b>'+probText(thresholds["Other FT"])+'</b></div></div>'+
+      '<div class="fusion-card"><h3>HT expert weights</h3>'+weightHtml(g.ht&&g.ht.weights)+'</div>'+
+      '<div class="fusion-card"><h3>FT expert weights</h3>'+weightHtml(g.ft&&g.ft.weights)+'</div>'+
+      '<div class="fusion-card"><h3>Market center</h3><div class="kv"><span>HT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ht&&ms.oneXTwo.ht.modelProbability)+'</b></div><div class="kv"><span>FT 1X2</span><b>'+esc(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelPick||"—")+' '+probText(ms.oneXTwo&&ms.oneXTwo.ft&&ms.oneXTwo.ft.modelProbability)+'</b></div><div class="kv"><span>FT O/U</span><b>'+esc(ms.overUnder&&ms.overUnder.ft&&ms.overUnder.ft.modelLean||"—")+'</b></div><div class="kv"><span>FT AH</span><b>'+esc(ms.asianHandicap&&ms.asianHandicap.ft&&ms.asianHandicap.ft.modelLean||"—")+'</b></div></div>'+
+      ((Array.isArray(u.reasons)&&u.reasons.length)?'<div class="fusion-card"><h3>Abstain reasons</h3><div class="pill-line">'+u.reasons.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"");
+  }
+  function renderInsights(out){
+    var box=$("insightsContent"),ex=out&&out.explosionScenario||{},ev=out&&out.evidenceSufficiency||{},g=out&&out.gates||{},td=Array.isArray(out&&out.topDecisions)?out.topDecisions:[];
+    var ft=ex.thresholds&&ex.thresholds.ft||{},ht=ex.thresholds&&ex.thresholds.ht||{};
+    box.innerHTML=
+      '<div class="insight-card"><h3>Evidence</h3><div class="kv"><span>Status</span><b>'+esc(ev.status||"—")+'</b></div><div class="kv"><span>Home fixtures</span><b>'+esc(ev.homeFixtures==null?"—":ev.homeFixtures)+'</b></div><div class="kv"><span>Away fixtures</span><b>'+esc(ev.awayFixtures==null?"—":ev.awayFixtures)+'</b></div><div class="kv"><span>H2H fixtures</span><b>'+esc(ev.h2hFixtures==null?"—":ev.h2hFixtures)+'</b></div></div>'+
+      '<div class="insight-card"><h3>Explosion scenario</h3><div class="kv"><span>Level</span><b>'+esc(ex.level||"—")+'</b></div><div class="kv"><span>HT 3+</span><b>'+probText(ht["3Plus"])+'</b></div><div class="kv"><span>FT 4+</span><b>'+probText(ft["4Plus"])+'</b></div><div class="kv"><span>FT 5+</span><b>'+probText(ft["5Plus"])+'</b></div><div class="kv"><span>FT 6+</span><b>'+probText(ft["6Plus"])+'</b></div></div>'+
+      '<div class="insight-card"><h3>Integrity gates</h3><div class="kv"><span>Strict-prior</span><b>'+(g.strictPrior===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Evidence</span><b>'+(g.evidenceSufficient===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Consistency</span><b>'+(g.consistency===true?"PASS":"FAIL")+'</b></div><div class="kv"><span>Fixture identity</span><b>'+(g.fixtureIdentityVerified===false?"FAIL":"PASS")+'</b></div></div>'+
+      '<div class="insight-card"><h3>Top decisions</h3>'+(td.length?td.slice(0,5).map(function(x){return '<div class="kv"><span>'+esc(x.market||x.target||"—")+'</span><b>'+esc(x.decision||"—")+' · '+probText(x.probability)+'</b></div>'}).join(""):'<div class="context-state">Không có actionable decision.</div>')+'</div>'+
+      ((Array.isArray(ex.triggers)&&ex.triggers.length)?'<div class="insight-card"><h3>Triggers</h3><div class="pill-line">'+ex.triggers.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"")+
+      ((Array.isArray(ex.contraSignals)&&ex.contraSignals.length)?'<div class="insight-card"><h3>Contra signals</h3><div class="pill-line">'+ex.contraSignals.map(function(x){return '<span class="pill">'+esc(x)+'</span>'}).join("")+'</div></div>':"");
+  }
+
+  function renderPrediction(data){
+    var out=unwrap(data);state.prediction=out;var rows=collectCore(out);var list=$("marketList");list.innerHTML="";
+    if(!rows.length){list.innerHTML='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
+    rows.forEach(function(r){var s=signal(r);var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(r.market)+"</b><div class='prob'>"+(r.p==null?"—":r.p.toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)});
+    var valid=rows.map(function(r){return r.p}).filter(function(x){return x!=null});var top=valid.length?Math.max.apply(Math,valid):null;
+    $("topProbability").textContent=top==null?"—":top.toFixed(0)+"%";$("scoreRing").style.setProperty("--p",(top||0)+"%");
+    $("resultTitle").textContent=(out.match&&out.match.home?out.match.home:state.match.home)+" vs "+(out.match&&out.match.away?out.match.away:state.match.away);
+    var gates=out.gates||{};$("gateStrict").textContent=gates.strictPrior===true?"PASS":(gates.strictPrior===false?"FAIL":"—");
+    $("gateEvidence").textContent=gates.evidenceSufficient===true?"PASS":(gates.evidenceSufficient===false?"FAIL":(out.evidenceSufficiency&&out.evidenceSufficiency.status)||"—");
+    $("gateConsistency").textContent=gates.consistency===true?"PASS":(gates.consistency===false?"FAIL":"—");$("finalDecision").textContent=out.final||"—";
+    renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
+  }
+
+  $("predictBtn").onclick=async function(){
+    var btn=$("predictBtn");btn.disabled=true;btn.innerHTML='<span class="loading"><i></i><i></i><i></i></span> Running CFI';
+    try{
+      var r=await api("/api/predict","POST",{home:state.match.canonicalHome||state.match.home,away:state.match.canonicalAway||state.match.away,target_date:state.match.date,language:"vi",input_mode:"SINGLE_MATCH"});
+      renderPrediction(r.data);
+    }catch(e){
+      var payload=e.data||{};var msg=(payload&&payload.message)||(payload&&payload.error)||e.message||"Prediction rejected";
+      $("blockedReason").textContent=String(msg);$("blockedSummary").textContent=e.status===422?"Evidence/identity gate rejected this prediction.":"CFI engine did not return an accepted prediction.";showScreen("blocked");
+    }finally{btn.disabled=false;btn.innerHTML="▶ &nbsp; RUN CFI PREDICTION"}
+  };
+  $("blockedBackBtn").onclick=function(){showScreen("ready")};
+  $("newMatchBtn").onclick=function(){state.prediction=null;showScreen("search")};
+
+  document.querySelectorAll(".tab").forEach(function(btn){btn.onclick=function(){
+    var group=btn.parentElement;group.querySelectorAll(".tab").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
+    if(group.id==="selectedTabs"&&btn.dataset.tab){
+      document.querySelectorAll("#screenSelected .selected-panel").forEach(function(p){p.classList.toggle("active",p.dataset.panel===btn.dataset.tab)});
+      if(btn.dataset.tab!=="overview"&&!state.context&&!state.contextLoading)loadMatchContext(false);
+    }
+    if(group.id==="resultTabs"&&btn.dataset.resulttab){
+      document.querySelectorAll("#screenResult .result-panel").forEach(function(p){p.classList.toggle("active",p.dataset.resultpanel===btn.dataset.resulttab)});
+    }
+  }});
+  document.querySelectorAll(".nav-btn").forEach(function(btn){btn.onclick=function(){
+    document.querySelectorAll(".nav-btn").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
+    if(btn.dataset.nav==="home"){showScreen("search");setSearchMode("manual")}
+    else if(btn.dataset.nav==="discover"){showScreen("search");setSearchMode("today")}
+    else toast(btn.textContent+" đã nhận thao tác; module này sẽ dùng endpoint CFI tương ứng.");
+  }});
+
+  setToday();
+})();
 </script>
 </body>
 </html>
