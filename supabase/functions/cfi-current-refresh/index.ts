@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+// manifest is bundled at deploy time; redeploy this function after editing config/sources.json.
 import manifest from "../../../config/sources.json" with { type: "json" };
 import { runBulkImport } from "../_shared/cfi-import-core.ts";
 import { normalizeRefreshRequest } from "../_shared/cfi-current-refresh.ts";
