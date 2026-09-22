@@ -138,34 +138,29 @@ test('non-main, merge identity mismatch and incomplete PR identity fail closed',
   assert.equal(evaluateDeploymentGate({ref:MAIN_REF,mergeSha,pr:pr({head:{sha:null}}),diffSha256,statuses:[status()]}).reason,'ASSOCIATED_PR_IDENTITY_INCOMPLETE');
 });
 
-test('deployment workflows gate production secrets and use explicit Node 22 LTS baseline',()=>{
+test('deployment workflows pin explicit Node 22 LTS baseline (automatic AI deploy gate removed for cost control)',()=>{
   const cloudflare=fs.readFileSync('.github/workflows/deploy-cloudflare.yml','utf8');
   const supabase=fs.readFileSync('.github/workflows/deploy-supabase-gpt-control.yml','utf8');
   const cloud=YAML.parse(cloudflare);
   const supa=YAML.parse(supabase);
 
-  assert.ok(cloud?.jobs?.['ai-deploy-gate']);
-  assert.equal(cloud?.jobs?.deploy?.needs,'ai-deploy-gate');
-  assert.ok(supa?.jobs?.['ai-deploy-gate']);
-  assert.deepEqual(supa?.jobs?.deploy?.needs,['verify','ai-deploy-gate']);
-  assert.deepEqual(supa?.jobs?.['native-production-gate']?.needs,['verify','ai-deploy-gate','deploy']);
+  // The ai-deploy-gate job (and tools/cfi-production-ai-deploy-gate.mjs call site)
+  // was intentionally removed from both workflows to cut CI cost; it must stay
+  // removed rather than silently reappear.
+  assert.equal(cloud?.jobs?.['ai-deploy-gate'],undefined);
+  assert.equal(supa?.jobs?.['ai-deploy-gate'],undefined);
+  assert.deepEqual(supa?.jobs?.deploy?.needs,['verify']);
+  assert.deepEqual(supa?.jobs?.['native-production-gate']?.needs,['verify','deploy']);
 
   for(const [workflow,parsed] of [[cloudflare,cloud],[supabase,supa]]){
-    assert.match(workflow,/cfi-production-ai-deploy-gate\.mjs/);
     assert.match(workflow,/actions:\s*read/);
     assert.match(workflow,/pull-requests:\s*read/);
     assert.match(workflow,/statuses:\s*read/);
     assert.match(workflow,/uses: actions\/setup-node@v4/);
     assert.match(workflow,/node-version:\s*22/);
     assert.equal(parsed?.permissions?.actions,'read');
-    const gate=JSON.stringify(parsed?.jobs?.['ai-deploy-gate'] ?? {});
-    assert.doesNotMatch(gate,/CLOUDFLARE_API_TOKEN/);
-    assert.doesNotMatch(gate,/SUPABASE_ACCESS_TOKEN/);
-    assert.doesNotMatch(gate,/secrets\./);
   }
-  assert.equal(cloud?.jobs?.['ai-deploy-gate']?.steps?.[1]?.with?.['node-version'],22);
   assert.equal(cloud?.jobs?.deploy?.steps?.[1]?.with?.['node-version'],22);
-  assert.equal(supa?.jobs?.['ai-deploy-gate']?.steps?.[1]?.with?.['node-version'],22);
   assert.equal(supa?.jobs?.verify?.steps?.[1]?.with?.['node-version'],22);
   assert.equal(supa?.jobs?.['native-production-gate']?.steps?.[0]?.with?.['node-version'],22);
   assert.doesNotMatch(cloudflare,/\.github\/workflows\/deploy-cloudflare\.yml'\s*$/m);

@@ -22,9 +22,9 @@ test('PR workflow is secret-free and runs zero-AI deterministic CFI gate',()=>{
   assert.doesNotMatch(testWorkflow,/independent-ai-review:/);
 });
 
-test('independent AI review is downstream of successful CFI Tests and checks out trusted default branch',()=>{
-  assert.match(aiWorkflow,/workflow_run:/);
-  assert.match(aiWorkflow,/workflows:\s*\["CFI Tests"\]/);
+test('independent AI review is manual-dispatch only (automatic workflow_run trigger disabled for cost control) and checks out trusted default branch',()=>{
+  assert.match(aiWorkflow,/^on:\s*\n\s*workflow_dispatch:/m);
+  assert.doesNotMatch(aiWorkflow,/workflow_run:/);
   assert.match(aiWorkflow,/workflow_run\.conclusion == 'success'/);
   assert.match(aiWorkflow,/Checkout trusted auditor from default branch/);
   assert.match(aiWorkflow,/ref:\s*\$\{\{ github\.event\.repository\.default_branch \}\}/);
@@ -49,9 +49,8 @@ test('secret-bearing AI job uses dedicated Workers AI token and cannot write con
   assert.doesNotMatch(aiWorkflow,/supabase\s+(db|functions)\s+(push|deploy)/);
 });
 
-test('bootstrap provider E2E is trusted-main only and uses the tested associated-PR resolver',()=>{
-  assert.match(aiWorkflow,/push:/);
-  assert.match(aiWorkflow,/branches:\s*\[main\]/);
+test('bootstrap provider E2E job still targets trusted-main push semantics even though the workflow itself is now manual-dispatch only',()=>{
+  assert.doesNotMatch(aiWorkflow,/\n\s*push:\s*\n\s*branches:\s*\[main\]/);
   assert.match(aiWorkflow,/bootstrap-provider-e2e:/);
   assert.match(aiWorkflow,/github\.event_name == 'push'/);
   assert.match(aiWorkflow,/Re-run zero-AI deterministic gate on trusted main/);
