@@ -89,6 +89,15 @@
     .unavailable-card{padding:26px 18px;text-align:center}.unavailable-card .pulse-icon{color:#7f9daf;border-color:#2c4f66;background:#0a1e2e}.unavailable-card h2{font-size:15px;margin:0 0 8px;color:#dceaf4}.unavailable-card p{font-size:12px;color:#87a2b8;line-height:1.55;margin:0 auto;max-width:300px}
     .live-score{display:flex;align-items:center;justify-content:center;gap:14px;padding:14px 0}.live-score b{font-size:26px}.live-score span{font-size:11px;color:#7f9daf}
     .stat-bars{display:grid;gap:10px}.stat-bars .dna-bar-row{margin:0}
+    .scoreline-primary{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:14px;border:1px solid #1d7dc9;border-radius:12px;background:linear-gradient(180deg,#0d3350,#082238);margin-bottom:12px}
+    .scoreline-primary b{font-size:20px;color:#eaf6ff}.scoreline-primary span{display:block;font-size:10px;color:#7fb8e6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+    .scoreline-primary .sl-prob{font-size:22px;font-weight:900;color:var(--green)}
+    .scoreline-ref-label{font-size:10px;color:#7f9daf;text-transform:uppercase;letter-spacing:.4px;margin:2px 0 8px}
+    .scoreline-ref-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .scoreline-ref-col h4{margin:0 0 8px;font-size:11px;color:#8ea8ba;font-weight:700}
+    .scoreline-ref-row{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid #12384f;font-size:12px;color:#c3d8e6}.scoreline-ref-row:first-of-type{border-top:0}
+    .scoreline-ref-row b{color:#8ea8ba;font-weight:700}
+    @media(max-width:390px){.scoreline-ref-grid{grid-template-columns:1fr}}
     .evidence-panel{display:none}.evidence-panel.active{display:block}
     .settlement-panel{display:none}.settlement-panel.active{display:block}
     .tabs{display:flex;border-bottom:1px solid #17415c;overflow:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tab{height:43px;padding:0 14px;border:0;background:transparent;color:#8ea8ba;font-size:12px;white-space:nowrap;border-bottom:2px solid transparent}.tab.active{color:#62bbff;border-bottom-color:#289bff;background:rgba(31,129,202,.06)}
@@ -314,6 +323,12 @@
         <div class="card pad">
           <h2 class="section-title">Prediction Output</h2>
           <div id="marketList" class="markets"></div>
+        </div>
+        <div class="card pad">
+          <h2 class="section-title">Scoreline</h2>
+          <p class="section-sub">Tỉ số khả năng cao nhất (Top 1) là dự đoán chính. Top 3 chỉ để tham khảo phân bố khả năng.</p>
+          <div id="scorelinePrimary"></div>
+          <div id="scorelineTop3"></div>
         </div>
         <div class="card pad">
           <h2 class="section-title">Integrity</h2>
@@ -934,6 +949,25 @@
     var grade=passCount>=4?"A":passCount===3?"B":passCount===2?"C":passCount===1?"D":"F";
     return{quality:quality,agreement:agreement,grade:grade};
   }
+  function scorelineRefCol(title,rows){
+    if(!Array.isArray(rows)||!rows.length)return '<div class="scoreline-ref-col"><h4>'+esc(title)+'</h4><div class="context-state">—</div></div>';
+    return '<div class="scoreline-ref-col"><h4>'+esc(title)+'</h4>'+rows.map(function(r){
+      var p=Number(r.probability);return '<div class="scoreline-ref-row"><span>'+esc(r.score||"—")+'</span><b>'+(Number.isFinite(p)?(p*100).toFixed(1)+"%":"—")+'</b></div>';
+    }).join("")+'</div>';
+  }
+  function renderScoreline(out){
+    var ch=out.champion||{},ht=Array.isArray(ch.top3HT)?ch.top3HT:[],ft=Array.isArray(ch.top3FT)?ch.top3FT:[];
+    var primary=$("scorelinePrimary"),ref=$("scorelineTop3");
+    if(!ht.length&&!ft.length){
+      primary.innerHTML='<div class="context-state">Chưa có dữ liệu tỉ số từ backend.</div>';ref.innerHTML="";return;
+    }
+    var htTop=ht[0],ftTop=ft[0];
+    var htPct=htTop&&Number.isFinite(Number(htTop.probability))?(Number(htTop.probability)*100).toFixed(1)+"%":"—";
+    var ftPct=ftTop&&Number.isFinite(Number(ftTop.probability))?(Number(ftTop.probability)*100).toFixed(1)+"%":"—";
+    primary.innerHTML='<div class="scoreline-primary"><div><span>Top 1 · Dự đoán chính</span><b>HT '+esc(htTop?htTop.score:"—")+' → FT '+esc(ftTop?ftTop.score:"—")+'</b></div><div class="sl-prob">'+ftPct+'</div></div>'+
+      '<div class="info-strip"><span>ⓘ</span><span>HT top1: '+esc(htTop?htTop.score:"—")+' ('+htPct+') · FT top1: '+esc(ftTop?ftTop.score:"—")+' ('+ftPct+')</span></div>';
+    ref.innerHTML='<div class="scoreline-ref-label">Top 3 — chỉ để tham khảo phân bố, không phải dự đoán chính</div><div class="scoreline-ref-grid">'+scorelineRefCol("HT",ht)+scorelineRefCol("FT",ft)+'</div>';
+  }
   function renderPrediction(data){
     var out=unwrap(data);state.prediction=out;var rows=collectCore(out);var list=$("marketList");list.innerHTML="";
     if(!rows.length){list.innerHTML='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
@@ -948,7 +982,7 @@
     $("badgeQualityVal").textContent=grades.quality+"/100";
     $("badgeAgreementVal").textContent=grades.agreement||"—";$("badgeAgreement").className="badge-chip"+(grades.agreement?" agree-"+grades.agreement:"");
     $("badgeGradeVal").textContent=grades.grade;$("badgeGrade").className="badge-chip grade-"+grades.grade;
-    renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
+    renderScoreline(out);renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
   }
 
   function renderBlockedIssues(msg,payload,status){
