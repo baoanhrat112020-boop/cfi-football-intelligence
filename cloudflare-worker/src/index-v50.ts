@@ -48,13 +48,15 @@ export function fixtureIdentityAudit(big:any){
   };
 }
 
+export const MIN_EXACT_TEAM_EVIDENCE=3;
+
 export function exactTeamEvidenceAudit(big:any){
   const home=Number(big?.exactTeam?.home?.retrieved);
   const away=Number(big?.exactTeam?.away?.retrieved);
   const h2h=Number(big?.exactTeam?.h2h?.retrieved);
-  const homeValid=Number.isFinite(home)&&home>0;
-  const awayValid=Number.isFinite(away)&&away>0;
-  return {verified:homeValid&&awayValid,home:Number.isFinite(home)?home:null,away:Number.isFinite(away)?away:null,h2h:Number.isFinite(h2h)?h2h:null};
+  const homeValid=Number.isFinite(home)&&home>=MIN_EXACT_TEAM_EVIDENCE;
+  const awayValid=Number.isFinite(away)&&away>=MIN_EXACT_TEAM_EVIDENCE;
+  return {verified:homeValid&&awayValid,home:Number.isFinite(home)?home:null,away:Number.isFinite(away)?away:null,h2h:Number.isFinite(h2h)?h2h:null,requiredPerTeam:MIN_EXACT_TEAM_EVIDENCE};
 }
 
 function temporalEvidenceAudit(big:any,targetDate:string){

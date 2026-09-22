@@ -1000,7 +1000,7 @@
   $("predictBtn").onclick=async function(){
     var btn=$("predictBtn");btn.disabled=true;btn.innerHTML='<span class="loading"><i></i><i></i><i></i></span> Running CFI';
     try{
-      var r=await api("/api/predict","POST",{home:state.match.canonicalHome||state.match.home,away:state.match.canonicalAway||state.match.away,target_date:state.match.date,language:"vi",input_mode:"SINGLE_MATCH"});
+      var r=await api("/api/predict","POST",{home:state.match.canonicalHome||state.match.home,away:state.match.canonicalAway||state.match.away,target_date:state.match.date,language:"vi",input_mode:"SINGLE_MATCH",response_mode:"full"});
       setStatus("marketDot","marketStatus","ok","Champion ready");
       renderPrediction(r.data);
     }catch(e){

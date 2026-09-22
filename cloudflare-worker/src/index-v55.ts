@@ -12,6 +12,7 @@ const BIGDB_VERSION='CFI_BIG_DB_RETRIEVAL_V2.3.1_SHARED_IDENTITY_BRIDGE';
 const DIVERSITY_GUARD_VERSION='CFI_MATCH_DIVERSITY_GUARD_V1';
 const PRODUCTION_ENTRYPOINT='index-live-router.ts';
 const PREMATCH_HANDLER='index-v55.ts';
+const MIN_EXACT_TEAM_EVIDENCE=3;
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
 const pct=(v:any)=>Number.isFinite(Number(v))?`${(Number(v)*100).toFixed(1)}%`:'—';
@@ -106,7 +107,7 @@ function zeroEvidenceGuard(body:any){
   const h2h=nonNegativeCount(exactTeam?.h2h?.retrieved)??nonNegativeCount(input?.h2hFixtures)??nonNegativeCount(counts?.h2hFixtures);
   const observed=home!==null||away!==null||h2h!==null;
   const fixtureIdentityVerified=fixtureIdentityState(body).verified;
-  const blocked=fixtureIdentityVerified&&observed&&((home??0)<=0||(away??0)<=0);
+  const blocked=fixtureIdentityVerified&&observed&&((home??0)<MIN_EXACT_TEAM_EVIDENCE||(away??0)<MIN_EXACT_TEAM_EVIDENCE);
   return {blocked,home,away,h2h,fixtureIdentityVerified,reason:blocked?'ZERO_EXACT_TEAM_EVIDENCE':null};
 }
 

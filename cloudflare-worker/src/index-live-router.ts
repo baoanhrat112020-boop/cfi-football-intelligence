@@ -28,10 +28,12 @@ async function fetchBigDb(env:Env,input:any){
   return b;
 }
 
+const MIN_EXACT_TEAM_EVIDENCE=3;
+
 function exactTeamEvidenceAudit(big:any){
   const home=Number(big?.exactTeam?.home?.retrieved),away=Number(big?.exactTeam?.away?.retrieved),h2h=Number(big?.exactTeam?.h2h?.retrieved);
-  const homeValid=Number.isFinite(home)&&home>0,awayValid=Number.isFinite(away)&&away>0;
-  return {verified:homeValid&&awayValid,home:Number.isFinite(home)?home:null,away:Number.isFinite(away)?away:null,h2h:Number.isFinite(h2h)?h2h:null};
+  const homeValid=Number.isFinite(home)&&home>=MIN_EXACT_TEAM_EVIDENCE,awayValid=Number.isFinite(away)&&away>=MIN_EXACT_TEAM_EVIDENCE;
+  return {verified:homeValid&&awayValid,home:Number.isFinite(home)?home:null,away:Number.isFinite(away)?away:null,h2h:Number.isFinite(h2h)?h2h:null,requiredPerTeam:MIN_EXACT_TEAM_EVIDENCE};
 }
 
 function temporalEvidenceAudit(big:any,targetDate:string){
