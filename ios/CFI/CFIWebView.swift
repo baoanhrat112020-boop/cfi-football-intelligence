@@ -69,7 +69,7 @@ struct CFIWebView: UIViewRepresentable {
                 let requestID = payload["id"] as? String,
                 let path = payload["path"] as? String,
                 let method = payload["method"] as? String,
-                allowedPaths.contains(path),
+                allowedPaths.contains(String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0])),
                 ["GET", "POST"].contains(method.uppercased())
             else {
                 return
