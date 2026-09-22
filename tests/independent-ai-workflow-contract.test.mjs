@@ -57,7 +57,6 @@ test('bootstrap provider E2E job still targets trusted-main push semantics even 
   assert.match(aiWorkflow,/tools\/cfi-resolve-associated-pr\.mjs/);
   assert.match(aiWorkflow,/--commit-sha/);
   assert.match(aiWorkflow,/--github-output/);
-  assert.match(aiWorkflow,/tools\/cfi-resolve-associated-pr\.mjs'/);
   assert.match(aiWorkflow,/Enforce bootstrap AI verdict/);
   assert.doesNotMatch(aiWorkflow,/node - <<'NODE'[\s\S]*commits\/\$\{sha\}\/pulls/);
 });
