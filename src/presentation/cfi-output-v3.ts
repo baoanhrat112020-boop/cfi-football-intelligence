@@ -1,6 +1,8 @@
 export const CFI_OUTPUT_V3='CFI_PRACTICAL_OUTPUT_V3';
 import { evaluateEvidenceSufficiency } from '../prediction/evidence-sufficiency.ts';
 import { evaluateThreePlusHtSafety } from '../prediction/three-plus-ht-safety.ts';
+import { evaluateSevenPlusFtSafety } from '../prediction/seven-plus-ft-safety.ts';
+import { evaluateOtherHtSafety } from '../prediction/other-ht-safety.ts';
 import { evaluateMarketCoherence } from '../prediction/market-coherence.ts';
 
 export type InputMode='IMAGE_ANALYSIS'|'DISCOVER_TOP_MATCHES'|'SINGLE_MATCH';
@@ -151,12 +153,19 @@ function explosionScenario(body:any,evidence:ReturnType<typeof evaluateEvidenceS
   return{version:'CFI_EXPLOSION_SCENARIO_V1',level,decisionUse:evidence.decisionEligible,expectedGoals:{ht:expectedTotals(body,'HT'),ft:expectedTotals(body,'FT')},thresholds:{ht,ft},baselinePath:body?.scoreline?.mostLikelyPath??null,highScoringPaths,triggers,contraSignals,interpretation:'Scenario probabilities are model distribution mass, not a guaranteed match script.'};
 }
 
-function renderedReport(mode:InputMode,match:any,cards:Card[],odds:ReturnType<typeof normalizeOdds>,summary:ReturnType<typeof marketSummary>,evidence:ReturnType<typeof evaluateEvidenceSufficiency>,explosion:ReturnType<typeof explosionScenario>,ledger:any,fusion:any,threePlusHtSafety:ReturnType<typeof evaluateThreePlusHtSafety>){
+function safetyLine(label:string,safety:{status:string;rawFinalProbability:number|null;bettingProbability:number|null;decisionUse:boolean}){
+  const pct=(v:number|null)=>v===null?'—':`${(v*100).toFixed(1)}%`;
+  return `${label} SAFETY: ${safety.status} | RAW FINAL ${pct(safety.rawFinalProbability)} | betting P ${pct(safety.bettingProbability)} | decisionUse=${safety.decisionUse?'true':'false'}`;
+}
+
+function renderedReport(mode:InputMode,match:any,cards:Card[],odds:ReturnType<typeof normalizeOdds>,summary:ReturnType<typeof marketSummary>,evidence:ReturnType<typeof evaluateEvidenceSufficiency>,explosion:ReturnType<typeof explosionScenario>,ledger:any,fusion:any,threePlusHtSafety:ReturnType<typeof evaluateThreePlusHtSafety>,sevenPlusFtSafety:ReturnType<typeof evaluateSevenPlusFtSafety>,otherHtSafety:ReturnType<typeof evaluateOtherHtSafety>){
   const ranked=cards.filter(x=>x.decision==='BET'||x.decision==='LEAN'||x.decision==='WATCH').sort((a,b)=>(b.expectedValue??-9)-(a.expectedValue??-9));
   const lines=[`CFI PRACTICAL OUTPUT V3 — ${mode}`,`${match.home??'—'} vs ${match.away??'—'} | ${match.date??'—'}`,`ODDS: ${odds.metadata.verified&&odds.metadata.fresh?`VERIFIED · ${odds.metadata.bookmaker} · ${odds.metadata.capturedAt}`:'NOT VERIFIED/FRESH'}`,'','TOP DECISIONS'];
   if(!ranked.length)lines.push('NO_BET — không có target vượt đủ gate.');
   else ranked.slice(0,5).forEach((x,i)=>lines.push(`${i+1}. ${x.decision} ${x.market} | P ${x.probability===null?'—':`${(x.probability*100).toFixed(1)}%`} | Odds ${x.marketOdds??'—'} | EV ${x.expectedValue===null?'—':`${(x.expectedValue*100).toFixed(1)}%`}`));
   lines.push('',`3+ HT SAFETY: ${threePlusHtSafety.status} | RAW FINAL ${threePlusHtSafety.rawFinalProbability===null?'—':`${(threePlusHtSafety.rawFinalProbability*100).toFixed(1)}%`} | FUTURE SIX ${threePlusHtSafety.futureSixChallengerProbability===null?'—':`${(threePlusHtSafety.futureSixChallengerProbability*100).toFixed(1)}%`} | HT O2.5 ${threePlusHtSafety.scoreGridProbability===null?'—':`${(threePlusHtSafety.scoreGridProbability*100).toFixed(1)}%`} | betting P ${threePlusHtSafety.bettingProbability===null?'—':`${(threePlusHtSafety.bettingProbability*100).toFixed(1)}%`} | decisionUse=${threePlusHtSafety.decisionUse?'true':'false'}`);
+  lines.push(safetyLine('7+ FT',sevenPlusFtSafety));
+  lines.push(safetyLine('OTHER HT',otherHtSafety));
   lines.push('',`EVIDENCE: ${evidence.status} | HOME ${evidence.homeFixtures} | AWAY ${evidence.awayFixtures} | required ${evidence.requiredPerTeam}/team`);
   lines.push('',`BET LEDGER: ${ledger.status} | explicit confirmation required | auto-placed: NO`);
   for(const period of ['HT','FT'] as const){const x=summary.oneXTwo[period.toLowerCase() as 'ht'|'ft'],ou=summary.overUnder[period.toLowerCase() as 'ht'|'ft'],ah=summary.asianHandicap[period.toLowerCase() as 'ht'|'ft'];lines.push('',`${period} 1X2: ${x.modelPick??'—'} ${x.modelProbability===null?'—':`${(x.modelProbability*100).toFixed(1)}%`}`,`${period} TOTAL: ${ou.projectedGoals.total??'—'} | O/U line ${ou.mainLine??'—'} | lean ${ou.modelLean??'—'} ${ou.modelProbability===null?'—':`${(ou.modelProbability*100).toFixed(1)}%`}`,`${period} AH: goal diff ${ah.projectedGoalDifference??'—'} | model line ${ah.homeModelLine??'—'} | lean ${ah.modelLean??'—'}`);}
@@ -175,19 +184,26 @@ export function buildCfiOutputV3(body:any,input:any={}){
   const qualityPass=Boolean(strictPrior&&consistency&&fixtureVerified&&evidenceSufficiency.decisionEligible);
   const oddsReady=odds.metadata.verified&&odds.metadata.fresh;
   const threePlusHtSafety=evaluateThreePlusHtSafety(body);
+  const sevenPlusFtSafety=evaluateSevenPlusFtSafety(body);
+  const otherHtSafety=evaluateOtherHtSafety(body);
   const marketCoherence=evaluateMarketCoherence(body);
+  const CALIBRATION_GATES:Record<string,{safety:any;sourceTag:string}>={
+    '3+ HT':{safety:threePlusHtSafety,sourceTag:'CALIBRATED_3PLUS_HT'},
+    '7+ FT':{safety:sevenPlusFtSafety,sourceTag:'CALIBRATED_7PLUS_FT'},
+    'Other HT':{safety:otherHtSafety,sourceTag:'CALIBRATED_OTHER_HT'},
+  };
   const cards:Card[]=(body?.ranking??[]).map((r:any)=>{
-    const market=String(r.target),isThreePlusHt=market==='3+ HT';
+    const market=String(r.target),gate=CALIBRATION_GATES[market]??null;
     const coherenceBlocked=marketCoherence.blockedMarkets.includes(market);
-    const modelProbability=isThreePlusHt&&threePlusHtSafety.bettingProbability!==null?threePlusHtSafety.bettingProbability:r.probability;
-    const c=makeCard({market,family:'CHAMPION',period:market.includes('HT')?'HT':'FT',probability:modelProbability,confidence:r.confidence??r.predictiveConfidence,odds:odds.values?.[r.target],decisionUse:coherenceBlocked?false:(isThreePlusHt?threePlusHtSafety.decisionUse:true),researchState:'CHAMPION',qualityPass,oddsReady});
-    if(isThreePlusHt){
-      c.rawProbability=threePlusHtSafety.rawFinalProbability;
-      c.bettingProbability=threePlusHtSafety.bettingProbability;
-      c.calibrationStatus=threePlusHtSafety.status;
-      c.probabilitySource=threePlusHtSafety.decisionUse?'CALIBRATED_3PLUS_HT':'FINAL_AUDIT_ONLY';
-      if(!threePlusHtSafety.decisionUse){
-        c.probability=threePlusHtSafety.rawFinalProbability;
+    const modelProbability=gate&&gate.safety.bettingProbability!==null?gate.safety.bettingProbability:r.probability;
+    const c=makeCard({market,family:'CHAMPION',period:market.includes('HT')?'HT':'FT',probability:modelProbability,confidence:r.confidence??r.predictiveConfidence,odds:odds.values?.[r.target],decisionUse:coherenceBlocked?false:(gate?gate.safety.decisionUse:true),researchState:'CHAMPION',qualityPass,oddsReady});
+    if(gate){
+      c.rawProbability=gate.safety.rawFinalProbability;
+      c.bettingProbability=gate.safety.bettingProbability;
+      c.calibrationStatus=gate.safety.status;
+      c.probabilitySource=gate.safety.decisionUse?gate.sourceTag:'FINAL_AUDIT_ONLY';
+      if(!gate.safety.decisionUse){
+        c.probability=gate.safety.rawFinalProbability;
         c.fairOdds=null;
         c.edge=null;c.expectedValue=null;c.decisionUse=false;
         c.decision=qualityPass?'WATCH':'BLOCKED';
@@ -241,7 +257,7 @@ export function buildCfiOutputV3(body:any,input:any={}){
   const fusion=championFusionView(body);
   const primary=bet[0]??lean[0]??watch[0]??null;
   const betLedger={version:'CFI_USER_BET_LEDGER_V1',status:'NOT_RECORDED',endpoint:'/api/bets',explicitConfirmationRequired:true,autoPlaced:false,candidate:primary?{market:primary.market,probability:primary.probability,odds:primary.marketOdds,decision:primary.decision}:null,requiredFields:['market_family','period','selection','line','odds','stake','bookmaker','confirmed_by_user=true'],note:'CFI chỉ ghi nhận sau khi người dùng xác nhận; CFI không tự đặt cược.'};
-  return{version:CFI_OUTPUT_V3,input:{mode,imageEvidence:mode==='IMAGE_ANALYSIS'?{imageCount:Math.max(0,finite(input?.image_evidence?.image_count)??0),fixtureIdentityVerified:fixtureVerified,extractedFields:Array.isArray(input?.image_evidence?.extracted_fields)?input.image_evidence.extracted_fields:[]}:null},match,final,primary,topDecisions:[...bet,...lean,...watch].slice(0,5),decisions:{bet,lean,watch,noBet:cards.filter(x=>x.decision==='NO_BET'),shadow:cards.filter(x=>x.decision==='SHADOW'),blocked:cards.filter(x=>x.decision==='BLOCKED')},champion:{thresholds:cards.filter(x=>x.family==='CHAMPION'),top3HT:body?.scoreline?.ht?.final??[],top3FT:body?.scoreline?.ft?.final??[],path:body?.scoreline?.mostLikelyPath??null},championFusion:fusion,threePlusHtSafety,marketCoherence,marketSummary:summary,explosionScenario:explosion,evidenceSufficiency,betLedger,multiMarket:{policy,oneXTwo:cards.filter(x=>x.family==='1X2'),overUnder:cards.filter(x=>x.family==='OVER_UNDER'),asianHandicap:cards.filter(x=>x.family==='ASIAN_HANDICAP')},odds:{...odds.metadata,ageMinutes:odds.ageMinutes,maxAgeMinutes:odds.maxAgeMinutes},gates:{strictPrior,consistency,fixtureIdentityVerified:fixtureVerified,evidenceSufficient:evidenceSufficiency.decisionEligible,verifiedOdds:odds.metadata.verified,freshOdds:odds.metadata.fresh,threePlusHtCalibration:threePlusHtSafety.status,threePlusHtCrossCore:threePlusHtSafety.crossCore.status,marketCoherence:marketCoherence.status,marketCoherenceScope:'PER_MARKET',marketCoherenceBlockedMarkets:marketCoherence.blockedMarkets,betRequiresAllGates:true,noForcedFive:true},rules:{betMinEdge:0.04,betMinExpectedValue:0.05,leanMinEdge:0.015,minEvidenceFixturesPerTeam:evidenceSufficiency.requiredPerTeam,unverifiedOrStaleOddsCannotBet:true,shadowDecisionUse:false,threePlusHtRawFinalIsAuditOnly:true,threePlusHtRequiresApprovedCalibration:true,threePlusHtRequiresCrossCoreEquivalence:true,marketCoherenceRequired:true,marketCoherenceFailCloseScope:'AFFECTED_MARKETS_ONLY',noGuaranteedWin:true},renderedPracticalReport:renderedReport(mode,match,cards,odds,summary,evidenceSufficiency,explosion,betLedger,fusion,threePlusHtSafety)};
+  return{version:CFI_OUTPUT_V3,input:{mode,imageEvidence:mode==='IMAGE_ANALYSIS'?{imageCount:Math.max(0,finite(input?.image_evidence?.image_count)??0),fixtureIdentityVerified:fixtureVerified,extractedFields:Array.isArray(input?.image_evidence?.extracted_fields)?input.image_evidence.extracted_fields:[]}:null},match,final,primary,topDecisions:[...bet,...lean,...watch].slice(0,5),decisions:{bet,lean,watch,noBet:cards.filter(x=>x.decision==='NO_BET'),shadow:cards.filter(x=>x.decision==='SHADOW'),blocked:cards.filter(x=>x.decision==='BLOCKED')},champion:{thresholds:cards.filter(x=>x.family==='CHAMPION'),top3HT:body?.scoreline?.ht?.final??[],top3FT:body?.scoreline?.ft?.final??[],path:body?.scoreline?.mostLikelyPath??null},championFusion:fusion,threePlusHtSafety,sevenPlusFtSafety,otherHtSafety,marketCoherence,marketSummary:summary,explosionScenario:explosion,evidenceSufficiency,betLedger,multiMarket:{policy,oneXTwo:cards.filter(x=>x.family==='1X2'),overUnder:cards.filter(x=>x.family==='OVER_UNDER'),asianHandicap:cards.filter(x=>x.family==='ASIAN_HANDICAP')},odds:{...odds.metadata,ageMinutes:odds.ageMinutes,maxAgeMinutes:odds.maxAgeMinutes},gates:{strictPrior,consistency,fixtureIdentityVerified:fixtureVerified,evidenceSufficient:evidenceSufficiency.decisionEligible,verifiedOdds:odds.metadata.verified,freshOdds:odds.metadata.fresh,threePlusHtCalibration:threePlusHtSafety.status,threePlusHtCrossCore:threePlusHtSafety.crossCore.status,sevenPlusFtCalibration:sevenPlusFtSafety.status,sevenPlusFtCrossCore:sevenPlusFtSafety.crossCore.status,otherHtCalibration:otherHtSafety.status,marketCoherence:marketCoherence.status,marketCoherenceScope:'PER_MARKET',marketCoherenceBlockedMarkets:marketCoherence.blockedMarkets,betRequiresAllGates:true,noForcedFive:true},rules:{betMinEdge:0.04,betMinExpectedValue:0.05,leanMinEdge:0.015,minEvidenceFixturesPerTeam:evidenceSufficiency.requiredPerTeam,unverifiedOrStaleOddsCannotBet:true,shadowDecisionUse:false,threePlusHtRawFinalIsAuditOnly:true,threePlusHtRequiresApprovedCalibration:true,threePlusHtRequiresCrossCoreEquivalence:true,sevenPlusFtRawFinalIsAuditOnly:true,sevenPlusFtRequiresApprovedCalibration:true,sevenPlusFtRequiresCrossCoreEquivalence:true,otherHtRawFinalIsAuditOnly:true,otherHtRequiresApprovedCalibration:true,marketCoherenceRequired:true,marketCoherenceFailCloseScope:'AFFECTED_MARKETS_ONLY',noGuaranteedWin:true},renderedPracticalReport:renderedReport(mode,match,cards,odds,summary,evidenceSufficiency,explosion,betLedger,fusion,threePlusHtSafety,sevenPlusFtSafety,otherHtSafety)};
 }
 
-export function attachCfiOutputV3(body:any,input:any={}){body.outputV3=buildCfiOutputV3(body,input);body.threePlusHtSafety=body.outputV3.threePlusHtSafety;body.marketCoherence=body.outputV3.marketCoherence;return body;}
+export function attachCfiOutputV3(body:any,input:any={}){body.outputV3=buildCfiOutputV3(body,input);body.threePlusHtSafety=body.outputV3.threePlusHtSafety;body.sevenPlusFtSafety=body.outputV3.sevenPlusFtSafety;body.otherHtSafety=body.outputV3.otherHtSafety;body.marketCoherence=body.outputV3.marketCoherence;return body;}
