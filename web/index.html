@@ -494,6 +494,12 @@
     }catch(e){item.reject(e)}
   };
 
+  function cancelPendingRequests(){
+    Object.keys(state.pending).forEach(function(id){
+      var item=state.pending[id];delete state.pending[id];
+      try{item.reject(new Error("Match changed"))}catch(e){}
+    });
+  }
   function api(path,method,body){
     method=method||"GET";
     if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.cfiAPI){
@@ -514,7 +520,9 @@
     setStatus("runtimeDot","runtimeStatus","","Checking…");
     setStatus("dbDot","dbStatus","warn","Check on run");
     try{
-      var r=await api("/health","GET");state.status=r.data;
+      var r=await api("/health","GET");
+      if(!r.data||typeof r.data!=="object"||!Object.keys(r.data).length)throw new Error("Health check returned empty body");
+      state.status=r.data;
       setStatus("runtimeDot","runtimeStatus","ok","Online");
       stamp("runtimeTime","Last checked");
       if(!silent)toast("CFI runtime online");
@@ -534,7 +542,8 @@
     var leagueOk=!!(match&&match.league&&match.league.trim());
     var strictOk=!!(audit&&audit.verified===true);
     var hf=(ctx&&ctx.home&&ctx.home.fixtures)||0,af=(ctx&&ctx.away&&ctx.away.fixtures)||0,h2h=(ctx&&ctx.h2h&&ctx.h2h.fixtures)||0;
-    var evidenceOk=hf>0&&af>0;
+    var MIN_FIXTURES_PER_TEAM=3;
+    var evidenceOk=hf>=MIN_FIXTURES_PER_TEAM&&af>=MIN_FIXTURES_PER_TEAM;
     var score=0;
     if(identityOk)score+=25;
     if(strictOk)score+=25;
@@ -584,7 +593,7 @@
     $("todayPanel").classList.toggle("active",mode==="today");
     if(mode==="today"&&!state.todayFixtures.length)loadTodayFixtures();
   }
-  function renderTodayFixtures(rows,source){
+  function renderTodayFixtures(rows,source,fromNetwork){
     state.todayFixtures=Array.isArray(rows)?rows:[];
     $("fixtureSource").textContent="Nguồn: "+(source||"CFI fixture discovery");
     $("fixtureCount").textContent=state.todayFixtures.length+" trận";
@@ -597,6 +606,7 @@
       b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span><span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc((f.provider||"")+(f.country?" · "+f.country:""))+'</div>';
       b.onclick=function(){
         var date=$("todayDateInput").value;
+        cancelPendingRequests();
         state.match={home:f.home,away:f.away,date:f.targetDate||date,league:league,kickoff:f.kickoffIso||null,provider:f.provider||source||null};
         $("homeInput").value=f.home;$("awayInput").value=f.away;$("dateInput").value=state.match.date;$("leagueInput").value=league;
         syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
@@ -604,7 +614,7 @@
       frag.appendChild(b);
     });
     list.appendChild(frag);
-    var d=$("todayDateInput").value;if(d)cacheSet(fixtureCacheKey(d),{rows:state.todayFixtures,source:source||"CACHE"});
+    if(fromNetwork){var d=$("todayDateInput").value;if(d)cacheSet(fixtureCacheKey(d),{rows:state.todayFixtures,source:source||"CACHE"});}
   }
   function fixtureKey(f){
     return [String(f.home||"").toLowerCase(),String(f.away||"").toLowerCase(),String(f.kickoffLocal||f.time||"")].join("|");
@@ -618,7 +628,7 @@
     var date=$("todayDateInput").value;if(!date){toast("Chọn ngày cần tìm trận.");return}
     var cached=cacheGet(fixtureCacheKey(date),5*60*1000);
     if(cached&&Array.isArray(cached.rows)&&cached.rows.length){
-      renderTodayFixtures(cached.rows,cached.source||"CACHE");
+      renderTodayFixtures(cached.rows,cached.source||"CACHE",false);
       $("fixtureSource").textContent="Nguồn: cache · đang refresh…";
     }else{
       $("fixtureList").innerHTML='<div class="fixture-empty"><span class="loading"><i></i><i></i><i></i></span> Đang tìm lịch thi đấu…</div>';
@@ -637,7 +647,7 @@
         source=(dd.provider||dd.source||"CFI_DISCOVER")+" · fallback";
       }
       rows=mergeFixtureRows([rows]);
-      renderTodayFixtures(rows,source);
+      renderTodayFixtures(rows,source,true);
       if(rows.length){toast("Đã tải "+rows.length+" trận");}
       else{toast("Không lấy được fixture từ production discovery.");}
     }catch(e){
@@ -750,7 +760,7 @@
 
   function parseQuickSearch(){
     var q=$("quickSearch").value.trim();if(!q)return;
-    var parts=q.split(/\s+(?:vs\.?|v)\s+/i);if(parts.length>=2){$("homeInput").value=parts[0].trim();$("awayInput").value=parts.slice(1).join(" vs ").trim()}
+    var m=q.match(/^(.+?)\s+(?:vs\.?|v)\s+(.+)$/i);if(m){$("homeInput").value=m[1].trim();$("awayInput").value=m[2].trim()}
   }
   $("quickSearch").addEventListener("change",parseQuickSearch);
   $("quickSearch").addEventListener("keydown",function(e){if(e.key==="Enter"){parseQuickSearch();$("homeInput").focus()}});
@@ -759,6 +769,7 @@
     parseQuickSearch();
     var home=$("homeInput").value.trim(),away=$("awayInput").value.trim(),date=$("dateInput").value,league=$("leagueInput").value.trim();
     if(!home||!away||!date){toast("Nhập đội nhà, đội khách và ngày thi đấu.");return}
+    cancelPendingRequests();
     state.match={home:home,away:away,date:date,league:league};syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
   };
   $("continueBtn").onclick=function(){showScreen("ready")};
@@ -864,10 +875,9 @@
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
   function unwrap(data){
-    var d=data||{};if(d.body&&typeof d.body==="object")d=d.body;
-    if(d.outputV3)return d.outputV3;
-    if(d.body&&d.body.outputV3)return d.body.outputV3;
-    return d;
+    var d=data||{},depth=3;
+    while(d&&typeof d==="object"&&d.body&&typeof d.body==="object"&&depth-->0)d=d.body;
+    return (d&&d.outputV3)||d;
   }
   function makeScaler(values){
     var nums=(values||[]).map(Number).filter(function(v){return Number.isFinite(v)&&v>=0});
