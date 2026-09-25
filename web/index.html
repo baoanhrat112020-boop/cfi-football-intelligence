@@ -146,7 +146,7 @@
 <body>
   <div class="header">
     <h1>CFI Predict</h1>
-    <p>Football Intelligence · v1.2026</p>
+    <p>Football Intelligence · v0.2.2 Beta 1 · Build 4</p>
   </div>
 
   <div class="input-group">
@@ -202,7 +202,6 @@ async function predict() {
     const data = await r.json();
     status.textContent = "";
     
-    // Meta
     meta.innerHTML = `
       <div class="meta-row"><span>fixture</span><span>${data.fixture_id.slice(0, 8)}...</span></div>
       <div class="meta-row"><span>date</span><span>${data.match_date}</span></div>
@@ -210,7 +209,6 @@ async function predict() {
     `;
     meta.style.display = "block";
     
-    // Render markets
     const order = ["7ft", "oft", "3ht", "oht"];
     for (const mkt of order) {
       const p = data.predictions[mkt];
