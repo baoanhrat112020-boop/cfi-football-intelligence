@@ -23,11 +23,7 @@ jobs:
         run: |
           pip install pandas numpy supabase
 
-      - name: Check fixtures_cache.csv
-        run: |
-          ls -lh fixtures_cache.csv
-
       - name: Run sync_features.py
         env:
-          SB_SERVICE_ROLE_KEY: ${{ secrets.SB_SERVICE_ROLE_KEY }}
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
         run: python scripts/sync_features.py
