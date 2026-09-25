@@ -1,0 +1,46 @@
+name: Sync Features
+
+on:
+  schedule:
+    # Chạy mỗi giờ, phút thứ 15 (sau khi cfi-current-refresh chạy)
+    - cron: '15 * * * *'
+  workflow_dispatch:  # Cho phép chạy tay
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: |
+          pip install pandas numpy supabase
+
+      - name: Download fixtures_cache.csv
+        run: |
+          # Nếu file trong repo thì skip, nếu không thì tải từ release
+          if [ ! -f fixtures_cache.csv ]; then
+            echo "fixtures_cache.csv not in repo, downloading from release..."
+            curl -L -o fixtures_cache.csv "https://github.com/${{ github.repository }}/releases/download/data-latest/fixtures_cache.csv"
+          fi
+          ls -lh fixtures_cache.csv
+
+      - name: Run sync_features.py
+        env:
+          SB_SERVICE_ROLE_KEY: ${{ secrets.SB_SERVICE_ROLE_KEY }}
+        run: python scripts/sync_features.py
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Sync failed. Check logs."
+          exit 1
