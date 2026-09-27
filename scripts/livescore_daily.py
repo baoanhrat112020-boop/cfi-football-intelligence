@@ -1,4 +1,4 @@
-﻿import os, re, uuid as U, json
+import os, re, uuid as U, json
 from datetime import datetime, timedelta
 from curl_cffi import requests as cf
 from supabase import create_client
@@ -31,7 +31,7 @@ def crawl_day(day_offset):
                 for ev in stage.get("Events", []):
                     eid = ev.get("Eid")
                     if eid and eid not in events:
-                        events[eid] = {**ev, "_stage": stage.get("Cnm")}
+                        events[eid] = {**ev, "_stage": stage.get("Cnm"), "_league": stage.get("Snm") or stage.get("Cnm")}
                         n_new += 1
             if n_new == 0: break
         except Exception as e:
@@ -90,8 +90,8 @@ for m in finished:
         "ht_home": ht_h, "ht_away": ht_a,
         "ft_home": ft_h, "ft_away": ft_a,
         "status": "CANONICAL",
-        "competition_key": "livescore:" + (m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50],
-        "competition_name": m.get("_stage"),
+        "competition_key": "livescore:" + (m.get("_league") or m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50],
+        "competition_name": m.get("_league") or m.get("_stage"),
     }
     try:
         sb.table("fixtures").insert(row).execute()
@@ -102,5 +102,33 @@ for m in finished:
             ok += 1
         except:
             fail += 1
+
+    # Also insert into cfi_living_verified_fixtures for /api/discover
+    esd_full = str(m.get("Esd",""))
+    if len(esd_full) >= 14:
+        kickoff = f"{esd_full[0:4]}-{esd_full[4:6]}-{esd_full[6:8]}T{esd_full[8:10]}:{esd_full[10:12]}:{esd_full[12:14]}Z"
+    else:
+        kickoff = f"{md}T12:00:00Z"
+    live_row = {
+        "fixture_id": fid,
+        "target_date": md,
+        "kickoff_at": kickoff,
+        "home_team": h_name,
+        "away_team": a_name,
+        "home_team_norm": norm(h_name),
+        "away_team_norm": norm(a_name),
+        "competition": m.get("_stage"),
+        "verification_status": "VERIFIED",
+        "source_name": "LIVESCORE",
+        "source_url": f"https://www.livescore.com/en/football/match/{eid}",
+        "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
+        "verified_at": datetime.utcnow().isoformat() + "Z",
+        "canonical_home_team_id": h_id,
+        "canonical_away_team_id": a_id,
+    }
+    try:
+        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="home_team_norm,away_team_norm,target_date,kickoff_at").execute()
+    except:
+        pass
 
 print(f"\nOK: {ok}, Fail: {fail}, Skip: {skip}")
