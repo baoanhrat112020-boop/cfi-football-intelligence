@@ -1,0 +1,35 @@
+name: Backfill Future Fixtures
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Days ahead (1-14)'
+        default: '7'
+        required: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Crawl future days
+        env:
+          CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
+          DAYS: ${{ github.event.inputs.days }}
+        run: |
+          python -c "
+          from scripts.livescore_daily import crawl_day
+          import os
+          days = int(os.environ.get('DAYS', '7'))
+          for offset in range(0, -days, -1):
+              print(f'=== offset {offset} ===')
+              try:
+                  crawl_day(offset)
+              except Exception as e:
+                  print(f'FAIL offset {offset}: {e}')
+          "
