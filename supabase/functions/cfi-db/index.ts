@@ -109,6 +109,7 @@ Deno.serve(async (req) => {
         .select(`
           fixture_id,
           match_date,
+          kickoff_at,
           competition_key,
           competition_name,
           country,
@@ -134,8 +135,13 @@ Deno.serve(async (req) => {
         competition: row.competition_name || row.competition_key || row.competition_segment || null,
         country: row.country || null,
         targetDate: requestedDate,
-        kickoffIso: null,
-        kickoffLocal: null,
+        kickoffIso: row.kickoff_at || null,
+        kickoffLocal: row.kickoff_at
+          ? new Date(row.kickoff_at).toLocaleTimeString("vi-VN", {
+              timeZone: "Asia/Ho_Chi_Minh",
+              hour: "2-digit", minute: "2-digit", hour12: false
+            })
+          : null,
         status: row.status || "CANONICAL",
         canonicalHomeTeamId: row.home_team_id || null,
         canonicalAwayTeamId: row.away_team_id || null,
