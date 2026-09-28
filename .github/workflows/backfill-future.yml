@@ -22,13 +22,10 @@ jobs:
           DAYS: ${{ github.event.inputs.days }}
         run: |
           python -c "
+          print('IMPORT START')
           from scripts.livescore_daily import crawl_day
-          import os
-          days = int(os.environ.get('DAYS', '7'))
-          for offset in range(0, -days, -1):
-              print(f'=== offset {offset} ===')
-              try:
-                  crawl_day(offset)
-              except Exception as e:
-                  print(f'FAIL offset {offset}: {e}')
+          print('IMPORT OK')
+          print('CRAWL offset 0 START')
+          crawl_day(0)
+          print('CRAWL offset 0 DONE')
           "
