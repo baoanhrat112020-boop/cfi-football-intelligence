@@ -258,31 +258,6 @@ async function footballDataDay(window:Window,fetchFn:FetchLike){
   return{rows,attempt:{stage:'FOOTBALL_DATA',provider:'FOOTBALL_DATA',ok:result.ok,httpStatus:result.status??null,rows:rows.length,error:result.error??null}};
 }
 
-async function filterToCoveredTeams(
-  rows: DayFixtureRow[],
-  env: FixtureDayEnv,
-  fetchFn: FetchLike
-): Promise<DayFixtureRow[]> {
-  if (!rows.length) return rows;
-  if (!env.CFI_DB_BASE_URL || !env.CFI_DB_KEY) return rows;
-  const base = env.CFI_DB_BASE_URL.replace(/\/$/, "");
-  const names = new Set<string>();
-  rows.forEach(r => { if (r.home) names.add(r.home); if (r.away) names.add(r.away); });
-  if (!names.size) return rows;
-  try {
-    const url = `${base}/teams-coverage?names=${encodeURIComponent([...names].join(","))}`;
-    const result: any = await getJson(fetchFn, url, PRIMARY_TIMEOUT_MS, {
-      method: "GET",
-      headers: { accept: "application/json", "x-cfi-key": env.CFI_DB_KEY }
-    });
-    if (!result.ok || !Array.isArray(result.payload?.canonical)) return rows;
-    const canonical = new Set<string>(result.payload.canonical);
-    return rows.filter(r => r.home && r.away && canonical.has(r.home) && canonical.has(r.away));
-  } catch {
-    return rows;
-  }
-}
-
 async function bongdaWapDay(window:Window,fetchFn:FetchLike){
   const [year,month,day]=window.targetDate.split('-');
   const url=`https://bongdawap.com/lich-thi-dau-bong-da-ngay-${day}-${month}-${year}.html`;
@@ -408,7 +383,6 @@ export async function handleFixturesDayRequest(
     return Response.json({status:'INVALID_REQUEST',error:'TIMEZONE_INVALID'},{status:400});
   }
   const {found,generatedAt,cacheHit}=await cachedBrowse({targetDate,timeZone,nowMs},env,fetchFn,nowMs);
-  found.rows=await filterToCoveredTeams(found.rows,env,fetchFn);
   return Response.json({
     status:'OK',
     action:'CFI_FIXTURES_DAY',
