@@ -15,11 +15,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
+      - run: pip install supabase requests
       - name: Crawl future days
         env:
-          CFI_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_URL: https://kovmddkkzttquupdgmel.supabase.co
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
           DAYS: ${{ github.event.inputs.days }}
         run: |
           python -c "
