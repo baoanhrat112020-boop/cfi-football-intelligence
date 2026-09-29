@@ -109,6 +109,7 @@ Deno.serve(async (req) => {
         .select(`
           fixture_id,
           match_date,
+          kickoff_at,
           competition_key,
           competition_name,
           country,
@@ -134,8 +135,13 @@ Deno.serve(async (req) => {
         competition: row.competition_name || row.competition_key || row.competition_segment || null,
         country: row.country || null,
         targetDate: requestedDate,
-        kickoffIso: null,
-        kickoffLocal: null,
+        kickoffIso: row.kickoff_at || null,
+        kickoffLocal: row.kickoff_at
+          ? new Date(row.kickoff_at).toLocaleTimeString("vi-VN", {
+              timeZone: "Asia/Ho_Chi_Minh",
+              hour: "2-digit", minute: "2-digit", hour12: false
+            })
+          : null,
         status: row.status || "CANONICAL",
         canonicalHomeTeamId: row.home_team_id || null,
         canonicalAwayTeamId: row.away_team_id || null,
@@ -247,6 +253,50 @@ Deno.serve(async (req) => {
         readOnly: true,
         canonicalWriteAttempted: false
       });
+    }
+
+    if ((req.method === "GET" || req.method === "POST") && route === "teams-coverage") {
+      let names: string[] = [];
+      if (req.method === "GET") {
+        names = (url.searchParams.get("names") || "").split(",").map(s => s.trim()).filter(Boolean);
+      } else {
+        const body = await req.clone().json().catch(() => ({}));
+        names = Array.isArray(body?.names) ? body.names.map(String) : [];
+      }
+      if (!names.length) return json({ canonical: [], count: 0 });
+
+      const canonicalSet = new Set<string>();
+      const teamIds = new Set<string>();
+
+      // Direct match on canonical_name
+      const { data: direct } = await supabase
+        .from("teams")
+        .select("team_id, canonical_name")
+        .in("canonical_name", names);
+      (direct || []).forEach((t: any) => {
+        if (t.canonical_name) canonicalSet.add(t.canonical_name);
+        if (t.team_id) teamIds.add(t.team_id);
+      });
+
+      // Alias match -> collect team_ids
+      const { data: aliasRows } = await supabase
+        .from("team_aliases")
+        .select("team_id")
+        .in("alias_normalized", names);
+      (aliasRows || []).forEach((a: any) => { if (a.team_id) teamIds.add(a.team_id); });
+
+      // Resolve team_ids to canonical names
+      if (teamIds.size) {
+        const { data: teamsFromIds } = await supabase
+          .from("teams")
+          .select("canonical_name")
+          .in("team_id", [...teamIds]);
+        (teamsFromIds || []).forEach((t: any) => {
+          if (t.canonical_name) canonicalSet.add(t.canonical_name);
+        });
+      }
+
+      return json({ canonical: [...canonicalSet], count: canonicalSet.size });
     }
 
     // =========================================================

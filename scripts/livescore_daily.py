@@ -56,12 +56,54 @@ while True:
 print(f"  {len(cfi_teams)} teams")
 
 all_events = []
-for day in [0, 1, 2]:
+for day in range(-7, 3):
     events = crawl_day(day)
     all_events.extend(events)
     print(f"  day -{day}: {len(events)} events")
 
-finished = [e for e in all_events 
+# Insert SCHEDULED (future) matches to cfi_living_verified_fixtures
+scheduled_ok = 0
+for m in all_events:
+    if m.get("Eps") == "FT":  # skip finished, xử lý ở dưới
+        continue
+    if not m.get("T1") or not m.get("T2"): continue
+    h_name = m["T1"][0].get("Nm")
+    a_name = m["T2"][0].get("Nm")
+    if not h_name or not a_name or h_name == a_name: continue
+    h_id = cfi_teams.get(norm(h_name))
+    a_id = cfi_teams.get(norm(a_name))
+    if not h_id or not a_id: continue
+    esd = str(m.get("Esd",""))
+    if len(esd) < 14: continue
+    md = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}"
+    kickoff = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T{esd[8:10]}:{esd[10:12]}:{esd[12:14]}Z"
+    eid = str(m.get("Eid",""))
+    fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
+    live_row = {
+        "fixture_id": fid,
+        "target_date": md,
+        "kickoff_at": kickoff,
+        "home_team": h_name,
+        "away_team": a_name,
+        "home_team_norm": norm(h_name),
+        "away_team_norm": norm(a_name),
+        "competition": m.get("_stage"),
+        "verification_status": "SCHEDULED",
+        "source_name": "LIVESCORE",
+        "source_url": f"https://www.livescore.com/en/football/match/{eid}",
+        "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
+        "verified_at": datetime.utcnow().isoformat() + "Z",
+        "canonical_home_team_id": h_id,
+        "canonical_away_team_id": a_id,
+    }
+    try:
+        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="home_team_norm,away_team_norm,target_date,kickoff_at").execute()
+        scheduled_ok += 1
+    except:
+        pass
+print(f"Scheduled inserted: {scheduled_ok}")
+
+finished = [e for e in all_events
             if e.get("Eps") == "FT" 
             and e.get("Trh1") is not None 
             and e.get("Trh2") is not None]
@@ -150,4 +192,4 @@ for m in finished:
     except:
         pass
 
-print(f"\nOK: {ok}, Fail: {fail}, Skip: {skip}")
+print(f"\nOK: {ok}, Fail: {fail}, Skip: {skip}, Scheduled: {scheduled_ok}")
