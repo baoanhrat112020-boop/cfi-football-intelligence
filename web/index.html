@@ -654,7 +654,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(fromNetwork){var d=$("todayDateInput").value;if(d)cacheSet(fixtureCacheKey(d),{rows:state.todayFixtures,source:source||"CACHE"});}
   }
   function fixtureKey(f){
-    return [String(f.home||"").toLowerCase(),String(f.away||"").toLowerCase(),String(f.kickoffLocal||f.time||"")].join("|");
+    return [String(f.home||"").toLowerCase(),String(f.away||"").toLowerCase()].join("|");
   }
   function mergeFixtureRows(groups){
     var map=new Map();
