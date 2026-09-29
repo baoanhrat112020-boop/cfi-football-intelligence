@@ -1,7 +1,11 @@
 import os, re, uuid as U, json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+VN_TZ = timezone(timedelta(hours=7))
 from curl_cffi import requests as cf
 from supabase import create_client
+import sys
+sys.path.insert(0, 'scripts')
+from cfi_tier import classify_tier
 
 SB_URL = "https://kovmddkkzttquupdgmel.supabase.co"
 SB_KEY = os.environ.get("SB_SERVICE_ROLE_KEY", "")
@@ -69,18 +73,32 @@ for m in finished:
     h_name = m["T1"][0].get("Nm")
     a_name = m["T2"][0].get("Nm")
     if not h_name or not a_name or h_name == a_name: continue
-    h_id = cfi_teams.get(norm(h_name))
-    a_id = cfi_teams.get(norm(a_name))
-    if not h_id or not a_id:
-        skip += 1; continue
+    def get_or_create_team(name):
+        n = norm(name)
+        if n in cfi_teams:
+            return cfi_teams[n]
+        tid = str(U.uuid5(U.NAMESPACE_DNS, f"cfi_team:{n}"))
+        try:
+            sb.table("teams").upsert({
+                "team_id": tid,
+                "canonical_name": name,
+            }, on_conflict="team_id").execute()
+        except Exception:
+            pass
+        cfi_teams[n] = tid
+        return tid
+
+    h_id = get_or_create_team(h_name)
+    a_id = get_or_create_team(a_name)
     try:
         ft_h,ft_a = int(m.get("Tr1")), int(m.get("Tr2"))
         ht_h,ht_a = int(m.get("Trh1")), int(m.get("Trh2"))
     except: continue
     if ht_h > ft_h or ht_a > ft_a: continue
     esd = str(m.get("Esd",""))
-    if len(esd) < 8: continue
-    md = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}"
+    if len(esd) < 14: continue
+    utc_dt = datetime.strptime(esd[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    md = utc_dt.astimezone(VN_TZ).strftime("%Y-%m-%d")
     eid = str(m.get("Eid",""))
     if not eid: continue
     fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
@@ -91,6 +109,7 @@ for m in finished:
         "ft_home": ft_h, "ft_away": ft_a,
         "status": "CANONICAL",
         "competition_key": "livescore:" + (m.get("_league") or m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50],
+        "tier": classify_tier(("livescore:" + (m.get("_league") or m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50])),
         "competition_name": m.get("_league") or m.get("_stage"),
     }
     try:
