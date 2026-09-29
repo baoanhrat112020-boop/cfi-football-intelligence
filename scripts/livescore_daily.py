@@ -72,11 +72,17 @@ for m in all_events:
     if not h_name or not a_name or h_name == a_name: continue
     h_id = cfi_teams.get(norm(h_name))
     a_id = cfi_teams.get(norm(a_name))
-    if not h_id or not a_id: continue
+    # Cho phép null team_id cho SCHEDULED (national teams, clubs lạ)
+    # Vẫn insert để app hiển thị; predict sẽ báo CANONICAL_IDENTITY_UNRESOLVED nếu cần
     esd = str(m.get("Esd",""))
-    if len(esd) < 14: continue
-    md = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}"
-    kickoff = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T{esd[8:10]}:{esd[10:12]}:{esd[12:14]}Z"
+    if len(esd) < 8: continue
+    if len(esd) >= 14:
+        kickoff = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T{esd[8:10]}:{esd[10:12]}:{esd[12:14]}Z"
+    else:
+        # Date-only Esd → default 12:00 UTC
+        kickoff = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T12:00:00Z"
+    utc_dt = datetime.strptime(kickoff.replace("Z",""), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    md = utc_dt.astimezone(VN_TZ).strftime("%Y-%m-%d")
     eid = str(m.get("Eid",""))
     fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
     live_row = {
@@ -88,7 +94,7 @@ for m in all_events:
         "home_team_norm": norm(h_name),
         "away_team_norm": norm(a_name),
         "competition": m.get("_stage"),
-        "verification_status": "SCHEDULED",
+        "verification_status": "VERIFIED",
         "source_name": "LIVESCORE",
         "source_url": f"https://www.livescore.com/en/football/match/{eid}",
         "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
@@ -97,7 +103,7 @@ for m in all_events:
         "canonical_away_team_id": a_id,
     }
     try:
-        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="home_team_norm,away_team_norm,target_date,kickoff_at").execute()
+        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id").execute()
         scheduled_ok += 1
     except:
         pass
@@ -188,7 +194,7 @@ for m in finished:
         "canonical_away_team_id": a_id,
     }
     try:
-        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="home_team_norm,away_team_norm,target_date,kickoff_at").execute()
+        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id").execute()
     except:
         pass
 
