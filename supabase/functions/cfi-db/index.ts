@@ -249,7 +249,7 @@ Deno.serve(async (req) => {
         requestedDate
       ].join("|");
 
-      for (const row of canonicalFixtures) {
+      for (const row of allFixtures) {
         merged.set(keyOf(row), row);
       }
 
@@ -284,7 +284,7 @@ Deno.serve(async (req) => {
         targetDate: requestedDate,
         source: bridgeFixtures.length ? "CFI_BIGDB_PLUS_AISCORE_BRIDGE" : "CFI_BIGDB",
         count: fixtures.length,
-        canonicalCount: canonicalFixtures.length,
+        canonicalCount: allFixtures.length,
         aiScoreBridgeCount: bridgeFixtures.length,
         aiScoreBridgeFresh: bridgeFresh,
         aiScoreBridgeGeneratedAt: bridgeGeneratedAt,
