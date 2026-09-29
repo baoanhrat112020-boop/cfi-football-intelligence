@@ -150,6 +150,45 @@ Deno.serve(async (req) => {
         sourceProviders: ["CFI_BIGDB"]
       })).filter((row: any) => row.home && row.away);
 
+    // Query SCHEDULED fixtures từ cfi_living_verified_fixtures
+    const { data: verifiedRows } = await supabase
+      .from("cfi_living_verified_fixtures")
+      .select("fixture_id,target_date,kickoff_at,home_team,away_team,competition,canonical_home_team_id,canonical_away_team_id")
+      .eq("target_date", requestedDate)
+      .limit(1000);
+
+    const verifiedFixtures = (verifiedRows || []).map((row: any) => ({
+      provider: "CFI_LIVESCORE",
+      providerId: String(row.fixture_id),
+      home: row.home_team || "",
+      away: row.away_team || "",
+      competition: row.competition || null,
+      country: null,
+      targetDate: requestedDate,
+      kickoffIso: row.kickoff_at || null,
+      kickoffLocal: row.kickoff_at
+        ? new Date(row.kickoff_at).toLocaleTimeString("vi-VN", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            hour: "2-digit", minute: "2-digit", hour12: false
+          })
+        : null,
+      status: "SCHEDULED",
+      canonicalHomeTeamId: row.canonical_home_team_id || null,
+      canonicalAwayTeamId: row.canonical_away_team_id || null,
+      season: null,
+      provenance: "LIVESCORE_VERIFIED",
+      sourceProviders: ["LIVESCORE"]
+    })).filter((r: any) => r.home && r.away);
+
+    const canonicalKeys = new Set(canonicalFixtures.map((r: any) =>
+      `${r.home}|${r.away}|${r.kickoffIso || ""}`.toLowerCase()
+    ));
+    const newVerified = verifiedFixtures.filter((r: any) =>
+      !canonicalKeys.has(`${r.home}|${r.away}|${r.kickoffIso || ""}`.toLowerCase())
+    );
+
+    const allFixtures = [...canonicalFixtures, ...newVerified];
+
       let bridgeFixtures: any[] = [];
       let bridgeFresh = false;
       let bridgeGeneratedAt: string | null = null;
