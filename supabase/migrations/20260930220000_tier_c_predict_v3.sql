@@ -24,7 +24,8 @@ BEGIN
 
   elo_diff := rh - ra;
 
-  total_xg := CASE WHEN neutral THEN 2.45 ELSE 2.55 END;
+  total_xg := (CASE WHEN neutral THEN 2.45 ELSE 2.55 END)
+              + 0.40 * LEAST(abs(rh - ra), 500) / 500.0;
 
   share_home := 0.5
     + (CASE WHEN neutral THEN 0.0 ELSE 0.05 END)
@@ -84,7 +85,7 @@ BEGIN
     'xg_home', ROUND(xg_home::numeric, 2),
     'xg_away', ROUND(xg_away::numeric, 2),
     'tier', 'C',
-    'model', 'elo_prior_v3',
+    'model', 'elo_prior_v3.1',
     'confidence', 'LOW',
     'elo_home', rh, 'elo_away', ra,
     'low_sample', (rh_matches < 30 OR ra_matches < 30)
