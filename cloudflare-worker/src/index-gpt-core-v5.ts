@@ -221,6 +221,22 @@ export default{
       const response=await v4.fetch(fullPredictRequest(request,input),env,ctx);
       if(!response.headers.get('content-type')?.includes('application/json'))return response;
       const body:any=await readJson(response);patchRuntimeTelemetry(body);
+      const TIER_C_ERRORS=['ZERO_EXACT_TEAM_EVIDENCE','INSUFFICIENT_TEAM_EVIDENCE','INSUFFICIENT_DATA','EVIDENCE_INSUFFICIENT'];
+      if(!response.ok&&body?.error&&TIER_C_ERRORS.includes(String(body.error))){
+        try{
+          const tcReq=new Request('https://cfi.internal/api/match-context',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({home:input?.home,away:input?.away,target_date:input?.target_date})});
+          const tcResp=await handleMatchContext(tcReq,env);
+          const tcBody:any=await readJson(tcResp);
+          if(tcBody?.status==='OK_TIER_C'&&tcBody?.prediction){
+            const pr=tcBody.prediction;
+            const mp=Math.max(pr.p_home,pr.p_draw,pr.p_away);
+            const pick=pr.p_home===mp?'HOME':pr.p_away===mp?'AWAY':'DRAW';
+            const tc:any={status:'SUCCESS',engine:FINAL_VERSION,tierC:true,tierCModel:pr.model,target:tcBody.target,tierCReason:tcBody.reason,tierCEvidenceCount:tcBody.evidenceCount,strictPrior:{required:false,verified:false,tierCFallback:true},evidence:{counts:{home:tcBody.evidenceCount?.home??0,away:tcBody.evidenceCount?.away??0,h2h:0}},outputV3:{version:'CFI_TIER_C_V1',final:'WATCH',primary:{market:'1X2_FT',pick:pick,probability:mp,confidence:'LOW',fairOdds:Number((1/mp).toFixed(2)),decisionUse:false,researchState:'TIER_C_ELO_FALLBACK'},gates:{strictPrior:false,evidenceSufficient:false,consistency:true,tierCFallback:true},quality:{dataQuality:'LOW',modelAgreement:'LOW',predictionGrade:'C'},probabilities:{home:pr.p_home,draw:pr.p_draw,away:pr.p_away},elo:{home:pr.elo_home,away:pr.elo_away},marketSummary:{oneXTwo:{ft:{modelPick:pick,modelProbability:mp}}},primaryTargets:{contract:'CFI_TIER_C',count:0,codes:[]},visibility:{tierC:true,reason:'ELO_ONLY_FALLBACK'}}};
+            patchRuntimeTelemetry(tc);
+            return Response.json(tc,{status:200});
+          }
+        }catch(_e){}
+      }
       if(!response.ok||!shouldCompactPredict(request,input))return Response.json(body,{status:response.status});
       return Response.json(compactPrediction(body),{status:response.status});
     }
