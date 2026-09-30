@@ -69,18 +69,18 @@ jobs:
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          bash ios/scripts/package-unsigned-ipa.sh             "$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"             "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa"
+          bash ios/scripts/package-unsigned-ipa.sh             "$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"             "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build5-unsigned.ipa"
 
       - name: Inspect IPA
         run: |
           set -euo pipefail
-          unzip -l "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa"
-          test -s "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa"
+          unzip -l "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build5-unsigned.ipa"
+          test -s "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build5-unsigned.ipa"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: CFI-iOS-v0.2.2-beta1-build4
-          path: ${{ runner.temp }}/CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa
+          name: CFI-iOS-v0.2.2-beta1-build5
+          path: ${{ runner.temp }}/CFI-iOS-v0.2.2-beta1-build5-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
