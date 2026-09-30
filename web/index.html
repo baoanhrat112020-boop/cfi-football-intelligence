@@ -1016,8 +1016,14 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     ref.innerHTML='<div class="scoreline-ref-label">Top 3 — chỉ để tham khảo phân bố, không phải dự đoán chính</div><div class="scoreline-ref-grid">'+scorelineRefCol("HT",ht)+scorelineRefCol("FT",ft)+'</div>';
   }
   function renderPrediction(data){
-    var out=unwrap(data);state.prediction=out;var rows=collectCore(out);var list=$("marketList");list.innerHTML="";
-    if(!rows.length){list.innerHTML='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
+    var isTierC=data&&data.tierC===true;
+    var out=unwrap(data);state.prediction=out;var rows;
+    if(isTierC&&out.probabilities){
+      rows=[{market:"HOME",p:Number(out.probabilities.home)*100,decision:"WATCH"},{market:"DRAW",p:Number(out.probabilities.draw)*100,decision:"WATCH"},{market:"AWAY",p:Number(out.probabilities.away)*100,decision:"WATCH"}];
+    }else{rows=collectCore(out);}
+    var list=$("marketList");list.innerHTML="";
+    if(isTierC){list.innerHTML='<div class="info-strip" style="border-color:#8a6c13;background:linear-gradient(180deg,#2c2a15,#1a201b);color:#ffd23f;margin-bottom:10px"><span>⚠️</span><span><b>TIER C — ELO FALLBACK</b><br>Thiếu dữ liệu lịch sử. Prediction dùng ELO + home advantage, confidence LOW. Không phải model Tier A. Chỉ tham khảo.</span></div>';}
+    if(!rows.length){list.innerHTML+='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
     rows.forEach(function(r){var s=signal(r);var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(r.market)+"</b><div class='prob'>"+(r.p==null?"—":r.p.toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)});
     var valid=rows.map(function(r){return r.p}).filter(function(x){return x!=null});var top=valid.length?Math.max.apply(Math,valid):null;
     $("topProbability").textContent=top==null?"—":top.toFixed(0)+"%";$("scoreRing").style.setProperty("--p",(top||0)+"%");
@@ -1027,7 +1033,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     $("gateConsistency").textContent=gates.consistency===true?"PASS":(gates.consistency===false?"FAIL":"—");$("finalDecision").textContent=out.final||"—";
     var grades=computeResultGrades(out);
     $("badgeQualityVal").textContent=grades.quality+"/100";
-    $("badgeAgreementVal").textContent=grades.agreement||"—";$("badgeAgreement").className="badge-chip"+(grades.agreement?" agree-"+grades.agreement:"");
+    $("badgeAgreementVal").textContent=isTierC?"LOW":(grades.agreement||"—");$("badgeAgreement").className="badge-chip"+(isTierC?" agree-LOW":(grades.agreement?" agree-"+grades.agreement:""));
     $("badgeGradeVal").textContent=grades.grade;$("badgeGrade").className="badge-chip grade-"+grades.grade;
     renderScoreline(out);renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
   }
