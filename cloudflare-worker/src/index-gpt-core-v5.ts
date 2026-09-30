@@ -7,7 +7,7 @@ import { SEVEN_PLUS_FT_SAFETY_VERSION } from '../../src/prediction/seven-plus-ft
 import { MARKET_COHERENCE_VERSION } from '../../src/prediction/market-coherence.ts';
 import { handleFixturesDayRequest } from '../../src/runtime/fixtures-day-fast.ts';
 
-type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
+type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;SUPABASE_SERVICE_KEY?:string;AI?:Ai};
 const TIER_C_LOG_SUPABASE_URL='https://kovmddkkzttquupdgmel.supabase.co';
 type FeedRow={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string;sourceUrls?:string[];discoveredAt?:string};
 
@@ -241,7 +241,7 @@ export default{
               {market:'BTTS YES',probability:pr.p_btts,decision:'WATCH',confidence:'LOW'}
             ];
             const tc:any={status:'SUCCESS',engine:FINAL_VERSION,tierC:true,tierCModel:pr.model,target:tcBody.target,tierCReason:tcBody.reason,tierCEvidenceCount:tcBody.evidenceCount,strictPrior:{required:false,verified:false,tierCFallback:true},evidence:{counts:{home:tcBody.evidenceCount?.home??0,away:tcBody.evidenceCount?.away??0,h2h:0}},outputV3:{version:'CFI_TIER_C_V1',final:'WATCH',primary:{market:'1X2_FT',pick:pick,probability:mp,confidence:'LOW',fairOdds:Number((1/mp).toFixed(2)),decisionUse:false,researchState:'TIER_C_ELO_FALLBACK'},gates:{strictPrior:false,evidenceSufficient:false,consistency:true,tierCFallback:true},quality:{dataQuality:'LOW',modelAgreement:'LOW',predictionGrade:'C'},probabilities:{home:pr.p_home,draw:pr.p_draw,away:pr.p_away},markets6:markets6,expectedGoals:{home:pr.xg_home,away:pr.xg_away,total:Number((Number(pr.xg_home)+Number(pr.xg_away)).toFixed(2))},elo:{home:pr.elo_home,away:pr.elo_away},lowSample:pr.low_sample===true,marketSummary:{oneXTwo:{ft:{modelPick:pick,modelProbability:mp}}},primaryTargets:{contract:'CFI_TIER_C',count:6,codes:['HOME','DRAW','AWAY','OVER 2.5','UNDER 2.5','BTTS YES']},visibility:{tierC:true,reason:'ELO_ONLY_FALLBACK'}}};
-            if(env.CFI_DB_KEY)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/tier_c_log`,{method:'POST',headers:{'apikey':env.CFI_DB_KEY,'Authorization':`Bearer ${env.CFI_DB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({match_id:`${tcBody.identity?.homeTeamId}_${tcBody.identity?.awayTeamId}_${tcBody.target?.date}`,home_team:tcBody.target?.home,away_team:tcBody.target?.away,p_home:pr.p_home,p_draw:pr.p_draw,p_away:pr.p_away,p_over25:pr.p_over25,p_btts:pr.p_btts,xg_home:pr.xg_home,xg_away:pr.xg_away,elo_home:pr.elo_home,elo_away:pr.elo_away,model:'elo_prior_v3.1'})}).catch(()=>{}));
+            if(env.SUPABASE_SERVICE_KEY)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/tier_c_log`,{method:'POST',headers:{'apikey':env.SUPABASE_SERVICE_KEY,'Authorization':`Bearer ${env.SUPABASE_SERVICE_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({match_id:`${tcBody.identity?.homeTeamId}_${tcBody.identity?.awayTeamId}_${tcBody.target?.date}`,home_team:tcBody.target?.home,away_team:tcBody.target?.away,p_home:pr.p_home,p_draw:pr.p_draw,p_away:pr.p_away,p_over25:pr.p_over25,p_btts:pr.p_btts,xg_home:pr.xg_home,xg_away:pr.xg_away,elo_home:pr.elo_home,elo_away:pr.elo_away,model:'elo_prior_v3.1'})}).catch(()=>{}));
             patchRuntimeTelemetry(tc);
             return Response.json(tc,{status:200});
           }
