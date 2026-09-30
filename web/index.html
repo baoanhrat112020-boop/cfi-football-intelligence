@@ -639,7 +639,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var frag=document.createDocumentFragment();
     state.todayFixtures.forEach(function(f){
       var b=document.createElement("button");b.className="fixture";b.type="button";
-      var time=f.kickoffLocal||f.time||"—",league=f.competition||f.league||"Unknown competition";
+      var time=f.kickoffLocal||f.time||"—";var league=f.competition||f.league||"Unknown competition";
       b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span><span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc((f.provider||"")+(f.country?" · "+f.country:""))+'</div>';
       b.onclick=function(){
         var date=$("todayDateInput").value;

@@ -304,13 +304,12 @@ export async function discoverDayFixturesFast(
   fetchFn:FetchLike=fetch
 ){
   const attempts:any[]=[];
-  const [big,fd,bdw]=await Promise.all([
+  const [big,fd]=await Promise.all([
     bigDbDay(window,env,fetchFn),
-    footballDataDay(window,fetchFn),
-    bongdaWapDay(window,fetchFn)
+    footballDataDay(window,fetchFn)
   ]);
 
-  attempts.push(big.attempt,fd.attempt,bdw.attempt);
+  attempts.push(big.attempt,fd.attempt);
 
   // Daily fixture discovery is a browse surface, not a prediction gate.
   // Use every available read-only source in parallel so BigDB remains canonical
@@ -318,8 +317,7 @@ export async function discoverDayFixturesFast(
   // small minimum has been reached.
   const rows=mergeRows([
     ...big.rows,
-    ...fd.rows,
-    ...bdw.rows
+    ...fd.rows
   ]);
 
   const providers=[...new Set(rows.flatMap(row=>row.sourceProviders||[row.provider]))];
@@ -329,7 +327,7 @@ export async function discoverDayFixturesFast(
     latencyMode:'PARALLEL_ALL_DAY_MULTI_SOURCE',
     targetRows:TARGET_ROWS,
     primarySources:['CFI_BIGDB_WITH_AISCORE_PC_BRIDGE','FOOTBALL_DATA'],
-    coverageSources:['BONGDAWAP']
+    coverageSources:[]
   };
 }
 
@@ -382,17 +380,38 @@ export async function handleFixturesDayRequest(
   try{new Intl.DateTimeFormat('en',{timeZone}).format(0)}catch{
     return Response.json({status:'INVALID_REQUEST',error:'TIMEZONE_INVALID'},{status:400});
   }
-  const {found,generatedAt,cacheHit}=await cachedBrowse({targetDate,timeZone,nowMs},env,fetchFn,nowMs);
+  const prevD=(()=>{const dt=new Date(targetDate+'T00:00:00Z');dt.setUTCDate(dt.getUTCDate()-1);return dt.toISOString().slice(0,10);})();
+  const [curr,prev]=await Promise.all([
+    cachedBrowse({targetDate,timeZone,nowMs},env,fetchFn,nowMs),
+    cachedBrowse({targetDate:prevD,timeZone,nowMs},env,fetchFn,nowMs)
+  ]);
+  const found=curr.found,generatedAt=curr.generatedAt,cacheHit=curr.cacheHit;
+  const allRows=[...found.rows,...prev.found.rows];
+  const nowParts=localParts(new Date(nowMs).toISOString(),timeZone);
+  const isToday=nowParts.date===targetDate;
+  const seen=new Set<string>();
+  const visibleRows=allRows.filter((row:any)=>{
+    if(row.status==='finished')return false;
+    if(!row.kickoffIso)return false;
+    const kd=localParts(row.kickoffIso,timeZone).date;
+    if(kd!==targetDate)return false;
+    if(isToday&&row.kickoff!=null&&row.kickoff<=nowMs)return false;
+    const k=String(row.canonicalHomeTeamId||row.home)+'|'+String(row.canonicalAwayTeamId||row.away);
+    if(seen.has(k))return false;
+    seen.add(k);
+    return true;
+  }).sort((a:any,b:any)=>String(a.kickoffIso).localeCompare(String(b.kickoffIso)));
+  const rowsWithOffset=visibleRows;
   return Response.json({
     status:'OK',
     action:'CFI_FIXTURES_DAY',
-    version:'CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY',
+    version:'CFI_FIXTURES_DAY_V11_NO_BONGDAWAP',
     source:found.provider,
     providers:found.providers,
     targetDate,timeZone,
     freshness:{generatedAt:new Date(generatedAt).toISOString(),cacheHit,maxCacheAgeSeconds:30},
-    counts:{fixtures:found.rows.length,targetRows:found.targetRows},
-    rows:found.rows,
+    counts:{fixtures:rowsWithOffset.length,targetRows:found.targetRows,filteredToday:isToday},
+    rows:rowsWithOffset,
     attempts:found.attempts,
     sourcePolicy:{
       primary:found.primarySources,

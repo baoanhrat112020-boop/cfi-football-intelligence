@@ -2,6 +2,9 @@
 from datetime import datetime, timedelta
 from curl_cffi import requests as cf
 from supabase import create_client
+import sys
+sys.path.insert(0, 'scripts')
+from cfi_tier import classify_tier
 
 SB_URL = "https://kovmddkkzttquupdgmel.supabase.co"
 SB_KEY = os.environ.get("SB_SERVICE_ROLE_KEY", "")
@@ -96,6 +99,7 @@ for m in all_matches:
         "ft_home": None, "ft_away": None,
         "status": "SCHEDULED",
         "competition_key": "flashscore:" + m["league"].lower().replace(": ","_").replace(" ","_")[:50],
+        "tier": classify_tier("flashscore:" + m["league"].lower().replace(": ","_").replace(" ","_")[:50]),
         "competition_name": m["league"],
     }
     try:

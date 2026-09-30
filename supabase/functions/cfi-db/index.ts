@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+﻿import { createClient } from "npm:@supabase/supabase-js@2";
 import { authorizeCfiDbRequest } from "../_shared/cfi-auth.ts";
 
 const corsHeaders = {
@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
         sourceProviders: ["CFI_BIGDB"]
       })).filter((row: any) => row.home && row.away);
 
-    // Query SCHEDULED fixtures từ cfi_living_verified_fixtures
+    // Query SCHEDULED fixtures tá»« cfi_living_verified_fixtures
     const { data: verifiedRows } = await supabase
       .from("cfi_living_verified_fixtures")
       .select("fixture_id,target_date,kickoff_at,home_team,away_team,competition,canonical_home_team_id,canonical_away_team_id")
@@ -393,7 +393,29 @@ Deno.serve(async (req) => {
     // =========================================================
     // H2H
     // =========================================================
-    if (req.method === "GET" && route === "h2h") {
+        // =========================================================
+    // TIER C PREDICT (ELO fallback for missing-data matches)
+    // =========================================================
+    if (req.method === "POST" && route === "tier-c-predict") {
+      const body = await req.json().catch(() => ({}));
+      const home_id = String(body.home_id || "");
+      const away_id = String(body.away_id || "");
+      const neutral = Boolean(body.neutral);
+      if (!home_id || !away_id) return json({ status: "ERROR", error: "MISSING_TEAM_IDS" }, 400);
+      const { data: homeElo } = await supabase.from("teams_elo").select("rating").eq("team_id", home_id).maybeSingle();
+      const { data: awayElo } = await supabase.from("teams_elo").select("rating").eq("team_id", away_id).maybeSingle();
+      const rh = homeElo?.rating ?? 1500;
+      const ra = awayElo?.rating ?? 1500;
+      const diff = rh - ra + (neutral ? 0 : 100);
+      const pRaw = 1 / (1 + Math.pow(10, -diff / 400));
+      const pDraw = 0.26;
+      const pHome = pRaw * (1 - pDraw);
+      const pAway = (1 - pRaw) * (1 - pDraw);
+      return json({ status: "OK", tier: "C", model: "elo_prior_v1", confidence: "LOW",
+        p_home: Number(pHome.toFixed(4)), p_draw: pDraw, p_away: Number(pAway.toFixed(4)),
+        elo_home: rh, elo_away: ra });
+    }
+if (req.method === "GET" && route === "h2h") {
       const home = (url.searchParams.get("home") || "").trim();
       const away = (url.searchParams.get("away") || "").trim();
 

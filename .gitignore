@@ -1,22 +1,95 @@
-node_modules/
-local-node/cache/
-local-node/logs/
-local-node/state/
+﻿# Temp / debug
+check_*.py
+debug_*.py
+fix_*.py
+patch_*.py
+test_*.py
+dbg_*.py
+inspect*.py
+probe*.py
+q*.py
+tmp.py
+temp_*.ts
+fast_*.py
+verify_*.py
+walk_forward*.py
+dixon_*.py
+show_code.py
+export_csv.py
+backfill_tier.py
+
+# Logs
+*.log
+*_log.txt
+*_out.txt
+*_log2.txt
+*_log.txt
+crawl_*.txt
+dbg_*.txt
+esd_check.txt
+db_snapshot.txt
+inspect*.txt
+inject_odds.py
+minor_predict*.txt
+odds_patch*.txt
+patch_*_log.txt
+patch_*_out.txt
+sched_fix_log.txt
+test_insert.txt
+
+# Data dumps
+*.dump
+*.pkl
+*.csv
+*.json.bak
+backup_*/
+tm_data/
+fixtures_cache.pkl
+cfi_models*.json
+all_team_logos.json
+
+# Cache
+__pycache__/
+*.pyc
+.cache/
+
+# Local config
 .env
 .env.*
-local-node/browser/fixture-collector/input/
-audit-reports/
-supabase/.temp/
-*.bak
-cfi-live-board-request-*.json
-cfi-live-board-result-*.json
-cfi-practical-small-result-*.json
-cfi-production-acquisition-smoke-*.json
-cfi-result-collector-*.zip
-gitignore-snippet.txt
-package-json-scripts-snippet.json
-/.cfi-audit/
-/audit-reports/
-/supabase/.temp/
+Windows PowerShell.lnk
 
-/.cfi-backup/
+# Windows
+Thumbs.db
+desktop.ini
+
+# Node
+node_modules/
+
+# Backup files
+*.bak
+*.pre-logos.bak
+*.ts.bak
+*.py.bak
+
+# SQL temp
+scripts/_*.sql
+kalman_state*.sql
+
+# Local node debug
+local-node/_patch.py
+local-node/local-node/
+
+# Supabase temp
+supabase/.temp/
+
+# Other junk
+ht_pipeline*.py
+cfi_all_experiments.py
+backup_rest.py
+diag_match.py
+dump_predict.py
+debug_output.txt
+sample_*.txt
+_cfi_context.txt
+_wf.txt
+CFI_*.txt

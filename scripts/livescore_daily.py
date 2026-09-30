@@ -55,11 +55,26 @@ while True:
     if len(r.data) < 1000: break
 print(f"  {len(cfi_teams)} teams")
 
+existing_map = {}
+_off = 0
+while True:
+    _r = sb.table("cfi_living_verified_fixtures").select("fixture_id,kickoff_at").range(_off, _off+999).execute()
+    if not _r.data: break
+    for _x in _r.data:
+        _k = _x.get("kickoff_at")
+        if _k:
+            try:
+                existing_map[_x["fixture_id"]] = datetime.fromisoformat(str(_k).replace("Z","+00:00"))
+            except: pass
+    _off += 1000
+    if len(_r.data) < 1000: break
+print(f"  Loaded {len(existing_map)} existing fixtures")
+
 all_events = []
-for day in range(-7, 3):
+for day in range(-1, 2):
     events = crawl_day(day)
     all_events.extend(events)
-    print(f"  day -{day}: {len(events)} events")
+    print(f"  day {day}: {len(events)} events")
 
 # Insert SCHEDULED (future) matches to cfi_living_verified_fixtures
 scheduled_ok = 0
@@ -98,10 +113,16 @@ for m in all_events:
         "source_name": "LIVESCORE",
         "source_url": f"https://www.livescore.com/en/football/match/{eid}",
         "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
-        "verified_at": datetime.utcnow().isoformat() + "Z",
+        "verified_at": datetime.now(timezone.utc).isoformat(),
         "canonical_home_team_id": h_id,
         "canonical_away_team_id": a_id,
     }
+    if fid in existing_map:
+        try:
+            _new_dt = datetime.fromisoformat(kickoff.replace("Z","+00:00"))
+            if existing_map[fid] == _new_dt:
+                continue
+        except: pass
     try:
         sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id").execute()
         scheduled_ok += 1
@@ -189,10 +210,16 @@ for m in finished:
         "source_name": "LIVESCORE",
         "source_url": f"https://www.livescore.com/en/football/match/{eid}",
         "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
-        "verified_at": datetime.utcnow().isoformat() + "Z",
+        "verified_at": datetime.now(timezone.utc).isoformat(),
         "canonical_home_team_id": h_id,
         "canonical_away_team_id": a_id,
     }
+    if fid in existing_map:
+        try:
+            _new_dt = datetime.fromisoformat(kickoff.replace("Z","+00:00"))
+            if existing_map[fid] == _new_dt:
+                continue
+        except: pass
     try:
         sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id").execute()
     except:
