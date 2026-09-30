@@ -402,18 +402,14 @@ Deno.serve(async (req) => {
       const away_id = String(body.away_id || "");
       const neutral = Boolean(body.neutral);
       if (!home_id || !away_id) return json({ status: "ERROR", error: "MISSING_TEAM_IDS" }, 400);
-      const { data: homeElo } = await supabase.from("teams_elo").select("rating").eq("team_id", home_id).maybeSingle();
-      const { data: awayElo } = await supabase.from("teams_elo").select("rating").eq("team_id", away_id).maybeSingle();
-      const rh = homeElo?.rating ?? 1500;
-      const ra = awayElo?.rating ?? 1500;
-      const diff = rh - ra + (neutral ? 0 : 100);
-      const pRaw = 1 / (1 + Math.pow(10, -diff / 400));
-      const pDraw = 0.26;
-      const pHome = pRaw * (1 - pDraw);
-      const pAway = (1 - pRaw) * (1 - pDraw);
-      return json({ status: "OK", tier: "C", model: "elo_prior_v1", confidence: "LOW",
-        p_home: Number(pHome.toFixed(4)), p_draw: pDraw, p_away: Number(pAway.toFixed(4)),
-        elo_home: rh, elo_away: ra });
+      const { data: rpcData, error: rpcError } = await supabase.rpc("tier_c_predict", {
+        home_id: home_id,
+        away_id: away_id,
+        neutral: neutral
+      });
+      if (rpcError) return json({ status: "ERROR", error: "RPC_FAILED", detail: rpcError.message }, 500);
+      if (!rpcData) return json({ status: "ERROR", error: "NO_PREDICTION" }, 404);
+      return json({ status: "OK", ...rpcData });
     }
 if (req.method === "GET" && route === "h2h") {
       const home = (url.searchParams.get("home") || "").trim();

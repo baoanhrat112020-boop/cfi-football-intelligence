@@ -231,7 +231,15 @@ export default{
             const pr=tcBody.prediction;
             const mp=Math.max(pr.p_home,pr.p_draw,pr.p_away);
             const pick=pr.p_home===mp?'HOME':pr.p_away===mp?'AWAY':'DRAW';
-            const tc:any={status:'SUCCESS',engine:FINAL_VERSION,tierC:true,tierCModel:pr.model,target:tcBody.target,tierCReason:tcBody.reason,tierCEvidenceCount:tcBody.evidenceCount,strictPrior:{required:false,verified:false,tierCFallback:true},evidence:{counts:{home:tcBody.evidenceCount?.home??0,away:tcBody.evidenceCount?.away??0,h2h:0}},outputV3:{version:'CFI_TIER_C_V1',final:'WATCH',primary:{market:'1X2_FT',pick:pick,probability:mp,confidence:'LOW',fairOdds:Number((1/mp).toFixed(2)),decisionUse:false,researchState:'TIER_C_ELO_FALLBACK'},gates:{strictPrior:false,evidenceSufficient:false,consistency:true,tierCFallback:true},quality:{dataQuality:'LOW',modelAgreement:'LOW',predictionGrade:'C'},probabilities:{home:pr.p_home,draw:pr.p_draw,away:pr.p_away},elo:{home:pr.elo_home,away:pr.elo_away},marketSummary:{oneXTwo:{ft:{modelPick:pick,modelProbability:mp}}},primaryTargets:{contract:'CFI_TIER_C',count:0,codes:[]},visibility:{tierC:true,reason:'ELO_ONLY_FALLBACK'}}};
+            const markets6=[
+              {market:'HOME',probability:pr.p_home,decision:'WATCH',confidence:'LOW'},
+              {market:'DRAW',probability:pr.p_draw,decision:'WATCH',confidence:'LOW'},
+              {market:'AWAY',probability:pr.p_away,decision:'WATCH',confidence:'LOW'},
+              {market:'OVER 2.5',probability:pr.p_over25,decision:'WATCH',confidence:'LOW'},
+              {market:'UNDER 2.5',probability:pr.p_under25,decision:'WATCH',confidence:'LOW'},
+              {market:'BTTS YES',probability:pr.p_btts,decision:'WATCH',confidence:'LOW'}
+            ];
+            const tc:any={status:'SUCCESS',engine:FINAL_VERSION,tierC:true,tierCModel:pr.model,target:tcBody.target,tierCReason:tcBody.reason,tierCEvidenceCount:tcBody.evidenceCount,strictPrior:{required:false,verified:false,tierCFallback:true},evidence:{counts:{home:tcBody.evidenceCount?.home??0,away:tcBody.evidenceCount?.away??0,h2h:0}},outputV3:{version:'CFI_TIER_C_V1',final:'WATCH',primary:{market:'1X2_FT',pick:pick,probability:mp,confidence:'LOW',fairOdds:Number((1/mp).toFixed(2)),decisionUse:false,researchState:'TIER_C_ELO_FALLBACK'},gates:{strictPrior:false,evidenceSufficient:false,consistency:true,tierCFallback:true},quality:{dataQuality:'LOW',modelAgreement:'LOW',predictionGrade:'C'},probabilities:{home:pr.p_home,draw:pr.p_draw,away:pr.p_away},markets6:markets6,expectedGoals:{home:pr.xg_home,away:pr.xg_away,total:Number((Number(pr.xg_home)+Number(pr.xg_away)).toFixed(2))},elo:{home:pr.elo_home,away:pr.elo_away},lowSample:pr.low_sample===true,marketSummary:{oneXTwo:{ft:{modelPick:pick,modelProbability:mp}}},primaryTargets:{contract:'CFI_TIER_C',count:6,codes:['HOME','DRAW','AWAY','OVER 2.5','UNDER 2.5','BTTS YES']},visibility:{tierC:true,reason:'ELO_ONLY_FALLBACK'}}};
             patchRuntimeTelemetry(tc);
             return Response.json(tc,{status:200});
           }

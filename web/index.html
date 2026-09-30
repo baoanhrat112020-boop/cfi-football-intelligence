@@ -1018,7 +1018,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function renderPrediction(data){
     var isTierC=data&&data.tierC===true;
     var out=unwrap(data);state.prediction=out;var rows;
-    if(isTierC&&out.probabilities){
+    if(isTierC&&Array.isArray(out.markets6)){
+      rows=out.markets6.map(function(m){return{market:m.market,p:Number(m.probability)*100,decision:m.decision||"WATCH",confidence:m.confidence||"LOW"}});
+    }else if(isTierC&&out.probabilities){
       rows=[{market:"HOME",p:Number(out.probabilities.home)*100,decision:"WATCH"},{market:"DRAW",p:Number(out.probabilities.draw)*100,decision:"WATCH"},{market:"AWAY",p:Number(out.probabilities.away)*100,decision:"WATCH"}];
     }else{rows=collectCore(out);}
     var list=$("marketList");list.innerHTML="";
