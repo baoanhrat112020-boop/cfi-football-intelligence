@@ -1003,7 +1003,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }).join("")+'</div>';
   }
   function renderScoreline(out){
-    var ch=out.champion||{},ht=Array.isArray(ch.top3HT)?ch.top3HT:[],ft=Array.isArray(ch.top3FT)?ch.top3FT:[];
+    var ch=out.champion||{},ht=Array.isArray(ch.top3HT)?ch.top3HT:[],ft=Array.isArray(ch.top3FT)?ch.top3FT:(Array.isArray(out.topScorelines)?out.topScorelines:[]);
     var primary=$("scorelinePrimary"),ref=$("scorelineTop3");
     if(!ht.length&&!ft.length){
       primary.innerHTML='<div class="context-state">Chưa có dữ liệu tỉ số từ backend.</div>';ref.innerHTML="";return;
@@ -1017,9 +1017,13 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function renderPrediction(data){
     var isTierC=data&&data.tierC===true;
-    var out=unwrap(data);state.prediction=out;var rows;
+    var out=unwrap(data);state.prediction=out;var rows,tierCOpts=[];
     if(isTierC&&Array.isArray(out.markets6)){
-      rows=out.markets6.map(function(m){return{market:m.market,p:Number(m.probability)*100,decision:m.decision||"WATCH",confidence:m.confidence||"LOW"}});
+      rows=[];
+      out.markets6.forEach(function(m){
+        if(Array.isArray(m.options))tierCOpts.push(m);
+        else if(m.probability!=null)rows.push({market:m.market+" "+m.value,p:Number(m.probability)*100,decision:m.decision||"WATCH",confidence:m.confidence||"LOW"});
+      });
     }else if(isTierC&&out.probabilities){
       rows=[{market:"HOME",p:Number(out.probabilities.home)*100,decision:"WATCH"},{market:"DRAW",p:Number(out.probabilities.draw)*100,decision:"WATCH"},{market:"AWAY",p:Number(out.probabilities.away)*100,decision:"WATCH"}];
     }else{rows=collectCore(out);}
@@ -1027,6 +1031,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(isTierC){list.innerHTML='<div class="info-strip" style="border-color:#8a6c13;background:linear-gradient(180deg,#2c2a15,#1a201b);color:#ffd23f;margin-bottom:10px"><span>⚠️</span><span><b>TIER C — ELO FALLBACK</b><br>Thiếu dữ liệu lịch sử. Prediction dùng ELO + home advantage, confidence LOW. Không phải model Tier A. Chỉ tham khảo.</span></div>';}
     if(!rows.length){list.innerHTML+='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
     rows.forEach(function(r){var s=signal(r);var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(r.market)+"</b><div class='prob'>"+(r.p==null?"—":r.p.toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)});
+    tierCOpts.forEach(function(m){m.options.forEach(function(o){var r={decision:o.decision||"WATCH"},s=signal(r);var el=document.createElement("div");el.className="market";el.style.cssText="padding:8px 12px;margin-left:10px";el.innerHTML="<b>"+esc(m.market+" "+(o.value!=null?o.value:o.score))+"</b><div class='prob'>"+(o.probability==null?"—":(Number(o.probability)*100).toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)})});
     var valid=rows.map(function(r){return r.p}).filter(function(x){return x!=null});
     var top;
     if(out.primary&&Number.isFinite(Number(out.primary.probability))){top=Number(out.primary.probability)*100;}

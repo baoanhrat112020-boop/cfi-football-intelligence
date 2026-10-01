@@ -16,6 +16,9 @@ DECLARE
   p_away REAL;
   p_over25 REAL;
   p_btts REAL;
+  top3 JSONB;
+  cs_opts JSONB;
+  markets JSONB;
 BEGIN
   SELECT rating, matches INTO rh, rh_matches FROM teams_elo WHERE team_id = home_id;
   SELECT rating, matches INTO ra, ra_matches FROM teams_elo WHERE team_id = away_id;
@@ -70,9 +73,40 @@ BEGIN
     COALESCE(SUM(CASE WHEN gi = gj THEN p ELSE 0 END), 0)::REAL,
     COALESCE(SUM(CASE WHEN gi < gj THEN p ELSE 0 END), 0)::REAL,
     COALESCE(SUM(CASE WHEN gi + gj >= 3 THEN p ELSE 0 END), 0)::REAL,
-    COALESCE(SUM(CASE WHEN gi >= 1 AND gj >= 1 THEN p ELSE 0 END), 0)::REAL
-  INTO p_home, p_draw, p_away, p_over25, p_btts
+    COALESCE(SUM(CASE WHEN gi >= 1 AND gj >= 1 THEN p ELSE 0 END), 0)::REAL,
+    (SELECT jsonb_agg(jsonb_build_object('score', t.gi || '-' || t.gj, 'probability', ROUND(t.p, 4)) ORDER BY t.p DESC)
+     FROM (SELECT gi, gj, p FROM norm ORDER BY p DESC LIMIT 3) t)
+  INTO p_home, p_draw, p_away, p_over25, p_btts, top3
   FROM norm;
+
+  top3 := COALESCE(top3, '[]'::jsonb);
+  SELECT COALESCE(jsonb_agg(e.value || '{"decision":"WATCH","confidence":"LOW"}'::jsonb ORDER BY e.ord), '[]'::jsonb)
+  INTO cs_opts
+  FROM jsonb_array_elements(top3) WITH ORDINALITY AS e(value, ord);
+
+  markets := jsonb_build_array(
+    jsonb_build_object('market', '1X2_PICK',
+      'value', CASE WHEN p_home >= p_draw AND p_home >= p_away THEN 'HOME' WHEN p_away >= p_draw THEN 'AWAY' ELSE 'DRAW' END,
+      'probability', ROUND(GREATEST(p_home, p_draw, p_away)::numeric, 4),
+      'decision', 'WATCH', 'confidence', 'LOW'),
+    jsonb_build_object('market', 'DOUBLE_CHANCE', 'options', jsonb_build_array(
+      jsonb_build_object('value', '1X', 'probability', ROUND((p_home + p_draw)::numeric, 4), 'decision', 'WATCH', 'confidence', 'LOW'),
+      jsonb_build_object('value', 'X2', 'probability', ROUND((p_draw + p_away)::numeric, 4), 'decision', 'WATCH', 'confidence', 'LOW'),
+      jsonb_build_object('value', '12', 'probability', ROUND((p_home + p_away)::numeric, 4), 'decision', 'WATCH', 'confidence', 'LOW'))),
+    jsonb_build_object('market', 'OU_PICK',
+      'value', CASE WHEN p_over25 >= 1.0 - p_over25 THEN 'OVER' ELSE 'UNDER' END,
+      'probability', ROUND(GREATEST(p_over25, 1.0 - p_over25)::numeric, 4),
+      'decision', 'WATCH', 'confidence', 'LOW'),
+    jsonb_build_object('market', 'BTTS',
+      'value', CASE WHEN p_btts >= 1.0 - p_btts THEN 'YES' ELSE 'NO' END,
+      'probability', ROUND(GREATEST(p_btts, 1.0 - p_btts)::numeric, 4),
+      'decision', 'WATCH', 'confidence', 'LOW'),
+    jsonb_build_object('market', 'CS_TOP3_FT', 'options', cs_opts),
+    jsonb_build_object('market', 'AH_MINUS_0_5',
+      'value', CASE WHEN p_home >= p_draw + p_away THEN 'HOME' ELSE 'AWAY' END,
+      'probability', ROUND(GREATEST(p_home, p_draw + p_away)::numeric, 4),
+      'decision', 'WATCH', 'confidence', 'LOW')
+  );
 
   RETURN jsonb_build_object(
     'p_home', ROUND(p_home::numeric, 4),
@@ -84,6 +118,8 @@ BEGIN
     'p_no_btts', ROUND((1.0 - p_btts)::numeric, 4),
     'xg_home', ROUND(xg_home::numeric, 2),
     'xg_away', ROUND(xg_away::numeric, 2),
+    'markets6', markets,
+    'topScorelines', top3,
     'tier', 'C',
     'model', 'elo_prior_v3.1',
     'confidence', 'LOW',
