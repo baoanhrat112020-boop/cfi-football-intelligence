@@ -36,6 +36,10 @@
     .fixture-top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px}
     .fixture-time{font-weight:900;color:#64c2ff;font-size:14px}.fixture-league{font-size:10px;color:#7898ad;max-width:68%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .fixture-teams{font-size:13px;font-weight:800;line-height:1.35}.fixture-meta{margin-top:6px;font-size:10px;color:#7895a9}
+    .fixture-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:800;margin-left:6px;vertical-align:middle}
+    .fixture-badge.tier-a{background:#0e5d3d;color:#4ff09e}
+    .fixture-badge.tier-c{background:#50471a;color:#ffd85c}
+    .fixture-badge.tier-c0{background:#5d2730;color:#ff7d85}
     .fixture-empty{padding:22px 14px;border:1px dashed #21526f;border-radius:12px;text-align:center;color:#829fb3;font-size:12px;line-height:1.5}
     .search-wrap{position:relative;margin-bottom:14px}.search-wrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#83a0b6}
     .search{width:100%;height:48px;border:1px solid var(--line2);border-radius:12px;background:#0a2032;color:white;padding:0 14px 0 44px;outline:none;font-size:15px}
@@ -640,7 +644,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     state.todayFixtures.forEach(function(f){
       var b=document.createElement("button");b.className="fixture";b.type="button";
       var time=f.kickoffLocal||f.time||"—";var league=f.competition||f.league||"Unknown competition";
-      b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span><span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc((f.provider||"")+(f.country?" · "+f.country:""))+'</div>';
+      b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span>'+(f.tier==="A"?'<span class="fixture-badge tier-a">A</span>':f.tier==="C"?'<span class="fixture-badge tier-c">C</span>':f.tier==="C0"?'<span class="fixture-badge tier-c0">No Data</span>':'')+'<span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc((f.provider||"")+(f.country?" · "+f.country:""))+'</div>';
       b.onclick=function(){
         var date=$("todayDateInput").value;
         cancelPendingRequests();

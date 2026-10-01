@@ -205,11 +205,46 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
   });
 }
 
+const TIER_EVIDENCE_TTL_MS=10*60*1000;
+const tierEvidenceCache=new Map<string,{n:number;exp:number}>();
+async function enrichFixturesWithTier(rows:any[],env:Env):Promise<any[]>{
+  const noTier=()=>rows.map(r=>({...r,tier:null}));
+  if(!env.SUPABASE_SERVICE_KEY)return noTier();
+  try{
+    const now=Date.now();
+    const names=[...new Set(rows.flatMap(r=>[r?.home,r?.away]).filter((x:any)=>typeof x==='string'&&x))] as string[];
+    const missing=names.filter(n=>{const c=tierEvidenceCache.get(n);return !c||c.exp<=now});
+    if(missing.length){
+      const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/teams_evidence_batch`,{method:'POST',headers:{'apikey':env.SUPABASE_SERVICE_KEY,'Authorization':`Bearer ${env.SUPABASE_SERVICE_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({p_team_names:missing}),signal:AbortSignal.timeout(3000)});
+      if(!res.ok)return noTier();
+      const got:any=await res.json();
+      if(!Array.isArray(got))return noTier();
+      const found=new Map<string,number>(got.map((g:any)=>[String(g.canonical_name),Number(g.evidence_count)||0]));
+      missing.forEach(n=>tierEvidenceCache.set(n,{n:found.get(n)??0,exp:now+TIER_EVIDENCE_TTL_MS}));
+    }
+    return rows.map(r=>{
+      const h=tierEvidenceCache.get(r?.home)?.n,a=tierEvidenceCache.get(r?.away)?.n;
+      if(h===undefined||a===undefined)return{...r,tier:null};
+      return{...r,tier:h===0&&a===0?'C0':(h<3||a<3?'C':'A')};
+    });
+  }catch{return noTier()}
+}
+
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
     if(url.pathname==='/api/match-context')return handleMatchContext(request,env);
-    if(url.pathname==='/api/fixtures-day'&&request.method==='POST')return handleFixturesDayRequest(request,env);
+    if(url.pathname==='/api/fixtures-day'&&request.method==='POST'){
+      const dayResp=await handleFixturesDayRequest(request,env);
+      if(!dayResp.ok||!dayResp.headers.get('content-type')?.includes('application/json'))return dayResp;
+      try{
+        const dayBody:any=await dayResp.clone().json();
+        if(!Array.isArray(dayBody?.rows))return dayResp;
+        dayBody.rows=await enrichFixturesWithTier(dayBody.rows,env);
+        const dayHeaders=new Headers(dayResp.headers);dayHeaders.delete('content-length');dayHeaders.delete('content-encoding');
+        return Response.json(dayBody,{status:dayResp.status,headers:dayHeaders});
+      }catch{return dayResp}
+    }
 
     if(url.pathname==='/api/discover'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
