@@ -1027,7 +1027,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(isTierC){list.innerHTML='<div class="info-strip" style="border-color:#8a6c13;background:linear-gradient(180deg,#2c2a15,#1a201b);color:#ffd23f;margin-bottom:10px"><span>⚠️</span><span><b>TIER C — ELO FALLBACK</b><br>Thiếu dữ liệu lịch sử. Prediction dùng ELO + home advantage, confidence LOW. Không phải model Tier A. Chỉ tham khảo.</span></div>';}
     if(!rows.length){list.innerHTML+='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
     rows.forEach(function(r){var s=signal(r);var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(r.market)+"</b><div class='prob'>"+(r.p==null?"—":r.p.toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)});
-    var valid=rows.map(function(r){return r.p}).filter(function(x){return x!=null});var top=valid.length?Math.max.apply(Math,valid):null;
+    var valid=rows.map(function(r){return r.p}).filter(function(x){return x!=null});
+    var top;
+    if(out.primary&&Number.isFinite(Number(out.primary.probability))){top=Number(out.primary.probability)*100;}
+    else{top=valid.length?Math.max.apply(Math,valid):null;}
     $("topProbability").textContent=top==null?"—":top.toFixed(0)+"%";$("scoreRing").style.setProperty("--p",(top||0)+"%");
     $("resultTitle").textContent=(out.match&&out.match.home?out.match.home:state.match.home)+" vs "+(out.match&&out.match.away?out.match.away:state.match.away);
     var gates=out.gates||{};$("gateStrict").textContent=gates.strictPrior===true?"PASS":(gates.strictPrior===false?"FAIL":"—");
