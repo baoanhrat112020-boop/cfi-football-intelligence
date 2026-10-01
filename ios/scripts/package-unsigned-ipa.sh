@@ -39,13 +39,13 @@ test -s "$BUNDLE/CFI" || { echo "IPA validation failed: executable missing" >&2;
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUNDLE/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUNDLE/Info.plist")"
-[[ "$VERSION" == "0.2.2" && "$BUILD" == "6" ]] || {
-  echo "IPA validation failed: expected 0.2.2 build 6, got $VERSION build $BUILD" >&2
+[[ "$VERSION" == "0.2.2" && "$BUILD" == "7" ]] || {
+  echo "IPA validation failed: expected 0.2.2 build 7, got $VERSION build $BUILD" >&2
   exit 65
 }
 
-grep -q 'v0.2.2 Beta 1 · Build 6' "$BUNDLE/index.html" || {
-  echo "IPA validation failed: bundled UI version does not match 0.2.2 build 6" >&2
+grep -q 'v0.2.2 Beta 1 · Build 7' "$BUNDLE/index.html" || {
+  echo "IPA validation failed: bundled UI version does not match 0.2.2 build 7" >&2
   exit 65
 }
 
