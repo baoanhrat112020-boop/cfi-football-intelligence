@@ -30,7 +30,7 @@ export const COMPONENT_WEIGHTS=Object.freeze({
 });
 const REQUIRED_BOOLEAN_GATES=Object.freeze(['strictPrior','temporalLeakage','validProbability','calibrationFloor','forecastCollapse','determinism','swap','crossMarketCoherence','noReconstruction','noHoldoutTuning','uncertaintyAbstention']);
 const clamp100=x=>Math.max(0,Math.min(100,Number.isFinite(Number(x))?Number(x):0));
-const finite=x=>Number.isFinite(Number(x));
+const finite=x=>(typeof x==='number'||(typeof x==='string'&&x.trim()!==''))&&Number.isFinite(Number(x));
 function validateOutputCoverage(input,hardFailures){
   if(input.contractVersion!==MULTIMARKET_RESEARCH_CONTRACT_VERSION)hardFailures.push('MULTIMARKET_RESEARCH_CONTRACT_VERSION_REQUIRED');
   const coverage=input.outputCoverage??{};
@@ -42,15 +42,18 @@ function validateNoRegression(input,hardFailures){
   if(comparison.baselineReproducible!==true)hardFailures.push('REPRODUCIBLE_BASELINE_REQUIRED');
   if(comparison.aggregateNetImprovementOrPreservation!==true)hardFailures.push('MULTIMARKET_AGGREGATE_NO_IMPROVEMENT');
   if(comparison.noUnacceptableRegression!==true)hardFailures.push('MULTIMARKET_UNACCEPTABLE_REGRESSION');
-  const required=Array.isArray(comparison.requiredGroups)?comparison.requiredGroups:REQUIRED_OUTPUT_GROUPS;
+  // Contract groups are mandatory. Caller-added groups remain optional evidence.
+  const required=REQUIRED_OUTPUT_GROUPS;
   const perGroup=comparison.perGroup??{};
   for(const group of required){
     const row=perGroup[group];
     if(!row||row.evaluated!==true)hardFailures.push(`BASELINE_COMPARISON_${group}_MISSING`);
     else if(row.unacceptableRegression===true)hardFailures.push(`BASELINE_REGRESSION_${group}`);
+    else if(row.unacceptableRegression!==false)hardFailures.push(`BASELINE_REGRESSION_RESULT_${group}_MISSING`);
   }
-  if(comparison.aggregateBrierDelta!=null&&!finite(comparison.aggregateBrierDelta))hardFailures.push('INVALID_AGGREGATE_BRIER_DELTA');
-  if(comparison.aggregateLogLossDelta!=null&&!finite(comparison.aggregateLogLossDelta))hardFailures.push('INVALID_AGGREGATE_LOGLOSS_DELTA');
+  // Missing, empty, and non-numeric evidence must not silently become a zero.
+  if(!finite(comparison.aggregateBrierDelta))hardFailures.push('INVALID_AGGREGATE_BRIER_DELTA');
+  if(!finite(comparison.aggregateLogLossDelta))hardFailures.push('INVALID_AGGREGATE_LOGLOSS_DELTA');
 }
 export function evaluateMultiMarketPromotion(input={}){
   const components=input.components??{};
