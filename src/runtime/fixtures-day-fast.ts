@@ -323,7 +323,7 @@ export async function discoverDayFixturesFast(
   const providers=[...new Set(rows.flatMap(row=>row.sourceProviders||[row.provider]))];
   return{
     provider:rows.length?(providers.length>1?'MULTI_SOURCE':providers[0]):'NONE',
-    providers,rows:rows.slice(0,500),attempts,
+    providers,rows,attempts,
     latencyMode:'PARALLEL_ALL_DAY_MULTI_SOURCE',
     targetRows:TARGET_ROWS,
     primarySources:['CFI_BIGDB_WITH_AISCORE_PC_BRIDGE','FOOTBALL_DATA'],
