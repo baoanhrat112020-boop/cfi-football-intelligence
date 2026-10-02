@@ -72,7 +72,7 @@ test('Football-Data parser keeps target date and normalizes known kickoff timezo
   assert.match(rows[0].kickoffLocal,/^\d{2}:\d{2}$/);
 });
 
-test('daily discovery merges BigDB, AiScore bridge, Football-Data and coverage feed in parallel', async()=>{
+test('daily discovery merges BigDB, AiScore bridge and Football-Data in parallel without BongdaWap', async()=>{
   const calls=[];
   const fetchFn=async(url,init={})=>{
     calls.push(String(url));
@@ -90,25 +90,26 @@ test('daily discovery merges BigDB, AiScore bridge, Football-Data and coverage f
   };
 
   const out=await discoverDayFixturesFast({targetDate,timeZone,nowMs},env,fetchFn);
-  assert.equal(calls.length,3);
-  assert.ok(out.rows.length>=18);
+  assert.equal(calls.length,2);
+  assert.ok(!calls.some(u=>u.includes('bongdawap.com')));
+  assert.ok(out.rows.length>=16);
   assert.deepEqual(out.primarySources,['CFI_BIGDB_WITH_AISCORE_PC_BRIDGE','FOOTBALL_DATA']);
-  assert.deepEqual(out.coverageSources,['BONGDAWAP']);
+  assert.deepEqual(out.coverageSources,[]);
   assert.equal(out.latencyMode,'PARALLEL_ALL_DAY_MULTI_SOURCE');
   assert.equal(out.attempts.find(x=>x.provider==='CFI_BIGDB').rows,14);
   assert.equal(out.attempts.find(x=>x.provider==='FOOTBALL_DATA').rows,2);
-  assert.equal(out.attempts.find(x=>x.provider==='BONGDAWAP').rows,2);
+  assert.equal(out.attempts.find(x=>x.provider==='BONGDAWAP'),undefined);
   assert.ok(out.providers.includes('CFI_BIGDB'));
   assert.ok(out.providers.includes('AISCORE'));
   assert.ok(out.providers.includes('FOOTBALL_DATA'));
-  assert.ok(out.providers.includes('BONGDAWAP'));
+  assert.ok(!out.providers.includes('BONGDAWAP'));
   const ai=out.rows.find(x=>x.provider==='AISCORE');
   assert.ok(ai);
   assert.equal(ai.kickoffLocal,'20:00');
   assert.equal(ai.provenance,'PC_NODE_AISCORE_BRIDGE');
 });
 
-test('coverage feed is queried even when BigDB already exceeds the old minimum', async()=>{
+test('BongdaWap coverage feed is no longer queried even when BigDB already exceeds the old minimum', async()=>{
   let coverageCalls=0;
   const fetchFn=async(url)=>{
     const s=String(url);
@@ -123,9 +124,9 @@ test('coverage feed is queried even when BigDB already exceeds the old minimum',
 
   const out=await discoverDayFixturesFast({targetDate,timeZone,nowMs},env,fetchFn);
 
-  assert.equal(coverageCalls,1);
-  assert.ok(out.rows.some(x=>x.provider==='BONGDAWAP'));
-  assert.ok(out.rows.length>=18);
+  assert.equal(coverageCalls,0);
+  assert.ok(!out.rows.some(x=>x.provider==='BONGDAWAP'));
+  assert.ok(out.rows.length>=16);
 });
 
 test('fixtures-day HTTP response exposes source policy', async()=>{
@@ -145,13 +146,15 @@ test('fixtures-day HTTP response exposes source policy', async()=>{
   assert.equal(response.status,200);
   const body=await response.json();
   assert.equal(body.status,'OK');
-  assert.equal(body.version,'CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY');
+  assert.equal(body.version,'CFI_FIXTURES_DAY_V11_NO_BONGDAWAP');
   assert.equal(body.sourcePolicy.primary[0],'CFI_BIGDB_WITH_AISCORE_PC_BRIDGE');
   assert.equal(body.sourcePolicy.primary[1],'FOOTBALL_DATA');
-  assert.equal(body.sourcePolicy.coverage[0],'BONGDAWAP');
+  assert.deepEqual(body.sourcePolicy.coverage,[]);
   assert.equal(body.sourcePolicy.mode,'PARALLEL_ALL_DAY_MULTI_SOURCE');
   assert.equal(body.counts.targetRows,20);
-  assert.ok(body.counts.fixtures>=18);
+  assert.equal(body.counts.fixtures,1);
+  assert.equal(body.counts.filteredToday,true);
+  assert.ok(!body.rows.some(x=>x.provider==='CFI_BIGDB'&&!x.kickoffIso));
   assert.ok(body.rows.some(x=>x.provider==='AISCORE'));
 });
 

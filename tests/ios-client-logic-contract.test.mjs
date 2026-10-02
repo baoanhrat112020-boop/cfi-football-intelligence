@@ -65,12 +65,15 @@ test('native bridge is defensive and exposes required production paths',()=>{
   assert.match(swift,/loadFileURL\(/);
 });
 
-test('v0.2.2 build 4 is aligned across UI Xcode and artifact workflow',()=>{
-  assert.ok(html.includes('v0.2.2 Beta 1 · Build 4'));
+test('v0.2.2 build number is aligned across UI Xcode and artifact workflow',()=>{
+  const builds=[...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m=>m[1]))];
+  assert.equal(builds.length,1);
+  const build=builds[0];
+  assert.ok(html.includes('v0.2.2 Beta 1 · Build '+build));
   assert.equal((pbx.match(/MARKETING_VERSION = 0\.2\.2;/g)||[]).length,2);
-  assert.equal((pbx.match(/CURRENT_PROJECT_VERSION = 4;/g)||[]).length,2);
-  assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build4-unsigned.ipa'));
-  assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build4'));
+  assert.equal((pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g)||[]).length,2);
+  assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build'+build+'-unsigned.ipa'));
+  assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build'+build));
 });
 
 test('icon pipeline forces and verifies real PNG bytes',()=>{
