@@ -228,7 +228,7 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
 }
 
 const TIER_EVIDENCE_TTL_MS=10*60*1000;
-const tierEvidenceCache=new Map<string,{n:number;exp:number}>();
+const tierEvidenceCache=new Map<string,{n:number|null;exp:number}>();
 async function enrichFixturesWithTier(rows:any[],env:Env):Promise<any[]>{
   const noTier=()=>rows.map(r=>({...r,tier:null}));
   if(!env.SUPABASE_SERVICE_KEY)return noTier();
@@ -242,11 +242,12 @@ async function enrichFixturesWithTier(rows:any[],env:Env):Promise<any[]>{
       const got:any=await res.json();
       if(!Array.isArray(got))return noTier();
       const found=new Map<string,number>(got.map((g:any)=>[String(g.canonical_name),Number(g.evidence_count)||0]));
-      missing.forEach(n=>tierEvidenceCache.set(n,{n:found.get(n)??0,exp:now+TIER_EVIDENCE_TTL_MS}));
+      missing.forEach(n=>tierEvidenceCache.set(n,{n:found.has(n)?found.get(n) as number:null,exp:now+TIER_EVIDENCE_TTL_MS}));
     }
     return rows.map(r=>{
       const h=tierEvidenceCache.get(r?.home)?.n,a=tierEvidenceCache.get(r?.away)?.n;
       if(h===undefined||a===undefined)return{...r,tier:null};
+      if(h===null||a===null)return{...r,tier:'C0'};
       return{...r,tier:h===0&&a===0?'C0':(h<3||a<3?'C':'A')};
     });
   }catch{return noTier()}
