@@ -71,6 +71,22 @@ function compactMultiMarket(value:any){
   };
 }
 
+function tierAExtraMarkets(body:any){
+  const mm=body?.multiMarket;
+  if(!mm||typeof mm!=='object')return[];
+  const pickMax=(market:string,options:[string,number|null][])=>{
+    if(options.some(o=>o[1]===null))return null;
+    const best=[...options].sort((a,b)=>(b[1] as number)-(a[1] as number))[0];
+    const probability=best[1] as number;
+    return{market,pick:best[0],probability,fairOdds:probability>0?Number((1/probability).toFixed(2)):null,decision:'WATCH',confidence:null};
+  };
+  const one=mm.oneXTwo?.ft,ou=mm.overUnder?.ft?.['2.5'];
+  return[
+    one?pickMax('1X2 FT',[['HOME',finite(one.home)],['DRAW',finite(one.draw)],['AWAY',finite(one.away)]]):null,
+    ou?pickMax('O/U 2.5 FT',[['OVER',finite(ou.over?.fullWin)],['UNDER',finite(ou.under?.fullWin)]]):null
+  ].filter(Boolean);
+}
+
 function compactThresholdMarkets(markets:any){
   if(!markets||typeof markets!=='object')return null;
   return Object.fromEntries(THRESHOLD_TARGETS.map(target=>{
@@ -103,6 +119,7 @@ function compactPrediction(body:any){
     extremeThresholdResearchSafety:body?.extremeThresholdResearchSafety??null,
     multiMarketIntegration:{version:body?.multiMarketIntegration?.version??null,status:body?.multiMarketIntegration?.status??body?.multiMarket?.mode??null,decisionUse:body?.multiMarketIntegration?.decisionUse===true||body?.multiMarket?.decisionUse===true,consistencyGuard:body?.multiMarketIntegration?.consistencyGuard??body?.multiMarket?.consistencyGuard??null,crossCoreConsistency:body?.multiMarketIntegration?.crossCoreConsistency??null,reason:body?.multiMarketIntegration?.reason??null},
     multiMarket:compactMultiMarket(body?.multiMarket),
+    extraMarkets:tierAExtraMarkets(body),
     practicalOutput:output?{version:output.version??null,final:output.final??null,primary:output.primary??null,quality:output.quality??null,gates:output.gates??null,rules:output.rules??null,marketSummary:output.marketSummary??null,visibility:output.visibility??null,scoreline:output.scoreline??null,expectedGoals:output.expectedGoals??null}:null,
     responseMeta:{mode:'compact',contract:COMPACT_CONTRACT}
   };
@@ -274,6 +291,7 @@ export default{
           }
         }catch(_e){}
       }
+      if(response.ok&&body&&typeof body==='object')body.extraMarkets=tierAExtraMarkets(body);
       if(!response.ok||!shouldCompactPredict(request,input))return Response.json(body,{status:response.status});
       return Response.json(compactPrediction(body),{status:response.status});
     }
