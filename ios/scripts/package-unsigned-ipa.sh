@@ -53,3 +53,30 @@ grep -qF "$UI_TAG" "$BUNDLE/index.html" || {
   echo "IPA validation failed: bundled UI must contain \"$UI_TAG\"" >&2
   exit 65
 }
+
+for icon in "$BUNDLE"/AppIcon*.png "$BUNDLE"/iTunesArtwork.png; do
+  [[ -f "$icon" ]] || { echo "IPA validation failed: icon missing" >&2; exit 65; }
+  MAGIC="$(head -c4 "$icon" | od -An -tx1 | tr -d ' \n')"
+  [[ "$MAGIC" == "89504e47" ]] || {
+    echo "IPA validation failed: icon is not PNG: $icon ($MAGIC)" >&2
+    exit 65
+  }
+done
+
+if grep -RIEq 'SUPABASE_SERVICE_ROLE_KEY|CLOUDFLARE_API_TOKEN|CFI_PC_NODE_KEY|CFI_ACTION_KEY[[:space:]]*=' "$BUNDLE"; then
+  echo "IPA validation failed: secret marker found in app bundle" >&2
+  exit 65
+fi
+
+rm -f "$OUTPUT_PATH"
+(
+  cd "$WORK_DIR"
+  /usr/bin/zip -qry "$OUTPUT_PATH" Payload
+)
+
+if ! /usr/bin/unzip -l "$OUTPUT_PATH" | /usr/bin/grep -q "Payload/CFI.app/"; then
+  echo "IPA validation failed: Payload/CFI.app is missing" >&2
+  exit 65
+fi
+
+echo "Created unsigned IPA: $OUTPUT_PATH"
