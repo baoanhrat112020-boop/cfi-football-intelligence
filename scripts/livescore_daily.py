@@ -1,4 +1,5 @@
 import os, re, uuid as U, json
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 VN_TZ = timezone(timedelta(hours=7))
 from curl_cffi import requests as cf
@@ -35,7 +36,7 @@ def crawl_day(day_offset):
                 for ev in stage.get("Events", []):
                     eid = ev.get("Eid")
                     if eid and eid not in events:
-                        events[eid] = {**ev, "_stage": stage.get("Cnm"), "_league": stage.get("Snm") or stage.get("Cnm")}
+                        events[eid] = {**ev, "_stage": stage.get("Cnm"), "_league": stage.get("Snm") or stage.get("Cnm"), "_ymd": ymd}
                         n_new += 1
             if n_new == 0: break
         except Exception as e:
@@ -76,71 +77,31 @@ for day in range(-1, 2):
     all_events.extend(events)
     print(f"  day {day}: {len(events)} events")
 
-# Insert SCHEDULED (future) matches to cfi_living_verified_fixtures
-scheduled_ok = 0
-for m in all_events:
-    if m.get("Eps") == "FT":  # skip finished, xử lý ở dưới
-        continue
-    if not m.get("T1") or not m.get("T2"): continue
-    h_name = m["T1"][0].get("Nm")
-    a_name = m["T2"][0].get("Nm")
-    if not h_name or not a_name or h_name == a_name: continue
-    h_id = cfi_teams.get(norm(h_name))
-    a_id = cfi_teams.get(norm(a_name))
-    # Cho phép null team_id cho SCHEDULED (national teams, clubs lạ)
-    # Vẫn insert để app hiển thị; predict sẽ báo CANONICAL_IDENTITY_UNRESOLVED nếu cần
-    esd = str(m.get("Esd",""))
-    if len(esd) < 8: continue
+drop = Counter()
+print(f"API events total: {len(all_events)}")
+
+def team_names(m):
+    t1, t2 = m.get("T1"), m.get("T2")
+    if not t1 or not t2: return None, None
+    return t1[0].get("Nm"), t2[0].get("Nm")
+
+def kickoff_of(m):
+    esd = str(m.get("Esd", ""))
     if len(esd) >= 14:
-        kickoff = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T{esd[8:10]}:{esd[10:12]}:{esd[12:14]}Z"
-    else:
-        # Date-only Esd → default 12:00 UTC
-        kickoff = f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T12:00:00Z"
-    utc_dt = datetime.strptime(kickoff.replace("Z",""), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-    md = utc_dt.astimezone(VN_TZ).strftime("%Y-%m-%d")
-    eid = str(m.get("Eid",""))
-    fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
-    live_row = {
-        "fixture_id": fid,
-        "target_date": md,
-        "kickoff_at": kickoff,
-        "home_team": h_name,
-        "away_team": a_name,
-        "home_team_norm": norm(h_name),
-        "away_team_norm": norm(a_name),
-        "competition": m.get("_stage"),
-        "verification_status": "VERIFIED",
-        "source_name": "LIVESCORE",
-        "source_url": f"https://www.livescore.com/en/football/match/{eid}",
-        "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
-        "verified_at": datetime.now(timezone.utc).isoformat(),
-        "canonical_home_team_id": h_id,
-        "canonical_away_team_id": a_id,
-    }
-    if fid in existing_map:
-        try:
-            _new_dt = datetime.fromisoformat(kickoff.replace("Z","+00:00"))
-            if existing_map[fid] == _new_dt:
-                continue
-        except: pass
-    try:
-        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id").execute()
-        scheduled_ok += 1
-    except:
-        pass
-print(f"Scheduled inserted: {scheduled_ok}")
+        return f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T{esd[8:10]}:{esd[10:12]}:{esd[12:14]}Z"
+    if len(esd) < 8:
+        esd = str(m.get("_ymd", ""))
+    if len(esd) < 8: return None
+    return f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T12:00:00Z"
 
-finished = [e for e in all_events
-            if e.get("Eps") == "FT" 
-            and e.get("Trh1") is not None 
-            and e.get("Trh2") is not None]
-print(f"Finished with HT: {len(finished)}")
+finished = [e for e in all_events if e.get("Eps") == "FT"]
+print(f"Finished (FT): {len(finished)}")
 
-ok, fail, skip = 0, 0, 0
+ok, fail = 0, 0
 for m in finished:
-    if not m.get("T1") or not m.get("T2"): continue
-    h_name = m["T1"][0].get("Nm")
-    a_name = m["T2"][0].get("Nm")
+    if m.get("Trh1") is None or m.get("Trh2") is None:
+        drop["fixtures_skip_no_ht"] += 1; continue
+    h_name, a_name = team_names(m)
     if not h_name or not a_name or h_name == a_name: continue
     def get_or_create_team(name):
         n = norm(name)
@@ -153,23 +114,29 @@ for m in finished:
                 "canonical_name": name,
             }, on_conflict="team_id").execute()
         except Exception:
-            pass
+            return None
         cfi_teams[n] = tid
         return tid
 
     h_id = get_or_create_team(h_name)
     a_id = get_or_create_team(a_name)
+    if not h_id or not a_id:
+        drop["fixtures_skip_team_create_fail"] += 1; continue
     try:
         ft_h,ft_a = int(m.get("Tr1")), int(m.get("Tr2"))
         ht_h,ht_a = int(m.get("Trh1")), int(m.get("Trh2"))
-    except: continue
-    if ht_h > ft_h or ht_a > ft_a: continue
+    except:
+        drop["fixtures_skip_bad_score"] += 1; continue
+    if ht_h > ft_h or ht_a > ft_a:
+        drop["fixtures_skip_ht_gt_ft"] += 1; continue
     esd = str(m.get("Esd",""))
-    if len(esd) < 14: continue
+    if len(esd) < 14:
+        drop["fixtures_skip_esd_short"] += 1; continue
     utc_dt = datetime.strptime(esd[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
     md = utc_dt.astimezone(VN_TZ).strftime("%Y-%m-%d")
     eid = str(m.get("Eid",""))
-    if not eid: continue
+    if not eid:
+        drop["fixtures_skip_no_eid"] += 1; continue
     fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
     row = {
         "fixture_id": fid, "match_date": md,
@@ -191,12 +158,22 @@ for m in finished:
         except:
             fail += 1
 
-    # Also insert into cfi_living_verified_fixtures for /api/discover
-    esd_full = str(m.get("Esd",""))
-    if len(esd_full) >= 14:
-        kickoff = f"{esd_full[0:4]}-{esd_full[4:6]}-{esd_full[6:8]}T{esd_full[8:10]}:{esd_full[10:12]}:{esd_full[12:14]}Z"
-    else:
-        kickoff = f"{md}T12:00:00Z"
+staged_ok = 0
+for m in all_events:
+    h_name, a_name = team_names(m)
+    if not h_name or not a_name:
+        drop["staging_skip_no_team_name"] += 1; continue
+    if h_name == a_name:
+        drop["staging_skip_same_team_name"] += 1; continue
+    eid = str(m.get("Eid",""))
+    if not eid:
+        drop["staging_skip_no_eid"] += 1; continue
+    kickoff = kickoff_of(m)
+    if not kickoff:
+        drop["staging_skip_no_date"] += 1; continue
+    utc_dt = datetime.strptime(kickoff.replace("Z",""), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    md = utc_dt.astimezone(VN_TZ).strftime("%Y-%m-%d")
+    fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
     live_row = {
         "fixture_id": fid,
         "target_date": md,
@@ -211,18 +188,27 @@ for m in finished:
         "source_url": f"https://www.livescore.com/en/football/match/{eid}",
         "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
         "verified_at": datetime.now(timezone.utc).isoformat(),
-        "canonical_home_team_id": h_id,
-        "canonical_away_team_id": a_id,
+        "canonical_home_team_id": cfi_teams.get(norm(h_name)),
+        "canonical_away_team_id": cfi_teams.get(norm(a_name)),
     }
     if fid in existing_map:
         try:
             _new_dt = datetime.fromisoformat(kickoff.replace("Z","+00:00"))
             if existing_map[fid] == _new_dt:
-                continue
+                drop["staging_unchanged_in_db"] += 1; continue
         except: pass
     try:
         sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id").execute()
-    except:
-        pass
+        staged_ok += 1
+    except Exception as e:
+        drop["staging_upsert_error"] += 1
+        if drop["staging_upsert_error"] <= 5:
+            print(f"  staging error {h_name} vs {a_name}: {str(e)[:160]}")
 
-print(f"\nOK: {ok}, Fail: {fail}, Skip: {skip}, Scheduled: {scheduled_ok}")
+print("\nFUNNEL")
+print(f"  api_total                 {len(all_events)}")
+for k in sorted(drop):
+    print(f"  {k:<32}{drop[k]}")
+print(f"  staging_upserted          {staged_ok}")
+print(f"  fixtures_inserted         {ok}")
+print(f"\nOK: {ok}, Fail: {fail}, Staged: {staged_ok}")
