@@ -13,6 +13,7 @@ type FeedRow={provider:string;providerId:string;home:string;away:string;competit
 
 const GPT_PRODUCTION_HOST='cfi-football-intelligence.baoanhrat112020.workers.dev';
 const COMPACT_CONTRACT='CFI_GPT_PREDICT_COMPACT_V2_EXTREME_THRESHOLD_SAFETY';
+const TIER_C_MIN_EVIDENCE=3;
 const THRESHOLD_TARGETS=['3+ HT','7+ FT','Other HT','Other FT'] as const;
 
 async function readJson(response:Response){try{return await response.clone().json()}catch{return null}}
@@ -279,7 +280,10 @@ export default{
       if(!response.headers.get('content-type')?.includes('application/json'))return response;
       const body:any=await readJson(response);patchRuntimeTelemetry(body);
       const TIER_C_ERRORS=['ZERO_EXACT_TEAM_EVIDENCE','INSUFFICIENT_TEAM_EVIDENCE','INSUFFICIENT_DATA','EVIDENCE_INSUFFICIENT'];
-      if(!response.ok&&body?.error&&TIER_C_ERRORS.includes(String(body.error))){
+      const evidenceCounts=body?.evidence?.counts??body?.evidence;
+      const homeEvidence=finite(evidenceCounts?.homeFixtures??evidenceCounts?.home),awayEvidence=finite(evidenceCounts?.awayFixtures??evidenceCounts?.away);
+      const thinEvidence=response.ok&&homeEvidence!==null&&awayEvidence!==null&&(homeEvidence<TIER_C_MIN_EVIDENCE||awayEvidence<TIER_C_MIN_EVIDENCE);
+      if((!response.ok&&body?.error&&TIER_C_ERRORS.includes(String(body.error)))||thinEvidence){
         try{
           const tcReq=new Request('https://cfi.internal/api/match-context',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({home:input?.home,away:input?.away,target_date:input?.target_date})});
           const tcResp=await handleMatchContext(tcReq,env);
