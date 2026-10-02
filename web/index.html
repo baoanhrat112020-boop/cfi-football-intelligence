@@ -1127,7 +1127,6 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 (function () {
   var API_BASE = "";
   var CFI_RULES = { betMinEdge: 0.04, betMinEV: 0.05, leanMinEdge: 0.015 };
-  var MARKETS = ["3+ HT", "7+ FT", "Other HT", "Other FT"];
 
   // 1. Polyfill iOS native bridge for Chrome testing
   function cleanTeam(s){return String(s||"").replace(/\s+\d{4}-\d{2}-\d{2}\s*$/,"").replace(/\s+/g," ").trim();}
@@ -1187,14 +1186,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return '<span class="odds-badge ' + cls + '">edge ' + e + '% &middot; EV ' + v + '% &middot; fair ' + r.fair.toFixed(2) + ' &middot; kelly ' + k + '%</span>';
   }
 
+  function readProbPct(row) {
+    var probEl = row.querySelector(".prob");
+    var m = ((probEl ? probEl.textContent : row.textContent) || "").match(/(-?\d+(?:\.\d+)?)\s*%/);
+    return m ? parseFloat(m[1]) : NaN;
+  }
+
   function attachToMarketRow(row) {
     if (row.dataset.oddsInjected === "1") return;
-    var marketEl = row.querySelector("b");
-    var probEl = row.querySelector(".prob");
-    if (!marketEl || !probEl) return;
-    var market = (marketEl.textContent || "").trim();
-    if (MARKETS.indexOf(market) === -1) return;
-    var probPct = parseFloat((probEl.textContent || "").replace("%", ""));
+    var probPct = readProbPct(row);
     if (!isFinite(probPct)) return;
     var prob = probPct / 100;
 
