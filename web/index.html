@@ -938,6 +938,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     rows.forEach(function(r){r.p=scale(r.pRaw)});
     return rows.sort(function(a,b){return["3+ HT","7+ FT","Other HT","Other FT"].indexOf(a.market)-["3+ HT","7+ FT","Other HT","Other FT"].indexOf(b.market)});
   }
+  function extraMarketsOf(data){
+    var d=data||{},depth=3;
+    while(d&&typeof d==="object"&&!Array.isArray(d.extraMarkets)&&d.body&&typeof d.body==="object"&&depth-->0)d=d.body;
+    return d&&Array.isArray(d.extraMarkets)?d.extraMarkets:[];
+  }
   function signal(row){
     var raw=String(row.decision||"").trim(),d=raw.toUpperCase().replace(/[ -]+/g,"_");
     if(d==="BET"||d==="LEAN"||d==="STRONG"||d==="PLAY")return["STRONG","sig-strong"];
@@ -1036,6 +1041,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(!rows.length){list.innerHTML+='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
     rows.forEach(function(r){var s=signal(r);var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(r.market)+"</b><div class='prob'>"+(r.p==null?"—":r.p.toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)});
     tierCOpts.forEach(function(m){m.options.forEach(function(o){var r={decision:o.decision||"WATCH"},s=signal(r);var el=document.createElement("div");el.className="market";el.style.cssText="padding:8px 12px;margin-left:10px";el.innerHTML="<b>"+esc(m.market+" "+(o.value!=null?o.value:o.score))+"</b><div class='prob'>"+(o.probability==null?"—":(Number(o.probability)*100).toFixed(1)+"%")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)})});
+    if(!isTierC)extraMarketsOf(data).forEach(function(m){var s=signal({decision:m.decision||"WATCH"});var el=document.createElement("div");el.className="market";el.innerHTML="<b>"+esc(m.market+" "+m.pick)+"</b><div class='prob'>"+(Number.isFinite(Number(m.probability))?(Number(m.probability)*100).toFixed(1)+"%":"—")+"</div><div class='signal "+s[1]+"'>"+s[0]+"</div>";list.appendChild(el)});
     var valid=rows.map(function(r){return r.p}).filter(function(x){return x!=null});
     var top;
     if(out.primary&&Number.isFinite(Number(out.primary.probability))){top=Number(out.primary.probability)*100;}

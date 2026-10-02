@@ -77,13 +77,17 @@ function tierAExtraMarkets(body:any){
   const pickMax=(market:string,options:[string,number|null][])=>{
     if(options.some(o=>o[1]===null))return null;
     const best=[...options].sort((a,b)=>(b[1] as number)-(a[1] as number))[0];
-    const probability=best[1] as number;
+    const probability=Number((best[1] as number).toFixed(4));
     return{market,pick:best[0],probability,fairOdds:probability>0?Number((1/probability).toFixed(2)):null,decision:'WATCH',confidence:null};
   };
   const one=mm.oneXTwo?.ft,ou=mm.overUnder?.ft?.['2.5'];
+  const eg=body?.scoreline?.expectedGoals,lh=finite(eg?.ftHome??body?.outputV3?.expectedGoals?.ft?.home??body?.expectedGoals?.home),la=finite(eg?.ftAway??body?.outputV3?.expectedGoals?.ft?.away??body?.expectedGoals?.away);
+  // Poisson approx, khong phai engine chuan — thay bang multi-market-v1 khi co
+  const bttsYes=lh!==null&&la!==null&&lh>=0&&la>=0?(1-Math.exp(-lh))*(1-Math.exp(-la)):null;
   return[
     one?pickMax('1X2 FT',[['HOME',finite(one.home)],['DRAW',finite(one.draw)],['AWAY',finite(one.away)]]):null,
-    ou?pickMax('O/U 2.5 FT',[['OVER',finite(ou.over?.fullWin)],['UNDER',finite(ou.under?.fullWin)]]):null
+    ou?pickMax('O/U 2.5 FT',[['OVER',finite(ou.over?.fullWin)],['UNDER',finite(ou.under?.fullWin)]]):null,
+    bttsYes!==null?pickMax('BTTS FT',[['YES',bttsYes],['NO',1-bttsYes]]):null
   ].filter(Boolean);
 }
 
