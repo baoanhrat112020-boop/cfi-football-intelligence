@@ -6,6 +6,7 @@ import { THREE_PLUS_HT_SAFETY_VERSION } from '../../src/prediction/three-plus-ht
 import { SEVEN_PLUS_FT_SAFETY_VERSION } from '../../src/prediction/seven-plus-ft-safety.ts';
 import { MARKET_COHERENCE_VERSION } from '../../src/prediction/market-coherence.ts';
 import { handleFixturesDayRequest } from '../../src/runtime/fixtures-day-fast.ts';
+import { poissonExtraMarkets } from '../../src/prediction/poisson-markets.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;SUPABASE_SERVICE_KEY?:string;AI?:Ai};
 const TIER_C_LOG_SUPABASE_URL='https://kovmddkkzttquupdgmel.supabase.co';
@@ -73,22 +74,24 @@ function compactMultiMarket(value:any){
 }
 
 function tierAExtraMarkets(body:any){
-  const mm=body?.multiMarket;
-  if(!mm||typeof mm!=='object')return[];
+  const mm=body?.multiMarket&&typeof body.multiMarket==='object'?body.multiMarket:null;
   const pickMax=(market:string,options:[string,number|null][])=>{
     if(options.some(o=>o[1]===null))return null;
     const best=[...options].sort((a,b)=>(b[1] as number)-(a[1] as number))[0];
     const probability=Number((best[1] as number).toFixed(4));
-    return{market,pick:best[0],probability,fairOdds:probability>0?Number((1/probability).toFixed(2)):null,decision:'WATCH',confidence:null};
+    return{market,group:'popular',pick:best[0],probability,fairOdds:probability>0?Number((1/probability).toFixed(2)):null,decision:'WATCH',confidence:null};
   };
-  const one=mm.oneXTwo?.ft,ou=mm.overUnder?.ft?.['2.5'];
-  const eg=body?.scoreline?.expectedGoals,lh=finite(eg?.ftHome??body?.outputV3?.expectedGoals?.ft?.home??body?.expectedGoals?.home),la=finite(eg?.ftAway??body?.outputV3?.expectedGoals?.ft?.away??body?.expectedGoals?.away);
+  const one=mm?.oneXTwo?.ft,ou=mm?.overUnder?.ft?.['2.5'];
+  const eg=body?.scoreline?.expectedGoals;
+  let lh=finite(eg?.ftHome??body?.outputV3?.expectedGoals?.ft?.home??body?.expectedGoals?.home),la=finite(eg?.ftAway??body?.outputV3?.expectedGoals?.ft?.away??body?.expectedGoals?.away);
+  if(lh===null||la===null){const total=finite(body?.outputV3?.expectedGoals?.ft?.total);if(total!==null&&total>=0){lh=total*0.55;la=total*0.45}}
   // Poisson approx, khong phai engine chuan — thay bang multi-market-v1 khi co
   const bttsYes=lh!==null&&la!==null&&lh>=0&&la>=0?(1-Math.exp(-lh))*(1-Math.exp(-la)):null;
   return[
     one?pickMax('1X2 FT',[['HOME',finite(one.home)],['DRAW',finite(one.draw)],['AWAY',finite(one.away)]]):null,
     ou?pickMax('O/U 2.5 FT',[['OVER',finite(ou.over?.fullWin)],['UNDER',finite(ou.under?.fullWin)]]):null,
-    bttsYes!==null?pickMax('BTTS FT',[['YES',bttsYes],['NO',1-bttsYes]]):null
+    bttsYes!==null?pickMax('BTTS FT',[['YES',bttsYes],['NO',1-bttsYes]]):null,
+    ...(lh!==null&&la!==null?poissonExtraMarkets(lh,la):[])
   ].filter(Boolean);
 }
 
@@ -293,7 +296,7 @@ export default{
             const pr=tcBody.prediction;
             const mp=Math.max(pr.p_home,pr.p_draw,pr.p_away);
             const pick=pr.p_home===mp?'HOME':pr.p_away===mp?'AWAY':'DRAW';
-            const tc:any={status:'SUCCESS',engine:FINAL_VERSION,tierC:true,tierCModel:pr.model,target:tcBody.target,tierCReason:tcBody.reason,tierCEvidenceCount:tcBody.evidenceCount,strictPrior:{required:false,verified:false,tierCFallback:true},evidence:{counts:{home:tcBody.evidenceCount?.home??0,away:tcBody.evidenceCount?.away??0,h2h:0}},outputV3:{version:'CFI_TIER_C_V1',final:'WATCH',primary:{market:'1X2_FT',pick:pick,probability:mp,confidence:'LOW',fairOdds:Number((1/mp).toFixed(2)),decisionUse:false,researchState:'TIER_C_ELO_FALLBACK'},gates:{strictPrior:false,evidenceSufficient:false,consistency:true,tierCFallback:true},quality:{dataQuality:'LOW',modelAgreement:'LOW',predictionGrade:'C'},probabilities:{home:pr.p_home,draw:pr.p_draw,away:pr.p_away},markets6:pr.markets6||[],topScorelines:pr.topScorelines||[],expectedGoals:{home:pr.xg_home,away:pr.xg_away,total:Number((Number(pr.xg_home)+Number(pr.xg_away)).toFixed(2))},elo:{home:pr.elo_home,away:pr.elo_away},lowSample:pr.low_sample===true,marketSummary:{oneXTwo:{ft:{modelPick:pick,modelProbability:mp}}},primaryTargets:{contract:'CFI_TIER_C',count:6,codes:['HOME','DRAW','AWAY','OVER 2.5','UNDER 2.5','BTTS YES']},visibility:{tierC:true,reason:'ELO_ONLY_FALLBACK'}}};
+            const tc:any={status:'SUCCESS',engine:FINAL_VERSION,tierC:true,tierCModel:pr.model,extraMarkets:poissonExtraMarkets(Number(pr.xg_home),Number(pr.xg_away),'LOW'),target:tcBody.target,tierCReason:tcBody.reason,tierCEvidenceCount:tcBody.evidenceCount,strictPrior:{required:false,verified:false,tierCFallback:true},evidence:{counts:{home:tcBody.evidenceCount?.home??0,away:tcBody.evidenceCount?.away??0,h2h:0}},outputV3:{version:'CFI_TIER_C_V1',final:'WATCH',primary:{market:'1X2_FT',pick:pick,probability:mp,confidence:'LOW',fairOdds:Number((1/mp).toFixed(2)),decisionUse:false,researchState:'TIER_C_ELO_FALLBACK'},gates:{strictPrior:false,evidenceSufficient:false,consistency:true,tierCFallback:true},quality:{dataQuality:'LOW',modelAgreement:'LOW',predictionGrade:'C'},probabilities:{home:pr.p_home,draw:pr.p_draw,away:pr.p_away},markets6:pr.markets6||[],topScorelines:pr.topScorelines||[],expectedGoals:{home:pr.xg_home,away:pr.xg_away,total:Number((Number(pr.xg_home)+Number(pr.xg_away)).toFixed(2))},elo:{home:pr.elo_home,away:pr.elo_away},lowSample:pr.low_sample===true,marketSummary:{oneXTwo:{ft:{modelPick:pick,modelProbability:mp}}},primaryTargets:{contract:'CFI_TIER_C',count:6,codes:['HOME','DRAW','AWAY','OVER 2.5','UNDER 2.5','BTTS YES']},visibility:{tierC:true,reason:'ELO_ONLY_FALLBACK'}}};
             if(env.SUPABASE_SERVICE_KEY)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/tier_c_log`,{method:'POST',headers:{'apikey':env.SUPABASE_SERVICE_KEY,'Authorization':`Bearer ${env.SUPABASE_SERVICE_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({match_id:`${tcBody.identity?.homeTeamId}_${tcBody.identity?.awayTeamId}_${tcBody.target?.date}`,home_team:tcBody.target?.home,away_team:tcBody.target?.away,p_home:pr.p_home,p_draw:pr.p_draw,p_away:pr.p_away,p_over25:pr.p_over25,p_btts:pr.p_btts,xg_home:pr.xg_home,xg_away:pr.xg_away,elo_home:pr.elo_home,elo_away:pr.elo_away,model:'elo_prior_v3.1'})}).catch(()=>{}));
             patchRuntimeTelemetry(tc);
             return Response.json(tc,{status:200});
