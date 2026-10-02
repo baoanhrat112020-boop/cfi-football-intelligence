@@ -1,4 +1,4 @@
-﻿# Temp / debug
+# Temp / debug
 check_*.py
 debug_*.py
 fix_*.py
@@ -93,3 +93,12 @@ sample_*.txt
 _cfi_context.txt
 _wf.txt
 CFI_*.txt
+
+*.bak-*
+*.bak2-*
+patch*.py
+verify.py
+HANDOFF.md
+PROMPT_CLAUDE.txt
+scripts/#*
+webapp/
