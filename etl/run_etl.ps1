@@ -81,6 +81,16 @@ if ($NoPush) {
 $r | Add-Content -Path $logFile -Encoding UTF8
 if ($LASTEXITCODE -ne 0) { Log "WARN aggregate exit=$LASTEXITCODE" }
 
-# === 6. Marker ===
+# === 6. Compute team tendency flags ===
+Log "TENDENCY..."
+if ($NoPush) {
+    $r = & python "$etl\compute_tendency.py" 2>&1
+} else {
+    $r = & python "$etl\compute_tendency.py" --push 2>&1
+}
+$r | Add-Content -Path $logFile -Encoding UTF8
+if ($LASTEXITCODE -ne 0) { Log "WARN tendency exit=$LASTEXITCODE" }
+
+# === 7. Marker ===
 "OK $(Get-Date -f 'yyyy-MM-dd HH:mm:ss')" | Set-Content -Path $marker -Encoding UTF8
 Log "=== CFI ETL done ==="
