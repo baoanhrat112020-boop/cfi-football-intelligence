@@ -102,3 +102,10 @@ HANDOFF.md
 PROMPT_CLAUDE.txt
 scripts/#*
 webapp/
+
+# ETL
+etl/.env
+etl/_pg_portable/
+etl/_etl_data/
+etl/.venv/
+etl/_*.py

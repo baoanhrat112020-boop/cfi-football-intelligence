@@ -1,0 +1,13 @@
+services:
+  cfi-db:
+    image: postgres:16-alpine
+    container_name: cfi-etl-db
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_DB: cfi_etl
+      POSTGRES_USER: cfi
+      POSTGRES_PASSWORD: cfi_local_dev
+    volumes:
+      - ./_etl_data/pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
