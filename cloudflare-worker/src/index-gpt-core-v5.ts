@@ -299,6 +299,43 @@ export default{
       return v4.fetch(request,env,ctx);
     }
 
+    if(url.pathname==='/api/suggest'&&request.method==='GET'){
+      try{
+        const minutes=Number(url.searchParams.get('minutes'));
+        if(![90,180,240,270,360,600].includes(minutes))return Response.json({error:'invalid'},{status:400});
+        const key=(env as any).SUPABASE_SERVICE_KEY;
+        const today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/suggest_snapshot?snapshot_date=eq.${today}&select=payload,match_count,generated_at&limit=1`,{headers:{'apikey':key,'Authorization':`Bearer ${key}`}});
+        if(!res.ok)return Response.json({error:'snapshot fetch failed',status:500},{status:500});
+        const rows:any=await res.json();
+        const cacheHeaders={'Cache-Control':'public, max-age=180'};
+        if(!Array.isArray(rows)||rows.length===0)return Response.json({minutes,slot_count:0,match_count:0,slots:[],note:'no snapshot'},{headers:cacheHeaders});
+        const snap=rows[0];
+        const all:any[]=[];
+        if(Array.isArray(snap?.payload?.slots))snap.payload.slots.forEach((s:any)=>{if(Array.isArray(s?.matches))s.matches.forEach((m:any)=>all.push(m))});
+        const now=Date.now();
+        const lo=now-15*60*1000;
+        const hi=now+minutes*60*1000;
+        const groups=new Map<string,any>();
+        let matchCount=0;
+        for(const m of all){
+          if(!m?.kickoff)continue;
+          const t=Date.parse(m.kickoff);
+          if(!Number.isFinite(t)||t<lo||t>hi)continue;
+          const date=String(m.kickoff).substring(0,10);
+          const hour=String(m.kickoff).substring(11,13)+':00';
+          const gk=date+' '+hour;
+          if(!groups.has(gk))groups.set(gk,{date,hour,matches:[]});
+          groups.get(gk).matches.push(m);
+          matchCount++;
+        }
+        const slots=[...groups.entries()].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0).map(([,s])=>{s.matches.sort((a:any,b:any)=>Date.parse(a.kickoff)-Date.parse(b.kickoff));return s});
+        return Response.json({minutes,generated_at:snap.generated_at,slot_count:slots.length,match_count:matchCount,slots},{headers:cacheHeaders});
+      }catch(e:any){
+        return Response.json({error:String(e?.message||e),status:500},{status:500});
+      }
+    }
+
     if(url.pathname==='/api/predict'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{}
       const response=await v4.fetch(fullPredictRequest(request,input),env,ctx);
