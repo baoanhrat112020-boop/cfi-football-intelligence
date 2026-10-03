@@ -56,7 +56,8 @@ struct CFIWebView: UIViewRepresentable {
             "/api/discover",
             "/api/predict",
             "/api/prediction-history",
-            "/api/results"
+            "/api/results",
+            "/api/suggest"
         ]
 
         func userContentController(
