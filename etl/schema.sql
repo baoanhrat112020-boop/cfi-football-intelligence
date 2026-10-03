@@ -50,3 +50,66 @@ CREATE TABLE IF NOT EXISTS teams_elo (
   updated_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_teams_elo_updated ON teams_elo(updated_at);
+-- tier_c_log: Tier C predictions
+CREATE TABLE IF NOT EXISTS tier_c_log (
+  id BIGSERIAL PRIMARY KEY,
+  match_id TEXT,
+  predicted_at TIMESTAMPTZ DEFAULT NOW(),
+  home_team TEXT,
+  away_team TEXT,
+  p_home FLOAT, p_draw FLOAT, p_away FLOAT,
+  p_over25 FLOAT, p_btts FLOAT,
+  xg_home FLOAT, xg_away FLOAT,
+  elo_home REAL, elo_away REAL,
+  model TEXT,
+  actual_home INT, actual_away INT,
+  settled_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_tier_c_log_match ON tier_c_log(match_id);
+CREATE INDEX IF NOT EXISTS idx_tier_c_log_predicted ON tier_c_log(predicted_at);
+CREATE INDEX IF NOT EXISTS idx_tier_c_log_unsettled ON tier_c_log(match_id) WHERE actual_home IS NULL;
+-- fixtures: canonical matches (source of truth for settle)
+CREATE TABLE IF NOT EXISTS fixtures (
+  fixture_id TEXT PRIMARY KEY,
+  match_date DATE,
+  home_team_id TEXT,
+  away_team_id TEXT,
+  ht_home INT,
+  ht_away INT,
+  ft_home INT,
+  ft_away INT,
+  status TEXT,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ,
+  competition_key TEXT,
+  competition_name TEXT,
+  country TEXT,
+  season TEXT,
+  competition_segment TEXT,
+  tier TEXT,
+  kickoff_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_fixtures_teams_date ON fixtures(home_team_id, away_team_id, match_date);
+CREATE INDEX IF NOT EXISTS idx_fixtures_updated ON fixtures(updated_at);
+CREATE INDEX IF NOT EXISTS idx_fixtures_status ON fixtures(status);
+-- cfi_living_verified_fixtures: staging for verification
+CREATE TABLE IF NOT EXISTS cfi_living_verified_fixtures (
+  fixture_id TEXT PRIMARY KEY,
+  target_date DATE,
+  kickoff_at TIMESTAMPTZ,
+  home_team TEXT,
+  away_team TEXT,
+  home_team_norm TEXT,
+  away_team_norm TEXT,
+  competition TEXT,
+  verification_status TEXT,
+  source_name TEXT,
+  source_url TEXT,
+  source_provenance TEXT,
+  verified_at TIMESTAMPTZ,
+  canonical_home_team_id TEXT,
+  canonical_away_team_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_clvf_date ON cfi_living_verified_fixtures(target_date);
+CREATE INDEX IF NOT EXISTS idx_clvf_canonical_home ON cfi_living_verified_fixtures(canonical_home_team_id);
+CREATE INDEX IF NOT EXISTS idx_clvf_canonical_away ON cfi_living_verified_fixtures(canonical_away_team_id);

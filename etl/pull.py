@@ -23,6 +23,24 @@ TABLES: dict[str, tuple[str, str, list[str]]] = {
                       "source", "confidence", "created_at", "updated_at"]),
     "teams_elo": ("updated_at", "team_id",
                   ["team_id", "rating", "matches", "updated_at"]),
+    "tier_c_log": ("predicted_at", "id",
+                   ["id", "match_id", "predicted_at", "home_team", "away_team",
+                    "p_home", "p_draw", "p_away", "p_over25", "p_btts",
+                    "xg_home", "xg_away", "elo_home", "elo_away",
+                    "model", "actual_home", "actual_away", "settled_at"]),
+    "fixtures": ("updated_at", "fixture_id",
+                 ["fixture_id", "match_date", "home_team_id", "away_team_id",
+                  "ht_home", "ht_away", "ft_home", "ft_away", "status",
+                  "created_at", "updated_at", "competition_key", "competition_name",
+                  "country", "season", "competition_segment", "tier", "kickoff_at"]),
+    "cfi_living_verified_fixtures": ("verified_at", "fixture_id",
+                                      ["fixture_id", "target_date", "kickoff_at",
+                                       "home_team", "away_team",
+                                       "home_team_norm", "away_team_norm",
+                                       "competition", "verification_status",
+                                       "source_name", "source_url",
+                                       "source_provenance", "verified_at",
+                                       "canonical_home_team_id", "canonical_away_team_id"]),
 }
 
 RETRY_DELAYS = [1, 2, 4]
@@ -96,6 +114,13 @@ def fetch_batch(sb: Any, table: str, cursor_col: str, key_col: str,
     return []
 
 
+def _adapt(v: Any) -> Any:
+    """Wrap dict/list for JSONB columns."""
+    if isinstance(v, (dict, list)):
+        return Json(v)
+    return v
+
+
 def upsert_local(conn: Any, table: str, cols: list[str],
                  rows: list[dict], key_col: str) -> int:
     if not rows:
@@ -111,7 +136,7 @@ def upsert_local(conn: Any, table: str, cols: list[str],
     )
     with conn.cursor() as cur:
         for row in rows:
-            cur.execute(sql, tuple(row.get(c) for c in cols))
+            cur.execute(sql, tuple(_adapt(row.get(c)) for c in cols))
     conn.commit()
     return len(rows)
 
