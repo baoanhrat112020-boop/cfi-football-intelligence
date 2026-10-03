@@ -151,29 +151,36 @@ def get_unsettled(conn: Any, limit: int) -> list[dict]:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def settle_row(conn: Any, pred: dict, ft_h: int, ft_a: int, dry_run: bool) -> bool:
+def settle_row(conn: Any, pred: dict, ft_h: int, ft_a: int,
+               ht_h: int | None, ht_a: int | None, dry_run: bool) -> bool:
     if dry_run:
         return True
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE tier_c_log SET actual_home = %s, actual_away = %s, settled_at = now() "
+            "UPDATE tier_c_log SET actual_home = %s, actual_away = %s, "
+            "actual_ht_home = %s, actual_ht_away = %s, settled_at = now() "
             "WHERE id = %s AND settled_at IS NULL",
-            (ft_h, ft_a, pred["id"]),
+            (ft_h, ft_a, ht_h, ht_a, pred["id"]),
         )
         return cur.rowcount == 1
     conn.commit()  # (unreachable here, committed after loop)
 
 
 def push_to_supabase(sb: Any, updates: list[dict]) -> int:
-    """Update Supabase tier_c_log for rows [{'id': int, 'actual_home': int, 'actual_away': int}]."""
+    """Update Supabase tier_c_log with FT + HT scores."""
     ok = 0
     for u in updates:
         try:
-            r = sb.table("tier_c_log").update({
+            payload = {
                 "actual_home": u["actual_home"],
                 "actual_away": u["actual_away"],
                 "settled_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", u["id"]).execute()
+            }
+            if u.get("actual_ht_home") is not None:
+                payload["actual_ht_home"] = u["actual_ht_home"]
+            if u.get("actual_ht_away") is not None:
+                payload["actual_ht_away"] = u["actual_ht_away"]
+            r = sb.table("tier_c_log").update(payload).eq("id", u["id"]).execute()
             if r.data:
                 ok += 1
         except Exception as e:
@@ -234,13 +241,15 @@ def run(limit: int, dry_run: bool, push: bool) -> None:
 
             print(f"  [{p['id']}] {p['home_team']} {ft_h}-{ft_a} {p['away_team']} (HT {ht_h}-{ht_a})")
 
-            if settle_row(conn, p, ft_h, ft_a, dry_run):
+            if settle_row(conn, p, ft_h, ft_a, ht_h, ht_a, dry_run):
                 total_ok += 1
                 if not dry_run:
                     updates_for_push.append({
                         "id": p["id"],
                         "actual_home": ft_h,
                         "actual_away": ft_a,
+                        "actual_ht_home": ht_h,
+                        "actual_ht_away": ht_a,
                     })
                     log_event(conn, run_id, "settle", "INFO",
                               f"settled id={p['id']} {ft_h}-{ft_a}",

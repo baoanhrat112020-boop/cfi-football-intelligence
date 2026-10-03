@@ -63,7 +63,11 @@ CREATE TABLE IF NOT EXISTS tier_c_log (
   elo_home REAL, elo_away REAL,
   model TEXT,
   actual_home INT, actual_away INT,
-  settled_at TIMESTAMPTZ
+  settled_at TIMESTAMPTZ,
+  p_o05_ht FLOAT, p_o15_ht FLOAT, p_btts_h1 FLOAT,
+  p_o35_ft FLOAT, p_o45_ft FLOAT, p_o55_ft FLOAT,
+  p_2_3_ft FLOAT, p_4_6_ft FLOAT,
+  actual_ht_home INT, actual_ht_away INT
 );
 CREATE INDEX IF NOT EXISTS idx_tier_c_log_match ON tier_c_log(match_id);
 CREATE INDEX IF NOT EXISTS idx_tier_c_log_predicted ON tier_c_log(predicted_at);

@@ -1,0 +1,15 @@
+-- Add 8 markets (O0.5/O1.5 HT, BTTS H1, O3.5/O4.5/O5.5 FT, 2-3/4-6 FT) + HT actuals
+
+ALTER TABLE tier_c_log
+  ADD COLUMN IF NOT EXISTS p_o05_ht    FLOAT,
+  ADD COLUMN IF NOT EXISTS p_o15_ht    FLOAT,
+  ADD COLUMN IF NOT EXISTS p_btts_h1   FLOAT,
+  ADD COLUMN IF NOT EXISTS p_o35_ft    FLOAT,
+  ADD COLUMN IF NOT EXISTS p_o45_ft    FLOAT,
+  ADD COLUMN IF NOT EXISTS p_o55_ft    FLOAT,
+  ADD COLUMN IF NOT EXISTS p_2_3_ft    FLOAT,
+  ADD COLUMN IF NOT EXISTS p_4_6_ft    FLOAT,
+  ADD COLUMN IF NOT EXISTS actual_ht_home INT,
+  ADD COLUMN IF NOT EXISTS actual_ht_away INT;
+
+CREATE INDEX IF NOT EXISTS idx_tier_c_log_settled ON tier_c_log(settled_at) WHERE settled_at IS NOT NULL;
