@@ -256,6 +256,27 @@ async function enrichFixturesWithTier(rows:any[],env:Env):Promise<any[]>{
   }catch{return noTier()}
 }
 
+async function fetchTeamWarnings(env:any,home:string,away:string):Promise<any[]>{
+  if(!env.SUPABASE_SERVICE_KEY)return[];
+  const names=[home,away].filter(Boolean);
+  if(names.length===0)return[];
+  try{
+    const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_team_tendency_by_names`,{
+      method:'POST',
+      headers:{'apikey':env.SUPABASE_SERVICE_KEY,'Authorization':`Bearer ${env.SUPABASE_SERVICE_KEY}`,'Content-Type':'application/json'},
+      body:JSON.stringify({p_names:names}),
+      signal:AbortSignal.timeout(2500)
+    });
+    if(!res.ok)return[];
+    const rows:any=await res.json();
+    return Array.isArray(rows)?rows.map((r:any)=>({
+      team:r.team_name,market:r.market,flag:r.flag,
+      nMatches:r.n_matches,nEvents:r.n_events,
+      rate:Number(r.rate),lift:Number(r.lift)
+    })):[];
+  }catch(_e){return[]}
+}
+
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
@@ -304,7 +325,15 @@ export default{
           }
         }catch(_e){}
       }
-      if(response.ok&&body&&typeof body==='object')body.extraMarkets=tierAExtraMarkets(body);
+      if(response.ok&&body&&typeof body==='object'){
+        body.extraMarkets=tierAExtraMarkets(body);
+        try{
+          const homeName=String(input?.home??body?.match?.home??'').trim();
+          const awayName=String(input?.away??body?.match?.away??'').trim();
+          const warns=await fetchTeamWarnings(env,homeName,awayName);
+          if(warns.length)body.tendencyWarnings=warns;
+        }catch(_e){}
+      }
       if(!response.ok||!shouldCompactPredict(request,input))return Response.json(body,{status:response.status});
       return Response.json(compactPrediction(body),{status:response.status});
     }
