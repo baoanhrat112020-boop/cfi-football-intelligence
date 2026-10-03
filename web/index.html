@@ -127,7 +127,7 @@
 .odds-input{width:72px;padding:4px 6px;font-size:13px;background:#1a1a1a;color:#eee;border:1px solid #333;border-radius:6px;text-align:center;font-family:ui-monospace,monospace}
 .odds-input:focus{border-color:#4a9eff;outline:none}
 .market-group-label{margin:12px 2px 2px;font-size:10px;font-weight:800;letter-spacing:.08em;color:#7895a9}
-.market-approximate{opacity:.95;background:#2a2814}.market-approximate .approx-flag{cursor:help;margin-left:4px}
+.market-approximate{opacity:.95;background:#2a2814}.market-approximate .approx-flag{cursor:help;margin-left:4px}.tendency-warn{padding:8px 12px;margin-bottom:6px;border-left:3px solid #f59e0b;background:#2a2314;border-radius:6px;font-size:12px}.tendency-warn.HIGH{border-color:#ef4444;background:#2a1414}.tendency-warn b{color:#ffd23f}.tendency-warn.HIGH b{color:#f87171}
 .odds-badge{font-size:11px;padding:3px 8px;border-radius:4px;font-family:ui-monospace,monospace;white-space:nowrap}
 .odds-neutral{background:#2a2a2a;color:#888}
 .odds-green{background:#0d3a1f;color:#4ade80}
@@ -1038,7 +1038,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }else if(isTierC&&out.probabilities){
       rows=[{market:"HOME",p:Number(out.probabilities.home)*100,decision:"WATCH"},{market:"DRAW",p:Number(out.probabilities.draw)*100,decision:"WATCH"},{market:"AWAY",p:Number(out.probabilities.away)*100,decision:"WATCH"}];
     }else{rows=collectCore(out);}
-    var list=$("marketList");list.innerHTML="";
+    var list=$("marketList");list.innerHTML="";(function(){var w=out&&out.tendencyWarnings;if(!w||!w.length)return;var byTeam={};w.forEach(function(x){(byTeam[x.team]=byTeam[x.team]||[]).push(x)});Object.keys(byTeam).forEach(function(t){var items=byTeam[t];var maxFlag=items.some(function(x){return x.flag==="HIGH"})?"HIGH":"MEDIUM";var el=document.createElement("div");el.className="tendency-warn "+maxFlag;var txt=items.map(function(x){var lift=x.lift?(x.lift.toFixed(2)+"x"):"?";return esc(x.market)+" ("+x.flag+" "+lift+")"}).join(" Â· ");el.innerHTML="<b>"+esc(t)+"</b>: "+txt;list.appendChild(el)})})();
     if(isTierC){list.innerHTML='<div class="info-strip" style="border-color:#8a6c13;background:linear-gradient(180deg,#2c2a15,#1a201b);color:#ffd23f;margin-bottom:10px"><span>⚠️</span><span><b>TIER C — ELO FALLBACK</b><br>Thiếu dữ liệu lịch sử. Prediction dùng ELO + home advantage, confidence LOW. Không phải model Tier A. Chỉ tham khảo.</span></div>';}
     if(!rows.length){list.innerHTML+='<div class="info-strip"><span>ⓘ</span><span>Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.</span></div>'}
     var GROUP_ORDER=["core","popular","ht_detail","ft_detail","range"],GROUP_LABELS={core:"CORE",popular:"PHỔ THÔNG",ht_detail:"HIỆP 1 · CHI TIẾT",ft_detail:"CẢ TRẬN · CHI TIẾT",range:"DẢI BÀN"},buckets={};
