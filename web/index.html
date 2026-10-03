@@ -428,11 +428,17 @@
       </div>
     </section>
 
-    <section id="screenLive" class="screen">
-      <div class="card unavailable-card" style="margin-top:12px">
-        <div class="pulse-icon"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 7 8 5-8 5z"/></svg></div>
-        <h2>Live CFI</h2>
-        <p>Live CFI dùng /api/predict-live cho trận đang thi đấu (in-play). Hãy tìm và mở một trận từ tab "Trận hôm nay" đã kickoff để xem live signal thật; màn này không tự dựng số liệu trực tiếp giả khi chưa có trận nào đang diễn ra.</p>
+    <section id="screenSuggest" class="screen">
+      <div class="tabs" id="suggestTabs">
+        <button class="tab" data-win="90">1h30</button>
+        <button class="tab" data-win="180">3h</button>
+        <button class="tab active" data-win="240">4h</button>
+        <button class="tab" data-win="270">4h30</button>
+        <button class="tab" data-win="360">6h</button>
+        <button class="tab" data-win="600">10h</button>
+      </div>
+      <div id="suggestContent" style="margin-top:12px">
+        <div class="context-state">Đang tải...</div>
       </div>
     </section>
 
@@ -465,7 +471,7 @@
   <nav class="bottom-nav">
     <button class="nav-btn active" data-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 11 9-8 9 8v10h-6v-6H9v6H3z"/></svg><span>Home</span></button>
     <button class="nav-btn" data-nav="discover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Discover</span></button>
-    <button class="nav-btn" data-nav="live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 7 8 5-8 5z"/></svg><span>Live</span></button>
+    <button class="nav-btn" data-nav="suggest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 15 8l6 1-4.5 4.5L18 20l-6-3-6 3 1.5-6.5L3 9l6-1z"/></svg><span>Suggest</span></button>
     <button class="nav-btn" data-nav="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v16H4zM8 3v4M16 3v4M4 10h16"/></svg><span>History</span></button>
     <button class="nav-btn" data-nav="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
   </nav>
@@ -482,7 +488,7 @@
 <script>
 (function(){
   var state={match:null,status:null,prediction:null,current:"search",pending:{},searchMode:"manual",todayFixtures:[],context:null,contextLoading:false,contextError:null};
-  var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult"),dna:document.getElementById("screenDNA"),evidence:document.getElementById("screenEvidence"),live:document.getElementById("screenLive"),settlement:document.getElementById("screenSettlement")};
+  var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult"),dna:document.getElementById("screenDNA"),evidence:document.getElementById("screenEvidence"),suggest:document.getElementById("screenSuggest"),settlement:document.getElementById("screenSettlement")};
 
   function $(id){return document.getElementById(id)}
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
@@ -1128,10 +1134,64 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     document.querySelectorAll(".nav-btn").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
     if(btn.dataset.nav==="home"){showScreen("search");setSearchMode("manual")}
     else if(btn.dataset.nav==="discover"){showScreen("search");setSearchMode("today")}
-    else if(btn.dataset.nav==="live")showScreen("live");
+    else if(btn.dataset.nav==="suggest"){showScreen("suggest");loadSuggest(240);}
     else if(btn.dataset.nav==="history"){showScreen("settlement");loadSettlement()}
     else $("settingsBtn").click();
   }});
+
+  async function loadSuggest(minutes){
+    var el=$("suggestContent");
+    el.innerHTML='<div class="context-state">Đang tải...</div>';
+    try{
+      var r=await api("/api/suggest?minutes="+minutes,"GET");
+      var data=r.data;
+      if(!data||typeof data!=="object")throw new Error("Empty response");
+      el.innerHTML=renderSuggestHtml(data);
+    }catch(e){
+      el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
+    }
+  }
+
+  function renderSuggestHtml(data){
+    if(!data.slots||!data.slots.length){
+      return '<div class="context-state">Không có trận nào thỏa ngưỡng trong '+data.minutes+' phút tới.</div>';
+    }
+    var html='<div class="source" style="margin-bottom:10px"><span>Tổng</span><b>'+data.match_count+' trận / '+data.slot_count+' khung giờ</b></div>';
+    data.slots.forEach(function(slot){
+      html+='<div style="margin:14px 0 6px"><b style="color:#49aeff;font-size:15px">'+esc(slot.hour)+'</b> <span style="color:#7f9daf;font-size:11px">'+esc(slot.date)+' · '+slot.matches.length+' trận</span></div>';
+      slot.matches.forEach(function(m){
+        var probs="";
+        ["3+ HT","Other FT","Other HT","7+ FT"].forEach(function(mk){
+          var p=m.probs[mk];
+          var hit=m.hit_markets&&m.hit_markets.indexOf(mk)>=0;
+          probs+='<div style="background:'+(hit?'#0d2818':'#0f1419')+';padding:5px 7px;border-radius:5px;text-align:center"><div style="font-size:9px;color:'+(hit?'#6ee7a0':'#7a8a99')+';font-weight:700">'+mk+'</div><div style="font-size:13px;font-weight:700;color:'+(hit?'#4ade80':'#c5d4de')+'">'+(p*100).toFixed(1)+'%</div></div>';
+        });
+        var kt=m.kickoff?m.kickoff.substring(11,16):"??:??";
+        var flagsHtml="";
+        if(m.flags&&m.flags.length){
+          var byTeam={};
+          m.flags.forEach(function(f){(byTeam[f.team]=byTeam[f.team]||[]).push(f)});
+          Object.keys(byTeam).forEach(function(t){
+            var items=byTeam[t];
+            var isHigh=items.some(function(x){return x.flag==="HIGH"});
+            var txt=items.map(function(x){return esc(x.market)+" ("+x.flag+" "+x.lift+"x)"}).join(" | ");
+            flagsHtml+='<div style="margin-top:6px;padding:5px 8px;border-left:3px solid '+(isHigh?'#ef4444':'#f59e0b')+';background:'+(isHigh?'#1a0808':'#1a1408')+';border-radius:0 5px 5px 0;font-size:11px;color:'+(isHigh?'#f0a8a8':'#d4b378')+'"><b>'+esc(t)+'</b>: '+txt+'</div>';
+          });
+        }
+        var badges=m.hit_markets?m.hit_markets.map(function(h){return '<span style="background:#0d3a1f;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-right:4px">'+esc(h)+'</span>'}).join(""):"";
+        html+='<div style="background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3">'+esc(m.home)+' vs '+esc(m.away)+'</b><span style="color:#7f9daf;font-size:11px;font-family:ui-monospace,monospace">'+esc(kt)+'</span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml+'</div>';
+      });
+    });
+    return html;
+  }
+
+  document.querySelectorAll("#suggestTabs .tab").forEach(function(btn){
+    btn.onclick=function(){
+      document.querySelectorAll("#suggestTabs .tab").forEach(function(x){x.classList.remove("active")});
+      btn.classList.add("active");
+      loadSuggest(parseInt(btn.dataset.win));
+    };
+  });
 
   setToday();
 })();
