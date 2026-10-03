@@ -335,7 +335,9 @@ export default{
         }catch(_e){}
       }
       if(!response.ok||!shouldCompactPredict(request,input))return Response.json(body,{status:response.status});
-      return Response.json(compactPrediction(body),{status:response.status});
+      const compact=compactPrediction(body);
+      if(body.tendencyWarnings)compact.tendencyWarnings=body.tendencyWarnings;
+      return Response.json(compact,{status:response.status});
     }
 
     if((url.pathname==='/api/status'||url.pathname==='/health')&&request.method==='GET'){
