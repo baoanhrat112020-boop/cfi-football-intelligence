@@ -109,3 +109,10 @@ etl/_pg_portable/
 etl/_etl_data/
 etl/.venv/
 etl/_*.py
+
+# Local logs
+_logs/
+_auto_finish.ps1
+_run_schema.ps1
+_dry_run_out/
+_dry/
