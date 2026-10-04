@@ -82,7 +82,7 @@ jobs:
             if(body?.status!=='OK'||body?.action!=='CFI_FIXTURES_DAY'||!Array.isArray(body?.rows)){
               throw new Error(`BAD_CONTRACT: ${text.slice(0,500)}`);
             }
-            if(body?.version!=='CFI_FIXTURES_DAY_V5_PARALLEL_ALL_DAY'){
+            if(body?.version!=='CFI_FIXTURES_DAY_V11_NO_BONGDAWAP'){
               throw new Error(`WRONG_FIXTURE_VERSION: ${body?.version}`);
             }
             const bigDb=(body?.attempts||[]).find(x=>x?.provider==='CFI_BIGDB');
