@@ -35,16 +35,16 @@ if (-not $Force -and (Test-Path $marker)) {
 }
 
 # === 2. Ensure Postgres running ===
-$pgStatus = & "$pgBin\pg_ctl.exe" -D $dataDir status 2>&1 | Out-String
-if ($pgStatus -notmatch "server is running") {
+$listening = (netstat -ano 2>&1 | Select-String ":15433.*LISTENING")
+if (-not $listening) {
     Log "Postgres chua chay. Dang start..."
-    & "$pgBin\pg_ctl.exe" -D $dataDir -l "$etl\_pg_portable\pg_start.log" start -w -t 30 | Out-Null
-    Start-Sleep 3
-    $pgStatus = & "$pgBin\pg_ctl.exe" -D $dataDir status 2>&1 | Out-String
-    if ($pgStatus -notmatch "server is running") {
-        Log "FAIL: Postgres khong start duoc"
-        exit 1
+    Start-Process -FilePath "$pgBin\pg_ctl.exe" -ArgumentList "-D","$dataDir","-l","$etl\_pg_portable\pg_start.log","start" -NoNewWindow
+    $ok = $false
+    for ($i = 0; $i -lt 15; $i++) {
+        Start-Sleep 1
+        if ((netstat -ano 2>&1 | Select-String ":15433.*LISTENING")) { $ok = $true; break }
     }
+    if (-not $ok) { Log "FAIL: Postgres khong start duoc"; exit 1 }
     Log "Postgres started OK"
 } else {
     Log "Postgres da chay san"
@@ -60,6 +60,16 @@ foreach ($t in $tables) {
     $r | Add-Content -Path $logFile -Encoding UTF8
     if ($LASTEXITCODE -ne 0) { Log "WARN pull $t exit=$LASTEXITCODE" }
 }
+
+# === 3b. Compute team stats ===
+Log "TEAM_STATS..."
+if ($NoPush) {
+    $r = & python "$etl\compute_team_stats.py" 2>&1
+} else {
+    $r = & python "$etl\compute_team_stats.py" --push 2>&1
+}
+$r | Add-Content -Path $logFile -Encoding UTF8
+if ($LASTEXITCODE -ne 0) { Log "WARN team_stats exit=$LASTEXITCODE" }
 
 # === 4. Settle ===
 Log "SETTLE..."

@@ -104,6 +104,7 @@
     @media(max-width:390px){.scoreline-ref-grid{grid-template-columns:1fr}}
     .evidence-panel{display:none}.evidence-panel.active{display:block}
     .settlement-panel{display:none}.settlement-panel.active{display:block}
+    .chip{padding:5px 12px;border:1px solid #1f2a35;background:#0f1419;color:#8a98a8;border-radius:16px;cursor:pointer;font-size:12px;font-weight:600}.chip.active{background:#4a9eff;color:#fff;border-color:#4a9eff}.chip:hover:not(.active){border-color:#2c3a48;color:#b0bcc8}
     .tabs{display:flex;border-bottom:1px solid #17415c;overflow:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tab{height:43px;padding:0 14px;border:0;background:transparent;color:#8ea8ba;font-size:12px;white-space:nowrap;border-bottom:2px solid transparent}.tab.active{color:#62bbff;border-bottom-color:#289bff;background:rgba(31,129,202,.06)}
     .empty{padding:34px 20px;text-align:center}.pulse-icon{width:62px;height:62px;border-radius:50%;border:1px solid #245d80;display:grid;place-items:center;margin:0 auto 15px;color:#59b9ff;background:#08263b}.empty h2{font-size:16px;margin:0 0 8px}.empty p{font-size:12px;color:#8ca5b8;line-height:1.5;margin:0 auto;max-width:290px}
     .quick-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:10px}.quick{height:70px;border:1px solid #1f5272;border-radius:11px;background:#09253a;color:#cbe0ed;font-size:11px;display:grid;place-items:center;gap:4px;padding:8px}.quick svg{color:#54b6ff}
@@ -429,14 +430,14 @@
     </section>
 
     <section id="screenSuggest" class="screen">
-      <div class="tabs" id="suggestTabs">
-        <button class="tab" data-win="30">30p tới</button>
-    <button class="tab" data-win="90">1h30</button>
-        <button class="tab" data-win="180">3h</button>
-        <button class="tab active" data-win="240">4h</button>
-        <button class="tab" data-win="270">4h30</button>
-        <button class="tab" data-win="360">6h</button>
-        <button class="tab" data-win="600">10h</button>
+      <div style="font-size:11px;color:#d4b378;padding:6px 2px">
+        Số liệu từ thống kê bàn thắng. Bấm vào trận để chạy Predict chính xác.
+      </div>
+      <div class="chip-row" id="suggestChips" style="display:flex;gap:6px;padding:8px 2px;flex-wrap:wrap">
+        <button class="chip active" data-range="180">&le;3h</button>
+        <button class="chip" data-range="today">H&ocirc;m nay</button>
+        <button class="chip" data-range="600">T&#7845;t c&#7843;</button>
+        <button class="chip" data-range="noamateur" style="margin-left:auto">Lo&#7841;i amateur</button>
       </div>
       <div id="suggestContent" style="margin-top:12px">
         <div class="context-state">Đang tải...</div>
@@ -643,6 +644,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     $("todayPanel").classList.toggle("active",mode==="today");
     if(mode==="today"&&!state.todayFixtures.length)loadTodayFixtures();
   }
+  function prefillAndPredict(home,away,date,league,extra){
+    cancelPendingRequests();
+    state.match=Object.assign({home:home,away:away,date:date,league:league||""},extra||{});
+    $("homeInput").value=home;$("awayInput").value=away;$("dateInput").value=date;$("leagueInput").value=league||"";
+    syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
+  }
   function renderTodayFixtures(rows,source,fromNetwork){
     state.todayFixtures=Array.isArray(rows)?rows:[];
     $("fixtureSource").textContent="Nguồn: "+(source||"CFI fixture discovery");
@@ -655,11 +662,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var time=f.kickoffLocal||f.time||"—";var league=f.competition||f.league||"Unknown competition";
       b.innerHTML='<div class="fixture-top"><span class="fixture-time">'+esc(time)+'</span>'+(f.tier==="A"?'<span class="fixture-badge tier-a">A</span>':f.tier==="C"?'<span class="fixture-badge tier-c">C</span>':f.tier==="C0"?'<span class="fixture-badge tier-c0">No Data</span>':'')+'<span class="fixture-league">'+esc(league)+'</span></div><div class="fixture-teams">'+esc(f.home)+' <span style="color:#65869d;font-weight:600">vs</span> '+esc(f.away)+'</div><div class="fixture-meta">'+esc((f.provider||"")+(f.country?" · "+f.country:""))+'</div>';
       b.onclick=function(){
-        var date=$("todayDateInput").value;
-        cancelPendingRequests();
-        state.match={home:f.home,away:f.away,date:f.targetDate||date,league:league,kickoff:f.kickoffIso||null,provider:f.provider||source||null};
-        $("homeInput").value=f.home;$("awayInput").value=f.away;$("dateInput").value=state.match.date;$("leagueInput").value=league;
-        syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
+        prefillAndPredict(f.home,f.away,f.targetDate||$("todayDateInput").value,league,{kickoff:f.kickoffIso||null,provider:f.provider||source||null});
       };
       frag.appendChild(b);
     });
@@ -920,7 +923,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.2 Beta 1 · Build 16</b></div></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.2 Beta 1 · Build 18</b></div></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1135,30 +1138,80 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     document.querySelectorAll(".nav-btn").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
     if(btn.dataset.nav==="home"){showScreen("search");setSearchMode("manual")}
     else if(btn.dataset.nav==="discover"){showScreen("search");setSearchMode("today")}
-    else if(btn.dataset.nav==="suggest"){showScreen("suggest");loadSuggest(240);}
+    else if(btn.dataset.nav==="suggest"){showScreen("suggest");if(!state.suggestData||Date.now()-state.suggestCache>SUGGEST_TTL)loadSuggest();else renderSuggestFromCache(false);}
     else if(btn.dataset.nav==="history"){showScreen("settlement");loadSettlement()}
     else $("settingsBtn").click();
   }});
 
-  async function loadSuggest(minutes){
+  var suggestSeq=0,SUGGEST_TTL=2*60*1000;
+  state.suggestData=null;state.suggestCache=0;state.suggestFilter="180";state.suggestNoAmateur=false;
+  try{state.suggestNoAmateur=localStorage.getItem("cfi_suggest_noamateur")==="1"}catch(e){}
+  function teamTags(name){
+    var n=String(name||"").trim(),t=[];
+    if(/\s(2|II)$/.test(n))t.push("Reserve");
+    if(/\bU(21|19|18)\b/i.test(n))t.push("Youth");
+    if(/\s(W|\(W\))$/.test(n))t.push("Women");
+    return t;
+  }
+  function tagBadges(name){
+    return teamTags(name).map(function(x){return ' <span style="background:#1c242c;color:#8fa1af;padding:1px 5px;border-radius:4px;font-size:9px;font-weight:600;vertical-align:middle">'+x+'</span>'}).join("");
+  }
+  async function loadSuggest(){
     var el=$("suggestContent");
-    el.innerHTML='<div class="context-state">Đang tải...</div>';
+    var seq=++suggestSeq;
+    el.innerHTML='<div class="context-state">\u0110ang t\u1ea3i...</div>';
     try{
-      var r=await api("/api/suggest?minutes="+minutes,"GET");
+      var r=await api("/api/suggest?minutes=600","GET");
+      if(seq!==suggestSeq)return;
       var data=r.data;
       if(!data||typeof data!=="object")throw new Error("Empty response");
-      el.innerHTML=renderSuggestHtml(data);
+      state.suggestData=data;state.suggestCache=Date.now();state.suggestFilter="180";
+      renderSuggestFromCache(true);
     }catch(e){
-      el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
+      if(seq!==suggestSeq)return;
+      el.innerHTML='<div class="context-state">Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c: '+esc(String(e.message||e))+'</div>';
     }
+  }
+  function suggestRangePass(range,m){
+    if(range==="180")return Date.parse(m.kickoff)<=Date.now()+3*3600*1000;
+    if(range==="today")return String(m.kickoff).substring(0,10)===new Date(Date.now()+7*3600*1000).toISOString().substring(0,10);
+    return true;
+  }
+  function suggestView(range){
+    var slots=(state.suggestData.slots||[]).map(function(sl){
+      return {date:sl.date,hour:sl.hour,matches:sl.matches.filter(function(m){
+        return suggestRangePass(range,m)&&(!state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length));
+      })};
+    }).filter(function(sl){return sl.matches.length});
+    var n=slots.reduce(function(a,sl){return a+sl.matches.length},0);
+    return {slots:slots,n:n};
+  }
+  function renderSuggestFromCache(autoExpand){
+    if(!state.suggestData)return;
+    var order=["180","today","600"],range=state.suggestFilter,view=suggestView(range);
+    if(autoExpand){
+      var i=order.indexOf(range);
+      while(view.n<5&&i<order.length-1){i++;view=suggestView(order[i])}
+      if(order[i]!==range){state.suggestFilter=order[i];toast("M\u1edf r\u1ed9ng \u0111\u1ec3 hi\u1ec7n "+view.n+" tr\u1eadn")}
+    }
+    document.querySelectorAll("#suggestChips .chip").forEach(function(c){
+      var d=c.dataset.range;
+      c.classList.toggle("active",d==="noamateur"?state.suggestNoAmateur:d===state.suggestFilter);
+    });
+    $("suggestContent").innerHTML=renderSuggestHtml({slots:view.slots});
   }
 
   function renderSuggestHtml(data){
-    if(!data.slots||!data.slots.length){
-      return '<div class="context-state">Không có trận nào thỏa ngưỡng trong '+data.minutes+' phút tới.</div>';
+    var slots=(data.slots||[]).map(function(sl){
+      return {date:sl.date,hour:sl.hour,matches:sl.matches.filter(function(m){
+        return !state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length);
+      })};
+    }).filter(function(sl){return sl.matches.length});
+    if(!slots.length){
+      return '<div class="context-state">Không có trận nào thỏa ngưỡng trong khung này.</div>';
     }
-    var html='<div class="source" style="margin-bottom:10px"><span>Tổng</span><b>'+data.match_count+' trận / '+data.slot_count+' khung giờ</b></div>';
-    data.slots.forEach(function(slot){
+    var html='<div class="source" style="margin-bottom:10px"><span>Tổng</span><b>'+slots.reduce(function(a,sl){return a+sl.matches.length},0)+' trận / '+slots.length+' khung giờ</b></div>';
+    slots.forEach(function(slot){
       html+='<div style="margin:14px 0 6px"><b style="color:#49aeff;font-size:15px">'+esc(slot.hour)+'</b> <span style="color:#7f9daf;font-size:11px">'+esc(slot.date)+' · '+slot.matches.length+' trận</span></div>';
       slot.matches.forEach(function(m){
         var probs="";
@@ -1174,19 +1227,32 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
           var txt=m.flags.map(function(x){return esc(x.market)+" ("+x.flag+" "+x.lift+"x)"}).join(" | ");
           flagsHtml+='<div style="margin-top:6px;padding:5px 8px;border-left:3px solid '+(isHigh?'#ef4444':'#f59e0b')+';background:'+(isHigh?'#1a0808':'#1a1408')+';border-radius:0 5px 5px 0;font-size:11px;color:'+(isHigh?'#f0a8a8':'#d4b378')+'"><b>Đội có xu hướng</b>: '+txt+'</div>';
         }
+        var compLine="";
+        if(m.competition){
+          var hi=Number(m.base_3ht)>0.15;
+          compLine='<div style="font-size:11px;color:#7f9daf;margin:-3px 0 7px">'+esc(m.competition)+' \u00b7 '+esc(slot.hour)+(m.base_3ht!=null?' \u00b7 base 3+ HT '+(Number(m.base_3ht)*100).toFixed(0)+'%':'')+(hi?' <span style="color:#7fc8ff">gi\u1ea3i nhi\u1ec1u b\u00e0n</span>':'')+'</div>';
+        }
         var badges=m.hit_markets?m.hit_markets.map(function(h){return '<span style="background:#0d3a1f;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-right:4px">'+esc(h)+'</span>'}).join(""):"";
-        html+='<div style="background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3">'+esc(m.home)+' vs '+esc(m.away)+'</b>'+timeBadge+'</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml+'</div>';
+        html+='<div class="suggest-card" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'" style="cursor:pointer;background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3">'+esc(m.home)+tagBadges(m.home)+' vs '+esc(m.away)+tagBadges(m.away)+'</b>'+timeBadge+'</div>'+compLine+'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml+'</div>';
       });
     });
     return html;
   }
 
-  document.querySelectorAll("#suggestTabs .tab").forEach(function(btn){
+  document.querySelectorAll("#suggestChips .chip").forEach(function(btn){
     btn.onclick=function(){
-      document.querySelectorAll("#suggestTabs .tab").forEach(function(x){x.classList.remove("active")});
-      btn.classList.add("active");
-      loadSuggest(parseInt(btn.dataset.win));
+      var r=btn.dataset.range;
+      if(r==="noamateur"){
+        state.suggestNoAmateur=!state.suggestNoAmateur;
+        try{localStorage.setItem("cfi_suggest_noamateur",state.suggestNoAmateur?"1":"0")}catch(e){}
+      }else state.suggestFilter=r;
+      renderSuggestFromCache(false);
     };
+  });
+
+  $("suggestContent").addEventListener("click",function(e){
+    var c=e.target.closest(".suggest-card");if(!c)return;
+    prefillAndPredict(c.dataset.home,c.dataset.away,c.dataset.date,null);
   });
 
   setToday();
