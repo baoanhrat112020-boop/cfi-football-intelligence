@@ -27,6 +27,7 @@ type Window={targetDate:string;timeZone:string;nowMs?:number};
 
 const TARGET_ROWS=20;
 const PRIMARY_TIMEOUT_MS=2500;
+const BIGDB_TIMEOUT_MS=6000;
 const FALLBACK_TIMEOUT_MS=1800;
 
 const FOOTBALL_DATA_URL='https://www.football-data.co.uk/fixtures.csv';
@@ -239,7 +240,7 @@ async function bigDbDay(window:Window,env:FixtureDayEnv,fetchFn:FetchLike){
   }
   const base=env.CFI_DB_BASE_URL.replace(/\/$/,'');
   const url=`${base}/fixtures-day?target_date=${encodeURIComponent(window.targetDate)}`;
-  const result:any=await getJson(fetchFn,url,PRIMARY_TIMEOUT_MS,{
+  const result:any=await getJson(fetchFn,url,BIGDB_TIMEOUT_MS,{
     method:'GET',
     headers:{accept:'application/json','x-cfi-key':env.CFI_DB_KEY}
   });
