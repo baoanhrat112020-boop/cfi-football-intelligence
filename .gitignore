@@ -116,3 +116,5 @@ _auto_finish.ps1
 _run_schema.ps1
 _dry_run_out/
 _dry/
+
+_cfi_key.txt

@@ -302,7 +302,7 @@ export default{
     if(url.pathname==='/api/suggest'&&request.method==='GET'){
       try{
         const minutes=Number(url.searchParams.get('minutes'));
-        if(![30,90,180,240,270,360,600].includes(minutes))return Response.json({error:'invalid'},{status:400});
+        if(![30,90,180,240,270,360,600,1440,2880].includes(minutes))return Response.json({error:'invalid'},{status:400});
         const key=(env as any).SUPABASE_SERVICE_KEY;
         const today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
         const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/suggest_snapshot?snapshot_date=eq.${today}&select=payload,match_count,generated_at&limit=1`,{headers:{'apikey':key,'Authorization':`Bearer ${key}`}});

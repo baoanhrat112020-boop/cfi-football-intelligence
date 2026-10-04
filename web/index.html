@@ -434,9 +434,10 @@
         Số liệu từ thống kê bàn thắng. Bấm vào trận để chạy Predict chính xác.
       </div>
       <div class="chip-row" id="suggestChips" style="display:flex;gap:6px;padding:8px 2px;flex-wrap:wrap">
-        <button class="chip active" data-range="180">&le;3h</button>
-        <button class="chip" data-range="today">H&ocirc;m nay</button>
-        <button class="chip" data-range="600">T&#7845;t c&#7843;</button>
+        <button class="chip" data-range="180">&le;3h</button>
+        <button class="chip" data-range="600">10h</button>
+        <button class="chip active" data-range="1440">24h</button>
+        <button class="chip" data-range="2880">48h</button>
         <button class="chip" data-range="noamateur" style="margin-left:auto">Lo&#7841;i amateur</button>
       </div>
       <div id="suggestContent" style="margin-top:12px">
@@ -923,7 +924,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.2 Beta 1 · Build 18</b></div></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.2 Beta 1 · Build 19</b></div></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1144,7 +1145,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }});
 
   var suggestSeq=0,SUGGEST_TTL=2*60*1000;
-  state.suggestData=null;state.suggestCache=0;state.suggestFilter="180";state.suggestNoAmateur=false;
+  state.suggestData=null;state.suggestCache=0;state.suggestFilter="1440";state.suggestNoAmateur=false;
   try{state.suggestNoAmateur=localStorage.getItem("cfi_suggest_noamateur")==="1"}catch(e){}
   function teamTags(name){
     var n=String(name||"").trim(),t=[];
@@ -1161,11 +1162,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var seq=++suggestSeq;
     el.innerHTML='<div class="context-state">\u0110ang t\u1ea3i...</div>';
     try{
-      var r=await api("/api/suggest?minutes=600","GET");
+      var r=await api("/api/suggest?minutes=2880","GET");
       if(seq!==suggestSeq)return;
       var data=r.data;
       if(!data||typeof data!=="object")throw new Error("Empty response");
-      state.suggestData=data;state.suggestCache=Date.now();state.suggestFilter="180";
+      state.suggestData=data;state.suggestCache=Date.now();state.suggestFilter="1440";
       renderSuggestFromCache(true);
     }catch(e){
       if(seq!==suggestSeq)return;
@@ -1173,9 +1174,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
   }
   function suggestRangePass(range,m){
-    if(range==="180")return Date.parse(m.kickoff)<=Date.now()+3*3600*1000;
-    if(range==="today")return String(m.kickoff).substring(0,10)===new Date(Date.now()+7*3600*1000).toISOString().substring(0,10);
-    return true;
+    var t=Date.parse(m.kickoff),now=Date.now();
+    if(!(t>=now-30*60*1000))return false;
+    if(range==="2880")return true;
+    return t<=now+Number(range)*60*1000;
   }
   function suggestView(range){
     var slots=(state.suggestData.slots||[]).map(function(sl){
@@ -1188,7 +1190,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function renderSuggestFromCache(autoExpand){
     if(!state.suggestData)return;
-    var order=["180","today","600"],range=state.suggestFilter,view=suggestView(range);
+    var order=["180","600","1440","2880"],range=state.suggestFilter,view=suggestView(range);
     if(autoExpand){
       var i=order.indexOf(range);
       while(view.n<5&&i<order.length-1){i++;view=suggestView(order[i])}
@@ -1205,7 +1207,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var slots=(data.slots||[]).map(function(sl){
       return {date:sl.date,hour:sl.hour,matches:sl.matches.filter(function(m){
         return !state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length);
-      })};
+      }).sort(function(a,b){return ((b.probs&&b.probs["3+ HT"])||0)-((a.probs&&a.probs["3+ HT"])||0)})};
     }).filter(function(sl){return sl.matches.length});
     if(!slots.length){
       return '<div class="context-state">Không có trận nào thỏa ngưỡng trong khung này.</div>';
