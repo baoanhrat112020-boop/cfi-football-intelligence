@@ -28,5 +28,6 @@ test('worker adds the Poisson markets to Tier A and Tier C',async()=>{
   const w=await readFile(new URL('../cloudflare-worker/src/index-gpt-core-v5.ts',import.meta.url),'utf8');
   assert.match(w,/import \{ poissonExtraMarkets \} from '\.\.\/\.\.\/src\/prediction\/poisson-markets\.ts'/);
   assert.match(w,/\.\.\.\(lh!==null&&la!==null\?poissonExtraMarkets\(lh,la\):\[\]\)/);
-  assert.match(w,/tierCModel:pr\.model,extraMarkets:poissonExtraMarkets\(Number\(pr\.xg_home\),Number\(pr\.xg_away\),'LOW'\)/);
+  assert.match(w,/poissonExtraMarkets\(Number\(pr\.xg_home\),Number\(pr\.xg_away\),'LOW'\)/);
+  assert.match(w,/tierC:true,tierCModel:pr\.model,extraMarkets:pem,/);
 });
