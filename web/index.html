@@ -1214,9 +1214,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       el.innerHTML='<div class="context-state">Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c: '+esc(String(e.message||e))+'</div>';
     }
   }
+  function suggestTimeBadge(m){
+    var kt=m.kickoff?m.kickoff.substring(11,16):"??:??",t=Date.parse(m.kickoff),el=Number.isFinite(t)?Math.floor((Date.now()-t)/60000):-1,base="font-size:10px;font-weight:800;font-family:ui-monospace,monospace;padding:2px 7px;border-radius:5px;";
+    if(el>=0&&el<=120)return '<span style="'+base+'background:#16293a;color:#7fc8ff">&#9679; Đã bắt đầu · '+el+'p trước</span>';
+    if(el>120)return '<span style="'+base+'background:#1a1f26;color:#7a8a99">Đã kết thúc</span>';
+    return '<span style="color:#7f9daf;font-size:11px;font-family:ui-monospace,monospace">'+esc(kt)+'</span>';
+  }
   function suggestRangePass(range,m){
     var t=Date.parse(m.kickoff),now=Date.now();
-    if(!(t>=now-30*60*1000))return false;
+    if(!(t>=now-120*60*1000))return false;
     if(range==="2880")return true;
     return t<=now+Number(range)*60*1000;
   }
@@ -1263,7 +1269,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
           var hit=m.hit_markets&&m.hit_markets.indexOf(mk)>=0;
           probs+='<div style="background:'+(hit?'#0d2818':'#0f1419')+';padding:5px 7px;border-radius:5px;text-align:center"><div style="font-size:9px;color:'+(hit?'#6ee7a0':'#7a8a99')+';font-weight:700">'+mk+'</div><div style="font-size:13px;font-weight:700;color:'+(hit?'#4ade80':'#c5d4de')+'">'+(p*100).toFixed(1)+'%</div></div>';
         });
-        var kt=m.kickoff?m.kickoff.substring(11,16):"??:??";var timeBadge=(m.live===true)?'<span style="background:#3a1010;color:#f87171;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800;font-family:ui-monospace,monospace">&#9679; LIVE '+(m.liveMinutes||0)+"'"+'</span>':'<span style="color:#7f9daf;font-size:11px;font-family:ui-monospace,monospace">'+esc(kt)+'</span>';
+        var timeBadge=suggestTimeBadge(m);
         var flagsHtml="";
         if(m.flags&&m.flags.length){
           var isHigh=m.flags.some(function(x){return x.flag==="HIGH"});

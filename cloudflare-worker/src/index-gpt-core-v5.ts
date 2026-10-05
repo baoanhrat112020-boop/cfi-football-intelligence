@@ -339,7 +339,7 @@ export default{
         const all:any[]=[];
         if(Array.isArray(snap?.payload?.slots))snap.payload.slots.forEach((s:any)=>{if(Array.isArray(s?.matches))s.matches.forEach((m:any)=>all.push(m))});
         const now=Date.now();
-        const lo=now-30*60*1000;
+        const lo=now-120*60*1000;
         const hi=now+minutes*60*1000;
         const groups=new Map<string,any>();
         let matchCount=0;
@@ -351,8 +351,9 @@ export default{
           const hour=String(m.kickoff).substring(11,13)+':00';
           const gk=date+' '+hour;
           if(!groups.has(gk))groups.set(gk,{date,hour,matches:[]});
-          const isLive=t<now;
-          groups.get(gk).matches.push(Object.assign({},m,{live:isLive,liveMinutes:isLive?Math.floor((now-t)/60000):0}));
+          const started=t<now;
+          const sinceKickoff=started?Math.floor((now-t)/60000):0;
+          groups.get(gk).matches.push(Object.assign({},m,{started:started,minutesSinceKickoff:sinceKickoff,live:started&&sinceKickoff<=30,liveMinutes:started&&sinceKickoff<=30?sinceKickoff:0}));
           matchCount++;
         }
         const slots=[...groups.entries()].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0).map(([,s])=>{s.matches.sort((a:any,b:any)=>Date.parse(a.kickoff)-Date.parse(b.kickoff));return s});
