@@ -1,18 +1,12 @@
 name: Deploy CFI Worker
 
+# TẠM DISABLE auto-deploy — bản CI 41abbe08 gây 1102, chưa tìm ra nguyên nhân.
+# Bật lại sau khi fix: thêm smoke test /api/predict + verify bundle CI khớp local.
+# Trigger push cũ: branches [main]; paths src/**, cloudflare-worker/**, worker/**,
+# wrangler.toml, wrangler.jsonc, package.json, package-lock.json,
+# tests/v14-alias-resolution-contract.test.mjs
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'cloudflare-worker/**'
-      - 'worker/**'
-      - 'wrangler.toml'
-      - 'wrangler.jsonc'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tests/v14-alias-resolution-contract.test.mjs'
 
 permissions:
   actions: read
