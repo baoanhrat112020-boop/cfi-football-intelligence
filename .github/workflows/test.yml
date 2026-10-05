@@ -27,6 +27,7 @@ jobs:
       - run: npm ci
       - name: Zero-AI deterministic CFI gate
         run: node tools/cfi-audit.mjs --full --no-cache
+      - run: npm test
       - name: Upload deterministic audit
         if: always()
         uses: actions/upload-artifact@v4
