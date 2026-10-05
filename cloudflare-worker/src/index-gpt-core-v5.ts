@@ -1,6 +1,6 @@
 import v4 from './index-gpt-core-v4.ts';
 import { isDryRun } from './dry-run.ts';
-import { enrichLive } from './live-fotmob.ts';
+import { enrichLive } from './live-livescore.ts';
 import { handleMatchContext } from '../../src/runtime/match-context.ts';
 import { fixtureCohort, normalizeAiFixtureCandidates, scorePrediction, CFI_DISCOVERY_VERSION } from '../../src/discovery/cfi-discovery.ts';
 import { FINAL_VERSION } from '../../src/prediction/final-engine.ts';
@@ -358,11 +358,11 @@ export default{
           matchCount++;
         }
         const slots=[...groups.entries()].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0).map(([,s])=>{s.matches.sort((a:any,b:any)=>Date.parse(a.kickoff)-Date.parse(b.kickoff));return s});
-        let liveMeta:any={candidates:0,matched:0,status:'off'};
+        let liveMeta:any={candidates:0,matched:0,eid_missing:0,not_found:0,status:'off'};
         try{
           liveMeta=await enrichLive(slots.flatMap((s:any)=>s.matches),now,(env as any).DEBUG==='true');
         }catch(_e){
-          liveMeta={candidates:0,matched:0,status:'off'};
+          liveMeta={candidates:0,matched:0,eid_missing:0,not_found:0,status:'off'};
         }
         const suggestHeaders=liveMeta.candidates>0?{'Cache-Control':'public, max-age=30'}:cacheHeaders;
         return Response.json({minutes,generated_at:snap.generated_at,slot_count:slots.length,match_count:matchCount,live_meta:liveMeta,slots},{headers:suggestHeaders});
