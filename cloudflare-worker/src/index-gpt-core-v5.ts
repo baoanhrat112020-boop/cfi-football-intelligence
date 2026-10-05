@@ -363,6 +363,20 @@ export default{
       }
     }
 
+    if(url.pathname==='/api/track-record'&&request.method==='GET'){
+      try{
+        const days=(url.searchParams.get('days')||'all').toLowerCase();
+        if(!['7','30','all'].includes(days))return Response.json({error:'invalid days'},{status:400});
+        const key=(env as any).SUPABASE_SERVICE_KEY;
+        if(!key)return Response.json({error:'not configured'},{status:500});
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days)}),signal:AbortSignal.timeout(8000)});
+        if(!res.ok)return Response.json({error:'track record fetch failed',status:res.status},{status:502});
+        return new Response(res.body,{status:200,headers:{'content-type':'application/json','Cache-Control':'public, max-age=300'}});
+      }catch(e:any){
+        return Response.json({error:String(e?.message||e)},{status:500});
+      }
+    }
+
     if(url.pathname==='/api/predict'&&request.method==='POST'){
       let input:any={};try{input=await request.clone().json()}catch{}
       const response=await v4.fetch(fullPredictRequest(request,input),env,ctx);
