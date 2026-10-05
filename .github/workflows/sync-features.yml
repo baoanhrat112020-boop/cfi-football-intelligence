@@ -1,8 +1,9 @@
 name: Sync Features
 
+# Bảng cfi_fixture_features bị xóa 28/9 cleanup DB, không còn consumer.
+# Đã xóa cron schedule (trước đây: '15 * * * *'). scripts/sync_features.py đã bị xóa,
+# nên chạy tay workflow này sẽ thất bại cho tới khi có script/bảng thay thế.
 on:
-  schedule:
-    - cron: '15 * * * *'
   workflow_dispatch:
 
 jobs:
