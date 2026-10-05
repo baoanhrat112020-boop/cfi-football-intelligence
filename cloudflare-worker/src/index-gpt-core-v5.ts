@@ -285,6 +285,23 @@ async function fetchTeamWarnings(env:any,home:string,away:string):Promise<any[]>
   }catch(_e){return[]}
 }
 
+async function fetchTeamStatsLambda(env:Env,home:string,away:string){
+  if(!env.SUPABASE_SERVICE_KEY||!home||!away)return null;
+  try{
+    const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_team_lambda_by_names`,{
+      method:'POST',
+      headers:{'apikey':env.SUPABASE_SERVICE_KEY,'Authorization':`Bearer ${env.SUPABASE_SERVICE_KEY}`,'Content-Type':'application/json'},
+      body:JSON.stringify({home_name:home,away_name:away}),
+      signal:AbortSignal.timeout(2500)
+    });
+    if(!res.ok)return null;
+    const r:any=await res.json();
+    const h=Number(r?.lambda_home_ft),a=Number(r?.lambda_away_ft);
+    if(!Number.isFinite(h)||!Number.isFinite(a)||h<0||a<0)return null;
+    return{lambdaFT:{home:h,away:a},source:String(r?.source??'team_stats')};
+  }catch(_e){return null}
+}
+
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
@@ -366,6 +383,8 @@ export default{
             const pem=poissonExtraMarkets(Number(pr.xg_home),Number(pr.xg_away),'LOW');const pm:any={};pem.forEach((m:any)=>{pm[m.market]=m.probability});
             const tc:any={status:'SUCCESS',engine:FINAL_VERSION,tierC:true,tierCModel:pr.model,extraMarkets:pem,lambdaFT:{home:Number(pr.xg_home),away:Number(pr.xg_away)},target:tcBody.target,tierCReason:tcBody.reason,tierCEvidenceCount:tcBody.evidenceCount,strictPrior:{required:false,verified:false,tierCFallback:true},evidence:{counts:{home:tcBody.evidenceCount?.home??0,away:tcBody.evidenceCount?.away??0,h2h:0}},outputV3:{version:'CFI_TIER_C_V1',final:'WATCH',primary:{market:'1X2_FT',pick:pick,probability:mp,confidence:'LOW',fairOdds:Number((1/mp).toFixed(2)),decisionUse:false,researchState:'TIER_C_ELO_FALLBACK'},gates:{strictPrior:false,evidenceSufficient:false,consistency:true,tierCFallback:true},quality:{dataQuality:'LOW',modelAgreement:'LOW',predictionGrade:'C'},probabilities:{home:pr.p_home,draw:pr.p_draw,away:pr.p_away},markets6:pr.markets6||[],topScorelines:pr.topScorelines||[],expectedGoals:{home:pr.xg_home,away:pr.xg_away,total:Number((Number(pr.xg_home)+Number(pr.xg_away)).toFixed(2))},elo:{home:pr.elo_home,away:pr.elo_away},lowSample:pr.low_sample===true,marketSummary:{oneXTwo:{ft:{modelPick:pick,modelProbability:mp}}},primaryTargets:{contract:'CFI_TIER_C',count:6,codes:['HOME','DRAW','AWAY','OVER 2.5','UNDER 2.5','BTTS YES']},visibility:{tierC:true,reason:'ELO_ONLY_FALLBACK'}}};
             if(env.SUPABASE_SERVICE_KEY)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/tier_c_log`,{method:'POST',headers:{'apikey':env.SUPABASE_SERVICE_KEY,'Authorization':`Bearer ${env.SUPABASE_SERVICE_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({match_id:`${tcBody.identity?.homeTeamId}_${tcBody.identity?.awayTeamId}_${tcBody.target?.date}`,home_team:tcBody.target?.home,away_team:tcBody.target?.away,p_home:pr.p_home,p_draw:pr.p_draw,p_away:pr.p_away,p_over25:pr.p_over25,p_btts:pr.p_btts,p_o05_ht:pm['O0.5 HT'],p_o15_ht:pm['O1.5 HT'],p_btts_h1:pm['BTTS H1'],p_o35_ft:pm['O3.5 FT'],p_o45_ft:pm['O4.5 FT'],p_o55_ft:pm['O5.5 FT'],p_2_3_ft:pm['2-3 FT'],p_4_6_ft:pm['4-6 FT'],xg_home:pr.xg_home,xg_away:pr.xg_away,elo_home:pr.elo_home,elo_away:pr.elo_away,model:'elo_prior_v3.1',source:isDryRun(request)?'SUGGEST_ENGINE':null})}).catch(()=>{}));
+            const tslC=await fetchTeamStatsLambda(env,String(input?.home??'').trim(),String(input?.away??'').trim());
+            if(tslC){tc.lambdaFTEngine=tc.lambdaFT;tc.lambdaFT=tslC.lambdaFT;tc.lambdaSource=tslC.source}else tc.lambdaSource='engine';
             patchRuntimeTelemetry(tc);
             return Response.json(tc,{status:200});
           }
@@ -374,6 +393,8 @@ export default{
       if(response.ok&&body&&typeof body==='object'){
         body.extraMarkets=tierAExtraMarkets(body);
         body.lambdaFT=tierALambda(body);
+        const tslA=await fetchTeamStatsLambda(env,String(input?.home??'').trim(),String(input?.away??'').trim());
+        if(tslA){body.lambdaFTEngine=body.lambdaFT;body.lambdaFT=tslA.lambdaFT;body.lambdaSource=tslA.source}else body.lambdaSource='engine';
         try{
           const homeName=String(input?.home??body?.match?.home??'').trim();
           const awayName=String(input?.away??body?.match?.away??'').trim();
@@ -385,6 +406,7 @@ export default{
       const compact=compactPrediction(body);
       if(body.tendencyWarnings)compact.tendencyWarnings=body.tendencyWarnings;
       if(body.lambdaFT)compact.lambdaFT=body.lambdaFT;
+      if(body.lambdaSource)compact.lambdaSource=body.lambdaSource;
       return Response.json(compact,{status:response.status});
     }
 
