@@ -340,7 +340,7 @@ export default{
         const all:any[]=[];
         if(Array.isArray(snap?.payload?.slots))snap.payload.slots.forEach((s:any)=>{if(Array.isArray(s?.matches))s.matches.forEach((m:any)=>all.push(m))});
         const now=Date.now();
-        const lo=now-120*60*1000;
+        const lo=now-150*60*1000;
         const hi=now+minutes*60*1000;
         const groups=new Map<string,any>();
         let matchCount=0;

@@ -1246,13 +1246,13 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       else if(ls==="unknown"||ls==="live"||ls==="ht"||ls==="ft")lb=['#1a1f26','#8a97a3','&#9679; Đang cập nhật','700'];
       if(lb)return '<span class="live-badge" data-live="'+esc(ls)+'" style="'+base+'background:'+lb[0]+';color:'+lb[1]+';font-weight:'+lb[3]+'">'+lb[2]+'</span>';
     }
-    if(el>=0&&el<=120)return '<span style="'+base+'background:#16293a;color:#7fc8ff">&#9679; Đã bắt đầu · '+el+'p trước</span>';
-    if(el>120)return '<span style="'+base+'background:#1a1f26;color:#7a8a99">Đã kết thúc</span>';
+    if(el>=0&&el<=150)return '<span style="'+base+'background:#16293a;color:#7fc8ff">&#9679; Đã bắt đầu · '+el+'p trước</span>';
+    if(el>150)return '<span style="'+base+'background:#1a1f26;color:#7a8a99">Đã kết thúc</span>';
     return '<span style="color:#7f9daf;font-size:11px;font-family:ui-monospace,monospace">'+esc(kt)+'</span>';
   }
   function suggestRangePass(range,m){
     var t=Date.parse(m.kickoff),now=Date.now();
-    if(!(t>=now-120*60*1000))return false;
+    if(!(t>=now-150*60*1000))return false;
     if(range==="2880")return true;
     return t<=now+Number(range)*60*1000;
   }
@@ -1285,7 +1285,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(!state.suggestData)return false;
     var now=Date.now();
     return (state.suggestData.slots||[]).some(function(sl){
-      return sl.matches.some(function(m){var t=Date.parse(m.kickoff);return Number.isFinite(t)&&t<now&&now<t+2*60*60*1000});
+      return sl.matches.some(function(m){var t=Date.parse(m.kickoff);return Number.isFinite(t)&&t<now&&now<t+150*60*1000});
     });
   }
   async function pollSuggestLive(){
