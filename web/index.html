@@ -438,6 +438,7 @@
         <button class="chip" data-range="600">10h</button>
         <button class="chip active" data-range="1440">24h</button>
         <button class="chip" data-range="2880">48h</button>
+        <button class="chip active" data-range="tb">&ge; TB (0.55)</button>
         <button class="chip" data-range="noamateur" style="margin-left:auto">Lo&#7841;i amateur</button>
       </div>
       <div id="suggestContent" style="margin-top:12px">
@@ -1035,15 +1036,28 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     c.forEach(function(x){if(x[1]>bp){bp=x[1];best=x[0]}});
     return {pred_home_ht:Math.floor(lhh),pred_away_ht:Math.floor(lah),pred_home_ft:Math.floor(lh),pred_away_ft:Math.floor(la),p_over1_ht:o1,p_over05_ht:o05,p_over075_ht:o075,lht:lht,top_market:bp>=0.5?best:null,top_market_prob:bp>=0.5?bp:null};
   }
-  function scoreBlockHtml(d){
+  var SUGGEST_BADGES=[
+    {min:0.65,label:"CAO",bg:"#166534",fg:"#ffffff"},
+    {min:0.60,label:"KHÁ",bg:"#173a26",fg:"#86efac"},
+    {min:0.55,label:"TB",bg:"#3b3410",fg:"#fde047"},
+    {min:0.50,label:"THẤP",bg:"#3d2410",fg:"#fb923c"},
+    {min:0,label:"RẤT THẤP",bg:"#2a1717",fg:"#f08a8a"}
+  ];
+  function suggestBadgeHtml(p){
+    var v=Number(p);if(!Number.isFinite(v))return "";
+    var b=SUGGEST_BADGES.find(function(x){return v>=x.min})||SUGGEST_BADGES[SUGGEST_BADGES.length-1];
+    return '<span class="conf-badge" title="O0.75 '+(v*100).toFixed(0)+'%" style="background:'+b.bg+';color:'+b.fg+';border-radius:6px;padding:3px 8px;font-size:10px;font-weight:800;letter-spacing:.3px;white-space:nowrap">'+b.label+'</span>';
+  }
+  function scoreBlockHtml(d,withBadge){
     if(!d||d.pred_home_ft==null||d.p_over075_ht==null)return "";
     function pc(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
     var lht=d.lht!=null?Number(d.lht):(d.p_over05_ht!=null&&Number(d.p_over05_ht)<1?-Math.log(1-Number(d.p_over05_ht)):null);
     var bestLabel=d.top_market?esc(TOP_MARKET_LABELS[d.top_market]||d.top_market):'<span style="color:#7a8a99">Không có kèo ≥50%</span>';
     var bestPct=d.top_market?pc(d.top_market_prob):"";
     var chip='display:inline-block;background:#12202b;color:#8fa6b6;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;margin-right:5px';
+    var badge=withBadge?suggestBadgeHtml(d.p_over075_ht):"";
     return '<div class="score-block" style="background:linear-gradient(180deg,#0f2a3a,#0b1d29);border:1px solid #1d4a63;border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><b style="font-size:19px;color:#4ade80">'+bestPct+'</b></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><span style="display:flex;align-items:center;gap:8px"><b style="font-size:19px;color:#4ade80">'+bestPct+'</b>'+badge+'</span></div>'+
       '<div style="display:flex;align-items:baseline;gap:14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>HT: Home '+d.pred_home_ht+' - Away '+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>FT: Home '+d.pred_home_ft+' - Away '+d.pred_away_ft+'</span></div>'+
       '<div style="margin-top:7px"><span style="'+chip+'">O0.5 '+pc(d.p_over05_ht)+'</span><span style="'+chip+';color:#cfe8f7">O0.75 '+pc(d.p_over075_ht)+'</span><span style="'+chip+'">O1 '+pc(d.p_over1_ht)+'</span></div></div>';
   }
@@ -1171,6 +1185,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   var suggestSeq=0,SUGGEST_TTL=2*60*1000;
   state.suggestData=null;state.suggestCache=0;state.suggestFilter="1440";state.suggestNoAmateur=false;
   try{state.suggestNoAmateur=localStorage.getItem("cfi_suggest_noamateur")==="1"}catch(e){}
+  state.suggestTB=true;
+  try{state.suggestTB=localStorage.getItem("cfi_suggest_tb")!=="0"}catch(e){}
+  function suggestTBPass(m){return !state.suggestTB||m.p_over075_ht==null||Number(m.p_over075_ht)>=0.55}
   function teamTags(name){
     var n=String(name||"").trim(),t=[];
     if(/\s(2|II)$/.test(n))t.push("Reserve");
@@ -1206,7 +1223,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function suggestView(range){
     var slots=(state.suggestData.slots||[]).map(function(sl){
       return {date:sl.date,hour:sl.hour,matches:sl.matches.filter(function(m){
-        return suggestRangePass(range,m)&&(!state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length));
+        return suggestRangePass(range,m)&&suggestTBPass(m)&&(!state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length));
       })};
     }).filter(function(sl){return sl.matches.length});
     var n=slots.reduce(function(a,sl){return a+sl.matches.length},0);
@@ -1222,7 +1239,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
     document.querySelectorAll("#suggestChips .chip").forEach(function(c){
       var d=c.dataset.range;
-      c.classList.toggle("active",d==="noamateur"?state.suggestNoAmateur:d===state.suggestFilter);
+      c.classList.toggle("active",d==="noamateur"?state.suggestNoAmateur:d==="tb"?state.suggestTB:d===state.suggestFilter);
     });
     $("suggestContent").innerHTML=renderSuggestHtml({slots:view.slots});
   }
@@ -1259,7 +1276,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
           compLine='<div style="font-size:11px;color:#7f9daf;margin:-3px 0 7px">'+esc(m.competition)+' \u00b7 '+esc(slot.hour)+(m.base_3ht!=null?' \u00b7 base 3+ HT '+(Number(m.base_3ht)*100).toFixed(0)+'%':'')+(hi?' <span style="color:#7fc8ff">gi\u1ea3i nhi\u1ec1u b\u00e0n</span>':'')+'</div>';
         }
         var badges=m.hit_markets?m.hit_markets.map(function(h){return '<span style="background:#0d3a1f;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-right:4px">'+esc(h)+'</span>'}).join(""):"";
-        html+='<div class="suggest-card" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'" style="cursor:pointer;background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3">'+esc(m.home)+tagBadges(m.home)+' vs '+esc(m.away)+tagBadges(m.away)+'</b>'+timeBadge+'</div>'+scoreBlockHtml(m)+compLine+'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml+'</div>';
+        html+='<div class="suggest-card" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'" style="cursor:pointer;background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3">'+esc(m.home)+tagBadges(m.home)+' vs '+esc(m.away)+tagBadges(m.away)+'</b>'+timeBadge+'</div>'+scoreBlockHtml(m,true)+compLine+'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml+'</div>';
       });
     });
     return html;
@@ -1271,6 +1288,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       if(r==="noamateur"){
         state.suggestNoAmateur=!state.suggestNoAmateur;
         try{localStorage.setItem("cfi_suggest_noamateur",state.suggestNoAmateur?"1":"0")}catch(e){}
+      }else if(r==="tb"){
+        state.suggestTB=!state.suggestTB;
+        try{localStorage.setItem("cfi_suggest_tb",state.suggestTB?"1":"0")}catch(e){}
       }else state.suggestFilter=r;
       renderSuggestFromCache(false);
     };
