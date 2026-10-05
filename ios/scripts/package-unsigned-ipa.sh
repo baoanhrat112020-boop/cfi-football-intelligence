@@ -48,7 +48,19 @@ BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUNDLE/Info.plist
   exit 65
 }
 
-UI_TAG="v${VERSION} Beta 1 · Build ${BUILD}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+EXPECTED_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+EXPECTED_BUILD="$(tr -d '[:space:]' < "$ROOT_DIR/BUILD_NUMBER")"
+[[ "$VERSION" == "$EXPECTED_VERSION" ]] || {
+  echo "IPA validation failed: Info.plist version $VERSION does not match VERSION file $EXPECTED_VERSION" >&2
+  exit 65
+}
+[[ "$BUILD" == "$EXPECTED_BUILD" ]] || {
+  echo "IPA validation failed: Info.plist build $BUILD does not match BUILD_NUMBER file $EXPECTED_BUILD" >&2
+  exit 65
+}
+
+UI_TAG="v${VERSION} · Build ${BUILD}"
 grep -qF "$UI_TAG" "$BUNDLE/index.html" || {
   echo "IPA validation failed: bundled UI must contain \"$UI_TAG\"" >&2
   exit 65

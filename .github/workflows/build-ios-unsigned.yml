@@ -24,6 +24,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read version
+        run: |
+          set -euo pipefail
+          echo "VERSION=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$(cat BUILD_NUMBER | tr -d '[:space:]')" >> "$GITHUB_ENV"
+
       - name: Show Xcode version
         run: xcodebuild -version
 
@@ -33,7 +39,7 @@ jobs:
       - name: Build CFI.app without signing
         run: |
           set -euo pipefail
-          xcodebuild             -project ios/CFI.xcodeproj             -scheme CFI             -configuration Release             -sdk iphoneos             -derivedDataPath "$RUNNER_TEMP/cfi-ios-derived"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             build
+          xcodebuild             -project ios/CFI.xcodeproj             -scheme CFI             -configuration Release             -sdk iphoneos             -derivedDataPath "$RUNNER_TEMP/cfi-ios-derived"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             MARKETING_VERSION="$VERSION"             CURRENT_PROJECT_VERSION="$BUILD_NUMBER"             build
 
       - name: Inject CFI app icon
         run: |
@@ -69,18 +75,18 @@ jobs:
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          bash ios/scripts/package-unsigned-ipa.sh             "$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"             "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build19-unsigned.ipa"
+          bash ios/scripts/package-unsigned-ipa.sh             "$RUNNER_TEMP/cfi-ios-derived/Build/Products/Release-iphoneos/CFI.app"             "$RUNNER_TEMP/CFI-iOS-v${VERSION}-build${BUILD_NUMBER}-unsigned.ipa"
 
       - name: Inspect IPA
         run: |
           set -euo pipefail
-          unzip -l "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build19-unsigned.ipa"
-          test -s "$RUNNER_TEMP/CFI-iOS-v0.2.2-beta1-build19-unsigned.ipa"
+          unzip -l "$RUNNER_TEMP/CFI-iOS-v${VERSION}-build${BUILD_NUMBER}-unsigned.ipa"
+          test -s "$RUNNER_TEMP/CFI-iOS-v${VERSION}-build${BUILD_NUMBER}-unsigned.ipa"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: CFI-iOS-v0.2.2-beta1-build19
-          path: ${{ runner.temp }}/CFI-iOS-v0.2.2-beta1-build19-unsigned.ipa
+          name: CFI-iOS-v${{ env.VERSION }}-build${{ env.BUILD_NUMBER }}
+          path: ${{ runner.temp }}/CFI-iOS-v${{ env.VERSION }}-build${{ env.BUILD_NUMBER }}-unsigned.ipa
           if-no-files-found: error
           retention-days: 14

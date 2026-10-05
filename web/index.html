@@ -924,7 +924,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.2 Beta 1 · Build 19</b></div></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.3 · Build 20</b></div></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1033,12 +1033,19 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var o05=1-Math.exp(-lht),o1=1-Math.exp(-lht)*(1+lht),o075=o1+0.5*Math.exp(-lht)*lht,o25=1-Math.exp(-lft)*(1+lft+lft*lft/2),bt=(1-Math.exp(-lh))*(1-Math.exp(-la));
     var c=[["over_1_ht",o1],["1x2_ht_home",xh[0]],["1x2_ft_home",xf[0]],["over_2_5_ft",o25],["btts_yes",bt]],best=null,bp=0;
     c.forEach(function(x){if(x[1]>bp){bp=x[1];best=x[0]}});
-    return {pred_home_ht:Math.floor(lhh),pred_away_ht:Math.floor(lah),pred_home_ft:Math.floor(lh),pred_away_ft:Math.floor(la),p_over1_ht:o1,p_over05_ht:o05,p_over075_ht:o075,top_market:bp>=0.5?best:null,top_market_prob:bp>=0.5?bp:null};
+    return {pred_home_ht:Math.floor(lhh),pred_away_ht:Math.floor(lah),pred_home_ft:Math.floor(lh),pred_away_ft:Math.floor(la),p_over1_ht:o1,p_over05_ht:o05,p_over075_ht:o075,lht:lht,top_market:bp>=0.5?best:null,top_market_prob:bp>=0.5?bp:null};
   }
   function scoreBlockHtml(d){
     if(!d||d.pred_home_ft==null||d.p_over075_ht==null)return "";
-    var best=d.top_market?(TOP_MARKET_LABELS[d.top_market]||d.top_market)+" ("+(Number(d.top_market_prob)*100).toFixed(0)+"%)":"—";
-    return '<div class="score-block" style="background:#0d2230;border:1px solid #1d4a63;border-radius:8px;padding:7px 9px;margin-bottom:7px;font-size:12px;font-weight:700;color:#cfe8f7;font-family:ui-monospace,monospace">HT '+d.pred_home_ht+'-'+d.pred_away_ht+' | FT '+d.pred_home_ft+'-'+d.pred_away_ft+' | O0.75 '+(Number(d.p_over075_ht)*100).toFixed(0)+'%'+(d.p_over1_ht!=null?' (O1 '+(Number(d.p_over1_ht)*100).toFixed(0)+'%)':'')+' | Best: '+esc(best)+'</div>';
+    function pc(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
+    var lht=d.lht!=null?Number(d.lht):(d.p_over05_ht!=null&&Number(d.p_over05_ht)<1?-Math.log(1-Number(d.p_over05_ht)):null);
+    var bestLabel=d.top_market?esc(TOP_MARKET_LABELS[d.top_market]||d.top_market):'<span style="color:#7a8a99">Không có kèo ≥50%</span>';
+    var bestPct=d.top_market?pc(d.top_market_prob):"";
+    var chip='display:inline-block;background:#12202b;color:#8fa6b6;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;margin-right:5px';
+    return '<div class="score-block" style="background:linear-gradient(180deg,#0f2a3a,#0b1d29);border:1px solid #1d4a63;border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><b style="font-size:19px;color:#4ade80">'+bestPct+'</b></div>'+
+      '<div style="display:flex;align-items:baseline;gap:14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>HT '+d.pred_home_ht+'-'+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>FT '+d.pred_home_ft+'-'+d.pred_away_ft+'</span></div>'+
+      '<div style="margin-top:7px"><span style="'+chip+'">O0.5 '+pc(d.p_over05_ht)+'</span><span style="'+chip+';color:#cfe8f7">O0.75 '+pc(d.p_over075_ht)+'</span><span style="'+chip+'">O1 '+pc(d.p_over1_ht)+'</span></div></div>';
   }
   function renderScoreline(out){
     var ch=out.champion||{},ht=Array.isArray(ch.top3HT)?ch.top3HT:[],ft=Array.isArray(ch.top3FT)?ch.top3FT:(Array.isArray(out.topScorelines)?out.topScorelines:[]);
@@ -1098,7 +1105,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     $("badgeQualityVal").textContent=grades.quality+"/100";
     $("badgeAgreementVal").textContent=isTierC?"LOW":(grades.agreement||"—");$("badgeAgreement").className="badge-chip"+(isTierC?" agree-LOW":(grades.agreement?" agree-"+grades.agreement:""));
     $("badgeGradeVal").textContent=grades.grade;$("badgeGrade").className="badge-chip grade-"+grades.grade;
-    (function(){var eg=out.expectedGoals,h=eg?Number(eg.home):NaN,a=eg?Number(eg.away):NaN;if(!(h>=0&&a>=0))return;var wrap=document.createElement("div");wrap.innerHTML=scoreBlockHtml(scorePredFromLambda(h,a));if(wrap.firstChild)list.insertBefore(wrap.firstChild,list.firstChild)})();
+    (function(){var lam=null,scan=data,dep=3;while(scan&&typeof scan==="object"&&dep-->0){if(scan.lambdaFT){lam=scan.lambdaFT;break}if(scan.body&&typeof scan.body==="object")scan=scan.body;else break}var eg=lam||out.expectedGoals,ft=eg&&eg.ft?eg.ft:eg,h=ft?Number(ft.home):NaN,a=ft?Number(ft.away):NaN;if(!(h>=0&&a>=0))return;var wrap=document.createElement("div");wrap.innerHTML=scoreBlockHtml(scorePredFromLambda(h,a));if(wrap.firstChild)list.insertBefore(wrap.firstChild,list.firstChild)})();
     renderScoreline(out);renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
   }
 
