@@ -1,4 +1,5 @@
 import base from './index-v45';
+import { isDryRun, DRY_RUN_AUDIT } from './dry-run.ts';
 import { buildPrediction, FINAL_VERSION } from '../../src/prediction/final-engine.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;AI?:Ai};
@@ -64,7 +65,7 @@ async function fallback(request:Request,env:Env,ctx:ExecutionContext,input:any){
  const [homePayload,awayPayload,h2hPayload]=await Promise.all([json(hr),json(ar),json(xr)]);
  const prediction=buildPrediction({home,away,targetDate:date,language:String(input?.language||'vi'),homePayload,awayPayload,h2hPayload});
  const result={...prediction,engine:FINAL_VERSION,note:'Native prediction computed from canonical Persistent DB evidence because upstream /predict returned NOT_FOUND.'};
- const audit=await recordAudit(env,input,result);
+ const audit=isDryRun(request)?DRY_RUN_AUDIT:await recordAudit(env,input,result);
  return Response.json({...result,audit});
 }
 
@@ -75,7 +76,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){const u
   const body=await request.text();const cloned=new Request(request.url,{method:'POST',headers:request.headers,body});const res=await base.fetch(cloned,env,ctx);let d:any=null;try{d=await res.clone().json()}catch{}const b=unwrap(d);let input:any={};try{input=JSON.parse(body)}catch{}
   if(res.status===404||d?.httpStatus===404||b?.error==='NOT_FOUND'||d?.body?.error==='NOT_FOUND')return fallback(request,env,ctx,input);
   if(res.ok&&b&&typeof b==='object'){
-   const audit=await recordAudit(env,input,b);
+   const audit=isDryRun(request)?DRY_RUN_AUDIT:await recordAudit(env,input,b);
    return Response.json({...b,audit});
   }
   return res;

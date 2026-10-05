@@ -1,4 +1,5 @@
 import base from './index-v48.ts';
+import { isDryRun, DRY_RUN_AUDIT } from './dry-run.ts';
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS } from '../../src/prediction/final-engine.ts';
 
 const RUNTIME_VERSION='CFI_SIX_TARGET_RUNTIME_V1.1';
@@ -132,7 +133,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
         return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION},status:'RUNTIME_CONTRACT_ERROR',error:'INCOMPLETE_2_METHODS_X_6_TARGETS'},{status:500});
       }
       const report=renderedReport(prediction,matrix);
-      const audit=await recordAudit(env,input,{...prediction,bigDbRetrieval:retrieval});
+      const audit=isDryRun(request)?DRY_RUN_AUDIT:await recordAudit(env,input,{...prediction,bigDbRetrieval:retrieval});
       return Response.json({...prediction,bigDbRetrieval:retrieval,sixTargetMatrix:matrix,renderedReport:report,presentationContract:{mode:'RENDER_RENDERED_REPORT_VERBATIM',source:'renderedReport',contract:matrix.contract},runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION},audit});
     }catch(e:any){
       return Response.json({status:'ERROR',error:'PREDICTION_RUNTIME_FAILURE',message:String(e?.message||e),runtime:{version:RUNTIME_VERSION,engine:FINAL_VERSION,bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:500});

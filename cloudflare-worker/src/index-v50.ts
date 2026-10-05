@@ -1,4 +1,5 @@
 import base from './index-v49.ts';
+import { isDryRun, DRY_RUN_AUDIT } from './dry-run.ts';
 import { buildPrediction, FINAL_VERSION, MARKET_CODES, PRIMARY_TARGETS, PRIMARY_CONTRACT } from '../../src/prediction/final-engine.ts';
 import { CHAMPION_FUSION_VERSION } from '../../src/prediction/multi-market-champion-fusion.ts';
 import { buildProspectiveV22AuditPrediction } from './prospective-v22-research-telemetry.ts';
@@ -139,6 +140,7 @@ function renderedReport(prediction:any,matrix:any){
 }
 
 async function recordAudit(env:Env,input:any,prediction:any){
+  if(input?.cfiDryRun===true)return DRY_RUN_AUDIT;
   const date=String(input?.target_date||input?.matchDate||prediction?.target?.date||'').slice(0,10),home=String(input?.home||prediction?.target?.home||'').trim(),away=String(input?.away||prediction?.target?.away||'').trim();
   if(!date||!env.CFI_DB_BASE_URL)return{status:'SKIPPED',reason:!date?'TARGET_DATE_REQUIRED':'DATABASE_NOT_CONFIGURED'};
   const url=env.CFI_DB_BASE_URL.replace(/\/cfi-db\/?$/,'/cfi-prediction-audit');
@@ -154,6 +156,7 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
   const url=new URL(request.url);
   if(url.pathname!=='/api/predict'||request.method!=='POST')return base.fetch(request,env,ctx);
   let input:any={};try{input=await request.clone().json()}catch{}
+  if(isDryRun(request))input={...input,cfiDryRun:true};
   const home=String(input?.home||'').trim(),away=String(input?.away||'').trim(),targetDate=String(input?.target_date||input?.matchDate||'').slice(0,10)||undefined;
   if(!home||!away)return Response.json({status:'INVALID_REQUEST',error:'HOME_AWAY_REQUIRED'},{status:400});
   if(!targetDate||!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return Response.json({status:'STRICT_PRIOR_GATE_ERROR',error:'TARGET_DATE_REQUIRED',strictPrior:{required:true,verified:false,failClosed:true}},{status:400});
