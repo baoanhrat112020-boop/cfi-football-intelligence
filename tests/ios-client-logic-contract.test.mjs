@@ -65,15 +65,21 @@ test('native bridge is defensive and exposes required production paths',()=>{
   assert.match(swift,/loadFileURL\(/);
 });
 
-test('v0.2.2 build number is aligned across UI Xcode and artifact workflow',()=>{
+test('version and build number are aligned across VERSION files UI Xcode and artifact workflow',async()=>{
+  const version=(await readFile(new URL('../VERSION',import.meta.url),'utf8')).trim();
+  const build=(await readFile(new URL('../BUILD_NUMBER',import.meta.url),'utf8')).trim();
+  assert.match(version,/^\d+\.\d+\.\d+$/);
+  assert.match(build,/^[1-9]\d*$/);
   const builds=[...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m=>m[1]))];
-  assert.equal(builds.length,1);
-  const build=builds[0];
-  assert.ok(html.includes('v0.2.2 Beta 1 · Build '+build));
-  assert.equal((pbx.match(/MARKETING_VERSION = 0\.2\.2;/g)||[]).length,2);
+  assert.deepEqual(builds,[build]);
+  const versions=[...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m=>m[1]))];
+  assert.deepEqual(versions,[version]);
+  assert.equal((pbx.match(/MARKETING_VERSION = [\d.]+;/g)||[]).length,2);
   assert.equal((pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g)||[]).length,2);
-  assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build'+build+'-unsigned.ipa'));
-  assert.ok(workflow.includes('CFI-iOS-v0.2.2-beta1-build'+build));
+  assert.ok(html.includes('v'+version+' · Build '+build));
+  assert.ok(!html.includes('Beta 1'));
+  assert.ok(workflow.includes('CFI-iOS-v${VERSION}-build${BUILD_NUMBER}-unsigned.ipa'));
+  assert.ok(workflow.includes('CFI-iOS-v${{ env.VERSION }}-build${{ env.BUILD_NUMBER }}'));
 });
 
 test('icon pipeline forces and verifies real PNG bytes',()=>{
