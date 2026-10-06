@@ -97,15 +97,17 @@ while True:
 print(f"  {len(cfi_teams)} teams")
 
 existing_map = {}
+existing_league = {}
 _off = 0
 while True:
-    _r = sb_exec(sb.table("cfi_living_verified_fixtures").select("fixture_id,kickoff_at").range(_off, _off+999))
+    _r = sb_exec(sb.table("cfi_living_verified_fixtures").select("fixture_id,kickoff_at,source_provenance").range(_off, _off+999))
     if not _r.data: break
     for _x in _r.data:
         _k = _x.get("kickoff_at")
         if _k:
             try:
                 existing_map[_x["fixture_id"]] = datetime.fromisoformat(str(_k).replace("Z","+00:00"))
+                existing_league[_x["fixture_id"]] = (_x.get("source_provenance") or {}).get("league")
             except: pass
     _off += 1000
     if len(_r.data) < 1000: break
@@ -255,7 +257,7 @@ for m in all_events:
         "verification_status": "VERIFIED",
         "source_name": "LIVESCORE",
         "source_url": f"https://www.livescore.com/en/football/match/{eid}",
-        "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage")},
+        "source_provenance": {"provider": "LIVESCORE", "providerId": eid, "stage": m.get("_stage"), "league": m.get("_league")},
         "verified_at": datetime.now(timezone.utc).isoformat(),
         "canonical_home_team_id": cfi_teams.get(norm(h_name)),
         "canonical_away_team_id": cfi_teams.get(norm(a_name)),
@@ -263,13 +265,14 @@ for m in all_events:
     if fid in existing_map:
         try:
             _new_dt = datetime.fromisoformat(kickoff.replace("Z","+00:00"))
-            if existing_map[fid] == _new_dt:
+            if existing_map[fid] == _new_dt and existing_league.get(fid) == m.get("_league"):
                 drop["staging_unchanged_in_db"] += 1; continue
         except: pass
     try:
         sb_exec(sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id"))
         staged_ok += 1
         existing_map[fid] = datetime.fromisoformat(kickoff.replace("Z","+00:00"))
+        existing_league[fid] = m.get("_league")
     except Exception as e:
         drop["staging_upsert_error"] += 1
         if drop["staging_upsert_error"] <= 5:
