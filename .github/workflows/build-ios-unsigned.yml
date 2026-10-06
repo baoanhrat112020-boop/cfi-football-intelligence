@@ -2,14 +2,6 @@ name: CFI iOS Unsigned IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - fix/cfi-ios-v022-build4
-    paths:
-      - "ios/**"
-      - "web/**"
-      - ".github/workflows/build-ios-unsigned.yml"
 
 permissions:
   contents: read
