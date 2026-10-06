@@ -58,28 +58,30 @@ def crawl_day(day_offset):
     date = datetime.now().date() - timedelta(days=day_offset)
     ymd = date.strftime("%Y%m%d")
     events = {}
-    for page in range(5):
-        url = f"https://prod-cdn-mev-api.livescore.com/v1/api/app/date/soccer/{ymd}/{page}?MD=1"
-        try:
-            r = fetch_page(url)
-            try:
-                d = json.loads(r.text)
-            except Exception as e:
-                raise LivescoreError(f"bad json url={url}: {e}")
-        except LivescoreError as e:
-            e.partial = list(events.values())
-            raise
-        stages = d.get("Stages", [])
-        if not stages: break
-        n_new = 0
-        for stage in stages:
-            for ev in stage.get("Events", []):
-                eid = ev.get("Eid")
-                if eid and eid not in events:
-                    events[eid] = {**ev, "_stage": stage.get("Cnm"), "_league": stage.get("Snm") or stage.get("Cnm"), "_ymd": ymd}
-                    n_new += 1
-        if n_new == 0: break
+    url = f"https://prod-cdn-mev-api.livescore.com/v1/api/app/date/soccer/{ymd}/0?MD=1"
+    r = fetch_page(url)
+    try:
+        d = json.loads(r.text)
+    except Exception as e:
+        raise LivescoreError(f"bad json url={url}: {e}")
+    for stage in d.get("Stages", []):
+        for ev in stage.get("Events", []):
+            eid = ev.get("Eid")
+            if eid and eid not in events:
+                events[eid] = {**ev, "_stage": stage.get("Cnm"), "_league": stage.get("Snm") or stage.get("Cnm"), "_ymd": ymd}
     return list(events.values())
+
+def dedupe_events(events):
+    by_eid = {}
+    for e in events:
+        eid = str(e.get("Eid"))
+        cur = by_eid.get(eid)
+        if cur is None:
+            by_eid[eid] = e
+            continue
+        if str(e.get("Esd", ""))[:8] == e.get("_ymd") and str(cur.get("Esd", ""))[:8] != cur.get("_ymd"):
+            by_eid[eid] = e
+    return list(by_eid.values())
 
 print("Loading teams...")
 cfi_teams = {}
@@ -122,6 +124,9 @@ for day in range(-1, 2):
     print(f"  day {day}: {len(events)} events")
 
 drop = Counter()
+_raw_total = len(all_events)
+all_events = dedupe_events(all_events)
+drop["events_deduped_by_eid"] = _raw_total - len(all_events)
 print(f"API events total: {len(all_events)}")
 
 def team_names(m):
@@ -264,6 +269,7 @@ for m in all_events:
     try:
         sb_exec(sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id"))
         staged_ok += 1
+        existing_map[fid] = datetime.fromisoformat(kickoff.replace("Z","+00:00"))
     except Exception as e:
         drop["staging_upsert_error"] += 1
         if drop["staging_upsert_error"] <= 5:
