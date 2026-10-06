@@ -1408,9 +1408,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         rt+='<tr>'+trackTd(esc(r.home)+" – "+esc(r.away),true,"max-width:150px;overflow:hidden;text-overflow:ellipsis")+trackTd(esc(r.ht_score||"—"))+trackTd(esc(r.ft_score||"—"))+trackTd(trackTierBadge(r.tier))+trackTd(esc(TOP_MARKET_LABELS[r.top_market]||r.top_market||"—"),true)+trackTd(hit)+'</tr>';
       });
       rt+='</tbody></table></div>';
-      if(recent.length<20)rt+='<div style="font-size:11px;color:#d4b378;margin-top:6px">Đang tích lũy: '+recent.length+'/20</div>';
+      if(recent.length<100)rt+='<div style="font-size:11px;color:#d4b378;margin-top:6px">Đang tích lũy: '+recent.length+'/100</div>';
     }
-    html+=trackCard("20 trận gần nhất",rt);
+    html+=trackCard("100 trận gần nhất",rt);
     return html;
   }
   async function loadTrack(force){
