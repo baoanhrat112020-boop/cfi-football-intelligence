@@ -1,4 +1,4 @@
-import os, re, uuid as U, json
+import os, re, uuid as U, json, time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 VN_TZ = timezone(timedelta(hours=7))
@@ -15,9 +15,44 @@ if not SB_KEY:
 
 sb = create_client(SB_URL, SB_KEY)
 
+RETRY_DELAYS = (2, 5)
+RPC_BATCH = 500
+stats = Counter()
+
+class LivescoreError(Exception):
+    def __init__(self, msg, blocked=False, partial=None):
+        super().__init__(msg)
+        self.blocked = blocked
+        self.partial = partial or []
+
+def sb_exec(q):
+    stats["sb_requests"] += 1
+    return q.execute()
+
 def norm(s):
     if not s: return ""
     return re.sub(r"\s+", " ", s.lower().strip())
+
+def fetch_page(url):
+    last = None
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        stats["ls_requests"] += 1
+        try:
+            r = cf.get(url, impersonate="chrome120", timeout=20)
+        except Exception as e:
+            last = LivescoreError(f"{type(e).__name__}: {e} url={url}")
+        else:
+            if r.status_code == 200:
+                return r
+            if r.status_code in (403, 429):
+                raise LivescoreError(f"http {r.status_code} url={url}", blocked=True)
+            last = LivescoreError(f"http {r.status_code} url={url}")
+            if r.status_code < 500:
+                raise last
+        if attempt < len(RETRY_DELAYS):
+            stats["ls_retries"] += 1
+            time.sleep(RETRY_DELAYS[attempt])
+    raise last
 
 def crawl_day(day_offset):
     date = datetime.now().date() - timedelta(days=day_offset)
@@ -26,28 +61,31 @@ def crawl_day(day_offset):
     for page in range(5):
         url = f"https://prod-cdn-mev-api.livescore.com/v1/api/app/date/soccer/{ymd}/{page}?MD=1"
         try:
-            r = cf.get(url, impersonate="chrome120", timeout=20)
-            if r.status_code != 200: break
-            d = json.loads(r.text)
-            stages = d.get("Stages", [])
-            if not stages: break
-            n_new = 0
-            for stage in stages:
-                for ev in stage.get("Events", []):
-                    eid = ev.get("Eid")
-                    if eid and eid not in events:
-                        events[eid] = {**ev, "_stage": stage.get("Cnm"), "_league": stage.get("Snm") or stage.get("Cnm"), "_ymd": ymd}
-                        n_new += 1
-            if n_new == 0: break
-        except Exception as e:
-            print(f"  err: {e}"); break
+            r = fetch_page(url)
+            try:
+                d = json.loads(r.text)
+            except Exception as e:
+                raise LivescoreError(f"bad json url={url}: {e}")
+        except LivescoreError as e:
+            e.partial = list(events.values())
+            raise
+        stages = d.get("Stages", [])
+        if not stages: break
+        n_new = 0
+        for stage in stages:
+            for ev in stage.get("Events", []):
+                eid = ev.get("Eid")
+                if eid and eid not in events:
+                    events[eid] = {**ev, "_stage": stage.get("Cnm"), "_league": stage.get("Snm") or stage.get("Cnm"), "_ymd": ymd}
+                    n_new += 1
+        if n_new == 0: break
     return list(events.values())
 
 print("Loading teams...")
 cfi_teams = {}
 off = 0
 while True:
-    r = sb.table("teams").select("team_id,canonical_name").range(off, off+999).execute()
+    r = sb_exec(sb.table("teams").select("team_id,canonical_name").range(off, off+999))
     if not r.data: break
     for t in r.data:
         n = norm(t["canonical_name"])
@@ -59,7 +97,7 @@ print(f"  {len(cfi_teams)} teams")
 existing_map = {}
 _off = 0
 while True:
-    _r = sb.table("cfi_living_verified_fixtures").select("fixture_id,kickoff_at").range(_off, _off+999).execute()
+    _r = sb_exec(sb.table("cfi_living_verified_fixtures").select("fixture_id,kickoff_at").range(_off, _off+999))
     if not _r.data: break
     for _x in _r.data:
         _k = _x.get("kickoff_at")
@@ -72,8 +110,14 @@ while True:
 print(f"  Loaded {len(existing_map)} existing fixtures")
 
 all_events = []
+failures = []
 for day in range(-1, 2):
-    events = crawl_day(day)
+    try:
+        events = crawl_day(day)
+    except LivescoreError as e:
+        failures.append(e)
+        events = e.partial
+        print(f"  day {day}: FAILED {e} (partial {len(events)} events)")
     all_events.extend(events)
     print(f"  day {day}: {len(events)} events")
 
@@ -94,30 +138,30 @@ def kickoff_of(m):
     if len(esd) < 8: return None
     return f"{esd[0:4]}-{esd[4:6]}-{esd[6:8]}T12:00:00Z"
 
+def get_or_create_team(name):
+    n = norm(name)
+    if n in cfi_teams:
+        return cfi_teams[n]
+    tid = str(U.uuid5(U.NAMESPACE_DNS, f"cfi_team:{n}"))
+    try:
+        sb_exec(sb.table("teams").upsert({
+            "team_id": tid,
+            "canonical_name": name,
+        }, on_conflict="team_id"))
+    except Exception:
+        return None
+    cfi_teams[n] = tid
+    return tid
+
 finished = [e for e in all_events if e.get("Eps") == "FT"]
 print(f"Finished (FT): {len(finished)}")
 
-ok, fail = 0, 0
+fixture_rows = {}
 for m in finished:
     if m.get("Trh1") is None or m.get("Trh2") is None:
         drop["fixtures_skip_no_ht"] += 1; continue
     h_name, a_name = team_names(m)
     if not h_name or not a_name or h_name == a_name: continue
-    def get_or_create_team(name):
-        n = norm(name)
-        if n in cfi_teams:
-            return cfi_teams[n]
-        tid = str(U.uuid5(U.NAMESPACE_DNS, f"cfi_team:{n}"))
-        try:
-            sb.table("teams").upsert({
-                "team_id": tid,
-                "canonical_name": name,
-            }, on_conflict="team_id").execute()
-        except Exception:
-            return None
-        cfi_teams[n] = tid
-        return tid
-
     h_id = get_or_create_team(h_name)
     a_id = get_or_create_team(a_name)
     if not h_id or not a_id:
@@ -138,25 +182,45 @@ for m in finished:
     if not eid:
         drop["fixtures_skip_no_eid"] += 1; continue
     fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
-    row = {
+    comp_key = "livescore:" + (m.get("_league") or m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50]
+    fixture_rows[fid] = {
         "fixture_id": fid, "match_date": md,
         "home_team_id": h_id, "away_team_id": a_id,
         "ht_home": ht_h, "ht_away": ht_a,
         "ft_home": ft_h, "ft_away": ft_a,
         "status": "CANONICAL",
-        "competition_key": "livescore:" + (m.get("_league") or m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50],
-        "tier": classify_tier(("livescore:" + (m.get("_league") or m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50])),
+        "competition_key": comp_key,
+        "tier": classify_tier(comp_key),
         "competition_name": m.get("_league") or m.get("_stage"),
     }
+
+def rpc_fixtures(rows):
+    res = sb_exec(sb.rpc("cfi_upsert_livescore_fixtures", {"p_rows": rows}))
+    data = res.data
+    if isinstance(data, list) and data: data = data[0]
+    if not isinstance(data, dict) or data.get("status") != "OK":
+        raise RuntimeError(f"rpc bad response: {data}")
+    return data
+
+fx_inserted = fx_updated = fx_skipped = fx_failed = 0
+rows_list = list(fixture_rows.values())
+for i in range(0, len(rows_list), RPC_BATCH):
+    chunk = rows_list[i:i+RPC_BATCH]
     try:
-        sb.table("fixtures").insert(row).execute()
-        ok += 1
-    except:
-        try:
-            sb.table("fixtures").upsert(row, on_conflict="fixture_id").execute()
-            ok += 1
-        except:
-            fail += 1
+        d = rpc_fixtures(chunk)
+        fx_inserted += int(d.get("inserted", 0))
+        fx_updated += int(d.get("updated", 0))
+        fx_skipped += int(d.get("skipped", 0))
+    except Exception as e:
+        print(f"  fixtures batch failed ({len(chunk)} rows): {str(e)[:200]}; retrying per row")
+        for row in chunk:
+            try:
+                d = rpc_fixtures([row])
+                fx_inserted += int(d.get("inserted", 0))
+                fx_updated += int(d.get("updated", 0))
+                fx_skipped += int(d.get("skipped", 0))
+            except Exception:
+                fx_failed += 1
 
 staged_ok = 0
 for m in all_events:
@@ -198,7 +262,7 @@ for m in all_events:
                 drop["staging_unchanged_in_db"] += 1; continue
         except: pass
     try:
-        sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id").execute()
+        sb_exec(sb.table("cfi_living_verified_fixtures").upsert(live_row, on_conflict="fixture_id"))
         staged_ok += 1
     except Exception as e:
         drop["staging_upsert_error"] += 1
@@ -210,5 +274,23 @@ print(f"  api_total                 {len(all_events)}")
 for k in sorted(drop):
     print(f"  {k:<32}{drop[k]}")
 print(f"  staging_upserted          {staged_ok}")
-print(f"  fixtures_inserted         {ok}")
-print(f"\nOK: {ok}, Fail: {fail}, Staged: {staged_ok}")
+print(f"  fixtures_candidates       {len(rows_list)}")
+print(f"  fixtures_inserted         {fx_inserted}")
+print(f"  fixtures_updated          {fx_updated}")
+print(f"  fixtures_skipped          {fx_skipped}")
+print(f"  fixtures_failed           {fx_failed}")
+print(f"\nREQUESTS livescore={stats['ls_requests']} (retries={stats['ls_retries']}) supabase={stats['sb_requests']}")
+print(f"ROWS upsert={fx_inserted + fx_updated + staged_ok} skip={fx_skipped + drop['staging_unchanged_in_db']}")
+print(f"OK: {fx_inserted + fx_updated}, Fail: {fx_failed}, Staged: {staged_ok}")
+
+if any(f.blocked for f in failures):
+    exit_code = 2
+elif failures or fx_failed:
+    exit_code = 1
+else:
+    exit_code = 0
+if failures:
+    print(f"LIVESCORE FAILURES: {len(failures)} -> exit {exit_code}")
+
+if __name__ == "__main__":
+    sys.exit(exit_code)
