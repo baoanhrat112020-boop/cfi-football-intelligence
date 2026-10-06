@@ -375,9 +375,11 @@ export default{
       try{
         const days=(url.searchParams.get('days')||'all').toLowerCase();
         if(!['7','30','all'].includes(days))return Response.json({error:'invalid days'},{status:400});
+        const tierParam=(url.searchParams.get('tier')||'').toUpperCase();
+        if(tierParam&&!['CAO','KHA','TB','THAP','RAT_THAP'].includes(tierParam))return Response.json({error:'invalid tier'},{status:400});
         const key=(env as any).SUPABASE_SERVICE_KEY;
         if(!key)return Response.json({error:'not configured'},{status:500});
-        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days)}),signal:AbortSignal.timeout(8000)});
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days),p_tier:tierParam||null}),signal:AbortSignal.timeout(8000)});
         if(!res.ok)return Response.json({error:'track record fetch failed',status:res.status},{status:502});
         return new Response(res.body,{status:200,headers:{'content-type':'application/json','Cache-Control':'public, max-age=300'}});
       }catch(e:any){

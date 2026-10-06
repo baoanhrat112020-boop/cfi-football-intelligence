@@ -456,6 +456,13 @@
           <button class="chip" data-days="30">30 ngày</button>
           <button class="chip active" data-days="all">Tất cả</button>
         </div>
+        <div class="chip-row" id="trackTierChips" style="display:flex;gap:6px;padding:0 2px 8px;flex-wrap:wrap">
+          <button class="chip" data-tier="CAO">CAO</button>
+          <button class="chip" data-tier="KHA">KHÁ</button>
+          <button class="chip" data-tier="TB">TB</button>
+          <button class="chip" data-tier="THAP">THẤP</button>
+          <button class="chip" data-tier="RAT_THAP">RẤT THẤP</button>
+        </div>
         <div id="trackContent" style="margin-top:8px">
           <div class="context-state">Đang tải...</div>
         </div>
@@ -1380,11 +1387,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   });
 
   var TRACK_MIN_N=30,TRACK_TTL=5*60*1000,TRACK_TIER_LABELS={CAO:"CAO",KHA:"KHÁ",TB:"TB",THAP:"THẤP",RAT_THAP:"RẤT THẤP"};
-  state.trackDays="all";state.trackCache={};state.trackSeq=0;
+  state.trackDays="all";state.trackTier="";state.trackCache={};state.trackSeq=0;
+  function trackResultChip(v){var m={WIN:["WIN","#166534","#ffffff"],HALF_WIN:["HALF","#3b3410","#fde047"],LOSS:["LOSS","#3a1616","#f87171"]}[v];if(!m)return '<span style="color:#7a8a99">—</span>';return '<span style="background:'+m[1]+';color:'+m[2]+';border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800;white-space:nowrap">'+m[0]+'</span>'}
   function trackPct(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
   function trackPair(pred,actual,show){return trackPct(pred)+' → <b style="color:#e8eef3">'+(show?trackPct(actual):"—")+'</b>'}
   function trackTierBadge(t){var map={CAO:0,KHA:1,TB:2,THAP:3,RAT_THAP:4},b=SUGGEST_BADGES[map[t]];if(!b)return esc(t);return '<span style="background:'+b.bg+';color:'+b.fg+';border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800;white-space:nowrap">'+esc(TRACK_TIER_LABELS[t]||t)+'</span>'}
-  function trackTh(t,left){return '<th style="padding:6px 8px;text-align:'+(left?"left":"right")+';font-size:10px;color:#7f9daf;font-weight:700;white-space:nowrap;border-bottom:1px solid #1f2a35">'+t+'</th>'}
+  function trackTh(t,left,extra){return '<th style="padding:6px 8px;text-align:'+(left?"left":"right")+';font-size:10px;color:#7f9daf;font-weight:700;white-space:nowrap;border-bottom:1px solid #1f2a35;'+(extra||"")+'">'+t+'</th>'}
   function trackTd(t,left,extra){return '<td style="padding:6px 8px;text-align:'+(left?"left":"right")+';font-size:12px;color:#c5d4de;white-space:nowrap;'+(extra||"")+'">'+t+'</td>'}
   function trackCard(title,body){return '<div style="background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:10px"><div style="font-size:12px;font-weight:800;color:#49aeff;margin-bottom:8px">'+title+'</div>'+body+'</div>'}
   function trackSinceDate(iso){var t=Date.parse(iso);if(!Number.isFinite(t))return "—";var d=new Date(t+7*3600*1000);return d.toISOString().slice(0,10)}
@@ -1393,12 +1401,17 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var html='';
     var cnt='<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#c5d4de"><span>Đã chấm <b style="color:#4ade80">'+scored+'</b></span><span>Đang chờ <b style="color:#fde047">'+(Number(c.pending)||0)+'</b></span><span>Không có kết quả <b style="color:#7a8a99">'+voided+'</b></span></div>';
     cnt+='<div style="font-size:11px;color:#7f9daf;margin-top:6px">Log bắt đầu '+esc(since)+' · pick được chốt trước giờ đá 5 phút</div>';
+    var selTier=state.trackTier||"",wT=0,hT=0,lT=0,nT=0;
+    (d.calibration_by_tier||[]).forEach(function(r){wT+=Number(r.win)||0;hT+=Number(r.half)||0;lT+=Number(r.loss)||0;nT+=Number(r.n)||0});
+    cnt+='<div style="margin-top:8px;font-size:12px;color:#c5d4de"><span style="color:#7f9daf">O0.75 hit rate:</span> '+(nT>=TRACK_MIN_N?'<b style="color:#4ade80">'+wT+'W</b> / <b style="color:#fde047">'+hT+'H</b> / <b style="color:#f87171">'+lT+'L</b> — <b>'+trackPct((wT+0.5*hT)/nT)+'</b> (n='+nT+')':'—')+'</div>';
+    cnt+='<div style="font-size:10px;color:#7f9daf;margin-top:3px">Nửa thắng tính 0,5. Khác với hit rate của best pick (✓/✗) trong bảng bên dưới.</div>';
+    if(selTier&&d.tier!==selTier)cnt+='<div style="margin-top:8px;padding:6px 8px;border-left:3px solid #f59e0b;background:#1a1408;border-radius:0 5px 5px 0;font-size:11px;color:#d4b378">Bộ lọc tier chưa khả dụng trên server, đang hiện toàn bộ.</div>';
     if(scored<TRACK_MIN_N)cnt+='<div style="margin-top:8px;padding:6px 8px;border-left:3px solid #f59e0b;background:#1a1408;border-radius:0 5px 5px 0;font-size:11px;color:#d4b378">Ít dữ liệu (n='+scored+'): chưa đủ '+TRACK_MIN_N+' trận đã chấm, các tỉ lệ thực tế được ẩn.</div>';
     html+=trackCard("Tổng quan",cnt);
     if(scored===0&&!recent.length){
       html+='<div class="context-state">Log từ '+esc(since)+'. Trận đầu tiên được chấm sau khi kết thúc (khoảng 3 giờ sau giờ đá).</div>';
     }
-    var tiers=d.calibration_by_tier||[],tt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Tier",true)+trackTh("n")+trackTh("O0.5")+trackTh("O0.75")+trackTh("O1")+trackTh("CI 95%")+'</tr></thead><tbody>';
+    var tiers=(d.calibration_by_tier||[]).filter(function(r){return !selTier||d.tier!==selTier||r.tier===selTier}),tt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Tier",true)+trackTh("n")+trackTh("O0.5")+trackTh("O0.75")+trackTh("O1")+trackTh("CI 95%")+'</tr></thead><tbody>';
     tiers.forEach(function(r){
       var show=Number(r.n)>=TRACK_MIN_N;
       tt+='<tr>'+trackTd(trackTierBadge(r.tier),true)+trackTd(String(r.n))+trackTd(trackPair(r.o05_pred,r.o05_actual,show))+trackTd(trackPair(r.o075_pred,r.o075_actual,show))+trackTd(trackPair(r.o1_pred,r.o1_actual,show))+trackTd(show&&r.wilson_95_low!=null?trackPct(r.wilson_95_low)+"–"+trackPct(r.wilson_95_high):"—")+'</tr>';
@@ -1416,33 +1429,36 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var rt='';
     if(!recent.length)rt='<div style="font-size:11px;color:#7f9daf">Chưa có trận nào được chấm.</div>';
     else{
-      rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true)+trackTh("HT")+trackTh("FT")+trackTh("Tier")+trackTh("Best pick",true)+trackTh("Hit?")+'</tr></thead><tbody>';
+      rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true,"padding:6px 4px")+trackTh("HT",false,"padding:6px 4px")+trackTh("FT",false,"padding:6px 4px")+trackTh("Tier",false,"padding:6px 4px")+trackTh("Best pick",true,"padding:6px 4px")+trackTh("O0.75",false,"padding:6px 4px")+'</tr></thead><tbody>';
       recent.forEach(function(r){
-        var hit=r.hit===true?'<span style="color:#4ade80;font-weight:800">✓</span>':r.hit===false?'<span style="color:#f87171;font-weight:800">✗</span>':'<span style="color:#7a8a99">—</span>';
-        rt+='<tr>'+trackTd(esc(r.home)+" – "+esc(r.away),true,"max-width:150px;overflow:hidden;text-overflow:ellipsis")+trackTd(esc(r.ht_score||"—"))+trackTd(esc(r.ft_score||"—"))+trackTd(trackTierBadge(r.tier))+trackTd(esc(TOP_MARKET_LABELS[r.top_market]||r.top_market||"—"),true)+trackTd(hit)+'</tr>';
+        var mark=r.hit===true?' <span style="color:#4ade80;font-weight:800;font-size:10px">✓</span>':r.hit===false?' <span style="color:#f87171;font-weight:800;font-size:10px">✗</span>':'';
+        var cp="padding:6px 4px;font-size:11px";
+        rt+='<tr>'+trackTd(esc(r.home)+" – "+esc(r.away),true,cp+";white-space:normal;max-width:96px;min-width:70px;line-height:1.25")+trackTd(esc(r.ht_score||"—"),false,cp)+trackTd(esc(r.ft_score||"—"),false,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(esc(TOP_MARKET_LABELS[r.top_market]||r.top_market||"—")+mark,true,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
       });
-      rt+='</tbody></table></div>';
+      rt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Chip = kết quả O0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.</div>';
       if(recent.length<100)rt+='<div style="font-size:11px;color:#d4b378;margin-top:6px">Đang tích lũy: '+recent.length+'/100</div>';
     }
     html+=trackCard("100 trận gần nhất",rt);
     return html;
   }
   async function loadTrack(force){
-    var days=state.trackDays,el=$("trackContent"),seq=++state.trackSeq,cached=state.trackCache[days];
+    var days=state.trackDays,tier=state.trackTier||"",ck=days+"|"+tier,el=$("trackContent"),seq=++state.trackSeq,cached=state.trackCache[ck];
     document.querySelectorAll("#trackChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.days===days)});
+    document.querySelectorAll("#trackTierChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.tier===tier)});
     if(cached&&!force&&Date.now()-cached.ts<TRACK_TTL){el.innerHTML=renderTrackHtml(cached.data);return}
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
-      var r=await api("/api/track-record?days="+encodeURIComponent(days),"GET");
+      var r=await api("/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):""),"GET");
       if(seq!==state.trackSeq)return;
       var data=r.data;if(!data||typeof data!=="object"||!data.counts)throw new Error("Empty response");
-      state.trackCache[days]={ts:Date.now(),data:data};el.innerHTML=renderTrackHtml(data);
+      state.trackCache[ck]={ts:Date.now(),data:data};el.innerHTML=renderTrackHtml(data);
     }catch(e){
       if(seq!==state.trackSeq)return;
       el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
     }
   }
   document.querySelectorAll("#trackChips .chip").forEach(function(btn){btn.onclick=function(){state.trackDays=btn.dataset.days;loadTrack(false)}});
+  document.querySelectorAll("#trackTierChips .chip").forEach(function(btn){btn.onclick=function(){state.trackTier=state.trackTier===btn.dataset.tier?"":btn.dataset.tier;loadTrack(false)}});
   document.querySelectorAll("#suggestSubtabs .chip").forEach(function(btn){
     btn.onclick=function(){
       var sub=btn.dataset.sub;
