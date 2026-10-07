@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, 'scripts')
 from cfi_tier import classify_tier
 
-SB_URL = "https://kovmddkkzttquupdgmel.supabase.co"
+SB_URL = "https://zbwkowqluwuvsnajkuvc.supabase.co"
 SB_KEY = os.environ.get("SB_SERVICE_ROLE_KEY", "")
 if not SB_KEY:
     print("ERROR: SB_SERVICE_ROLE_KEY not set"); exit(1)
