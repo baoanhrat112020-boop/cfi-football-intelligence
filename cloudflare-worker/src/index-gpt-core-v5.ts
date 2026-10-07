@@ -11,7 +11,7 @@ import { handleFixturesDayRequest } from '../../src/runtime/fixtures-day-fast.ts
 import { poissonExtraMarkets } from '../../src/prediction/poisson-markets.ts';
 
 type Env={CFI_DB_BASE_URL?:string;CFI_DB_KEY?:string;SUPABASE_SERVICE_KEY?:string;DEBUG?:string;AI?:Ai};
-const TIER_C_LOG_SUPABASE_URL='https://kovmddkkzttquupdgmel.supabase.co';
+const TIER_C_LOG_SUPABASE_URL='https://zbwkowqluwuvsnajkuvc.supabase.co';
 type FeedRow={provider:string;providerId:string;home:string;away:string;competition:string|null;country:string|null;kickoffIso:string;kickoffLocal:string;targetDate:string;status:string;sourceUrls?:string[];discoveredAt?:string};
 
 const GPT_PRODUCTION_HOST='cfi-football-intelligence.baoanhrat112020.workers.dev';
