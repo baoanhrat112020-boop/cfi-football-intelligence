@@ -30,7 +30,7 @@ jobs:
         env:
           CFI_STATUS_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/status
           CFI_DISCOVERY_URL: https://cfi-football-intelligence.baoanhrat112020.workers.dev/api/discover
-          CFI_FEED_URL: https://kovmddkkzttquupdgmel.supabase.co/functions/v1/cfi-discovery-feed
+          CFI_FEED_URL: https://zbwkowqluwuvsnajkuvc.supabase.co/functions/v1/cfi-discovery-feed
           CFI_DB_KEY: ${{ secrets.CFI_DB_KEY || secrets.CFI_ACTION_KEY }}
         run: |
           set -euo pipefail
