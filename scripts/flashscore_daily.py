@@ -1,4 +1,4 @@
-﻿import os, re, uuid as U
+﻿import os, re, uuid as U, unicodedata
 from datetime import datetime, timedelta
 from curl_cffi import requests as cf
 from supabase import create_client
@@ -57,18 +57,21 @@ def parse(text):
             out.append({"mid": mid, "home": home, "away": away, "league": cur_lg})
     return out
 
-print("Loading teams...")
-cfi_teams = {}
-off = 0
-while True:
-    r = sb.table("teams").select("team_id,canonical_name").range(off, off+999).execute()
-    if not r.data: break
-    for t in r.data:
-        n = norm(t["canonical_name"])
-        if n: cfi_teams[n] = t["team_id"]
-    off += 1000
-    if len(r.data) < 1000: break
-print(f"  {len(cfi_teams)} teams")
+def fold_key(s):
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.category(c).startswith("M"))
+    s = s.lower().replace("&", " and ")
+    return " ".join("".join(c if c.isalnum() else " " for c in s).split())
+
+def load_teams(names):
+    keys = sorted({fold_key(n) for n in names if n} - {""})
+    teams = {}
+    for i in range(0, len(keys), 200):
+        r = sb.table("teams").select("team_id,canonical_name").in_("folded_name", keys[i:i+200]).execute()
+        for t in r.data:
+            n = norm(t["canonical_name"])
+            if n: teams[n] = t["team_id"]
+    return teams
 
 all_matches = []
 for day in [0, 1]:
@@ -83,6 +86,10 @@ for day in [0, 1]:
     print(f"  day {day} ({md}): {len(matches)} whitelist matches")
 
 print(f"\nTotal: {len(all_matches)}")
+
+print("Loading teams...")
+cfi_teams = load_teams({m[k] for m in all_matches for k in ("home", "away")})
+print(f"  {len(cfi_teams)} teams")
 
 ok, fail, skip = 0, 0, 0
 for m in all_matches:
