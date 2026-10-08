@@ -134,7 +134,10 @@
 .odds-green{background:#0d3a1f;color:#4ade80}
 .odds-yellow{background:#3a2f0d;color:#fbbf24}
 .odds-red{background:#3a0d0d;color:#f87171}
-</style>
+    .bm-star{background:none;border:0;color:#7f9daf;font-size:18px;line-height:1;padding:2px 4px;cursor:pointer;-webkit-tap-highlight-color:transparent;flex-shrink:0}.bm-star.on{color:#fde047}
+    .saved-row{background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px}
+    .bm-del{background:#1c242c;color:#c5d4de;border:1px solid #2a3642;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer}
+  </style>
 <script>(function(){var l="vi";try{l=localStorage.getItem("cfi.lang")==="en"?"en":"vi"}catch(e){}window.CFI_LANG=l;window.CFI_LOCALE=l==="en"?"en-GB":"vi-VN";document.documentElement.lang=l})();</script>
 </head>
 <body>
@@ -434,6 +437,7 @@
       <div class="chip-row" id="suggestSubtabs" style="display:flex;gap:6px;padding:4px 2px 0">
         <button class="chip active" data-sub="picks">Dự đoán</button>
         <button class="chip" data-sub="history">Lịch sử</button>
+        <button class="chip" data-sub="saved">Đã lưu</button>
       </div>
       <div id="suggestPicks">
         <div style="font-size:11px;color:#d4b378;padding:6px 2px">
@@ -450,6 +454,9 @@
         <div id="suggestContent" style="margin-top:12px">
           <div class="context-state">Đang tải...</div>
         </div>
+      </div>
+      <div id="suggestSaved" style="display:none">
+        <div id="savedContent" style="margin-top:8px"></div>
       </div>
       <div id="suggestHistory" style="display:none">
         <div class="chip-row" id="trackChips" style="display:flex;gap:6px;padding:8px 2px;flex-wrap:wrap">
@@ -661,6 +668,48 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function fixtureCacheKey(date){return "cfi:fixtures:"+date}
   function contextCacheKey(m){return "cfi:context:"+[m.date,m.home.toLowerCase(),m.away.toLowerCase()].join("|")}
+  var BM_KEY="cfi:bookmarks:v1";state.suggestSub="picks";
+  function bmLoad(){try{var a=JSON.parse(localStorage.getItem(BM_KEY)||"[]");return Array.isArray(a)?a:[]}catch(e){return[]}}
+  function bmSave(a){try{localStorage.setItem(BM_KEY,JSON.stringify(a));return true}catch(e){return false}}
+  function bmKickoff(k){var t=Date.parse(k);return Number.isFinite(t)?new Date(t).toISOString():String(k||"")}
+  function bmId(x){if(x.fixture_id)return String(x.fixture_id);return [bmKickoff(x.kickoff),String(x.home||"").toLowerCase(),String(x.away||"").toLowerCase()].join("|")}
+  function bmHas(id){return bmLoad().some(function(b){return b.id===id})}
+  function bmTierKey(p){var v=Number(p);if(!Number.isFinite(v))return "";return v>=0.65?"CAO":v>=0.60?"KHA":v>=0.55?"TB":v>=0.50?"THAP":"RAT_THAP"}
+  function bmStarHtml(x){
+    var id=bmId(x),on=bmHas(id);
+    return '<button type="button" class="bm-star'+(on?' on':'')+'" aria-label="Lưu" data-bm-id="'+esc(id)+'" data-home="'+esc(x.home)+'" data-away="'+esc(x.away)+'" data-kickoff="'+esc(x.kickoff||"")+'" data-tier="'+esc(x.tier||"")+'" data-top="'+esc(x.top_market||"")+'">'+(on?"★":"☆")+'</button>';
+  }
+  function bmSync(id){
+    var on=bmHas(id);
+    document.querySelectorAll(".bm-star").forEach(function(s){if(s.getAttribute("data-bm-id")===id){s.classList.toggle("on",on);s.textContent=on?"★":"☆"}});
+  }
+  function bmToggleEl(btn){
+    var id=btn.getAttribute("data-bm-id"),a=bmLoad(),i=a.findIndex(function(b){return b.id===id});
+    if(i>=0){a.splice(i,1);if(!bmSave(a)){toast("Không lưu được");return}toast("Đã bỏ lưu")}
+    else{
+      a.push({id:id,home:btn.getAttribute("data-home"),away:btn.getAttribute("data-away"),kickoff:btn.getAttribute("data-kickoff")||null,tier:btn.getAttribute("data-tier")||null,top_market:btn.getAttribute("data-top")||null,savedAt:Date.now()});
+      if(!bmSave(a)){toast("Không lưu được");return}toast("Đã lưu trận");
+    }
+    bmSync(id);
+  }
+  function bmApplyResults(rows){
+    if(!Array.isArray(rows)||!rows.length)return;
+    var a=bmLoad();if(!a.length)return;
+    var by={};rows.forEach(function(r){by[bmId({fixture_id:r.fixture_id,home:r.home,away:r.away,kickoff:r.kickoff})]=r});
+    var ch=false;
+    a.forEach(function(b){var r=by[b.id];if(r){b.result={ht_score:r.ht_score||null,ft_score:r.ft_score||null,hit:r.hit,o075_result:r.o075_result||null};ch=true}});
+    if(ch){bmSave(a);if(state.suggestSub==="saved")renderSaved()}
+  }
+  function renderSaved(){
+    var el=$("savedContent"),a=bmLoad().sort(function(x,y){return (y.savedAt||0)-(x.savedAt||0)});
+    if(!a.length){el.innerHTML='<div class="context-state">Chưa lưu trận nào. Bấm ☆ trên thẻ Gợi ý hoặc bảng Lịch sử để lưu.</div>';return}
+    el.innerHTML=a.map(function(b){
+      var t=Date.parse(b.kickoff),when=Number.isFinite(t)?new Date(t).toLocaleString(window.CFI_LOCALE||"vi-VN",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
+      var r=b.result,res=r?'<div style="font-size:11px;color:#c5d4de;margin-top:6px">HT '+esc(r.ht_score||"—")+' · FT '+esc(r.ft_score||"—")+' '+trackResultChip(r.o075_result)+(r.hit===true?' <span style="color:#4ade80;font-weight:800;font-size:10px">✓</span>':r.hit===false?' <span style="color:#f87171;font-weight:800;font-size:10px">✗</span>':'')+'</div>':'';
+      var meta=(b.tier?trackTierBadge(b.tier)+' ':'')+(b.top_market?'<span style="font-size:11px;color:#7f9daf">'+esc(TOP_MARKET_LABELS[b.top_market]||b.top_market)+'</span>':'');
+      return '<div class="saved-row" data-bm-id="'+esc(b.id)+'"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:13px;color:#e8eef3"><span translate="no">'+esc(b.home)+'</span> vs <span translate="no">'+esc(b.away)+'</span></b><button type="button" class="bm-del" data-bm-id="'+esc(b.id)+'">Xóa</button></div><div style="font-size:11px;color:#7f9daf;margin-top:4px">'+esc(when)+'</div><div style="margin-top:6px">'+meta+'</div>'+res+'</div>';
+    }).join("");
+  }
 
   function setSearchMode(mode){
     state.searchMode=mode;
@@ -1367,7 +1416,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         }
         var compName=m.competition?'<div class="suggest-comp" translate="no" style="font-size:11px;color:#7f9daf;margin:-4px 0 7px">'+esc(m.competition)+'</div>':"";
         var badges=m.hit_markets?m.hit_markets.map(function(h){return '<span style="background:#0d3a1f;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-right:4px">'+esc(h)+'</span>'}).join(""):"";
-        html+='<div class="suggest-card" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'" style="cursor:pointer;background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3"><span translate="no">'+esc(m.home)+'</span>'+tagBadges(m.home)+' vs <span translate="no">'+esc(m.away)+'</span>'+tagBadges(m.away)+'</b>'+timeBadge+'</div>'+compName+scoreBlockHtml(m,true)+compLine+'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml+'</div>';
+        html+='<div class="suggest-card" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'" style="cursor:pointer;background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3"><span translate="no">'+esc(m.home)+'</span>'+tagBadges(m.home)+' vs <span translate="no">'+esc(m.away)+'</span>'+tagBadges(m.away)+'</b>'+'<span style="display:flex;align-items:center;gap:4px;flex-shrink:0">'+timeBadge+bmStarHtml({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,tier:bmTierKey(m.p_over075_ht),top_market:m.top_market})+'</span></div>'+compName+scoreBlockHtml(m,true)+compLine+'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml+'</div>';
       });
     });
     return html;
@@ -1434,7 +1483,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       recent.forEach(function(r){
         var mark=r.hit===true?' <span style="color:#4ade80;font-weight:800;font-size:10px">✓</span>':r.hit===false?' <span style="color:#f87171;font-weight:800;font-size:10px">✗</span>':'';
         var cp="padding:6px 4px;font-size:11px";
-        rt+='<tr>'+trackTd('<span translate="no">'+esc(r.home)+" – "+esc(r.away)+'</span>',true,cp+";white-space:normal;max-width:96px;min-width:70px;line-height:1.25")+trackTd(esc(r.ht_score||"—"),false,cp)+trackTd(esc(r.ft_score||"—"),false,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(esc(TOP_MARKET_LABELS[r.top_market]||r.top_market||"—")+mark,true,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
+        rt+='<tr>'+trackTd(bmStarHtml({fixture_id:r.fixture_id,home:r.home,away:r.away,kickoff:r.kickoff,tier:r.tier,top_market:r.top_market})+'<span translate="no">'+esc(r.home)+" – "+esc(r.away)+'</span>',true,cp+";white-space:normal;max-width:96px;min-width:70px;line-height:1.25")+trackTd(esc(r.ht_score||"—"),false,cp)+trackTd(esc(r.ft_score||"—"),false,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(esc(TOP_MARKET_LABELS[r.top_market]||r.top_market||"—")+mark,true,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
       });
       rt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Chip = kết quả O0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.</div>';
       if(recent.length<100)rt+='<div style="font-size:11px;color:#d4b378;margin-top:6px">Đang tích lũy: '+recent.length+'/100</div>';
@@ -1452,7 +1501,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var r=await api("/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):""),"GET");
       if(seq!==state.trackSeq)return;
       var data=r.data;if(!data||typeof data!=="object"||!data.counts)throw new Error("Empty response");
-      state.trackCache[ck]={ts:Date.now(),data:data};el.innerHTML=renderTrackHtml(data);
+      state.trackCache[ck]={ts:Date.now(),data:data};bmApplyResults(data.recent_settled);el.innerHTML=renderTrackHtml(data);
     }catch(e){
       if(seq!==state.trackSeq)return;
       el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
@@ -1465,15 +1514,22 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var sub=btn.dataset.sub;
       document.querySelectorAll("#suggestSubtabs .chip").forEach(function(c){c.classList.toggle("active",c===btn)});
       $("suggestPicks").style.display=sub==="picks"?"":"none";
+      state.suggestSub=sub;
+      $("suggestSaved").style.display=sub==="saved"?"":"none";
       $("suggestHistory").style.display=sub==="history"?"":"none";
+      if(sub==="saved")renderSaved();
       if(sub==="history")loadTrack(false);
     };
   });
 
   $("suggestContent").addEventListener("click",function(e){
+    var st=e.target.closest(".bm-star");if(st){e.stopPropagation();bmToggleEl(st);return}
     var c=e.target.closest(".suggest-card");if(!c)return;
     prefillAndPredict(c.dataset.home,c.dataset.away,c.dataset.date,null);
   });
+
+  $("trackContent").addEventListener("click",function(e){var st=e.target.closest(".bm-star");if(st){e.stopPropagation();bmToggleEl(st)}});
+  $("savedContent").addEventListener("click",function(e){var d=e.target.closest(".bm-del");if(!d)return;e.stopPropagation();var id=d.getAttribute("data-bm-id");bmSave(bmLoad().filter(function(b){return b.id!==id}));bmSync(id);renderSaved()});
 
   setToday();
 })();
@@ -1787,6 +1843,13 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Lỗi": "Error",
       "Dự đoán": "Picks",
       "Lịch sử": "History",
+      "Đã lưu": "Saved",
+      "Lưu": "Save",
+      "Xóa": "Delete",
+      "Đã lưu trận": "Saved",
+      "Đã bỏ lưu": "Removed",
+      "Không lưu được": "Could not save",
+      "Chưa lưu trận nào. Bấm ☆ trên thẻ Gợi ý hoặc bảng Lịch sử để lưu.": "Nothing saved yet. Tap ☆ on a pick card or the History table to save.",
       "Tất cả": "All",
       "Loại amateur": "Hide amateur",
       "Số liệu từ thống kê bàn thắng. Bấm vào trận để chạy Predict chính xác.": "Based on goal statistics. Tap a match to run an exact Predict.",
