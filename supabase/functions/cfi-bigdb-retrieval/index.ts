@@ -9,51 +9,49 @@ const foldName=(value:string)=>String(value||'').normalize('NFKD').replace(/\p{M
 const clubIdentityKey=(value:string)=>foldName(value).split(' ').filter(token=>token&&!CLUB_DESIGNATORS.has(token)).join(' ');
 
 type IdentityCandidate={team_id:string;canonical_name:string};
-type IdentityCatalog={expiresAt:number;folded:Map<string,Map<string,IdentityCandidate>>;club:Map<string,Map<string,IdentityCandidate>>};
-let identityCatalog:IdentityCatalog|null=null;
+type LabelHit={foldedLabel:string;candidate:IdentityCandidate};
+type IdentityColumn='folded_name'|'club_key'|'auto_key';
 
-const addCandidate=(map:Map<string,Map<string,IdentityCandidate>>,key:string,candidate:IdentityCandidate)=>{
-  if(!key||key.length<2)return;
-  const bucket=map.get(key)||new Map<string,IdentityCandidate>();
-  bucket.set(candidate.team_id,candidate);
-  map.set(key,bucket);
-};
-
-async function fetchAll(db:any,table:string,columns:string){
-  const out:any[]=[]; const pageSize=1000;
-  for(let offset=0;offset<20000;offset+=pageSize){
-    const {data,error}=await db.from(table).select(columns).range(offset,offset+pageSize-1);
-    if(error)throw new Error(`${table.toUpperCase()}_CATALOG_FAILED:${error.code||''}:${error.message}`);
-    const rows=Array.isArray(data)?data:[]; out.push(...rows);
-    if(rows.length<pageSize)break;
-  }
-  return out;
-}
-
-async function loadIdentityCatalog(db:any){
-  const now=Date.now();
-  if(identityCatalog&&identityCatalog.expiresAt>now)return identityCatalog;
-  const [teams,aliases]=await Promise.all([
-    fetchAll(db,'teams','team_id,canonical_name'),
-    fetchAll(db,'team_aliases','team_id,alias_display')
+async function lookupLabels(db:any,column:IdentityColumn,keys:string[]):Promise<LabelHit[]>{
+  const wanted=[...new Set(keys.filter(Boolean))];
+  if(!wanted.length)return[];
+  const [teamsRes,aliasRes]=await Promise.all([
+    db.from('teams').select('team_id,canonical_name,folded_name').in(column,wanted),
+    db.from('team_aliases').select('team_id,folded_name').in(column,wanted)
   ]);
-  const teamById=new Map<string,string>();
-  for(const row of teams){
+  if(teamsRes.error)throw new Error(`TEAMS_CATALOG_FAILED:${teamsRes.error.code||''}:${teamsRes.error.message}`);
+  if(aliasRes.error)throw new Error(`TEAM_ALIASES_CATALOG_FAILED:${aliasRes.error.code||''}:${aliasRes.error.message}`);
+  const canonicalById=new Map<string,string>();
+  const hits:LabelHit[]=[];
+  for(const row of teamsRes.data||[]){
     const id=String(row?.team_id||''),canonical=String(row?.canonical_name||'').trim();
-    if(id&&canonical)teamById.set(id,canonical);
+    if(!id||!canonical)continue;
+    canonicalById.set(id,canonical);
+    hits.push({foldedLabel:String(row?.folded_name||''),candidate:{team_id:id,canonical_name:canonical}});
   }
-  const folded=new Map<string,Map<string,IdentityCandidate>>(),club=new Map<string,Map<string,IdentityCandidate>>();
-  const index=(label:string,teamId:string)=>{
-    const canonical=teamById.get(teamId); if(!canonical)return;
-    const candidate={team_id:teamId,canonical_name:canonical};
-    addCandidate(folded,foldName(label),candidate);
-    const clubKey=clubIdentityKey(label); if(clubKey.length>=3)addCandidate(club,clubKey,candidate);
-  };
-  for(const [teamId,canonical] of teamById)index(canonical,teamId);
-  for(const row of aliases){const teamId=String(row?.team_id||''),label=String(row?.alias_display||'').trim();if(teamId&&label)index(label,teamId);}
-  identityCatalog={expiresAt:now+5*60*1000,folded,club};
-  return identityCatalog;
+  const aliasRows=(aliasRes.data||[]).filter((row:any)=>row?.team_id);
+  const missing=[...new Set(aliasRows.map((row:any)=>String(row.team_id)).filter((id:string)=>!canonicalById.has(id)))] as string[];
+  for(let i=0;i<missing.length;i+=100){
+    const {data,error}=await db.from('teams').select('team_id,canonical_name').in('team_id',missing.slice(i,i+100));
+    if(error)throw new Error(`TEAMS_CATALOG_FAILED:${error.code||''}:${error.message}`);
+    for(const row of data||[]){
+      const id=String(row?.team_id||''),canonical=String(row?.canonical_name||'').trim();
+      if(id&&canonical)canonicalById.set(id,canonical);
+    }
+  }
+  for(const row of aliasRows){
+    const id=String(row.team_id),canonical=canonicalById.get(id);
+    if(!canonical)continue;
+    hits.push({foldedLabel:String(row?.folded_name||''),candidate:{team_id:id,canonical_name:canonical}});
+  }
+  return hits;
 }
+
+const bucketOf=(hits:LabelHit[])=>{
+  const bucket=new Map<string,IdentityCandidate>();
+  for(const hit of hits)bucket.set(hit.candidate.team_id,hit.candidate);
+  return bucket;
+};
 
 const uniqueCandidate=(bucket:Map<string,IdentityCandidate>|undefined)=>{
   const values=bucket?[...bucket.values()]:[];
@@ -79,10 +77,10 @@ const autoAliasKey=(value:string)=>
     .join(' ');
 
 async function deterministicFallback(db:any,name:string){
-  const catalog=await loadIdentityCatalog(db);
-
   const foldedKey=foldName(name);
-  const foldedBucket=catalog.folded.get(foldedKey);
+  const foldedBucket=foldedKey.length>=2
+    ? bucketOf(await lookupLabels(db,'folded_name',[foldedKey]))
+    : undefined;
   const folded=uniqueCandidate(foldedBucket);
 
   if(folded){
@@ -105,7 +103,7 @@ async function deterministicFallback(db:any,name:string){
 
   const clubKey=clubIdentityKey(name);
   const clubBucket=clubKey.length>=3
-    ? catalog.club.get(clubKey)
+    ? bucketOf(await lookupLabels(db,'club_key',[clubKey]))
     : undefined;
 
   const club=uniqueCandidate(clubBucket);
@@ -133,13 +131,11 @@ async function deterministicFallback(db:any,name:string){
   const hits=new Map<string,IdentityCandidate>();
 
   if(key.length>=3){
-    for(const [label,bucket] of catalog.folded){
-      if(autoAliasClass(label)!==klass)continue;
-      if(autoAliasKey(label)!==key)continue;
-
-      for(const candidate of bucket.values()){
-        hits.set(candidate.team_id,candidate);
-      }
+    for(const hit of await lookupLabels(db,'auto_key',[key])){
+      if(hit.foldedLabel.length<2)continue;
+      if(autoAliasClass(hit.foldedLabel)!==klass)continue;
+      if(autoAliasKey(hit.foldedLabel)!==key)continue;
+      hits.set(hit.candidate.team_id,hit.candidate);
     }
   }
 
