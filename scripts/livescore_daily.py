@@ -1,4 +1,4 @@
-import os, re, uuid as U, json, time
+import os, re, uuid as U, json, time, unicodedata
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 VN_TZ = timezone(timedelta(hours=7))
@@ -83,19 +83,6 @@ def dedupe_events(events):
             by_eid[eid] = e
     return list(by_eid.values())
 
-print("Loading teams...")
-cfi_teams = {}
-off = 0
-while True:
-    r = sb_exec(sb.table("teams").select("team_id,canonical_name").range(off, off+999))
-    if not r.data: break
-    for t in r.data:
-        n = norm(t["canonical_name"])
-        if n: cfi_teams[n] = t["team_id"]
-    off += 1000
-    if len(r.data) < 1000: break
-print(f"  {len(cfi_teams)} teams")
-
 existing_map = {}
 existing_league = {}
 _off = 0
@@ -135,6 +122,26 @@ def team_names(m):
     t1, t2 = m.get("T1"), m.get("T2")
     if not t1 or not t2: return None, None
     return t1[0].get("Nm"), t2[0].get("Nm")
+
+def fold_key(s):
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.category(c).startswith("M"))
+    s = s.lower().replace("&", " and ")
+    return " ".join("".join(c if c.isalnum() else " " for c in s).split())
+
+def load_teams(names):
+    keys = sorted({fold_key(n) for n in names if n} - {""})
+    teams = {}
+    for i in range(0, len(keys), 200):
+        r = sb_exec(sb.table("teams").select("team_id,canonical_name").in_("folded_name", keys[i:i+200]))
+        for t in r.data:
+            n = norm(t["canonical_name"])
+            if n: teams[n] = t["team_id"]
+    return teams
+
+print("Loading teams...")
+cfi_teams = load_teams({n for m in all_events for n in team_names(m) if n})
+print(f"  {len(cfi_teams)} teams")
 
 def kickoff_of(m):
     esd = str(m.get("Esd", ""))
