@@ -1446,6 +1446,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function trackTd(t,left,extra){return '<td style="padding:6px 8px;text-align:'+(left?"left":"right")+';font-size:12px;color:#c5d4de;white-space:nowrap;'+(extra||"")+'">'+t+'</td>'}
   function trackCard(title,body){return '<div style="background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:10px"><div style="font-size:12px;font-weight:800;color:#49aeff;margin-bottom:8px">'+title+'</div>'+body+'</div>'}
   function trackSinceDate(iso){var t=Date.parse(iso);if(!Number.isFinite(t))return "—";var d=new Date(t+7*3600*1000);return d.toISOString().slice(0,10)}
+  function trackRecentRow(r){
+        var mark=r.hit===true?' <span style="color:#4ade80;font-weight:800;font-size:10px">✓</span>':r.hit===false?' <span style="color:#f87171;font-weight:800;font-size:10px">✗</span>':'';
+        var cp="padding:6px 4px;font-size:11px";
+        return '<tr>'+trackTd(bmStarHtml({fixture_id:r.fixture_id,home:r.home,away:r.away,kickoff:r.kickoff,tier:r.tier,top_market:r.top_market})+'<span translate="no">'+esc(r.home)+" – "+esc(r.away)+'</span>',true,cp+";white-space:normal;max-width:96px;min-width:70px;line-height:1.25")+trackTd(esc(r.ht_score||"—"),false,cp)+trackTd(esc(r.ft_score||"—"),false,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(esc(TOP_MARKET_LABELS[r.top_market]||r.top_market||"—")+mark,true,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
+  }
   function renderTrackHtml(d){
     var c=d.counts||{},scored=Number(c.scored)||0,voided=(Number(c.void_no_result)||0)+(Number(c.void_no_ht)||0),recent=d.recent_settled||[],since=trackSinceDate(c.logging_since);
     var html='';
@@ -1479,17 +1484,37 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var rt='';
     if(!recent.length)rt='<div style="font-size:11px;color:#7f9daf">Chưa có trận nào được chấm.</div>';
     else{
-      rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true,"padding:6px 4px")+trackTh("HT",false,"padding:6px 4px")+trackTh("FT",false,"padding:6px 4px")+trackTh("Tier",false,"padding:6px 4px")+trackTh("Best pick",true,"padding:6px 4px")+trackTh("O0.75",false,"padding:6px 4px")+'</tr></thead><tbody>';
-      recent.forEach(function(r){
-        var mark=r.hit===true?' <span style="color:#4ade80;font-weight:800;font-size:10px">✓</span>':r.hit===false?' <span style="color:#f87171;font-weight:800;font-size:10px">✗</span>':'';
-        var cp="padding:6px 4px;font-size:11px";
-        rt+='<tr>'+trackTd(bmStarHtml({fixture_id:r.fixture_id,home:r.home,away:r.away,kickoff:r.kickoff,tier:r.tier,top_market:r.top_market})+'<span translate="no">'+esc(r.home)+" – "+esc(r.away)+'</span>',true,cp+";white-space:normal;max-width:96px;min-width:70px;line-height:1.25")+trackTd(esc(r.ht_score||"—"),false,cp)+trackTd(esc(r.ft_score||"—"),false,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(esc(TOP_MARKET_LABELS[r.top_market]||r.top_market||"—")+mark,true,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
-      });
+      rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true,"padding:6px 4px")+trackTh("HT",false,"padding:6px 4px")+trackTh("FT",false,"padding:6px 4px")+trackTh("Tier",false,"padding:6px 4px")+trackTh("Best pick",true,"padding:6px 4px")+trackTh("O0.75",false,"padding:6px 4px")+'</tr></thead><tbody id="trackRecentBody">';
+      recent.forEach(function(r){rt+=trackRecentRow(r)});
       rt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Chip = kết quả O0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.</div>';
       if(recent.length<100)rt+='<div style="font-size:11px;color:#d4b378;margin-top:6px">Đang tích lũy: '+recent.length+'/100</div>';
+      if(!d._done&&recent.length>=100)rt+='<div style="text-align:center;margin-top:10px"><button type="button" id="trackMore" class="bm-del" style="padding:8px 18px;font-size:12px">Xem thêm</button></div>';
     }
     html+=trackCard("100 trận gần nhất",rt);
     return html;
+  }
+  async function loadMoreTrack(){
+    var days=state.trackDays,tier=state.trackTier||"",ck=days+"|"+tier,c=state.trackCache[ck],btn=$("trackMore");
+    if(!c||!btn||btn.disabled)return;
+    var rows=c.data.recent_settled||[],last=rows[rows.length-1];if(!last)return;
+    btn.disabled=true;btn.textContent="Đang tải...";
+    try{
+      var q="/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+"&before_kickoff="+encodeURIComponent(last.kickoff)+(last.fixture_id?"&before_fixture="+encodeURIComponent(last.fixture_id):"")+"&limit=100";
+      var r=await api(q,"GET");
+      var more=(r.data&&Array.isArray(r.data.recent_settled))?r.data.recent_settled:null;
+      if(!more)throw new Error("Empty response");
+      c.data.recent_settled=rows.concat(more);
+      if(more.length<100)c.data._done=true;
+      bmApplyResults(more);
+      var body=$("trackRecentBody"),b2=$("trackMore");
+      if(body&&b2&&ck===state.trackDays+"|"+(state.trackTier||"")){
+        body.insertAdjacentHTML("beforeend",more.map(trackRecentRow).join(""));
+        if(c.data._done)b2.parentNode.removeChild(b2);else{b2.disabled=false;b2.textContent="Xem thêm"}
+      }
+    }catch(e){
+      var b3=$("trackMore");if(b3){b3.disabled=false;b3.textContent="Xem thêm"}
+      toast("Không tải được: "+String(e.message||e));
+    }
   }
   async function loadTrack(force){
     var days=state.trackDays,tier=state.trackTier||"",ck=days+"|"+tier,el=$("trackContent"),seq=++state.trackSeq,cached=state.trackCache[ck];
@@ -1528,7 +1553,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     prefillAndPredict(c.dataset.home,c.dataset.away,c.dataset.date,null);
   });
 
-  $("trackContent").addEventListener("click",function(e){var st=e.target.closest(".bm-star");if(st){e.stopPropagation();bmToggleEl(st)}});
+  $("trackContent").addEventListener("click",function(e){var mb=e.target.closest("#trackMore");if(mb){e.stopPropagation();loadMoreTrack();return}var st=e.target.closest(".bm-star");if(st){e.stopPropagation();bmToggleEl(st)}});
   $("savedContent").addEventListener("click",function(e){var d=e.target.closest(".bm-del");if(!d)return;e.stopPropagation();var id=d.getAttribute("data-bm-id");bmSave(bmLoad().filter(function(b){return b.id!==id}));bmSync(id);renderSaved()});
 
   setToday();
@@ -1844,6 +1869,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Dự đoán": "Picks",
       "Lịch sử": "History",
       "Đã lưu": "Saved",
+      "Xem thêm": "Load more",
       "Lưu": "Save",
       "Xóa": "Delete",
       "Đã lưu trận": "Saved",
