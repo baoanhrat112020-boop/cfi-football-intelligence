@@ -103,7 +103,6 @@
     .scoreline-ref-row b{color:#8ea8ba;font-weight:700}
     @media(max-width:390px){.scoreline-ref-grid{grid-template-columns:1fr}}
     .evidence-panel{display:none}.evidence-panel.active{display:block}
-    .settlement-panel{display:none}.settlement-panel.active{display:block}
     .chip{padding:5px 12px;border:1px solid #1f2a35;background:#0f1419;color:#8a98a8;border-radius:16px;cursor:pointer;font-size:12px;font-weight:600}.chip.active{background:#4a9eff;color:#fff;border-color:#4a9eff}.chip:hover:not(.active){border-color:#2c3a48;color:#b0bcc8}
     .tabs{display:flex;border-bottom:1px solid #17415c;overflow:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tab{height:43px;padding:0 14px;border:0;background:transparent;color:#8ea8ba;font-size:12px;white-space:nowrap;border-bottom:2px solid transparent}.tab.active{color:#62bbff;border-bottom-color:#289bff;background:rgba(31,129,202,.06)}
     .empty{padding:34px 20px;text-align:center}.pulse-icon{width:62px;height:62px;border-radius:50%;border:1px solid #245d80;display:grid;place-items:center;margin:0 auto 15px;color:#59b9ff;background:#08263b}.empty h2{font-size:16px;margin:0 0 8px}.empty p{font-size:12px;color:#8ca5b8;line-height:1.5;margin:0 auto;max-width:290px}
@@ -115,7 +114,7 @@
     .markets{display:grid;gap:8px}.market{display:grid;grid-template-columns:1.2fr .8fr .75fr;align-items:center;padding:11px 12px;border:1px solid #16425e;border-radius:10px;background:#092237}.market b{font-size:13px}.prob{font-size:15px;font-weight:900;text-align:right}.signal{text-align:right;font-size:10px;font-weight:800}.sig-strong{color:var(--green)}.sig-watch{color:var(--amber)}.sig-pass{color:#829aaa}.sig-block{color:var(--red)}
     .result-panel{display:none}.result-panel.active{display:block}.fusion-grid,.insight-grid{display:grid;gap:10px}.fusion-card,.insight-card{padding:13px;border:1px solid #174863;border-radius:11px;background:#082238}.fusion-card h3,.insight-card h3{margin:0 0 8px;font-size:13px;color:#d9edf8}.kv{display:flex;justify-content:space-between;gap:14px;padding:6px 0;border-top:1px solid #12384f;font-size:11px}.kv:first-of-type{border-top:0}.kv span{color:#7f9daf}.kv b{text-align:right}.weights{display:grid;gap:6px}.weight-row{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11px}.weight-bar{grid-column:1/-1;height:5px;border-radius:999px;background:#12384f;overflow:hidden}.weight-bar i{display:block;height:100%;background:#2aa8ff}.pill-line{display:flex;gap:6px;flex-wrap:wrap}.pill{padding:5px 8px;border:1px solid #245572;border-radius:999px;font-size:10px;color:#9ec3d8;background:#071d2f}
 
-    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
+    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(4,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
     .nav-btn{border:0;background:transparent;color:#7896aa;display:grid;place-items:center;align-content:center;gap:2px;font-size:10px}.nav-btn.active{color:#49aeff}.nav-btn svg{width:20px;height:20px}
     .toast{position:fixed;left:50%;bottom:82px;transform:translate(-50%,14px);width:min(460px,calc(100% - 32px));padding:12px 14px;background:#102b40;border:1px solid #2a6b91;border-radius:11px;color:#dbeaf3;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:60;box-shadow:var(--shadow)}.toast.show{opacity:1;transform:translate(-50%,0)}
     .modal-wrap{position:fixed;inset:0;background:rgba(0,8,14,.72);backdrop-filter:blur(8px);display:none;align-items:flex-end;z-index:80}.modal-wrap.show{display:flex}.modal{width:min(540px,100%);max-height:72vh;overflow:auto;background:#092136;border:1px solid #216084;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -16px 50px rgba(0,0,0,.4)}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.modal h3{margin:0}.modal pre{white-space:pre-wrap;word-break:break-word;color:#9db5c6;font-size:11px;line-height:1.5;background:#061725;border:1px solid #173b53;border-radius:10px;padding:12px}
@@ -476,38 +475,12 @@
         </div>
       </div>
     </section>
-
-    <section id="screenSettlement" class="screen">
-      <div class="tabs" id="settlementTabs">
-        <button class="tab active" data-stab="history">History</button>
-        <button class="tab" data-stab="performance">Performance</button>
-      </div>
-      <div class="settlement-panel active" data-spanel="history" style="margin-top:12px">
-        <div class="card pad">
-          <h2 class="section-title">Prediction History</h2>
-          <p class="section-sub">Dữ liệu thật từ /api/prediction-history (CFI Persistent DB).</p>
-          <div id="historyList" class="history-list"><div class="context-state">Đang tải…</div></div>
-        </div>
-      </div>
-      <div class="settlement-panel" data-spanel="performance">
-        <div class="card pad">
-          <h2 class="section-title">CFI Performance</h2>
-          <p class="section-sub">Hit Rate/Brier tính thật từ /api/results (settled snapshots), không mô phỏng.</p>
-          <div id="performanceSummary" class="badge-row"><div class="context-state">Đang tải…</div></div>
-        </div>
-        <div class="card pad">
-          <h2 class="section-title">Recent Settlements</h2>
-          <div id="performanceList" class="history-list"></div>
-        </div>
-      </div>
-    </section>
   </main>
 
   <nav class="bottom-nav">
     <button class="nav-btn active" data-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 11 9-8 9 8v10h-6v-6H9v6H3z"/></svg><span>Home</span></button>
     <button class="nav-btn" data-nav="discover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Discover</span></button>
     <button class="nav-btn" data-nav="suggest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 15 8l6 1-4.5 4.5L18 20l-6-3-6 3 1.5-6.5L3 9l6-1z"/></svg><span>Suggest</span></button>
-    <button class="nav-btn" data-nav="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v16H4zM8 3v4M16 3v4M4 10h16"/></svg><span>History</span></button>
     <button class="nav-btn" data-nav="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
   </nav>
 </div>
@@ -523,7 +496,7 @@
 <script>
 (function(){
   var state={match:null,status:null,prediction:null,current:"search",pending:{},searchMode:"manual",todayFixtures:[],context:null,contextLoading:false,contextError:null};
-  var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult"),dna:document.getElementById("screenDNA"),evidence:document.getElementById("screenEvidence"),suggest:document.getElementById("screenSuggest"),settlement:document.getElementById("screenSettlement")};
+  var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult"),dna:document.getElementById("screenDNA"),evidence:document.getElementById("screenEvidence"),suggest:document.getElementById("screenSuggest")};
 
   function $(id){return document.getElementById(id)}
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
@@ -953,52 +926,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function goToEvidence(){renderEvidence();showScreen("evidence")}
 
-  function pctText(v){var n=Number(v);return Number.isFinite(n)?(n*100).toFixed(0)+"%":"—"}
-  function historyRowHtml(r){
-    var date=r.target_date||"—",status=String(r.settlement_status||"PENDING").toUpperCase();
-    var settled=status==="SETTLED";
-    var score=settled&&r.actual_ft_home!=null&&r.actual_ft_away!=null?(r.actual_ft_home+"-"+r.actual_ft_away):"—";
-    return '<div class="history-row"><div class="history-top"><span>'+esc(date)+'</span><span>'+esc(status)+'</span></div><div class="history-match"><span class="home">'+esc(r.home_team||"?")+'</span><span class="history-score">'+esc(score)+'</span><span>'+esc(r.away_team||"?")+'</span></div></div>';
-  }
-  var settlementLoaded=false;
-  async function loadSettlement(){
-    if(settlementLoaded)return;settlementLoaded=true;
-    $("historyList").innerHTML='<div class="context-state"><span class="loading"><i></i><i></i><i></i></span> Đang tải...</div>';
-    $("performanceSummary").innerHTML='<div class="context-state">Đang tải…</div>';
-    $("performanceList").innerHTML="";
-    try{
-      var hr=await api("/api/prediction-history?limit=20","GET");
-      var hrows=(hr.data&&hr.data.rows)||[];
-      $("historyList").innerHTML=hrows.length?hrows.map(historyRowHtml).join(""):'<div class="context-state">Chưa có prediction snapshot nào.</div>';
-    }catch(e){
-      settlementLoaded=false;
-      $("historyList").innerHTML='<div class="context-state">Không tải được history: '+esc((e.data&&(e.data.message||e.data.error))||e.message)+'</div>';
-    }
-    try{
-      var rr=await api("/api/results?limit=20","GET");
-      var rrows=(rr.data&&rr.data.rows)||[];
-      var settled=rrows.filter(function(r){return String(r.settlement_status||"").toUpperCase()==="SETTLED"});
-      var hitRate=settled.length?settled.filter(function(r){return r.top1_ft_hit===true}).length/settled.length:null;
-      var briers=settled.map(function(r){return Number(r.mean_brier)}).filter(function(v){return Number.isFinite(v)});
-      var avgBrier=briers.length?briers.reduce(function(a,b){return a+b},0)/briers.length:null;
-      $("performanceSummary").innerHTML=
-        '<div class="badge-chip"><span>Settled</span><b>'+settled.length+' / '+rrows.length+'</b></div>'+
-        '<div class="badge-chip"><span>FT Top1 Hit Rate</span><b>'+(hitRate==null?"—":pctText(hitRate))+'</b></div>'+
-        '<div class="badge-chip"><span>Mean Brier</span><b>'+(avgBrier==null?"—":avgBrier.toFixed(3))+'</b></div>';
-      $("performanceList").innerHTML=rrows.length?rrows.map(function(r){
-        var settledRow=String(r.settlement_status||"").toUpperCase()==="SETTLED";
-        var score=settledRow&&r.actual_ft_score?r.actual_ft_score:"—";
-        var hit=r.top1_ft_hit===true?"HIT":r.top1_ft_hit===false?"MISS":"—";
-        return '<div class="history-row"><div class="history-top"><span>'+esc(r.target_date||"—")+'</span><span>'+esc(hit)+'</span></div><div class="history-match"><span class="home">'+esc(r.home_team||"?")+'</span><span class="history-score">'+esc(score)+'</span><span>'+esc(r.away_team||"?")+'</span></div></div>';
-      }).join(""):'<div class="context-state">Chưa có settlement nào.</div>';
-    }catch(e){
-      $("performanceSummary").innerHTML='<div class="context-state">Không tải được performance: '+esc((e.data&&(e.data.message||e.data.error))||e.message)+'</div>';
-    }
-  }
-
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.8 · Build 25</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.2.9 · Build 26</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1255,16 +1185,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(group.id==="evidenceTabs"&&btn.dataset.etab){
       document.querySelectorAll("#screenEvidence .evidence-panel").forEach(function(p){p.classList.toggle("active",p.dataset.epanel===btn.dataset.etab)});
     }
-    if(group.id==="settlementTabs"&&btn.dataset.stab){
-      document.querySelectorAll("#screenSettlement .settlement-panel").forEach(function(p){p.classList.toggle("active",p.dataset.spanel===btn.dataset.stab)});
-    }
   }});
   document.querySelectorAll(".nav-btn").forEach(function(btn){btn.onclick=function(){
     document.querySelectorAll(".nav-btn").forEach(function(x){x.classList.remove("active")});btn.classList.add("active");
     if(btn.dataset.nav==="home"){showScreen("search");setSearchMode("manual")}
     else if(btn.dataset.nav==="discover"){showScreen("search");setSearchMode("today")}
     else if(btn.dataset.nav==="suggest"){showScreen("suggest");if(!state.suggestData||Date.now()-state.suggestCache>SUGGEST_TTL)loadSuggest();else renderSuggestFromCache(false);}
-    else if(btn.dataset.nav==="history"){showScreen("settlement");loadSettlement()}
     else $("settingsBtn").click();
   }});
 
@@ -1734,11 +1660,6 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Final decision": "Quyết định cuối",
       "CFI Insights": "Phân tích CFI",
       "New Match": "Trận mới",
-      "History": "Lịch sử",
-      "Performance": "Hiệu suất",
-      "Prediction History": "Lịch sử dự đoán",
-      "CFI Performance": "Hiệu suất CFI",
-      "Recent Settlements": "Kết quả gần đây",
       "Settings": "Cài đặt",
       "Discover": "Khám phá",
       "Suggest": "Gợi ý",
@@ -1851,10 +1772,6 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Nhập đội nhà, đội khách và ngày thi đấu.": "Enter the home team, away team and match date.",
       "Kickoff time chưa được xác thực cho trận này.": "Kickoff time has not been verified for this match.",
       "BigDB không xác định được identity duy nhất cho đội nhà/đội khách.": "BigDB could not determine a unique identity for the home/away team.",
-      "Chưa có prediction snapshot nào.": "No prediction snapshots yet.",
-      "Chưa có settlement nào.": "No settlements yet.",
-      "Dữ liệu thật từ /api/prediction-history (CFI Persistent DB).": "Real data from /api/prediction-history (CFI Persistent DB).",
-      "Hit Rate/Brier tính thật từ /api/results (settled snapshots), không mô phỏng.": "Hit Rate/Brier computed from /api/results (settled snapshots), not simulated.",
       "Đang tải...": "Loading...",
       "Đang tải…": "Loading…",
       "Đang tìm lịch thi đấu…": "Looking up fixtures…",
@@ -1929,7 +1846,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       { re: /^Không tải được (\w+): (.+)$/, to: "Failed to load $1: $2" }
     ],
     scoped_vi: {
-      ".bottom-nav": { "Home": "Trang chủ", "Discover": "Khám phá", "Suggest": "Gợi ý", "History": "Lịch sử", "More": "Thêm" }
+      ".bottom-nav": { "Home": "Trang chủ", "Discover": "Khám phá", "Suggest": "Gợi ý", "More": "Thêm" }
     },
     scoped_en: {}
   };

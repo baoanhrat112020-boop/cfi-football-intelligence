@@ -96,40 +96,4 @@ paths:
               additionalProperties: true
       responses:
         '200': {description: CFI LIVE prediction}
-  /api/prediction-history:
-    get:
-      operationId: cfiGetPredictionHistory
-      summary: Get immutable prediction history
-      parameters:
-        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
-        - {name: target_date, in: query, schema: {type: string, format: date}}
-        - {name: home, in: query, schema: {type: string}}
-        - {name: away, in: query, schema: {type: string}}
-      responses:
-        '200': {description: Prediction history}
-  /api/results:
-    get:
-      operationId: cfiGetResults
-      summary: Get prediction versus actual settlement results
-      responses:
-        '200': {description: Settlement results}
-  /api/collect-results:
-    post:
-      operationId: cfiCollectResults
-      summary: Collect actual results and settle immutable predictions
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                snapshot_id: {type: string}
-                target_date: {type: string, format: date}
-                home: {type: string}
-                away: {type: string}
-                limit: {type: integer, minimum: 1, maximum: 100, default: 20}
-              additionalProperties: false
-      responses:
-        '200': {description: Collector summary}
 `;

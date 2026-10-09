@@ -104,7 +104,7 @@ test('pattern samples translate as expected (vi direction)', () => {
 
 function staticTexts() {
   const body = html.slice(html.indexOf('<body>'), html.indexOf('<script', html.indexOf('<body>')));
-  const screens = ['screenSearch', 'screenSelected', 'screenReady', 'screenBlocked', 'screenResult', 'screenSuggest', 'screenSettlement'];
+  const screens = ['screenSearch', 'screenSelected', 'screenReady', 'screenBlocked', 'screenResult', 'screenSuggest'];
   const chunks = [];
   for (const id of screens) {
     const s = body.indexOf(`id="${id}"`);

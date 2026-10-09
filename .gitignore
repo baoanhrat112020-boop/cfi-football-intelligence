@@ -118,3 +118,5 @@ _dry_run_out/
 _dry/
 
 _cfi_key.txt
+
+.env.migration

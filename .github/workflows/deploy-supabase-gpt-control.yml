@@ -7,7 +7,6 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/_shared/**'
-      - 'supabase/functions/cfi-gpt-control/**'
       - 'supabase/functions/cfi-discovery-feed/**'
       - 'supabase/functions/cfi-bigdb-retrieval/**'
       - 'supabase/functions/cfi-current-refresh/**'
@@ -41,10 +40,6 @@ jobs:
           node --experimental-strip-types --test tests/v14-alias-resolution-contract.test.mjs
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
-          const gpt=readFileSync('supabase/functions/cfi-gpt-control/index.ts','utf8');
-          for (const token of ['AUDIT_3D','futureEvidenceCount','sameDateEvidenceCount','maxEvidenceDate']) {
-            if (!gpt.includes(token)) throw new Error(`missing fail-closed token: ${token}`);
-          }
           const big=readFileSync('supabase/functions/cfi-bigdb-retrieval/index.ts','utf8');
           for (const token of ['CANONICAL_FOLDED_EXACT','CANONICAL_CLUB_KEY_EXACT','AMBIGUOUS_EXACT_IDENTITY_KEY']) {
             if (!big.includes(token)) throw new Error(`missing identity token: ${token}`);
@@ -69,7 +64,6 @@ jobs:
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           set -euo pipefail
-          supabase functions deploy cfi-gpt-control --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy cfi-discovery-feed --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy cfi-bigdb-retrieval --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy cfi-current-refresh --project-ref "$SUPABASE_PROJECT_REF"
