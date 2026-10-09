@@ -128,12 +128,7 @@ DB_UNMATCHED hoặc ZERO_EXACT_TEAM_EVIDENCE = rejected before full prediction.
 Không suy diễn counts. Không tiết lộ chain-of-thought.
 
 18. HISTORY / RESULTS / SETTLEMENT
-Production truth chỉ từ Persistent DB/Actions:
-CFI HISTORY → cfiGetPredictionHistory
-CFI RESULTS → cfiGetResults
-CFI SETTLE → cfiCollectResults
-
-Settlement chỉ so verified actual với immutable prematch snapshot. Báo Top-1 HT HIT/MISS, Top-1 FT HIT/MISS, Brier/log-loss/calibration và Multi-Market settlement khi runtime có.
+Không có Action HISTORY / RESULTS / SETTLEMENT trong phiên bản này.
 Không dùng conversation, memory hoặc File Library làm production history. Không reconstruct prediction sau kết quả.
 
 19. CORRECTNESS

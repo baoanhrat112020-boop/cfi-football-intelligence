@@ -6,7 +6,7 @@ import { parse } from "yaml";
 const schemaText=readFileSync(new URL("../gpt-action/openapi.yaml",import.meta.url),"utf8");
 const instructions=readFileSync(new URL("../gpt-action/CFI_GPT_INSTRUCTIONS.md",import.meta.url),"utf8");
 
-test("GPT Action OpenAPI parses and exposes exactly the Core V4 seven-action contract",()=>{
+test("GPT Action OpenAPI parses and exposes exactly the Core V4 four-action contract",()=>{
   const schema=parse(schemaText);
   assert.equal(schema.openapi,"3.1.0");
   assert.equal(schema.info.version,"5.3.1-core-v4");
@@ -14,9 +14,9 @@ test("GPT Action OpenAPI parses and exposes exactly the Core V4 seven-action con
   assert.equal(schema.paths["/api/discover"].post.operationId,"cfiDiscoverOpportunities");
   assert.equal(schema.paths["/api/predict"].post.operationId,"cfiPredictMatch");
   assert.equal(schema.paths["/api/predict-live"].post.operationId,"cfiPredictLive");
-  assert.equal(schema.paths["/api/prediction-history"].get.operationId,"cfiGetPredictionHistory");
-  assert.equal(schema.paths["/api/results"].get.operationId,"cfiGetResults");
-  assert.equal(schema.paths["/api/collect-results"].post.operationId,"cfiCollectResults");
+  assert.equal(schema.paths["/api/prediction-history"],undefined);
+  assert.equal(schema.paths["/api/results"],undefined);
+  assert.equal(schema.paths["/api/collect-results"],undefined);
   assert.equal(schema.paths["/api/bets"],undefined);
   const discovery=schema.paths["/api/discover"].post.requestBody.content["application/json"].schema;
   assert.ok(discovery.properties.target_date);
@@ -114,15 +114,8 @@ test("production config exposes discovery through canonical router chain and pre
   assert.match(worker,/renderedReport/);
 });
 
-test("result, immutable snapshot and settlement bridges remain reused",()=>{
+test("immutable snapshot bridge remains reused",()=>{
   const predictionWorker=readFileSync(new URL("../cloudflare-worker/src/index-v50.ts",import.meta.url),"utf8");
-  const resultWorker=readFileSync(new URL("../cloudflare-worker/src/index-v47.ts",import.meta.url),"utf8");
-  const compatWorker=readFileSync(new URL("../cloudflare-worker/src/index-v48.ts",import.meta.url),"utf8");
   assert.match(predictionWorker,/action:'SNAPSHOT'/);
   assert.match(predictionWorker,/cfi-prediction-audit/);
-  assert.match(resultWorker,/\/api\/prediction-history/);
-  assert.match(resultWorker,/\/api\/results/);
-  assert.match(resultWorker,/\/api\/collect-results/);
-  assert.match(compatWorker,/legacyResultBridge/);
-  assert.match(compatWorker,/action:'COLLECT'/);
 });

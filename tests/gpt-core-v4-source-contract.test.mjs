@@ -16,7 +16,7 @@ test('GPT Core V4 instructions remain supplied-fixture first and under editor li
   assert.doesNotMatch(text,/P0 Discovery-first routing/i);
 });
 
-test('GPT Action schema exposes exactly the Core V4 seven-action contract',()=>{
+test('GPT Action schema exposes exactly the Core V4 four-action contract',()=>{
   const yaml=read('gpt-action/openapi.yaml');
   assert.match(yaml,/version: 5\.3\.1-core-v4/);
   assert.match(yaml,/summary: Rank supplied real prematch fixtures/);
@@ -30,10 +30,7 @@ test('GPT Action schema exposes exactly the Core V4 seven-action contract',()=>{
     'cfiGetStatus',
     'cfiDiscoverOpportunities',
     'cfiPredictMatch',
-    'cfiPredictLive',
-    'cfiGetPredictionHistory',
-    'cfiGetResults',
-    'cfiCollectResults'
+    'cfiPredictLive'
   ]);
 });
 

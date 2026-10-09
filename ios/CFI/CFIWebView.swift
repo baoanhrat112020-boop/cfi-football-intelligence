@@ -55,8 +55,6 @@ struct CFIWebView: UIViewRepresentable {
             "/api/fixtures-day",
             "/api/discover",
             "/api/predict",
-            "/api/prediction-history",
-            "/api/results",
             "/api/suggest",
             "/api/track-record"
         ]
