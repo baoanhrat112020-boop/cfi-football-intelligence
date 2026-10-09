@@ -1034,10 +1034,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     function pmf(l,k){var p=Math.exp(-l);for(var i=1;i<=k;i++)p*=l/i;return p}
     function x12(l1,l2){var h=0,d=0,a=0,s=0;for(var i=0;i<=12;i++)for(var j=0;j<=12;j++){var p=pmf(l1,i)*pmf(l2,j);s+=p;if(i>j)h+=p;else if(i===j)d+=p;else a+=p}return [h/s,d/s,a/s]}
     var xh=x12(lhh,lah),xf=x12(lh,la);
-    var o05=1-Math.exp(-lht),o1=1-Math.exp(-lht)*(1+lht),o075=o1+0.5*Math.exp(-lht)*lht,o125=o1-0.5*Math.exp(-lht)*lht,o15=o1,o25=1-Math.exp(-lft)*(1+lft+lft*lft/2),bt=(1-Math.exp(-lh))*(1-Math.exp(-la));
+    var o05=1-Math.exp(-lht),o1=1-Math.exp(-lht)*(1+lht),o075=o1+0.5*Math.exp(-lht)*lht,q1=Math.exp(-lht)*lht,s075=o1+0.75*q1,s1=o1+0.5*q1,s125=o1+0.25*q1,o25=1-Math.exp(-lft)*(1+lft+lft*lft/2),bt=(1-Math.exp(-lh))*(1-Math.exp(-la));
     var c=[["over_1_ht",o1],["1x2_ht_home",xh[0]],["1x2_ft_home",xf[0]],["over_2_5_ft",o25],["btts_yes",bt]],best=null,bp=0;
     c.forEach(function(x){if(x[1]>bp){bp=x[1];best=x[0]}});
-    return {pred_home_ht:Math.floor(lhh),pred_away_ht:Math.floor(lah),pred_home_ft:Math.floor(lh),pred_away_ft:Math.floor(la),p_over1_ht:o1,p_over05_ht:o05,p_over075_ht:o075,p_over125_ht:o125,p_over15_ht:o15,lht:lht,top_market:bp>=0.5?best:null,top_market_prob:bp>=0.5?bp:null};
+    return {pred_home_ht:Math.floor(lhh),pred_away_ht:Math.floor(lah),pred_home_ft:Math.floor(lh),pred_away_ft:Math.floor(la),p_over1_ht:o1,p_over05_ht:o05,p_over075_ht:o075,s_over05_ht:o05,s_over075_ht:s075,s_over1_ht:s1,s_over125_ht:s125,s_over15_ht:o1,lht:lht,top_market:bp>=0.5?best:null,top_market_prob:bp>=0.5?bp:null};
   }
   var SUGGEST_BADGES=[
     {min:0.65,label:"CAO",bg:"#166534",fg:"#ffffff"},
@@ -1065,8 +1065,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return '<div class="score-block" style="background:linear-gradient(180deg,#0f2a3a,#0b1d29);border:1px solid #1d4a63;border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><span style="display:flex;align-items:center;gap:8px"><b style="font-size:19px;color:#4ade80">'+bestPct+'</b>'+badge+'</span></div>'+
       '<div style="display:flex;align-items:baseline;gap:14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>HT: Home '+d.pred_home_ht+' - Away '+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>FT: Home '+d.pred_home_ft+' - Away '+d.pred_away_ft+'</span></div>'+
-      '<div style="margin-top:7px"><span style="'+chipMain+'">O1.0 '+pc(d.p_over1_ht)+'</span><span style="'+chipMain+'">O1.25 '+pc(d.p_over125_ht)+'</span><span style="'+chipMain+'">O1.5 '+pc(d.p_over15_ht)+'</span></div>'+
-      '<div style="margin-top:4px"><span style="'+chipSub+'">O0.5 '+pc(d.p_over05_ht)+'</span><span style="'+chipSub+'">O0.75 '+pc(d.p_over075_ht)+'</span></div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
+      '<div style="margin-top:7px"><span style="'+chipMain+'">O1.0 '+pc(d.s_over1_ht)+'</span><span style="'+chipMain+'">O1.25 '+pc(d.s_over125_ht)+'</span><span style="'+chipMain+'">O1.5 '+pc(d.s_over15_ht)+'</span></div>'+
+      '<div style="margin-top:4px"><span style="'+chipSub+'">O0.5 '+pc(d.s_over05_ht)+'</span><span style="'+chipSub+'">O0.75 '+pc(d.s_over075_ht)+'</span></div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
   }
   var SECONDARY_LABELS={m_over_2_5_ft:"O2.5 FT",m_btts_yes:"BTTS",m_1x2_ft_home:"Home thắng",m_1x2_ht_home:"Home H1"};
   function secondaryMarketsHtml(d,chip,pc){
