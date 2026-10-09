@@ -447,7 +447,7 @@
           <button class="chip" data-range="600">10h</button>
           <button class="chip active" data-range="1440">24h</button>
           <button class="chip" data-range="2880">48h</button>
-          <button class="chip active" data-range="tb">Ch&#7881; &ge; TB (0.55)</button>
+          <button class="chip" data-range="tb">Ch&#7881; &ge; TB (0.55)</button>
           <button class="chip" data-range="noamateur" style="margin-left:auto">Lo&#7841;i amateur</button>
         </div>
         <div id="suggestContent" style="margin-top:12px">
@@ -928,7 +928,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.1 · Build 2</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.2 · Build 3</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1060,13 +1060,13 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var chip='display:inline-block;background:#12202b;color:#8fa6b6;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;margin-right:5px';
     if(d.no_stats)return '<div class="score-block" style="background:#0d1620;border:1px solid #1b2a36;border-radius:10px;padding:10px 12px;margin-bottom:8px;opacity:.6"><span style="display:inline-block;background:#3d2410;color:#fb923c;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">&#9888; Ch&#432;a &#273;o</span></div>';
     var badge=withBadge?suggestBadgeHtml(d.p_over075_ht):"";
-    var chipMain='display:inline-block;background:#173246;color:#e8f4fc;border-radius:5px;padding:3px 9px;font-size:13px;font-weight:800;margin-right:6px';
-    var chipSub='display:inline-block;color:#6f8797;font-size:10px;font-weight:600;margin-right:8px';
+    var ouCells=[["O0.5","s_over05_ht",0],["O0.75","s_over075_ht",1],["O1.0","s_over1_ht",0],["O1.25","s_over125_ht",0],["O1.5","s_over15_ht",0]].map(function(c){
+      return '<div style="min-width:0;padding:5px 2px;border:1px solid '+(c[2]?'var(--cyan)':'var(--line)')+';border-radius:8px;background:'+(c[2]?'var(--surface3)':'var(--surface)')+';text-align:center"><div style="font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap">'+c[0]+'</div><div style="font-size:13px;font-weight:800;color:var(--text)">'+pc(d[c[1]])+'</div></div>';
+    }).join("");
     return '<div class="score-block" style="background:linear-gradient(180deg,#0f2a3a,#0b1d29);border:1px solid #1d4a63;border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><span style="display:flex;align-items:center;gap:8px"><b style="font-size:19px;color:#4ade80">'+bestPct+'</b>'+badge+'</span></div>'+
-      '<div style="display:flex;align-items:baseline;gap:14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>HT: Home '+d.pred_home_ht+' - Away '+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>FT: Home '+d.pred_home_ft+' - Away '+d.pred_away_ft+'</span></div>'+
-      '<div style="margin-top:7px"><span style="'+chipMain+'">O1.0 '+pc(d.s_over1_ht)+'</span><span style="'+chipMain+'">O1.25 '+pc(d.s_over125_ht)+'</span><span style="'+chipMain+'">O1.5 '+pc(d.s_over15_ht)+'</span></div>'+
-      '<div style="margin-top:4px"><span style="'+chipSub+'">O0.5 '+pc(d.s_over05_ht)+'</span><span style="'+chipSub+'">O0.75 '+pc(d.s_over075_ht)+'</span></div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
+      '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>Dự đoán HT: Home '+d.pred_home_ht+' - Away '+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>Dự đoán FT: Home '+d.pred_home_ft+' - Away '+d.pred_away_ft+'</span></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:7px">'+ouCells+'</div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
   }
   var SECONDARY_LABELS={m_over_2_5_ft:"O2.5 FT",m_btts_yes:"BTTS",m_1x2_ft_home:"Home thắng",m_1x2_ht_home:"Home H1"};
   function secondaryMarketsHtml(d,chip,pc){
@@ -1804,6 +1804,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Chưa lưu trận nào. Bấm ☆ trên thẻ Gợi ý hoặc bảng Lịch sử để lưu.": "Nothing saved yet. Tap ☆ on a pick card or the History table to save.",
       "Tất cả": "All",
       "Loại amateur": "Hide amateur",
+      "Chỉ ≥ TB (0.55)": "Only ≥ TB (0.55)",
+      "Chưa đo": "Not measured",
       "Số liệu từ thống kê bàn thắng. Bấm vào trận để chạy Predict chính xác.": "Based on goal statistics. Tap a match to run an exact Predict.",
       "Không có trận nào thỏa ngưỡng trong khung này.": "No matches meet the threshold in this window.",
       "Tổng": "Total",
@@ -1830,10 +1832,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Chip = kết quả O0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.": "Chip = O0.75 result (main market). ✓/✗ next to Best pick = whether the best pick hit or missed."
     },
     patterns_vi: [
-      { re: /^HT: Home (\d+) - Away (\d+)$/, to: "HT: Nhà $1 - Khách $2" },
-      { re: /^FT: Home (\d+) - Away (\d+)$/, to: "FT: Nhà $1 - Khách $2" }
+      { re: /^Dự đoán HT: Home (\d+) - Away (\d+)$/, to: "Dự đoán HT: Nhà $1 - Khách $2" },
+      { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Dự đoán FT: Nhà $1 - Khách $2" }
     ],
     patterns_en: [
+      { re: /^Dự đoán HT: Home (\d+) - Away (\d+)$/, to: "Pred HT: Home $1 - Away $2" },
+      { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Pred FT: Home $1 - Away $2" },
       { re: /^Đã tải (\d+) trận$/, to: "Loaded $1 matches" },
       { re: /^(\d+) trận$/, to: "$1 matches" },
       { re: /^(\d+) ngày$/, to: "$1 days" },

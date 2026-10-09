@@ -35,7 +35,7 @@ const OUT_OF_SCOPE_VI = [
   'Thiếu dữ liệu lịch sử cho một hoặc cả hai đội', 'Không tải được history', 'Không tải được performance',
   'Không lấy được fixture', 'H2H fixture', 'Mở rộng để hiện', 'giải nhiều bàn', 'base 3+ HT', 'Lọc theo', 'Số liệu từ thống kê',
   'Tỉ số các trận gần nhất', 'Trạng thái backend thật tại thời điểm mở màn này', 'Response gần nhất từ backend',
-  'Đã tải ', 'Không tìm thấy trận', 'Các lần đối đầu'
+  'Đã tải ', 'Không tìm thấy trận', 'Các lần đối đầu', 'aria-label="Lưu"'
 ];
 
 function applyDict(map, patterns, s) {
@@ -86,7 +86,9 @@ test('pattern samples translate as expected (en direction)', () => {
     ['2026-10-06 · 4 trận', '2026-10-06 · 4 matches'],
     ['Đang tích lũy: 56/100', 'Collecting: 56/100'],
     ['Ít dữ liệu (n=9): chưa đủ 30 trận đã chấm, các tỉ lệ thực tế được ẩn.', 'Low data (n=9): fewer than 30 settled matches, so the actual rates are hidden.'],
-    ['Không tải được: Empty response', 'Failed to load: Empty response']
+    ['Không tải được: Empty response', 'Failed to load: Empty response'],
+    ['Dự đoán HT: Home 0 - Away 1', 'Pred HT: Home 0 - Away 1'],
+    ['Dự đoán FT: Home 2 - Away 1', 'Pred FT: Home 2 - Away 1']
   ];
   for (const [input, expected] of cases) {
     const p = I18N.patterns_en.find((x) => x.re.test(input));
@@ -97,9 +99,9 @@ test('pattern samples translate as expected (en direction)', () => {
 });
 
 test('pattern samples translate as expected (vi direction)', () => {
-  const p = I18N.patterns_vi.find((x) => x.re.test('HT: Home 1 - Away 0'));
-  const m = p.re.exec('HT: Home 1 - Away 0');
-  assert.equal(p.to.replace(/\$(\d)/g, (_, n) => m[+n]), 'HT: Nhà 1 - Khách 0');
+  const p = I18N.patterns_vi.find((x) => x.re.test('Dự đoán HT: Home 1 - Away 0'));
+  const m = p.re.exec('Dự đoán HT: Home 1 - Away 0');
+  assert.equal(p.to.replace(/\$(\d)/g, (_, n) => m[+n]), 'Dự đoán HT: Nhà 1 - Khách 0');
 });
 
 function staticTexts() {
