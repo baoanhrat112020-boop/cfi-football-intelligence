@@ -1,4 +1,4 @@
-export const R_HT=0.42;
+export const R_HT=0.50;
 
 export function poissonPmf(lambda:number,k:number):number{
   if(!(lambda>=0)||!Number.isInteger(k)||k<0)return 0;
