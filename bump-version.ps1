@@ -21,11 +21,15 @@ if ($Version) {
     $minor = [int]$parts[1]
     $patch = [int]$parts[2]
     $newBuild = [int](Get-Content $buildPath -Raw).Trim()
-    $newBuild++
-    $patch++
-    if ($patch -gt 9) {
-        $minor++
-        $patch = 0
+    if ($newBuild -lt 9) {
+        $newBuild++
+    } else {
+        $newBuild = 1
+        $patch++
+        if ($patch -gt 9) {
+            $minor++
+            $patch = 0
+        }
     }
     $newVersion = "$major.$minor.$patch"
 }
