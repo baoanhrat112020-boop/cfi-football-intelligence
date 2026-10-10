@@ -88,7 +88,8 @@ test('pattern samples translate as expected (en direction)', () => {
     ['Ít dữ liệu (n=9): chưa đủ 30 trận đã chấm, các tỉ lệ thực tế được ẩn.', 'Low data (n=9): fewer than 30 settled matches, so the actual rates are hidden.'],
     ['Không tải được: Empty response', 'Failed to load: Empty response'],
     ['Dự đoán HT: Home 0 - Away 1', 'Pred HT: Home 0 - Away 1'],
-    ['Dự đoán FT: Home 2 - Away 1', 'Pred FT: Home 2 - Away 1']
+    ['Dự đoán FT: Home 2 - Away 1', 'Pred FT: Home 2 - Away 1'],
+    ['Dự đoán: HT 1-1 · FT 2-2', 'Pred: HT 1-1 · FT 2-2']
   ];
   for (const [input, expected] of cases) {
     const p = I18N.patterns_en.find((x) => x.re.test(input));

@@ -928,7 +928,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.3 · Build 6</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.3 · Build 7</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1067,27 +1067,55 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><span style="display:flex;align-items:center;gap:8px"><b style="font-size:19px;color:#4ade80">'+bestPct+'</b>'+badge+'</span></div>'+
       '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>Dự đoán HT: Home '+d.pred_home_ht+' - Away '+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>Dự đoán FT: Home '+d.pred_home_ft+' - Away '+d.pred_away_ft+'</span></div>'+
       '<div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted);margin-top:7px">Over HT</div>'+
-      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:3px">'+ouCells+'</div>'+marketOddsHtml(d,pc)+secondaryMarketsHtml(d,chip,pc)+'</div>';
+      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:3px">'+ouCells+'</div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
   }
-  function marketOddsHtml(d,pc){
+  var sgOpen={};
+  function sgPct(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
+  function marketOddsHtml(d){
     var mo=d&&d.market_odds;
     if(!Array.isArray(mo)||!mo.length)return "";
-    var order={"OVER_UNDER|HT":0,"OVER_UNDER|FT":1,"1X2|FT":2,"ASIAN_HANDICAP|FT":3,"ASIAN_HANDICAP|HT":4};
+    var fam={"OVER_UNDER":0,"1X2":1,"ASIAN_HANDICAP":2};
     function odd(v){var n=Number(v);return v!=null&&Number.isFinite(n)?n.toFixed(2):"—"}
-    function ord(x){var o=order[x.family+"|"+x.period];return o==null?9:o}
-    var cells=mo.slice().sort(function(a,b){return ord(a)-ord(b)}).map(function(x){
-      var p=x.period==="HT"?"HT":"FT",l=Number(x.line),lb,val,title="",flex="1 1 100%";
+    function sk(x){var f=fam[x.family],l=Number(x.line);return [f==null?3:f,x.period==="HT"?0:x.period==="FT"?1:2,Number.isFinite(l)?l:0]}
+    var rows=mo.slice().sort(function(a,b){var ka=sk(a),kb=sk(b);for(var i=0;i<3;i++)if(ka[i]!==kb[i])return ka[i]-kb[i];return 0}).map(function(x){
+      var p=esc(x.period||""),l=Number(x.line),lb,val,title="";
       if(x.family==="OVER_UNDER"){
-        lb="O/U "+p+" "+l;val=x.p_implied!=null?pc(x.p_implied):"—";title="Over "+odd(x.odds_over)+" / Under "+odd(x.odds_under);flex="1 1 42%";
+        lb="O/U "+p+" "+l;val=sgPct(x.p_implied);title="Over "+odd(x.odds_over)+" / Under "+odd(x.odds_under);
       }else if(x.family==="1X2"){
-        lb="1X2 nhà/hòa/khách";val=odd(x.odds_home)+" / "+odd(x.odds_draw)+" / "+odd(x.odds_away);
+        lb="1X2";val=odd(x.odds_home)+" / "+odd(x.odds_draw)+" / "+odd(x.odds_away);
       }else if(x.family==="ASIAN_HANDICAP"){
-        lb="AH "+p+" "+(l>0?"+":"")+l+" ("+(l===0?"hòa":x.handicap_side==="away"?"khách chấp":"nhà chấp")+")";val=odd(x.odds_home)+" / "+odd(x.odds_away);title="Nhà "+odd(x.odds_home)+" / Khách "+odd(x.odds_away);
-      }else return "";
-      return '<div title="'+title+'" style="display:flex;justify-content:space-between;gap:6px;flex:'+flex+';font-size:11px;padding:2px 0"><span style="color:var(--muted);font-weight:600">'+lb+'</span><b style="color:#e8eef3">'+val+'</b></div>';
+        lb="AH "+p+" "+(l>0?"+":"")+l+" (<span>"+(l===0?"hòa":x.handicap_side==="away"?"khách chấp":"nhà chấp")+"</span>)";val=odd(x.odds_home)+" / "+odd(x.odds_away);
+      }else{
+        lb=esc(String(x.family||"?"))+" "+p+(x.line!=null?" "+l:"");
+        val=x.p_implied!=null?sgPct(x.p_implied):["odds_over","odds_under","odds_home","odds_draw","odds_away"].filter(function(k){return x[k]!=null}).map(function(k){return odd(x[k])}).join(" / ");
+      }
+      return '<div title="'+title+'" style="display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:2px 0"><span style="color:var(--muted);font-weight:600">'+lb+'</span><b style="color:#e8eef3">'+val+'</b></div>';
     }).join("");
-    if(!cells)return "";
-    return '<div class="score-market" style="margin-top:7px"><div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted)">Market:</div><div style="display:flex;flex-wrap:wrap;gap:0 12px;margin-top:2px">'+cells+'</div></div>';
+    return '<div class="score-market" style="margin-top:8px"><div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted)">Market:</div><div style="margin-top:2px">'+rows+'</div></div>';
+  }
+  function suggestBodyHtml(d,x){
+    var box='background:linear-gradient(180deg,#0f2a3a,#0b1d29);border:1px solid #1d4a63;border-radius:10px;padding:10px 12px;margin-bottom:8px';
+    var oddsHtml=marketOddsHtml(d);
+    if(d.no_stats||d.pred_home_ft==null||d.p_over075_ht==null)return oddsHtml?'<div class="score-block" style="'+box+'">'+oddsHtml+'</div>':"";
+    var lht=d.lht!=null?Number(d.lht):(d.p_over05_ht!=null&&Number(d.p_over05_ht)<1?-Math.log(1-Number(d.p_over05_ht)):null);
+    var bars=[["0.5","s_over05_ht",0],["0.75","s_over075_ht",1],["1.0","s_over1_ht",0],["1.25","s_over125_ht",0],["1.5","s_over15_ht",0]].map(function(c){
+      var v=Number(d[c[1]]),w=Number.isFinite(v)?Math.max(0,Math.min(100,v*100)):0,hi=c[2];
+      return '<div style="display:grid;grid-template-columns:40px 1fr 36px;align-items:center;gap:6px;padding:2px 0"><span style="font-size:11px;font-weight:700;color:'+(hi?'var(--cyan)':'var(--muted)')+'">'+c[0]+(hi?' ★':'')+'</span><span style="display:block;height:10px;border-radius:5px;background:var(--surface);overflow:hidden"><span style="display:block;height:100%;width:'+w.toFixed(0)+'%;background:'+(hi?'var(--cyan)':'#4b6b80')+';border-radius:5px"></span></span><b style="font-size:12px;text-align:right;color:'+(hi?'var(--cyan)':'var(--text)')+'">'+sgPct(d[c[1]])+'</b></div>';
+    }).join("");
+    var id=String(d.fixture_id||""),open=!!sgOpen[id];
+    var detail='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:8px">'+x.probs+'</div>'+(lht!=null?'<div style="font-size:11px;color:#7f9daf;margin-top:6px">HT <span>(kỳ vọng '+lht.toFixed(1)+' bàn)</span></div>':'')+x.compLine+x.flagsHtml;
+    return '<div class="score-block" style="'+box+'">'+
+      '<div style="font-size:13px;font-weight:700;color:#e8eef3">Dự đoán: HT '+d.pred_home_ht+'-'+d.pred_away_ht+' · FT '+d.pred_home_ft+'-'+d.pred_away_ft+'</div>'+
+      '<div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted);margin-top:7px">Over HT:</div><div style="margin-top:3px">'+bars+'</div>'+oddsHtml+
+      '<button type="button" class="sg-toggle" data-sg="'+esc(id)+'" aria-expanded="'+(open?'true':'false')+'" style="width:100%;min-height:44px;margin-top:8px;background:transparent;border:1px solid #1d4a63;border-radius:8px;color:var(--cyan);font-size:12px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent"><span class="sg-arrow">'+(open?'▾':'▸')+'</span> <span>Chi tiết</span></button>'+
+      '<div class="sg-detail" style="display:'+(open?'block':'none')+'">'+detail+'</div></div>';
+  }
+  function sgToggle(btn){
+    var id=btn.getAttribute("data-sg"),open=!sgOpen[id];
+    sgOpen[id]=open;
+    btn.setAttribute("aria-expanded",open?"true":"false");
+    if(btn.firstChild)btn.firstChild.textContent=open?"▾":"▸";
+    if(btn.nextElementSibling)btn.nextElementSibling.style.display=open?"block":"none";
   }
   var SECONDARY_LABELS={m_over_2_5_ft:"Over 2.5 FT",m_btts_yes:"BTTS",m_1x2_ft_home:"Home thắng",m_1x2_ht_home:"Home H1"};
   function secondaryMarketsHtml(d,chip,pc){
@@ -1359,6 +1387,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
           probs+='<div style="background:'+(hit?'#0d2818':'#0f1419')+';padding:5px 7px;border-radius:5px;text-align:center"><div style="font-size:9px;color:'+(hit?'#6ee7a0':'#7a8a99')+';font-weight:700">'+mk+'</div><div style="font-size:13px;font-weight:700;color:'+(hit?'#4ade80':'#c5d4de')+'">'+(p*100).toFixed(1)+'%</div></div>';
         });
         var timeBadge=suggestTimeBadge(m);
+        var tierBadge=m.no_stats?'<span style="display:inline-block;background:#3d2410;color:#fb923c;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:800;white-space:nowrap">&#9888; Ch&#432;a &#273;o</span>':suggestBadgeHtml(m.p_over075_ht);
         var flagsHtml="";
         if(m.flags&&m.flags.length){
           var isHigh=m.flags.some(function(x){return x.flag==="HIGH"});
@@ -1371,8 +1400,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
           compLine='<div style="font-size:11px;color:#7f9daf;margin:-3px 0 7px">'+esc(slot.hour)+' \u00b7 base 3+ HT '+(Number(m.base_3ht)*100).toFixed(0)+'%'+(hi?' <span style="color:#7fc8ff">gi\u1ea3i nhi\u1ec1u b\u00e0n</span>':'')+'</div>';
         }
         var compName=m.competition?'<div class="suggest-comp" translate="no" style="font-size:11px;color:#7f9daf;margin:-4px 0 7px">'+esc(m.competition)+'</div>':"";
-        var badges=m.hit_markets?m.hit_markets.map(function(h){return '<span style="background:#0d3a1f;color:#4ade80;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-right:4px">'+esc(h)+'</span>'}).join(""):"";
-        html+='<div class="suggest-card" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'" style="cursor:pointer;background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px'+(m.no_stats?';opacity:.65':'')+'"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3"><span translate="no">'+esc(m.home)+'</span>'+tagBadges(m.home)+' vs <span translate="no">'+esc(m.away)+'</span>'+tagBadges(m.away)+'</b>'+'<span style="display:flex;align-items:center;gap:4px;flex-shrink:0">'+timeBadge+bmStarHtml({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,tier:bmTierKey(m.p_over075_ht),top_market:m.top_market})+'</span></div>'+compName+scoreBlockHtml(m,true)+compLine+(m.no_stats?'':'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">'+probs+'</div><div style="margin-top:6px">'+badges+'</div>'+flagsHtml)+'</div>';
+        html+='<div class="suggest-card" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'" style="cursor:pointer;background:linear-gradient(180deg,#111821,#0d1218);border:1px solid #1f2a35;border-radius:10px;padding:10px;margin-bottom:6px'+(m.no_stats&&!m.market_odds?';opacity:.65':'')+'"><div style="display:flex;justify-content:space-between;margin-bottom:7px;gap:10px"><b style="font-size:13px;color:#e8eef3"><span translate="no">'+esc(m.home)+'</span>'+tagBadges(m.home)+' vs <span translate="no">'+esc(m.away)+'</span>'+tagBadges(m.away)+'</b>'+'<span style="display:flex;align-items:center;gap:4px;flex-shrink:0">'+timeBadge+tierBadge+bmStarHtml({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,tier:bmTierKey(m.p_over075_ht),top_market:m.top_market})+'</span></div>'+compName+suggestBodyHtml(m,{probs:probs,flagsHtml:flagsHtml,compLine:compLine})+'</div>';
       });
     });
     return html;
@@ -1505,6 +1533,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("suggestContent").addEventListener("click",function(e){
     var st=e.target.closest(".bm-star");if(st){e.stopPropagation();bmToggleEl(st);return}
+    var tg=e.target.closest(".sg-toggle");if(tg){e.stopPropagation();sgToggle(tg);return}
     var c=e.target.closest(".suggest-card");if(!c)return;
     prefillAndPredict(c.dataset.home,c.dataset.away,c.dataset.date,null);
   });
@@ -1827,6 +1856,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Loại amateur": "Hide amateur",
       "Chỉ ≥ TB (0.55)": "Only ≥ MEDIUM (0.55)",
       "Chưa đo": "Not measured",
+      "Chi tiết": "Details",
+      "nhà chấp": "home gives",
+      "khách chấp": "away gives",
+      "hòa": "even",
       "Số liệu từ thống kê bàn thắng. Bấm vào trận để chạy Predict chính xác.": "Based on goal statistics. Tap a match to run an exact Predict.",
       "Không có trận nào thỏa ngưỡng trong khung này.": "No matches meet the threshold in this window.",
       "Tổng": "Total",
@@ -1862,6 +1895,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Dự đoán FT: Nhà $1 - Khách $2" }
     ],
     patterns_en: [
+      { re: /^Dự đoán: HT (\d+)-(\d+) · FT (\d+)-(\d+)$/, to: "Pred: HT $1-$2 · FT $3-$4" },
       { re: /^Dự đoán HT: Home (\d+) - Away (\d+)$/, to: "Pred HT: Home $1 - Away $2" },
       { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Pred FT: Home $1 - Away $2" },
       { re: /^Đã tải (\d+) trận$/, to: "Loaded $1 matches" },
