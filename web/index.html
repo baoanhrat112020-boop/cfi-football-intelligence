@@ -50,7 +50,7 @@
     .section-sub{font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.45}
     .teams{display:grid;grid-template-columns:1fr 46px 1fr;gap:9px;align-items:center}
     .team-box{min-width:0;text-align:center}.shirt{height:70px;display:grid;place-items:center}
-    .shirt svg{width:58px;height:58px}.shirt.home{color:#28a76a}.shirt.away{color:#ec4b4f}
+    .shirt svg{width:58px;height:58px}.shirt.home{color:#28a76a}.shirt.away{color:#ec4b4f}.shirt img.shirt-logo{width:58px;height:58px;border-radius:50%;object-fit:contain;background:#0a2133;padding:4px;border:1px solid #2c6584}
     .team-label{font-size:13px;font-weight:700;margin-bottom:7px}.team-input{width:100%;height:42px;border:1px solid #24526f;border-radius:10px;background:#0a2032;color:#fff;padding:0 10px;text-align:center;outline:none}
     .vs{font-size:12px;color:#a7bac8;font-weight:800;text-align:center}
     .meta-form{display:grid;gap:10px;margin-top:16px}.field label{display:block;font-size:11px;color:#7f9aae;margin:0 0 6px 2px}
@@ -164,7 +164,7 @@
         <p class="section-sub">Chọn trận để CFI kiểm tra dữ liệu và chuẩn bị prediction.</p>
         <div class="teams">
           <div class="team-box">
-            <div class="shirt home">
+            <div class="shirt home" id="homeShirt">
               <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 10 12 15 5 28l10 6 5-7v27h24V27l5 7 10-6-7-13-9-5c-2 6-20 6-22 0z"/></svg>
             </div>
             <div class="team-label">Home Team</div>
@@ -172,7 +172,7 @@
           </div>
           <div class="vs">VS</div>
           <div class="team-box">
-            <div class="shirt away">
+            <div class="shirt away" id="awayShirt">
               <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 10 12 15 5 28l10 6 5-7v27h24V27l5 7 10-6-7-13-9-5c-2 6-20 6-22 0z"/></svg>
             </div>
             <div class="team-label">Away Team</div>
@@ -539,6 +539,30 @@ function renderCrest(el,name){
 function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(CLUB_COLORS[s])return CLUB_COLORS[s];for(var k in CLUB_COLORS){if(s.indexOf(k)!==-1)return CLUB_COLORS[k]}return null}
   function setToday(){var d=new Date();var local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);$("dateInput").value=local;$("todayDateInput").value=local}
   function initials(name){return String(name||"?").trim().split(/\s+/).slice(0,2).map(function(x){return x[0]||""}).join("").toUpperCase()}
+  var SHIRT_SVG='<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 10 12 15 5 28l10 6 5-7v27h24V27l5 7 10-6-7-13-9-5c-2 6-20 6-22 0z"/></svg>';
+  var SHIRT_DEFAULT={home:"Manchester United",away:"Real Madrid"},SHIRT_UNKNOWN="#6b7f8e",shirtTimers={},shirtTok={};
+  function shirtSet(side,name,fallbackColor){
+    var el=$(side+"Shirt");if(!el)return;
+    var tok=shirtTok[side]=(shirtTok[side]||0)+1;
+    function showShirt(color){el.innerHTML=SHIRT_SVG;el.style.color=color||""}
+    var url=teamLogoUrl(name);
+    if(!url){showShirt(fallbackColor);return}
+    var img=new Image();img.className="shirt-logo";img.alt="";
+    img.onload=function(){if(shirtTok[side]!==tok)return;el.innerHTML="";el.style.color="";el.appendChild(img)};
+    img.onerror=function(){if(shirtTok[side]!==tok)return;showShirt(fallbackColor)};
+    img.src=url;
+  }
+  function shirtUpdate(side){
+    var inp=$(side+"Input"),v=inp?String(inp.value||"").trim():"";
+    if(v.length<3){shirtSet(side,SHIRT_DEFAULT[side],"");return}
+    shirtSet(side,v,clubColor(v)||SHIRT_UNKNOWN);
+  }
+  function shirtSync(){shirtUpdate("home");shirtUpdate("away")}
+  ["home","away"].forEach(function(side){
+    var inp=$(side+"Input");if(!inp)return;
+    inp.addEventListener("input",function(){clearTimeout(shirtTimers[side]);shirtTimers[side]=setTimeout(function(){shirtUpdate(side)},300)});
+  });
+  shirtSync();
   function prettyDate(v){if(!v)return "—";var d=new Date(v+"T12:00:00");return isNaN(d)?v:d.toLocaleDateString(window.CFI_LOCALE||"vi-VN",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"})}
   function syncMatch(){
     if(!state.match)return;
@@ -703,7 +727,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function prefillAndPredict(home,away,date,league,extra){
     cancelPendingRequests();
     state.match=Object.assign({home:home,away:away,date:date,league:league||""},extra||{});
-    $("homeInput").value=home;$("awayInput").value=away;$("dateInput").value=date;$("leagueInput").value=league||"";
+    $("homeInput").value=home;$("awayInput").value=away;$("dateInput").value=date;$("leagueInput").value=league||"";shirtSync();
     syncMatch();showScreen("selected");Promise.allSettled([refreshStatus(true),loadMatchContext(true)]);
   }
   function renderTodayFixtures(rows,source,fromNetwork){
@@ -869,7 +893,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   function parseQuickSearch(){
     var q=$("quickSearch").value.trim();if(!q)return;
-    var m=q.match(/^(.+?)\s+(?:vs\.?|v)\s+(.+)$/i);if(m){$("homeInput").value=m[1].trim();$("awayInput").value=m[2].trim()}
+    var m=q.match(/^(.+?)\s+(?:vs\.?|v)\s+(.+)$/i);if(m){$("homeInput").value=m[1].trim();$("awayInput").value=m[2].trim();shirtSync()}
   }
   $("quickSearch").addEventListener("change",parseQuickSearch);
   $("quickSearch").addEventListener("keydown",function(e){if(e.key==="Enter"){parseQuickSearch();$("homeInput").focus()}});
