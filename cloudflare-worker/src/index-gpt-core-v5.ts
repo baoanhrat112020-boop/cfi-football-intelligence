@@ -377,6 +377,8 @@ export default{
         if(!['7','30','all'].includes(days))return Response.json({error:'invalid days'},{status:400});
         const tierParam=(url.searchParams.get('tier')||'').toUpperCase();
         if(tierParam&&!['CAO','KHA','TB','THAP','RAT_THAP'].includes(tierParam))return Response.json({error:'invalid tier'},{status:400});
+        const modelVersion=url.searchParams.get('model_version')||'';
+        if(modelVersion&&!['v1_ht045','v2_ht050','v3_dynamic'].includes(modelVersion))return Response.json({error:'invalid model_version'},{status:400});
         const beforeRaw=url.searchParams.get('before_kickoff');
         let beforeKickoff:string|null=null;
         if(beforeRaw){const bt=Date.parse(beforeRaw);if(!Number.isFinite(bt))return Response.json({error:'invalid before_kickoff'},{status:400});beforeKickoff=new Date(bt).toISOString();}
@@ -387,7 +389,7 @@ export default{
         if(!Number.isInteger(pageLimit)||pageLimit<1||pageLimit>200)return Response.json({error:'invalid limit'},{status:400});
         const key=(env as any).SUPABASE_SERVICE_KEY;
         if(!key)return Response.json({error:'not configured'},{status:500});
-        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days),p_tier:tierParam||null,p_before_kickoff:beforeKickoff,p_limit:pageLimit,p_before_fixture:beforeFixture||null}),signal:AbortSignal.timeout(8000)});
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days),p_tier:tierParam||null,p_before_kickoff:beforeKickoff,p_limit:pageLimit,p_before_fixture:beforeFixture||null,...(modelVersion?{p_model_version:modelVersion}:{})}),signal:AbortSignal.timeout(8000)});
         if(!res.ok)return Response.json({error:'track record fetch failed',status:res.status},{status:502});
         return new Response(res.body,{status:200,headers:{'content-type':'application/json','Cache-Control':'public, max-age=300'}});
       }catch(e:any){
