@@ -444,6 +444,7 @@ BEGIN
            (m->>'p_over05_ht')::real AS p_over05_ht,
            (m->>'p_over075_ht')::real AS p_over075_ht,
            (m->>'p_over1_ht')::real AS p_over1_ht,
+           (m->>'s_over075_ht')::real AS s_over075_ht,
            m->>'top_market' AS top_market,
            (m->>'top_market_prob')::real AS top_market_prob,
            (m->>'pred_home_ht')::smallint AS pred_home_ht,
@@ -460,11 +461,19 @@ BEGIN
            COALESCE(v.target_date, (src.kickoff_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) AS target_date,
            v.canonical_home_team_id AS home_team_id,
            v.canonical_away_team_id AS away_team_id,
-           CASE WHEN src.p_over075_ht >= 0.65 THEN 'CAO'
-                WHEN src.p_over075_ht >= 0.60 THEN 'KHA'
-                WHEN src.p_over075_ht >= 0.55 THEN 'TB'
-                WHEN src.p_over075_ht >= 0.50 THEN 'THAP'
-                ELSE 'RAT_THAP' END AS confidence_tier
+           CASE WHEN v_model = 'v3_dynamic' AND src.s_over075_ht IS NOT NULL THEN
+                  CASE WHEN src.s_over075_ht >= 0.729 THEN 'CAO'
+                       WHEN src.s_over075_ht >= 0.685 THEN 'KHA'
+                       WHEN src.s_over075_ht >= 0.639 THEN 'TB'
+                       WHEN src.s_over075_ht >= 0.591 THEN 'THAP'
+                       ELSE 'RAT_THAP' END
+                ELSE
+                  CASE WHEN src.p_over075_ht >= 0.65 THEN 'CAO'
+                       WHEN src.p_over075_ht >= 0.60 THEN 'KHA'
+                       WHEN src.p_over075_ht >= 0.55 THEN 'TB'
+                       WHEN src.p_over075_ht >= 0.50 THEN 'THAP'
+                       ELSE 'RAT_THAP' END
+           END AS confidence_tier
     FROM src
     LEFT JOIN public.cfi_living_verified_fixtures v ON v.fixture_id = src.fixture_id
     WHERE src.kickoff_at > now() + interval '5 minutes'
