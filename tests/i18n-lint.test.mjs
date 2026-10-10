@@ -105,6 +105,12 @@ test('pattern samples translate as expected (vi direction)', () => {
   assert.equal(p.to.replace(/\$(\d)/g, (_, n) => m[+n]), 'Dự đoán HT: Nhà 1 - Khách 0');
 });
 
+test('market odds block text nodes translate to English', () => {
+  const expected = { 'nhà chấp': 'home gives', 'khách chấp': 'away gives', 'hòa': 'even', 'Chi tiết': 'Details' };
+  for (const [vi, en] of Object.entries(expected)) assert.equal(I18N.en[vi], en, `market label not translated: ${vi}`);
+  assert.ok(!/nhà\/hòa\/khách/.test(html), 'old combined 1X2 label must not return');
+});
+
 test('confidence tier badge labels translate to English', () => {
   const expected = { 'CAO': 'HIGH', 'KHÁ': 'GOOD', 'TB': 'MEDIUM', 'THẤP': 'LOW', 'RẤT THẤP': 'VERY LOW' };
   for (const [vi, en] of Object.entries(expected)) assert.equal(I18N.en[vi], en, `tier label not translated: ${vi}`);
