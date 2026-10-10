@@ -234,7 +234,7 @@ BEGIN
         ('over_15_ht', 1.5, (p.sp->>'s_over15_ht')::numeric)
       ) AS c(market, line, s)
       WHERE c.s BETWEEN 0.55 AND 0.70
-      ORDER BY c.s DESC, c.line DESC
+      ORDER BY c.line DESC
       LIMIT 1
     ) ht ON true
     LEFT JOIN LATERAL (
@@ -250,7 +250,7 @@ BEGIN
         ('over_35_ft', 3.5, (p.sp->>'s_over_35_ft')::numeric)
       ) AS c(market, line, s)
       WHERE c.s BETWEEN 0.55 AND 0.70
-      ORDER BY c.s DESC, c.line DESC
+      ORDER BY c.line DESC
       LIMIT 1
     ) ft ON true
   ),
@@ -307,5 +307,97 @@ BEGIN
     'slots', COALESCE((SELECT jsonb_agg(jsonb_build_object('date', d, 'hour', h, 'matches', matches) ORDER BY d, h) FROM slot_agg), '[]'::jsonb)
   ) INTO v_result;
   RETURN v_result;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.cfi_settle_suggest_picks()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_settled integer := 0;
+  v_no_ht integer := 0;
+  v_void integer := 0;
+BEGIN
+  WITH cand AS (
+    SELECT l.fixture_id, l.top_market, f.ht_home AS fht_h, f.ht_away AS fht_a, f.ft_home AS fft_h, f.ft_away AS fft_a
+    FROM public.suggest_pick_log l
+    JOIN LATERAL (
+      SELECT fx.ht_home, fx.ht_away, fx.ft_home, fx.ft_away
+      FROM public.fixtures fx
+      WHERE fx.home_team_id = l.home_team_id
+        AND fx.away_team_id = l.away_team_id
+        AND fx.match_date BETWEEN l.target_date - 1 AND l.target_date + 1
+        AND fx.status IN ('CANONICAL', 'COMPLETE')
+        AND fx.ft_home IS NOT NULL AND fx.ft_away IS NOT NULL
+      ORDER BY abs(fx.match_date - l.target_date)
+      LIMIT 1
+    ) f ON true
+    WHERE l.settled_at IS NULL
+      AND l.kickoff_at < now() - interval '3 hours'
+      AND l.home_team_id IS NOT NULL AND l.away_team_id IS NOT NULL
+  ),
+  calc AS (
+    SELECT c.*,
+           (c.fht_h IS NOT NULL AND c.fht_a IS NOT NULL AND c.fft_h >= c.fht_h AND c.fft_a >= c.fht_a) AS ht_ok,
+           m.period AS ou_period,
+           m.line AS ou_line
+    FROM cand c
+    LEFT JOIN LATERAL (
+      SELECT CASE WHEN c.top_market = 'over_2_5_ft' THEN 'ft' ELSE x.r[3] END AS period,
+             CASE WHEN c.top_market = 'over_2_5_ft' THEN 2.5
+                  WHEN x.r[2] = '' THEN x.r[1]::numeric
+                  ELSE (x.r[1] || '.' || x.r[2])::numeric END AS line
+      FROM (SELECT regexp_match(c.top_market, '^over_(\d)(\d*)_(ht|ft)$') AS r) x
+      WHERE c.top_market = 'over_2_5_ft' OR x.r IS NOT NULL
+    ) m ON true
+  ),
+  upd AS (
+    UPDATE public.suggest_pick_log l SET
+      settled_at = now(),
+      void_reason = CASE WHEN c.ht_ok THEN NULL ELSE 'NO_HT' END,
+      ht_home = CASE WHEN c.ht_ok THEN c.fht_h END,
+      ht_away = CASE WHEN c.ht_ok THEN c.fht_a END,
+      ft_home = c.fft_h,
+      ft_away = c.fft_a,
+      hit_o05_ht = CASE WHEN c.ht_ok THEN (c.fht_h + c.fht_a) >= 1 END,
+      hit_o1_ht = CASE WHEN c.ht_ok THEN (c.fht_h + c.fht_a) >= 2 END,
+      result_o075 = CASE WHEN NOT c.ht_ok THEN NULL
+                         WHEN c.fht_h + c.fht_a >= 2 THEN 'WIN'
+                         WHEN c.fht_h + c.fht_a = 1 THEN 'HALF_WIN'
+                         ELSE 'LOSS' END,
+      hit_top_market = CASE
+        WHEN l.top_market = 'btts_yes' THEN c.fft_h >= 1 AND c.fft_a >= 1
+        WHEN l.top_market = '1x2_ht_home' THEN CASE WHEN c.ht_ok THEN c.fht_h > c.fht_a END
+        WHEN l.top_market = '1x2_ft_home' THEN c.fft_h > c.fft_a
+        WHEN c.ou_period = 'ht' THEN CASE WHEN c.ht_ok THEN
+          CASE public.ou_result(c.fht_h + c.fht_a, c.ou_line)
+            WHEN 'WIN' THEN true WHEN 'HALF_WIN' THEN true
+            WHEN 'LOSS' THEN false WHEN 'HALF_LOSS' THEN false
+            ELSE NULL END
+          END
+        WHEN c.ou_period = 'ft' THEN
+          CASE public.ou_result(c.fft_h + c.fft_a, c.ou_line)
+            WHEN 'WIN' THEN true WHEN 'HALF_WIN' THEN true
+            WHEN 'LOSS' THEN false WHEN 'HALF_LOSS' THEN false
+            ELSE NULL END
+        ELSE NULL END
+    FROM calc c
+    WHERE l.fixture_id = c.fixture_id
+    RETURNING c.ht_ok
+  )
+  SELECT count(*), count(*) FILTER (WHERE NOT ht_ok) INTO v_settled, v_no_ht FROM upd;
+
+  WITH v AS (
+    UPDATE public.suggest_pick_log
+    SET settled_at = now(), void_reason = 'NO_RESULT'
+    WHERE settled_at IS NULL AND kickoff_at < now() - interval '7 days'
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_void FROM v;
+
+  RETURN jsonb_build_object('status', 'OK', 'settled', v_settled, 'settled_without_ht', v_no_ht, 'voided_no_result', v_void);
 END;
 $function$;
