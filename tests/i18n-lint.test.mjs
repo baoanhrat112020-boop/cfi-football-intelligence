@@ -23,11 +23,11 @@ const NEUTRAL_EN_STATIC = new Set([
   'CFI', 'Football Intelligence', 'VS', 'H2H', 'RT', 'DB', 'SP', 'MK', 'CFI Runtime', 'CFI Historical DB',
   'Production worker · /health', 'BigDB strict-prior evidence', 'Strict-Prior Guard', 'Match DNA', 'Fusion',
   'Strict-Prior', 'Champion Fusion', 'CFI App', 'CFI Production API', 'Engine', 'No Data', 'Raw Payload',
-  'CAO', 'KHÁ', 'TB', 'THẤP', 'RẤT THẤP', '3+ HT', '7+ FT', 'Other HT', 'Other FT', 'HT', 'FT', 'CI 95%',
+  '3+ HT', '7+ FT', 'Other HT', 'Other FT', 'HT', 'FT', 'CI 95%',
   'Over 2.5 FT', 'BTTS Yes', 'FT Home', 'HT Home', 'Over 1 HT', 'Settings', 'Ngôn ngữ / Language', 'Tiếng Việt',
   'English', 'WIN', 'HALF', 'LOSS', 'TB (0.55)'
 ]);
-const NEUTRAL_VI_STATIC = new Set(['CAO', 'KHÁ', 'TB', 'THẤP', 'RẤT THẤP', 'Ngôn ngữ / Language', 'Tiếng Việt']);
+const NEUTRAL_VI_STATIC = new Set(['Ngôn ngữ / Language', 'Tiếng Việt']);
 
 const OUT_OF_SCOPE_VI = [
   'PHỔ THÔNG', 'HIỆP 1 · CHI TIẾT', 'CẢ TRẬN · CHI TIẾT', 'DẢI BÀN', 'Không có expert weights', 'Không có actionable decision',
@@ -102,6 +102,11 @@ test('pattern samples translate as expected (vi direction)', () => {
   const p = I18N.patterns_vi.find((x) => x.re.test('Dự đoán HT: Home 1 - Away 0'));
   const m = p.re.exec('Dự đoán HT: Home 1 - Away 0');
   assert.equal(p.to.replace(/\$(\d)/g, (_, n) => m[+n]), 'Dự đoán HT: Nhà 1 - Khách 0');
+});
+
+test('confidence tier badge labels translate to English', () => {
+  const expected = { 'CAO': 'HIGH', 'KHÁ': 'GOOD', 'TB': 'MEDIUM', 'THẤP': 'LOW', 'RẤT THẤP': 'VERY LOW' };
+  for (const [vi, en] of Object.entries(expected)) assert.equal(I18N.en[vi], en, `tier label not translated: ${vi}`);
 });
 
 function staticTexts() {
