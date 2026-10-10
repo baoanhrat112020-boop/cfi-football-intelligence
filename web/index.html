@@ -1049,7 +1049,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function suggestBadgeHtml(p){
     var v=Number(p);if(!Number.isFinite(v))return "";
     var b=SUGGEST_BADGES.find(function(x){return v>=x.min})||SUGGEST_BADGES[SUGGEST_BADGES.length-1];
-    return '<span class="conf-badge" title="O0.75 '+(v*100).toFixed(0)+'%" style="background:'+b.bg+';color:'+b.fg+';border-radius:6px;padding:3px 8px;font-size:10px;font-weight:800;letter-spacing:.3px;white-space:nowrap">'+b.label+'</span>';
+    return '<span class="conf-badge" title="Over HT 0.75 '+(v*100).toFixed(0)+'%" style="background:'+b.bg+';color:'+b.fg+';border-radius:6px;padding:3px 8px;font-size:10px;font-weight:800;letter-spacing:.3px;white-space:nowrap">'+b.label+'</span>';
   }
   function scoreBlockHtml(d,withBadge){
     if(!d||d.pred_home_ft==null||d.p_over075_ht==null)return "";
@@ -1060,15 +1060,16 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var chip='display:inline-block;background:#12202b;color:#8fa6b6;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;margin-right:5px';
     if(d.no_stats)return '<div class="score-block" style="background:#0d1620;border:1px solid #1b2a36;border-radius:10px;padding:10px 12px;margin-bottom:8px;opacity:.6"><span style="display:inline-block;background:#3d2410;color:#fb923c;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">&#9888; Ch&#432;a &#273;o</span></div>';
     var badge=withBadge?suggestBadgeHtml(d.p_over075_ht):"";
-    var ouCells=[["O0.5","s_over05_ht",0],["O0.75","s_over075_ht",1],["O1.0","s_over1_ht",0],["O1.25","s_over125_ht",0],["O1.5","s_over15_ht",0]].map(function(c){
-      return '<div style="min-width:0;padding:5px 2px;border:1px solid '+(c[2]?'var(--cyan)':'var(--line)')+';border-radius:8px;background:'+(c[2]?'var(--surface3)':'var(--surface)')+';text-align:center"><div style="font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap">'+c[0]+'</div><div style="font-size:13px;font-weight:800;color:var(--text)">'+pc(d[c[1]])+'</div></div>';
+    var ouCells=[["0.5","s_over05_ht",0],["0.75","s_over075_ht",1],["1.0","s_over1_ht",0],["1.25","s_over125_ht",0],["1.5","s_over15_ht",0]].map(function(c){
+      return '<div style="min-width:0;padding:5px 2px;border:1px solid '+(c[2]?'var(--cyan)':'var(--line)')+';border-radius:8px;background:'+(c[2]?'var(--surface3)':'var(--surface)')+';text-align:center"><div style="font-size:10px;font-weight:700;color:'+(c[2]?'var(--cyan)':'var(--muted)')+';white-space:nowrap">'+c[0]+'</div><div style="font-size:13px;font-weight:800;color:'+(c[2]?'var(--cyan)':'var(--text)')+'">'+pc(d[c[1]])+'</div></div>';
     }).join("");
     return '<div class="score-block" style="background:linear-gradient(180deg,#0f2a3a,#0b1d29);border:1px solid #1d4a63;border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><span style="display:flex;align-items:center;gap:8px"><b style="font-size:19px;color:#4ade80">'+bestPct+'</b>'+badge+'</span></div>'+
       '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>Dự đoán HT: Home '+d.pred_home_ht+' - Away '+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>Dự đoán FT: Home '+d.pred_home_ft+' - Away '+d.pred_away_ft+'</span></div>'+
-      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:7px">'+ouCells+'</div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
+      '<div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted);margin-top:7px">Over HT</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:3px">'+ouCells+'</div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
   }
-  var SECONDARY_LABELS={m_over_2_5_ft:"O2.5 FT",m_btts_yes:"BTTS",m_1x2_ft_home:"Home thắng",m_1x2_ht_home:"Home H1"};
+  var SECONDARY_LABELS={m_over_2_5_ft:"Over 2.5 FT",m_btts_yes:"BTTS",m_1x2_ft_home:"Home thắng",m_1x2_ht_home:"Home H1"};
   function secondaryMarketsHtml(d,chip,pc){
     var mk=d&&d.markets;
     if(!mk||typeof mk!=="object")return "";
@@ -1393,7 +1394,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     cnt+='<div style="font-size:11px;color:#7f9daf;margin-top:6px">Log bắt đầu '+esc(since)+' · pick được chốt trước giờ đá 5 phút</div>';
     var selTier=state.trackTier||"",wT=0,hT=0,lT=0,nT=0;
     (d.calibration_by_tier||[]).forEach(function(r){wT+=Number(r.win)||0;hT+=Number(r.half)||0;lT+=Number(r.loss)||0;nT+=Number(r.n)||0});
-    cnt+='<div style="margin-top:8px;font-size:12px;color:#c5d4de"><span style="color:#7f9daf">O0.75 hit rate:</span> '+(nT>=TRACK_MIN_N?'<b style="color:#4ade80">'+wT+'W</b> / <b style="color:#fde047">'+hT+'H</b> / <b style="color:#f87171">'+lT+'L</b> — <b>'+trackPct((wT+0.5*hT)/nT)+'</b> (n='+nT+')':'—')+'</div>';
+    cnt+='<div style="margin-top:8px;font-size:12px;color:#c5d4de"><span style="color:#7f9daf">Over 0.75 hit rate:</span> '+(nT>=TRACK_MIN_N?'<b style="color:#4ade80">'+wT+'W</b> / <b style="color:#fde047">'+hT+'H</b> / <b style="color:#f87171">'+lT+'L</b> — <b>'+trackPct((wT+0.5*hT)/nT)+'</b> (n='+nT+')':'—')+'</div>';
     cnt+='<div style="font-size:10px;color:#7f9daf;margin-top:3px">Nửa thắng tính 0,5. Khác với hit rate của best pick (✓/✗) trong bảng bên dưới.</div>';
     if(selTier&&d.tier!==selTier)cnt+='<div style="margin-top:8px;padding:6px 8px;border-left:3px solid #f59e0b;background:#1a1408;border-radius:0 5px 5px 0;font-size:11px;color:#d4b378">Bộ lọc tier chưa khả dụng trên server, đang hiện toàn bộ.</div>';
     if(scored<TRACK_MIN_N)cnt+='<div style="margin-top:8px;padding:6px 8px;border-left:3px solid #f59e0b;background:#1a1408;border-radius:0 5px 5px 0;font-size:11px;color:#d4b378">Ít dữ liệu (n='+scored+'): chưa đủ '+TRACK_MIN_N+' trận đã chấm, các tỉ lệ thực tế được ẩn.</div>';
@@ -1401,12 +1402,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(scored===0&&!recent.length){
       html+='<div class="context-state">Log từ '+esc(since)+'. Trận đầu tiên được chấm sau khi kết thúc (khoảng 3 giờ sau giờ đá).</div>';
     }
-    var tiers=(d.calibration_by_tier||[]).filter(function(r){return !selTier||d.tier!==selTier||r.tier===selTier}),tt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Tier",true)+trackTh("n")+trackTh("O0.5")+trackTh("O0.75")+trackTh("O1")+trackTh("CI 95%")+'</tr></thead><tbody>';
+    var tiers=(d.calibration_by_tier||[]).filter(function(r){return !selTier||d.tier!==selTier||r.tier===selTier}),tt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Tier",true)+trackTh("n")+trackTh("0.5")+trackTh("0.75")+trackTh("1")+trackTh("CI 95%")+'</tr></thead><tbody>';
     tiers.forEach(function(r){
       var show=Number(r.n)>=TRACK_MIN_N;
       tt+='<tr>'+trackTd(trackTierBadge(r.tier),true)+trackTd(String(r.n))+trackTd(trackPair(r.o05_pred,r.o05_actual,show))+trackTd(trackPair(r.o075_pred,r.o075_actual,show))+trackTd(trackPair(r.o1_pred,r.o1_actual,show))+trackTd(show&&r.wilson_95_low!=null?trackPct(r.wilson_95_low)+"–"+trackPct(r.wilson_95_high):"—")+'</tr>';
     });
-    tt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Dự đoán → thực tế. O0.75 tính nửa thắng = 0,5; CI 95% áp dụng cho điểm O0.75. Tier có n&lt;'+TRACK_MIN_N+' hiện "—".</div>';
+    tt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Dự đoán → thực tế. Over 0.75 tính nửa thắng = 0,5; CI 95% áp dụng cho điểm Over 0.75. Tier có n&lt;'+TRACK_MIN_N+' hiện "—".</div>';
     html+=trackCard("Hiệu chuẩn theo tier",tt);
     var mk=d.by_top_market||[],mt='';
     if(!mk.length)mt='<div style="font-size:11px;color:#7f9daf">Chưa có dữ liệu.</div>';
@@ -1419,9 +1420,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var rt='';
     if(!recent.length)rt='<div style="font-size:11px;color:#7f9daf">Chưa có trận nào được chấm.</div>';
     else{
-      rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true,"padding:6px 4px")+trackTh("HT",false,"padding:6px 4px")+trackTh("FT",false,"padding:6px 4px")+trackTh("Tier",false,"padding:6px 4px")+trackTh("Best pick",true,"padding:6px 4px")+trackTh("O0.75",false,"padding:6px 4px")+'</tr></thead><tbody id="trackRecentBody">';
+      rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true,"padding:6px 4px")+trackTh("HT",false,"padding:6px 4px")+trackTh("FT",false,"padding:6px 4px")+trackTh("Tier",false,"padding:6px 4px")+trackTh("Best pick",true,"padding:6px 4px")+trackTh("0.75",false,"padding:6px 4px")+'</tr></thead><tbody id="trackRecentBody">';
       recent.forEach(function(r){rt+=trackRecentRow(r)});
-      rt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Chip = kết quả O0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.</div>';
+      rt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Chip = kết quả Over 0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.</div>';
       if(recent.length<100)rt+='<div style="font-size:11px;color:#d4b378;margin-top:6px">Đang tích lũy: '+recent.length+'/100</div>';
       if(!d._done&&recent.length>=100)rt+='<div style="text-align:center;margin-top:10px"><button type="button" id="trackMore" class="bm-del" style="padding:8px 18px;font-size:12px">Xem thêm</button></div>';
     }
@@ -1742,7 +1743,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Best pick": "Kèo tốt nhất",
       "Hit rate": "Tỉ lệ trúng",
       "Prob TB": "Xác suất TB",
-      "O0.75 hit rate:": "Tỉ lệ trúng O0.75:"
+      "Over 0.75 hit rate:": "Tỉ lệ trúng Over 0.75:"
     },
     en: {
       "Nhập trận": "Enter match",
@@ -1829,7 +1830,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Chưa có dữ liệu.": "No data yet.",
       "Chưa có trận nào được chấm.": "No matches settled yet.",
       "100 trận gần nhất": "Last 100 matches",
-      "Chip = kết quả O0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.": "Chip = O0.75 result (main market). ✓/✗ next to Best pick = whether the best pick hit or missed.",
+      "Chip = kết quả Over 0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.": "Chip = Over 0.75 result (main market). ✓/✗ next to Best pick = whether the best pick hit or missed.",
       "CAO": "HIGH",
       "KHÁ": "GOOD",
       "TB": "MEDIUM",
@@ -1859,7 +1860,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       { re: /^Ít dữ liệu \(n=(\d+)\): chưa đủ (\d+) trận đã chấm, các tỉ lệ thực tế được ẩn\.$/, to: "Low data (n=$1): fewer than $2 settled matches, so the actual rates are hidden." },
       { re: /^Log bắt đầu (\S+) · pick được chốt trước giờ đá 5 phút$/, to: "Logging since $1 · picks are locked 5 minutes before kickoff" },
       { re: /^Log từ (\S+)\. Trận đầu tiên được chấm sau khi kết thúc \(khoảng 3 giờ sau giờ đá\)\.$/, to: "Logging since $1. The first match is settled after it ends (about 3 hours after kickoff)." },
-      { re: /^Dự đoán → thực tế\. O0\.75 tính nửa thắng = 0,5; CI 95% áp dụng cho điểm O0\.75\. Tier có n<(\d+) hiện "—"\.$/, to: "Predicted → actual. O0.75 counts a half-win as 0.5; the 95% CI applies to the O0.75 score. Tiers with n<$1 show \"—\"." },
+      { re: /^Dự đoán → thực tế\. Over 0\.75 tính nửa thắng = 0,5; CI 95% áp dụng cho điểm Over 0\.75\. Tier có n<(\d+) hiện "—"\.$/, to: "Predicted → actual. Over 0.75 counts a half-win as 0.5; the 95% CI applies to the Over 0.75 score. Tiers with n<$1 show \"—\"." },
       { re: /^Không tải được: (.+)$/, to: "Failed to load: $1" },
       { re: /^Không tải được (\w+): (.+)$/, to: "Failed to load $1: $2" }
     ],
