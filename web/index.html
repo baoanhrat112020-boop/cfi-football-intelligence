@@ -1067,7 +1067,27 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><span style="display:flex;align-items:center;gap:8px"><b style="font-size:19px;color:#4ade80">'+bestPct+'</b>'+badge+'</span></div>'+
       '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;margin-top:5px;font-size:14px;color:#e8eef3;font-weight:700"><span>Dự đoán HT: Home '+d.pred_home_ht+' - Away '+d.pred_away_ht+(lht!=null?' <span style="font-size:11px;color:#7f9daf;font-weight:600">(kỳ vọng '+lht.toFixed(1)+' bàn)</span>':'')+'</span><span>Dự đoán FT: Home '+d.pred_home_ft+' - Away '+d.pred_away_ft+'</span></div>'+
       '<div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted);margin-top:7px">Over HT</div>'+
-      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:3px">'+ouCells+'</div>'+secondaryMarketsHtml(d,chip,pc)+'</div>';
+      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:3px">'+ouCells+'</div>'+marketOddsHtml(d,pc)+secondaryMarketsHtml(d,chip,pc)+'</div>';
+  }
+  function marketOddsHtml(d,pc){
+    var mo=d&&d.market_odds;
+    if(!Array.isArray(mo)||!mo.length)return "";
+    var order={"OVER_UNDER|HT":0,"OVER_UNDER|FT":1,"1X2|FT":2,"ASIAN_HANDICAP|FT":3,"ASIAN_HANDICAP|HT":4};
+    function odd(v){var n=Number(v);return v!=null&&Number.isFinite(n)?n.toFixed(2):"—"}
+    function ord(x){var o=order[x.family+"|"+x.period];return o==null?9:o}
+    var cells=mo.slice().sort(function(a,b){return ord(a)-ord(b)}).map(function(x){
+      var p=x.period==="HT"?"HT":"FT",l=Number(x.line),lb,val,title="",flex="1 1 100%";
+      if(x.family==="OVER_UNDER"){
+        lb="O/U "+p+" "+l;val=x.p_implied!=null?pc(x.p_implied):"—";title="Over "+odd(x.odds_over)+" / Under "+odd(x.odds_under);flex="1 1 42%";
+      }else if(x.family==="1X2"){
+        lb="1X2 nhà/hòa/khách";val=odd(x.odds_home)+" / "+odd(x.odds_draw)+" / "+odd(x.odds_away);
+      }else if(x.family==="ASIAN_HANDICAP"){
+        lb="AH "+p+" "+(l>0?"+":"")+l+" ("+(l===0?"hòa":x.handicap_side==="away"?"khách chấp":"nhà chấp")+")";val=odd(x.odds_home)+" / "+odd(x.odds_away);title="Nhà "+odd(x.odds_home)+" / Khách "+odd(x.odds_away);
+      }else return "";
+      return '<div title="'+title+'" style="display:flex;justify-content:space-between;gap:6px;flex:'+flex+';font-size:11px;padding:2px 0"><span style="color:var(--muted);font-weight:600">'+lb+'</span><b style="color:#e8eef3">'+val+'</b></div>';
+    }).join("");
+    if(!cells)return "";
+    return '<div class="score-market" style="margin-top:7px"><div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted)">Market:</div><div style="display:flex;flex-wrap:wrap;gap:0 12px;margin-top:2px">'+cells+'</div></div>';
   }
   var SECONDARY_LABELS={m_over_2_5_ft:"Over 2.5 FT",m_btts_yes:"BTTS",m_1x2_ft_home:"Home thắng",m_1x2_ht_home:"Home H1"};
   function secondaryMarketsHtml(d,chip,pc){
