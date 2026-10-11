@@ -119,6 +119,7 @@
     .toast{position:fixed;left:50%;bottom:82px;transform:translate(-50%,14px);width:min(460px,calc(100% - 32px));padding:12px 14px;background:#102b40;border:1px solid #2a6b91;border-radius:11px;color:#dbeaf3;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:60;box-shadow:var(--shadow)}.toast.show{opacity:1;transform:translate(-50%,0)}
     .modal-wrap{position:fixed;inset:0;background:rgba(0,8,14,.72);backdrop-filter:blur(8px);display:none;align-items:flex-end;z-index:80}.modal-wrap.show{display:flex}.modal{width:min(540px,100%);max-height:72vh;overflow:auto;background:#092136;border:1px solid #216084;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -16px 50px rgba(0,0,0,.4)}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.modal h3{margin:0}.modal pre{white-space:pre-wrap;word-break:break-word;color:#9db5c6;font-size:11px;line-height:1.5;background:#061725;border:1px solid #173b53;border-radius:10px;padding:12px}
     .loading{display:inline-flex;gap:5px;align-items:center}.loading i{width:6px;height:6px;border-radius:50%;background:currentColor;animation:b 1s infinite}.loading i:nth-child(2){animation-delay:.15s}.loading i:nth-child(3){animation-delay:.3s}@keyframes b{0%,70%,100%{opacity:.3;transform:scale(.8)}35%{opacity:1;transform:scale(1)}} 
+    .scroll-top-btn{position:fixed;right:max(16px,calc(50% - 254px));bottom:calc(88px + env(safe-area-inset-bottom));width:40px;height:40px;padding:2px;border-radius:50%;background:var(--surface3);border:1px solid var(--cyan);color:var(--cyan);display:none;z-index:40;cursor:pointer;align-items:center;justify-content:center}.scroll-top-btn.visible{display:flex}
     @media(min-width:700px){.app{padding-top:18px}.header{border-radius:16px 16px 0 0}.bottom-nav{border-radius:0 0 16px 16px}}
   
 /* ==== CFI ODDS SIDECAR ==== */
@@ -487,6 +488,8 @@
       </div>
     </section>
   </main>
+
+  <button id="scrollTopBtn" class="scroll-top-btn" aria-label="Về đầu trang"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>
 
   <nav class="bottom-nav">
     <button class="nav-btn active" data-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 11 9-8 9 8v10h-6v-6H9v6H3z"/></svg><span>Home</span></button>
@@ -963,7 +966,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.3 · Build 9</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1113,11 +1116,13 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var chip='display:inline-block;background:#12202b;color:#8fa6b6;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;margin-right:5px';
     if(d.no_stats)return '<div class="score-block" style="background:#0d1620;border:1px solid #1b2a36;border-radius:10px;padding:10px 12px;margin-bottom:8px;opacity:.6"><span style="display:inline-block;background:#3d2410;color:#fb923c;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">&#9888; Ch&#432;a &#273;o</span></div>';
     var badge=withBadge?suggestBadgeHtml(d.s_over075_ht):"";
-    function ouCell(c){
-      return '<div style="min-width:0;padding:5px 2px;border:1px solid '+(c[2]?'var(--cyan)':'var(--line)')+';border-radius:8px;background:'+(c[2]?'var(--surface3)':'var(--surface)')+';text-align:center"><div style="font-size:10px;font-weight:700;color:'+(c[2]?'var(--cyan)':'var(--muted)')+';white-space:nowrap">'+c[0]+'</div><div style="font-size:13px;font-weight:800;color:'+(c[2]?'var(--cyan)':'var(--text)')+'">'+pc(d[c[1]])+'</div></div>';
+    var mo=Array.isArray(d.market_odds)?d.market_odds:[];
+    function ouVal(c,per){for(var i=0;i<mo.length;i++){var x=mo[i];if(x&&x.family==="OVER_UNDER"&&x.period===per&&Number(x.line)===Number(c[0])){var o=Number(x.odds_over);if(x.odds_over!=null&&Number.isFinite(o))return o.toFixed(2)}}return pc(d[c[1]])}
+    function ouCell(c,per){
+      return '<div style="min-width:0;padding:5px 2px;border:1px solid '+(c[2]?'var(--cyan)':'var(--line)')+';border-radius:8px;background:'+(c[2]?'var(--surface3)':'var(--surface)')+';text-align:center"><div style="font-size:10px;font-weight:700;color:'+(c[2]?'var(--cyan)':'var(--muted)')+';white-space:nowrap">'+c[0]+'</div><div style="font-size:13px;font-weight:800;color:'+(c[2]?'var(--cyan)':'var(--text)')+'">'+ouVal(c,per)+'</div></div>';
     }
-    var ouCells=ouRows(HT_LINES,d.selected_ht_line).map(ouCell).join("");
-    var ftCells=d.s_over_15_ft!=null?ouRows(ftWindow(d.selected_ft_line),d.selected_ft_line).map(ouCell).join(""):"";
+    var ouCells=ouRows(HT_LINES,d.selected_ht_line).map(function(c){return ouCell(c,"HT")}).join("");
+    var ftCells=d.s_over_15_ft!=null?ouRows(ftWindow(d.selected_ft_line),d.selected_ft_line).map(function(c){return ouCell(c,"FT")}).join(""):"";
     var ftBlock=ftCells?'<div style="font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--muted);margin-top:7px">Over FT:</div><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:3px">'+ftCells+'</div>':"";
     return '<div class="score-block" style="background:linear-gradient(180deg,#0f2a3a,#0b1d29);border:1px solid #1d4a63;border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:19px;color:#4ade80;line-height:1.2">'+bestLabel+'</b><span style="display:flex;align-items:center;gap:8px"><b style="font-size:19px;color:#4ade80">'+bestPct+'</b>'+badge+'</span></div>'+
@@ -1494,7 +1499,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return esc(base)+(r.model_version&&!state.trackModel?' <span style="font-size:9px;color:#6b7f8e">'+esc(r.model_version)+'</span>':"");
   }
   function trackRecentRow(r){
-        var mark=r.hit===true?' <span style="color:#4ade80;font-weight:800;font-size:10px">✓</span>':r.hit===false?' <span style="color:#f87171;font-weight:800;font-size:10px">✗</span>':r.top_result==="PUSH"?' <span style="color:#7a8a99;font-weight:800;font-size:10px">PUSH</span>':'';
+        var tm={WIN:["✓","#4ade80"],HALF_WIN:["½✓","#86efac"],PUSH:["=","#8fa6b6"],HALF_LOSS:["½✗","#fca5a5"],LOSS:["✗","#f87171"]}[r.top_result];
+        var mark=tm?' <span style="color:'+tm[1]+';font-weight:800;font-size:10px;white-space:nowrap">'+tm[0]+'</span>':' <span style="color:#7a8a99;font-weight:800;font-size:10px">–</span>';
         var cp="padding:6px 4px;font-size:11px";
         return '<tr>'+trackTd(bmStarHtml({fixture_id:r.fixture_id,home:r.home,away:r.away,kickoff:r.kickoff,tier:r.tier,top_market:r.top_market})+'<span translate="no">'+esc(r.home)+" – "+esc(r.away)+'</span>',true,cp+";white-space:normal;max-width:96px;min-width:70px;line-height:1.25")+trackTd(esc(r.ht_score||"—"),false,cp)+trackTd(esc(r.ft_score||"—"),false,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(esc(r.top_market?marketLabel(r.top_market):"—")+mark,true,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
   }
@@ -1523,17 +1529,17 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var mk=d.by_top_market||[],mt='';
     if(!mk.length)mt='<div style="font-size:11px;color:#7f9daf">Chưa có dữ liệu.</div>';
     else{
-      mt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Kèo",true)+trackTh("n")+trackTh("Prob TB")+trackTh("Hit rate")+trackTh("Push")+trackTh("CI 95%")+'</tr></thead><tbody>';
+      mt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Kèo",true)+trackTh("n*")+trackTh("Prob TB")+trackTh("Hit rate")+trackTh("Push")+trackTh("CI 95%")+'</tr></thead><tbody>';
       mk.forEach(function(r){var show=Number(r.n)>=TRACK_MIN_N;mt+='<tr>'+trackTd(rowMarketLabel(r),true)+trackTd(String(r.n))+trackTd(trackPct(r.prob_avg))+trackTd(show?trackPct(r.hit_rate):"—")+trackTd(String(r.n_push||0))+trackTd(show?trackPct(r.wilson_95_low)+"–"+trackPct(r.wilson_95_high):"—")+'</tr>'});
       mt+='</tbody></table></div>';
     }
-    html+=trackCard("Theo kèo tốt nhất",mt+'<div style="font-size:10px;color:#7f9daf;margin-top:6px">Hit rate tính nửa thắng 0,75 và nửa thua 0,25; Push không tính vào n.</div>');
+    html+=trackCard("Theo kèo tốt nhất",mt+'<div style="font-size:10px;color:#7f9daf;margin-top:6px">Hit rate tính nửa thắng 0,75 và nửa thua 0,25; Push không tính vào n. * n = số trận thắng/thua đã chốt, không gồm push.</div>');
     var rt='';
     if(!recent.length)rt='<div style="font-size:11px;color:#7f9daf">Chưa có trận nào được chấm.</div>';
     else{
       rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true,"padding:6px 4px")+trackTh("HT",false,"padding:6px 4px")+trackTh("FT",false,"padding:6px 4px")+trackTh("Tier",false,"padding:6px 4px")+trackTh("Best pick",true,"padding:6px 4px")+trackTh("0.75",false,"padding:6px 4px")+'</tr></thead><tbody id="trackRecentBody">';
       recent.forEach(function(r){rt+=trackRecentRow(r)});
-      rt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Chip = kết quả Over 0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.</div>';
+      rt+='</tbody></table></div><div style="font-size:10px;color:#7f9daf;margin-top:6px">Chip = kết quả Over 0.75 (kèo chính). ✓ = WIN, ½✓ = HALF_WIN, = = PUSH, ½✗ = HALF_LOSS, ✗ = LOSS.</div>';
       if(recent.length<100)rt+='<div style="font-size:11px;color:#d4b378;margin-top:6px">Đang tích lũy: '+recent.length+'/100</div>';
       if(!d._done&&recent.length>=100)rt+='<div style="text-align:center;margin-top:10px"><button type="button" id="trackMore" class="bm-del" style="padding:8px 18px;font-size:12px">Xem thêm</button></div>';
     }
@@ -1605,6 +1611,13 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("trackContent").addEventListener("click",function(e){var mb=e.target.closest("#trackMore");if(mb){e.stopPropagation();loadMoreTrack();return}var st=e.target.closest(".bm-star");if(st){e.stopPropagation();bmToggleEl(st)}});
   $("savedContent").addEventListener("click",function(e){var d=e.target.closest(".bm-del");if(!d)return;e.stopPropagation();var id=d.getAttribute("data-bm-id");bmSave(bmLoad().filter(function(b){return b.id!==id}));bmSync(id);renderSaved()});
+
+  var scrollTopBtn=$("scrollTopBtn"),hideOnInput=false;
+  function scrollTopThreshold(){return window.scrollY>window.innerHeight*1.5}
+  window.addEventListener("scroll",function(){if(hideOnInput)return;scrollTopBtn.classList.toggle("visible",scrollTopThreshold())},{passive:true});
+  document.addEventListener("focusin",function(e){if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"){hideOnInput=true;scrollTopBtn.classList.remove("visible")}});
+  document.addEventListener("focusout",function(e){if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"){hideOnInput=false;if(scrollTopThreshold())scrollTopBtn.classList.add("visible")}});
+  scrollTopBtn.addEventListener("click",function(){window.scrollTo({top:0,behavior:"smooth"})});
 
   setToday();
 })();
@@ -1948,8 +1961,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Chưa có dữ liệu.": "No data yet.",
       "Chưa có trận nào được chấm.": "No matches settled yet.",
       "100 trận gần nhất": "Last 100 matches",
-      "Chip = kết quả Over 0.75 (kèo chính). ✓/✗ cạnh Best pick = best pick trúng hay trượt.": "Chip = Over 0.75 result (main market). ✓/✗ next to Best pick = whether the best pick hit or missed.",
-      "Hit rate tính nửa thắng 0,75 và nửa thua 0,25; Push không tính vào n.": "Hit rate counts a half-win as 0.75 and a half-loss as 0.25; pushes are not counted in n.",
+      "Chip = kết quả Over 0.75 (kèo chính). ✓ = WIN, ½✓ = HALF_WIN, = = PUSH, ½✗ = HALF_LOSS, ✗ = LOSS.": "Chip = Over 0.75 result (main market). ✓ = WIN, ½✓ = HALF_WIN, = = PUSH, ½✗ = HALF_LOSS, ✗ = LOSS.",
+      "Hit rate tính nửa thắng 0,75 và nửa thua 0,25; Push không tính vào n. * n = số trận thắng/thua đã chốt, không gồm push.": "Hit rate counts a half-win as 0.75 and a half-loss as 0.25; pushes are not counted in n. * n = settled wins/losses only, excludes pushes.",
       "CAO": "HIGH",
       "KHÁ": "GOOD",
       "TB": "MEDIUM",
