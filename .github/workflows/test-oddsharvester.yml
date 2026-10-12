@@ -33,7 +33,7 @@ jobs:
         run: |
           python --version
           pip install oddsharvester
-          pip show oddsharvester | head -3
+          pip show oddsharvester | sed -n 1,3p
           playwright install --with-deps chromium
 
       - name: Scrape FT (1x2 + over_under + asian_handicap)
