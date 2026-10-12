@@ -21,6 +21,7 @@ TIME_WINDOW = timedelta(hours=4)
 BATCH_SIZE = 500
 RETENTION_DAYS = 90
 PICK_HORIZON = timedelta(hours=48)
+MIN_MATCHES = 50
 NUM = re.compile(r"-?\d+(?:\.\d+)?")
 
 
@@ -405,6 +406,8 @@ def main():
     rows = parse_bongdawap_handicap(html, args.tz, ref_date)
     if not rows:
         print("no matches parsed (size=%d)" % len(html))
+        if not args.dry_run:
+            sys.exit("ALERT: parsed_matches=0 < %d" % MIN_MATCHES)
         return
     inserts, stats = build_inserts(picks, rows, args.tz)
     report(rows, stats, inserts)
@@ -413,6 +416,9 @@ def main():
     pushed = push_records(sb_url, key, to_records(inserts))
     cutoff = purge_old(sb_url, key, now_utc)
     print(json.dumps({"upserted": pushed, "purged_before": cutoff}))
+    parsed = len({r["provider_id"] for r in rows})
+    if parsed < MIN_MATCHES:
+        sys.exit("ALERT: parsed_matches=%d < %d" % (parsed, MIN_MATCHES))
 
 
 if __name__ == "__main__":
