@@ -153,8 +153,11 @@
 #screenSuggest .chip-row:not(#suggestSubtabs) .chip{flex:none;min-height:44px;padding:0 16px;border-radius:22px;font-size:13px;white-space:nowrap;background:var(--surface);border-color:var(--line);color:var(--muted)}
 #screenSuggest .chip-row:not(#suggestSubtabs) .chip.active{background:var(--cyan);border-color:var(--cyan);color:var(--bg)}
 #trackModel{background:var(--surface)!important;color:var(--text)!important;border:1px solid var(--line)!important;border-radius:22px!important;min-height:44px!important;padding:0 16px!important;font-size:13px!important;font-weight:600}
+.sg-hint{align-items:center}.sg-showpast{border:0;background:none;color:var(--cyan);font-size:12px;font-weight:700;min-height:44px;padding:0 6px}
+.sg-past{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:48px;margin-top:12px;padding:0 14px;border-radius:10px;background:var(--surface);border:1px solid var(--line);color:var(--text);font-size:13px;font-weight:700}
 .sg-hdr{display:flex;gap:6px;font-size:12px;color:var(--muted);margin:0 2px 6px}.sg-hdr b{color:var(--text);font-weight:700}
-.sg-slot{display:flex;align-items:center;gap:10px;margin:16px 0 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--lavender);font-weight:700}
+.sg-sl{margin-top:8px}
+.sg-slot{position:sticky;top:calc(58px + env(safe-area-inset-top,0px));z-index:5;background:rgba(6,21,34,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:8px 0;margin:0 0 6px;display:flex;align-items:center;gap:10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--lavender);font-weight:700}
 .sg-slot span{font-size:15px;font-weight:800;letter-spacing:-.3px;color:var(--text);text-transform:none}
 .sg-slot i{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}.sg-slot em{font-style:normal;color:var(--muted);font-weight:600}
 .sgc{background:linear-gradient(180deg,var(--hi) 0,var(--surface) 70%);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px;cursor:pointer;position:relative;box-shadow:inset 0 1px 0 rgba(244,248,252,.06),0 8px 20px -14px #000}
@@ -513,6 +516,7 @@
           <button class="chip active" data-range="1440">24h</button>
           <button class="chip" data-range="2880">48h</button>
           <button class="chip" data-range="tb">Ch&#7881; &ge; TB (0.55)</button>
+          <button class="chip" data-range="hidepast">&#7848;n &#273;&#227; &#273;&aacute;</button>
           <button class="chip" data-range="noamateur" style="margin-left:auto">Lo&#7841;i amateur</button>
         </div>
         <div id="suggestContent" style="margin-top:12px">
@@ -1405,6 +1409,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   try{state.suggestNoAmateur=localStorage.getItem("cfi_suggest_noamateur")==="1"}catch(e){}
   state.suggestTB=false;
   try{state.suggestTB=localStorage.getItem("cfi_suggest_tb")==="1"}catch(e){}
+  state.suggestHidePast=true;state.suggestPastOpen=false;
+  try{state.suggestHidePast=localStorage.getItem("cfi_suggest_hidepast")!=="0"}catch(e){}
+  function suggestIsPast(m){
+    var ls=m.live_status;
+    if(ls==="ft"||ls==="postponed"||ls==="cancelled")return true;
+    if(ls==="live"||ls==="ht"||ls==="ir")return false;
+    var t=Date.parse(m.kickoff);
+    return Number.isFinite(t)&&t<Date.now()-10*60*1000;
+  }
   function suggestTBPass(m){return !state.suggestTB||m.no_stats||m.s_over075_ht==null||Number(m.s_over075_ht)>=0.639}
   function teamTags(name){
     var n=String(name||"").trim(),t=[];
@@ -1459,16 +1472,17 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return t<=now+Number(range)*60*1000;
   }
   function suggestView(range){
-    var total=0;
+    var total=0,hidden=0;
     var slots=(state.suggestData.slots||[]).map(function(sl){
       return {date:sl.date,hour:sl.hour,matches:sl.matches.filter(function(m){
         var base=suggestRangePass(range,m)&&(!state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length));
+        if(base&&state.suggestHidePast&&suggestIsPast(m)){if(suggestTBPass(m))hidden++;return false}
         if(base)total++;
         return base&&suggestTBPass(m);
       })};
     }).filter(function(sl){return sl.matches.length});
     var n=slots.reduce(function(a,sl){return a+sl.matches.length},0);
-    return {slots:slots,n:n,total:total};
+    return {slots:slots,n:n,total:total,hidden:hidden};
   }
   function renderSuggestFromCache(autoExpand){
     if(!state.suggestData)return;
@@ -1480,11 +1494,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
     document.querySelectorAll("#suggestChips .chip").forEach(function(c){
       var d=c.dataset.range;
-      c.classList.toggle("active",d==="noamateur"?state.suggestNoAmateur:d==="tb"?state.suggestTB:d===state.suggestFilter);
+      c.classList.toggle("active",d==="noamateur"?state.suggestNoAmateur:d==="tb"?state.suggestTB:d==="hidepast"?state.suggestHidePast:d===state.suggestFilter);
     });
-    var sig=state.suggestFilter+"|"+state.suggestTB+"|"+state.suggestNoAmateur,keep=sig===suggestSig,y=window.scrollY;
+    var sig=state.suggestFilter+"|"+state.suggestTB+"|"+state.suggestNoAmateur+"|"+state.suggestHidePast,keep=sig===suggestSig,y=window.scrollY;
     if(!keep){suggestSig=sig;state.suggestShown=10}
-    $("suggestContent").innerHTML=renderSuggestHtml({slots:view.slots,total:view.total});
+    $("suggestContent").innerHTML=renderSuggestHtml({slots:view.slots,total:view.total,hidden:view.hidden});
     if(keep)window.scrollTo(0,y);
   }
 
@@ -1527,19 +1541,26 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         return !state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length);
       }).sort(function(a,b){return (a.no_stats?1:0)-(b.no_stats?1:0)||(Number(b.s_over075_ht)||0)-(Number(a.s_over075_ht)||0)})};
     }).filter(function(sl){return sl.matches.length});
-    if(!slots.length){
-      return '<div class="context-state">Không có trận nào thỏa ngưỡng trong khung này.</div>';
+    var nSlots=slots.length,pastSlots=[];
+    if(!state.suggestHidePast){
+      pastSlots=slots.map(function(sl){return {date:sl.date,hour:sl.hour,past:true,matches:sl.matches.filter(suggestIsPast)}}).filter(function(sl){return sl.matches.length});
+      slots=slots.map(function(sl){return {date:sl.date,hour:sl.hour,matches:sl.matches.filter(function(m){return !suggestIsPast(m)})}}).filter(function(sl){return sl.matches.length});
+    }
+    var hint=state.suggestHidePast&&data.hidden>0?'<div class="sg-hdr sg-hint"><span>Đã ẩn '+data.hidden+' trận</span><span>·</span><button type="button" class="sg-showpast">Hiện</button></div>':"";
+    if(!slots.length&&!pastSlots.length){
+      return hint+'<div class="context-state">Không có trận nào thỏa ngưỡng trong khung này.</div>';
     }
     var shown=slots.reduce(function(a,sl){return a+sl.matches.length},0);
-    var countTxt=state.suggestTB&&data.total!=null?shown+' / '+data.total+' trận':shown+' trận';
-    var html='<div class="sg-hdr"><span>Tổng</span><b>'+countTxt+'</b><span>/ '+slots.length+' khung giờ</span></div>';
-    var limit=state.suggestShown,rendered=0;
-    slots.forEach(function(slot){
-      if(rendered>=limit)return;
-      html+='<div class="sg-slot"><span>'+esc(slot.hour)+'</span><i></i><em>'+esc(slot.date)+' · '+slot.matches.length+' trận</em></div>';
+    var pastN=pastSlots.reduce(function(a,sl){return a+sl.matches.length},0),allN=shown+pastN;
+    var countTxt=state.suggestTB&&data.total!=null?allN+' / '+data.total+' trận':allN+' trận';
+    var html='<div class="sg-hdr"><span>Tổng</span><b>'+countTxt+'</b><span>/ '+nSlots+' khung giờ</span></div>'+hint;
+    var limit=state.suggestShown,rendered=0,uid=0;
+    function emitSlot(slot){
+      if(!slot.past&&rendered>=limit)return;
+      html+='<div class="sg-sl"><div class="sg-slot"><span>'+esc(slot.hour)+'</span><i></i><em>'+esc(slot.date)+' · '+slot.matches.length+' trận</em></div>';
       slot.matches.forEach(function(m){
-        if(rendered>=limit)return;
-        rendered++;
+        if(!slot.past&&rendered>=limit)return;
+        if(!slot.past)rendered++;
         var probs="";
         ["3+ HT","Other FT","Other HT","7+ FT"].forEach(function(mk){
           var p=m.probs&&m.probs[mk];
@@ -1561,13 +1582,24 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         }
         var compName=m.competition?'<span class="suggest-comp sgcomp" translate="no">'+esc(m.competition)+'</span>':"";
         var lv=(m.live_status==="live"||m.live_status==="ht")&&Date.parse(m.kickoff)<=Date.now();
-        html+='<div class="suggest-card sgc'+(lv?' lv':'')+(m.no_stats&&!m.market_odds?' dim':'')+'" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'"><div class="sgm'+(m.no_stats?' one':'')+'"><div class="sgi"><div class="sgr1">'+timeBadge+tierBadge+compName+'</div><div class="sgt">'+sgMono(m.home)+'<span class="n"><span translate="no">'+esc(m.home)+'</span>'+tagBadges(m.home)+'</span></div><div class="sgt">'+sgMono(m.away)+'<span class="n"><span translate="no">'+esc(m.away)+'</span>'+tagBadges(m.away)+'</span></div></div>'+sgRingHtml(m,"sgg"+rendered)+'</div>'+suggestBodyHtml(m,{probs:probs,flagsHtml:flagsHtml,compLine:compLine,star:bmStarHtml({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,tier:bmTierKey(m.s_over075_ht),top_market:m.top_market})})+'</div>';
+        html+='<div class="suggest-card sgc'+(lv?' lv':'')+(m.no_stats&&!m.market_odds?' dim':'')+'" data-home="'+esc(m.home)+'" data-away="'+esc(m.away)+'" data-date="'+esc(m.date||slot.date)+'"><div class="sgm'+(m.no_stats?' one':'')+'"><div class="sgi"><div class="sgr1">'+timeBadge+tierBadge+compName+'</div><div class="sgt">'+sgMono(m.home)+'<span class="n"><span translate="no">'+esc(m.home)+'</span>'+tagBadges(m.home)+'</span></div><div class="sgt">'+sgMono(m.away)+'<span class="n"><span translate="no">'+esc(m.away)+'</span>'+tagBadges(m.away)+'</span></div></div>'+sgRingHtml(m,"sgg"+(uid++))+'</div>'+suggestBodyHtml(m,{probs:probs,flagsHtml:flagsHtml,compLine:compLine,star:bmStarHtml({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,tier:bmTierKey(m.s_over075_ht),top_market:m.top_market})})+'</div>';
       });
-    });
+      html+='</div>';
+    }
+    slots.forEach(emitSlot);
     if(shown>rendered){var rem=shown-rendered,nn=Math.min(10,rem);html+='<button type="button" class="chip sg-more">Hiện thêm '+nn+' trận<small>('+rem+' còn lại)</small></button>'}
+    if(pastN){
+      var po=!!state.suggestPastOpen;
+      html+='<button type="button" class="sg-past" aria-expanded="'+(po?'true':'false')+'"><span>Đã đá ('+pastN+')</span><span>'+(po?'▾':'▸')+'</span></button>';
+      if(po)pastSlots.forEach(emitSlot);
+    }
     return html;
   }
-  $("suggestContent").addEventListener("click",function(e){if(e.target.closest(".sg-more")){e.stopPropagation();sgMore()}});
+  $("suggestContent").addEventListener("click",function(e){
+    if(e.target.closest(".sg-more")){e.stopPropagation();sgMore();return}
+    if(e.target.closest(".sg-showpast")){e.stopPropagation();state.suggestHidePast=false;try{localStorage.setItem("cfi_suggest_hidepast","0")}catch(x){}renderSuggestFromCache(false);return}
+    if(e.target.closest(".sg-past")){e.stopPropagation();state.suggestPastOpen=!state.suggestPastOpen;renderSuggestFromCache(false)}
+  });
 
   document.querySelectorAll("#suggestChips .chip").forEach(function(btn){
     btn.onclick=function(){
@@ -1578,6 +1610,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       }else if(r==="tb"){
         state.suggestTB=!state.suggestTB;
         try{localStorage.setItem("cfi_suggest_tb",state.suggestTB?"1":"0")}catch(e){}
+      }else if(r==="hidepast"){
+        state.suggestHidePast=!state.suggestHidePast;
+        try{localStorage.setItem("cfi_suggest_hidepast",state.suggestHidePast?"1":"0")}catch(e){}
       }else state.suggestFilter=r;
       renderSuggestFromCache(false);
     };
