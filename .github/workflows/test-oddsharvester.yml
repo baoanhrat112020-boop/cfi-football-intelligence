@@ -1,0 +1,101 @@
+name: Test OddsHarvester (GHA)
+
+on:
+  push:
+    branches: [test/gha-oddsharvester]
+    paths: ['.github/workflows/test-oddsharvester.yml']
+  workflow_dispatch:
+    inputs:
+      league:
+        description: OddsHarvester league slug
+        default: spain-laliga2
+      hours:
+        description: Only matches kicking off within N hours
+        default: '72'
+
+permissions:
+  contents: read
+
+jobs:
+  scrape-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LEAGUE: ${{ inputs.league || 'spain-laliga2' }}
+      HOURS: ${{ inputs.hours || '72' }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OddsHarvester and Chromium
+        shell: bash
+        run: |
+          python --version
+          pip install oddsharvester
+          pip show oddsharvester | head -3
+          playwright install --with-deps chromium
+
+      - name: Scrape FT (1x2 + over_under + asian_handicap)
+        shell: bash
+        run: |
+          set +e
+          mkdir -p out
+          start=$(date +%s)
+          timeout 840 oddsharvester upcoming -s football -l "$LEAGUE" \
+            --kickoff-within-hours "$HOURS" -m 1x2,over_under,asian_handicap \
+            --concurrency 2 --headless -f json -o out/ft.json > out/ft.log 2>&1
+          rc=$?
+          echo "ft_exit=$rc elapsed=$(( $(date +%s) - start ))s"
+          echo "--- head ---"; head -50 out/ft.log
+          echo "--- tail ---"; tail -50 out/ft.log
+          ls -la out/
+
+      - name: Scrape HT (--period 1st_half, same markets)
+        shell: bash
+        run: |
+          set +e
+          start=$(date +%s)
+          timeout 840 oddsharvester upcoming -s football -l "$LEAGUE" \
+            --kickoff-within-hours "$HOURS" -m over_under,asian_handicap \
+            --period 1st_half --concurrency 2 --headless -f json -o out/ht.json > out/ht.log 2>&1
+          rc=$?
+          echo "ht_exit=$rc elapsed=$(( $(date +%s) - start ))s"
+          echo "--- head ---"; head -50 out/ht.log
+          echo "--- tail ---"; tail -50 out/ht.log
+          ls -la out/
+
+      - name: Summarize output format
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          for name in ("ft", "ht"):
+              path = f"out/{name}.json"
+              print(f"=== {name} ===")
+              if not os.path.exists(path):
+                  print("no output file")
+                  continue
+              try:
+                  data = json.load(open(path, encoding="utf-8"))
+              except Exception as e:
+                  print("not valid JSON:", e)
+                  continue
+              rows = data if isinstance(data, list) else data.get("matches") or data.get("data") or [data]
+              print("type:", type(data).__name__, "matches:", len(rows))
+              if not rows:
+                  continue
+              first = rows[0]
+              print("first match keys:", sorted(first.keys()) if isinstance(first, dict) else type(first))
+              counts = {}
+              for m in rows:
+                  if not isinstance(m, dict):
+                      continue
+                  for k, v in m.items():
+                      if isinstance(v, (list, dict)):
+                          counts[k] = counts.get(k, 0) + (len(v) if v else 0)
+              print("nested entries per key (summed over matches):", counts)
+              print("sample (first match, truncated):")
+              print(json.dumps(first, ensure_ascii=False)[:1500])
+          PY
