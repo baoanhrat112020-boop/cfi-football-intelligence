@@ -17,6 +17,8 @@ TIME_WINDOW = timedelta(hours=4)
 HT_LINES = {0.5, 0.75, 1.0, 1.25, 1.5}
 FT_LINES = {1.5, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5}
 BOOK_PRIORITY = ("pinnacle", "bet365", "bwin", "unibet", "betfair", "williamhill", "1xbet")
+FT_NEEDS = (("OVER_UNDER", "FT"), ("ASIAN_HANDICAP", "FT"), ("1X2", "FT"))
+HT_NEEDS = (("OVER_UNDER", "HT"), ("ASIAN_HANDICAP", "HT"))
 PERIOD_CODE = {"full_time": "FT", "1st_half": "HT"}
 MARKETS = {"full_time": "1x2,over_under,asian_handicap", "1st_half": "over_under,asian_handicap"}
 LINK = re.compile(r"/football/h2h/([^/]+)/([^/#?]+)")
@@ -110,6 +112,9 @@ def match_targets(picks, rows):
                 "away": p["away"],
                 "kickoff_utc": fmt_utc(p["kickoff_utc"]),
                 "tier": p.get("tier"),
+                "need_ft": p.get("need_ft", True),
+                "need_ht": p.get("need_ht", True),
+                "missing": p.get("missing", []),
                 "match_link": best[1],
             })
     return out
@@ -167,29 +172,29 @@ def fetch_picks(sb_url, key, now, hours, tiers):
 
 
 def fetch_coverage(sb_url, key, ids):
-    seen = {}
-    for i in range(0, len(ids), 40):
-        chunk = ids[i:i + 40]
-        path = "match_odds?select=verified_fixture_id,last_seen_at&source=eq.%s&verified_fixture_id=in.(%s)&limit=1000" % (SOURCE, ",".join(chunk))
+    have = {}
+    for i in range(0, len(ids), 25):
+        chunk = ids[i:i + 25]
+        path = "match_odds?select=verified_fixture_id,market_family,period&verified_fixture_id=in.(%s)&limit=1000" % ",".join(chunk)
         for r in sb_request(sb_url, key, "GET", path) or []:
-            t = parse_utc(r.get("last_seen_at"))
-            fid = r["verified_fixture_id"]
-            if t is not None and (fid not in seen or t > seen[fid]):
-                seen[fid] = t
-    return seen
+            have.setdefault(r["verified_fixture_id"], set()).add((r["market_family"], r["period"]))
+    return have
 
 
-def prioritize(picks, coverage, refresh_hours, now):
-    fresh = timedelta(hours=refresh_hours)
-    need, stale = [], []
+def prioritize(picks, have):
+    out = []
     for p in picks:
-        t = coverage.get(p["fixture_id"])
-        if t is None:
-            need.append(p)
-        elif now - t > fresh:
-            stale.append(p)
-    by_kickoff = lambda p: p["kickoff_utc"]
-    return sorted(need, key=by_kickoff) + sorted(stale, key=by_kickoff), len(need), len(stale)
+        got = have.get(p["fixture_id"], set())
+        miss_ft = [k for k in FT_NEEDS if k not in got]
+        miss_ht = [k for k in HT_NEEDS if k not in got]
+        if not miss_ft and not miss_ht:
+            continue
+        q = dict(p)
+        q["need_ft"] = bool(miss_ft)
+        q["need_ht"] = bool(miss_ht)
+        q["missing"] = ["%s/%s" % k for k in miss_ft + miss_ht]
+        out.append(q)
+    return sorted(out, key=lambda p: p["kickoff_utc"])
 
 
 def run_cmd(cmd, log_path, timeout_s):
@@ -238,9 +243,17 @@ def cmd_plan(args):
     workdir.mkdir(parents=True, exist_ok=True)
     tiers = [t.strip() for t in args.tiers.split(",") if t.strip()]
     picks = fetch_picks(sb_url, key, now, args.hours, tiers)
-    coverage = fetch_coverage(sb_url, key, [p["fixture_id"] for p in picks])
-    ordered, need, stale = prioritize(picks, coverage, args.refresh_hours, now)
-    stats = {"picks": len(picks), "need": need, "stale": stale, "links": 0, "matched": 0, "selected": 0}
+    have = fetch_coverage(sb_url, key, [p["fixture_id"] for p in picks])
+    ordered = prioritize(picks, have)
+    stats = {
+        "picks": len(picks),
+        "gaps": len(ordered),
+        "need_ft": sum(1 for p in ordered if p["need_ft"]),
+        "need_ht": sum(1 for p in ordered if p["need_ht"]),
+        "links": 0,
+        "matched": 0,
+        "selected": 0,
+    }
     targets = []
     if ordered:
         end = now + timedelta(hours=args.hours)
@@ -254,7 +267,7 @@ def cmd_plan(args):
         for line in unmatched_report(ordered, matched, rows):
             print(line)
     for t in targets[:12]:
-        print("target %s | %s - %s | %s | %s" % (t["kickoff_utc"], t["home"], t["away"], t["tier"], t["match_link"]))
+        print("target %s | %s - %s | %s | missing=%s | %s" % (t["kickoff_utc"], t["home"], t["away"], t["tier"], ",".join(t["missing"]), t["match_link"]))
     print("plan " + json.dumps(stats))
     Path(args.out).write_text(json.dumps({"generated_at": fmt_utc(now), "stats": stats, "targets": targets}, ensure_ascii=False), encoding="utf-8")
     gh_out = os.environ.get("GITHUB_OUTPUT")
@@ -393,7 +406,8 @@ def cmd_scrape(args):
     period = args.period
     code_p = PERIOD_CODE[period]
     plan = json.loads(Path(args.targets).read_text(encoding="utf-8"))
-    by_link = {t["match_link"]: t for t in plan.get("targets", [])}
+    flag = "need_ft" if period == "full_time" else "need_ht"
+    by_link = {t["match_link"]: t for t in plan.get("targets", []) if t.get(flag, True)}
     workdir = Path(args.workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     sb_url = key = None
@@ -454,7 +468,6 @@ def main():
     p = sub.add_parser("plan")
     p.add_argument("--hours", type=float, default=12)
     p.add_argument("--tiers", default="CAO,KHA,TB")
-    p.add_argument("--refresh-hours", type=float, default=3)
     p.add_argument("--max-matches", type=int, default=60)
     p.add_argument("--out", default="targets.json")
     p.add_argument("--workdir", default="work")
