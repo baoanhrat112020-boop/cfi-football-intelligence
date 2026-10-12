@@ -1,0 +1,124 @@
+name: Test OddsHarvester HT only
+
+on:
+  push:
+    branches: [test/gha-oddsharvester]
+    paths: ['.github/workflows/test-oddsharvester-ht.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-oddsharvester-ht
+  cancel-in-progress: true
+
+jobs:
+  ht_clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OddsHarvester and Chromium
+        shell: bash
+        run: |
+          set -eo pipefail
+          pip install oddsharvester
+          pip show oddsharvester | sed -n 1,3p
+          playwright install --with-deps chromium
+          mkdir -p out
+
+      - name: Probe league page
+        shell: bash
+        run: |
+          set -eo pipefail
+          echo "runner ip: $(curl -sS -m 10 https://api.ipify.org || echo unknown)"
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          echo "--- HEAD ---"
+          curl -sSI -m 25 -A "$UA" https://www.oddsportal.com/football/spain/laliga2/ | head -12 || true
+          code=$(curl -sS -m 25 -A "$UA" -o /dev/null -w '%{http_code}' https://www.oddsportal.com/football/spain/laliga2/ || echo curl_failed)
+          echo "probe_get=$code"
+
+      - name: Scrape HT only (period 1st_half, today UTC)
+        shell: bash
+        run: |
+          set -eo pipefail
+          rc=0
+          D=$(date -u +%Y%m%d)
+          echo "date_arg=$D"
+          timeout 1500 oddsharvester upcoming -s football -l spain-laliga2 \
+            -d "$D" --period 1st_half \
+            -m 1x2,asian_handicap,over_under \
+            --headless -f json -o out/ht.json > out/ht.stdout.log 2> out/ht.stderr.log || rc=$?
+          echo "ht_exit=$rc"
+          echo "=== stdout head 30 ==="; head -30 out/ht.stdout.log
+          echo "=== stderr tail 30 ===";  tail -30 out/ht.stderr.log
+          ls -la out/
+          exit 0
+
+      - name: Upload logs and JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oddsharvester-ht-logs
+          path: out/
+          retention-days: 3
+          if-no-files-found: warn
+
+      - name: RESULT summary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, re
+          def read(p):
+              try:
+                  return open(p, encoding="utf-8", errors="replace").read()
+              except Exception:
+                  return ""
+          out, err = read("out/ht.stdout.log"), read("out/ht.stderr.log")
+          both = out + "\n" + err
+          print("## RESULT (HT only, clean job)")
+          m = re.findall(r"Found (\d+) event rows", both)
+          print("event rows found on league page:", m[-1] if m else "n/a")
+          m = re.findall(r"Successfully scraped (\d+) matches \((\d+) failed", both)
+          print("scraped/failed:", m[-1] if m else "no summary line")
+          m2 = re.findall(r"Scraping completed: (.*)", both)
+          print("scraper summary:", m2[-1] if m2 else "n/a")
+          rl = re.findall(r"rate limited by OddsPortal: HTTP 429 on (\d+) request", both)
+          print("rate-limited matches:", len(rl), "| 429 requests (sum):", sum(int(x) for x in rl))
+          print("lines containing '429':", sum(1 for l in both.splitlines() if "429" in l))
+          print("ERR_HTTP_RESPONSE_CODE_FAILURE lines:", both.count("ERR_HTTP_RESPONSE_CODE_FAILURE"))
+          path = "out/ht.json"
+          if not os.path.exists(path):
+              print("no ht.json output")
+          else:
+              try:
+                  data = json.load(open(path, encoding="utf-8"))
+              except Exception as e:
+                  print("invalid json:", e)
+                  data = []
+              rows = data if isinstance(data, list) else [data]
+              print("matches in json:", len(rows))
+              periods, books, ou, ah, x12 = set(), set(), 0, 0, 0
+              for r in rows:
+                  if not isinstance(r, dict):
+                      continue
+                  for k, v in r.items():
+                      if k.endswith("_market") and isinstance(v, list) and v:
+                          if k.startswith("over_under"): ou += 1
+                          if k.startswith("asian_handicap"): ah += 1
+                          if k.startswith("1x2"): x12 += 1
+                          for e in v:
+                              if isinstance(e, dict):
+                                  periods.add(e.get("period"))
+                                  books.add(e.get("bookmaker_name"))
+              print("distinct period values:", sorted(map(str, periods)))
+              print("non-empty markets: OU", ou, "| AH", ah, "| 1x2", x12)
+              print("bookmakers:", sorted(map(str, books))[:12])
+              for r in rows[:6]:
+                  if isinstance(r, dict):
+                      print("  -", r.get("match_date"), r.get("home_team"), "-", r.get("away_team"))
+          PY
