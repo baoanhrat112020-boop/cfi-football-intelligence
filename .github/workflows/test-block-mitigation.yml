@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [headless, headed, headed_winua]
+        variant: [headed, headed_winua]
         replica: [1, 2]
     env:
       VARIANT: ${{ matrix.variant }}
@@ -74,7 +74,8 @@ jobs:
               if now < dt < now + timedelta(hours=24):
                   keep.append((dt, r["match_link"]))
           keep.sort()
-          open("out/l.txt", "w").write("\n".join(l for _, l in keep[:6]) + "\n")
+          if keep:
+              open("out/l.txt", "w").write("\n".join(l for _, l in keep[:6]) + "\n")
           print("links rows:", len(rows), "selected:", min(6, len(keep)))
           PY
           if [ -s out/l.txt ]; then
@@ -100,6 +101,8 @@ jobs:
                 "| ERR_HTTP lines:", (links + ft).count("ERR_HTTP_RESPONSE_CODE_FAILURE"),
                 "| links_found:", (re.findall(r"Collected (\d+) unique links", links) or ["n/a"])[-1])
           PY
+          echo "=== links.log tail ==="; tail -25 out/links.log 2>/dev/null | cut -c1-260
+          echo "=== ft.log tail ==="; tail -25 out/ft.log 2>/dev/null | cut -c1-260
           exit 0
 
       - uses: actions/upload-artifact@v4
