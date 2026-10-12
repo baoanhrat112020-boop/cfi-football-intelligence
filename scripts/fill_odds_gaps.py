@@ -81,12 +81,33 @@ def pair_score(nh, na, ta, tb):
     return best
 
 
+def estimate_offset(picks, cands):
+    votes = {}
+    for p in picks:
+        nh, na = norm(p["home"]), norm(p["away"])
+        for link, (ta, tb), ko in cands:
+            if ko is None or pair_score(nh, na, ta, tb) is None:
+                continue
+            step = round((ko - p["kickoff_utc"]).total_seconds() / 900)
+            votes[step] = votes.get(step, 0) + 1
+    if not votes:
+        return timedelta(0)
+    step, count = max(votes.items(), key=lambda kv: kv[1])
+    if step == 0 or count < 2 or abs(step) > 104:
+        return timedelta(0)
+    return timedelta(seconds=step * 900)
+
+
 def match_targets(picks, rows):
     cands = []
     for r in rows:
         teams = link_teams(r.get("match_link"))
         if teams is not None:
             cands.append((r["match_link"], teams, parse_utc(r.get("kickoff_utc"))))
+    offset = estimate_offset(picks, cands)
+    if offset:
+        print("kickoff offset applied: %s" % offset)
+        cands = [(l, t, ko - offset if ko is not None else None) for l, t, ko in cands]
     used = set()
     out = []
     for p in picks:
