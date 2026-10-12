@@ -1,0 +1,112 @@
+name: Fill Odds Gaps (OddsPortal)
+
+on:
+  push:
+    branches: [test/gha-oddsharvester]
+    paths:
+      - '.github/workflows/fill-odds-gaps.yml'
+      - 'scripts/fill_odds_gaps.py'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Scrape and parse but do not write to the database
+        type: boolean
+        default: true
+      hours:
+        description: Kickoff window in hours
+        default: '12'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fill-odds-gaps
+  cancel-in-progress: false
+
+env:
+  SB_URL: https://zbwkowqluwuvsnajkuvc.supabase.co
+  DRY_RUN: ${{ (github.event_name == 'push' || inputs.dry_run) && 'true' || 'false' }}
+  HOURS: ${{ inputs.hours || '12' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install OddsHarvester and Chromium
+        run: |
+          pip install oddsharvester
+          playwright install --with-deps chromium
+      - name: Plan targets
+        id: plan
+        shell: bash
+        env:
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/fill_odds_gaps.py plan --hours "$HOURS" --out targets.json --workdir work | tee plan.log
+          grep -E '^plan ' plan.log >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Harvester log tail
+        if: always()
+        shell: bash
+        run: tail -40 work/links.log 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fill-odds-plan
+          path: |
+            targets.json
+            work/
+          retention-days: 3
+          if-no-files-found: warn
+
+  scrape:
+    needs: plan
+    if: needs.plan.outputs.count != '0' && needs.plan.outputs.count != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        period: [full_time, 1st_half]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install OddsHarvester and Chromium
+        run: |
+          pip install oddsharvester
+          playwright install --with-deps chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: fill-odds-plan
+          path: plan
+      - name: Scrape ${{ matrix.period }}
+        shell: bash
+        env:
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          EXTRA=""
+          if [ "$DRY_RUN" = "true" ]; then EXTRA="--dry-run"; fi
+          python scripts/fill_odds_gaps.py scrape --period "${{ matrix.period }}" --targets plan/targets.json --budget-min 85 --workdir work $EXTRA | tee scrape.log
+          echo "### ${{ matrix.period }} (dry_run=$DRY_RUN)" >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(result|ok) ' scrape.log >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Harvester log tail
+        if: always()
+        shell: bash
+        run: tail -60 work/scrape_${{ matrix.period }}.log 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fill-odds-scrape-${{ matrix.period }}
+          path: |
+            scrape.log
+            work/
+          retention-days: 3
+          if-no-files-found: warn
