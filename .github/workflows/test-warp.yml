@@ -1,0 +1,133 @@
+name: Test Cloudflare WARP proxy (OddsPortal)
+
+on:
+  push:
+    branches: [test/gha-oddsharvester]
+    paths: ['.github/workflows/test-warp.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-warp
+  cancel-in-progress: true
+
+jobs:
+  variant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [direct_headed, warp_headed, warp_headless]
+        replica: [1, 2]
+    env:
+      MODE_NAME: ${{ matrix.mode }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OddsHarvester, Chromium and Xvfb
+        shell: bash
+        run: |
+          set -eo pipefail
+          pip install oddsharvester
+          playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+
+      - name: Start Cloudflare WARP in proxy mode
+        if: startsWith(matrix.mode, 'warp')
+        shell: bash
+        run: |
+          set +e
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ noble main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cloudflare-warp
+          sudo systemctl start warp-svc
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            warp-cli --accept-tos status 2>&1 | head -3 && break
+            sleep 2
+          done
+          warp-cli --accept-tos registration new 2>&1 | head -5
+          warp-cli --accept-tos mode proxy 2>&1 | head -3
+          warp-cli --accept-tos connect 2>&1 | head -3
+          sleep 8
+          warp-cli --accept-tos status 2>&1 | head -5
+          echo "warp egress ip: $(curl -sS -m 15 -x socks5h://127.0.0.1:40000 https://api.ipify.org || echo failed)"
+          echo "warp trace:"; curl -sS -m 15 -x socks5h://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace 2>&1 | grep -E '^(ip|colo|loc|warp)=' || true
+          exit 0
+
+      - name: Links for tomorrow, then scrape up to 6 matches
+        shell: bash
+        run: |
+          set +e
+          mkdir -p out
+          echo "mode=$MODE_NAME replica=${{ matrix.replica }} direct_ip=$(curl -sS -m 10 https://api.ipify.org)"
+          D=$(date -u -d '+1 day' +%Y%m%d)
+          PREFIX="xvfb-run -a"
+          MODE="--no-headless"
+          PROXYARG=()
+          case "$MODE_NAME" in
+            warp_headed) PROXYARG=(--proxy-url socks5://127.0.0.1:40000) ;;
+            warp_headless) PREFIX=""; MODE="--headless"; PROXYARG=(--proxy-url socks5://127.0.0.1:40000) ;;
+          esac
+          $PREFIX oddsharvester upcoming -s football -d "$D" --links-only $MODE "${PROXYARG[@]}" -f json -o out/links.json > out/links.log 2>&1
+          echo "links_exit=$? date=$D"
+          python - <<'PY'
+          import json
+          from datetime import datetime, timedelta, timezone
+          try:
+              rows = json.load(open("out/links.json", encoding="utf-8"))
+          except Exception as e:
+              rows = []
+              print("links json error:", e)
+          keep = []
+          for r in rows:
+              k = str(r.get("kickoff_utc") or "").replace(" UTC", "").replace("Z", "+00:00")
+              try:
+                  dt = datetime.fromisoformat(k)
+                  dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+              except ValueError:
+                  continue
+              keep.append((dt, r["match_link"]))
+          keep.sort()
+          if keep:
+              open("out/l.txt", "w").write("\n".join(l for _, l in keep[:6]) + "\n")
+          print("links rows:", len(rows), "selected:", min(6, len(keep)))
+          PY
+          if [ -s out/l.txt ]; then
+            $PREFIX oddsharvester upcoming -s football --match-links-file out/l.txt --period full_time \
+              -m 1x2,over_under,asian_handicap --concurrency 2 --request-delay 2 $MODE "${PROXYARG[@]}" \
+              -f json -o out/ft.json > out/ft.log 2>&1
+            echo "ft_exit=$?"
+          fi
+          python - <<'PY'
+          import re
+          def read(p):
+              try:
+                  return open(p, encoding="utf-8", errors="replace").read()
+              except Exception:
+                  return ""
+          links, ft = read("out/links.log"), read("out/ft.log")
+          m = re.findall(r"Successfully scraped (\d+) matches \((\d+) failed", ft)
+          rl = re.findall(r"HTTP 429 on (\d+) request", ft)
+          print("VARIANT_RESULT scraped/failed:", m[-1] if m else "none",
+                "| 429_matches:", len(rl),
+                "| ERR_HTTP lines:", (links + ft).count("ERR_HTTP_RESPONSE_CODE_FAILURE"),
+                "| links_found:", (re.findall(r"Collected (\d+) unique links", links) or ["n/a"])[-1],
+                "| proxy_errors:", len(re.findall(r"(?i)proxy|ERR_PROXY|ERR_TUNNEL|ERR_SOCKS", links + ft)))
+          PY
+          echo "=== links.log tail ==="; tail -12 out/links.log 2>/dev/null | cut -c1-240
+          echo "=== ft.log tail ==="; tail -12 out/ft.log 2>/dev/null | cut -c1-240
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: warp-test-${{ matrix.mode }}-${{ matrix.replica }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: warn
