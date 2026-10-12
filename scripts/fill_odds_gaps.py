@@ -218,13 +218,18 @@ def load_json_list(path):
     return data if isinstance(data, list) else [data]
 
 
+def proxy_args():
+    url = os.environ.get("PROXY_URL", "").strip()
+    return ["--proxy-url", url] if url else []
+
+
 def collect_links(dates, workdir, attempts=2):
     rows = []
     for day in dates:
         out = str(workdir / ("links_%s.json" % day))
         for attempt in range(attempts):
             Path(out).unlink(missing_ok=True)
-            cmd = ["oddsharvester", "upcoming", "-s", "football", "-d", day, "--links-only", "--headless", "-f", "json", "-o", out]
+            cmd = ["oddsharvester", "upcoming", "-s", "football", "-d", day, "--links-only", "--headless", "-f", "json", "-o", out] + proxy_args()
             code = run_cmd(cmd, str(workdir / "links.log"), 900)
             got = load_json_list(out)
             print("links date=%s attempt=%d exit=%s rows=%d" % (day, attempt + 1, code, len(got)))
@@ -397,7 +402,7 @@ def scrape_chunk(links, period, workdir, tag, timeout_s):
         "oddsharvester", "upcoming", "-s", "football", "--match-links-file", str(links_file),
         "--period", period, "-m", MARKETS[period], "--concurrency", "2", "--request-delay", "2",
         "--headless", "-f", "json", "-o", out,
-    ]
+    ] + proxy_args()
     code = run_cmd(cmd, str(workdir / ("scrape_%s.log" % period)), timeout_s)
     return code, load_json_list(out)
 
