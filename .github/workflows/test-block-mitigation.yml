@@ -1,0 +1,111 @@
+name: Test block mitigation (OddsPortal)
+
+on:
+  push:
+    branches: [test/gha-oddsharvester]
+    paths: ['.github/workflows/test-block-mitigation.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-block-mitigation
+  cancel-in-progress: true
+
+jobs:
+  variant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [headless, headed, headed_winua]
+        replica: [1, 2]
+    env:
+      VARIANT: ${{ matrix.variant }}
+      WINUA: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36'
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OddsHarvester, Chromium and Xvfb
+        shell: bash
+        run: |
+          set -eo pipefail
+          pip install oddsharvester
+          playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+
+      - name: Links, then scrape up to 6 matches
+        shell: bash
+        run: |
+          set +e
+          mkdir -p out
+          echo "variant=$VARIANT replica=${{ matrix.replica }} ip=$(curl -sS -m 10 https://api.ipify.org)"
+          D=$(date -u +%Y%m%d)
+          PREFIX=""
+          MODE="--headless"
+          UAARG=()
+          case "$VARIANT" in
+            headed) PREFIX="xvfb-run -a"; MODE="--no-headless" ;;
+            headed_winua) PREFIX="xvfb-run -a"; MODE="--no-headless"; UAARG=(--user-agent "$WINUA") ;;
+          esac
+          $PREFIX oddsharvester upcoming -s football -d "$D" --links-only $MODE "${UAARG[@]}" -f json -o out/links.json > out/links.log 2>&1
+          echo "links_exit=$?"
+          python - <<'PY'
+          import json
+          from datetime import datetime, timedelta, timezone
+          try:
+              rows = json.load(open("out/links.json", encoding="utf-8"))
+          except Exception as e:
+              rows = []
+              print("links json error:", e)
+          now = datetime.now(timezone.utc)
+          keep = []
+          for r in rows:
+              k = str(r.get("kickoff_utc") or "").replace(" UTC", "").replace("Z", "+00:00")
+              try:
+                  dt = datetime.fromisoformat(k)
+                  dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+              except ValueError:
+                  continue
+              if now < dt < now + timedelta(hours=24):
+                  keep.append((dt, r["match_link"]))
+          keep.sort()
+          open("out/l.txt", "w").write("\n".join(l for _, l in keep[:6]) + "\n")
+          print("links rows:", len(rows), "selected:", min(6, len(keep)))
+          PY
+          if [ -s out/l.txt ]; then
+            $PREFIX oddsharvester upcoming -s football --match-links-file out/l.txt --period full_time \
+              -m 1x2,over_under,asian_handicap --concurrency 2 --request-delay 2 $MODE "${UAARG[@]}" \
+              -f json -o out/ft.json > out/ft.log 2>&1
+            echo "ft_exit=$?"
+          fi
+          python - <<'PY'
+          import re
+          def read(p):
+              try:
+                  return open(p, encoding="utf-8", errors="replace").read()
+              except Exception:
+                  return ""
+          links, ft = read("out/links.log"), read("out/ft.log")
+          m = re.findall(r"Successfully scraped (\d+) matches \((\d+) failed", ft)
+          home_fail = len(re.findall(r"ERR_HTTP_RESPONSE_CODE_FAILURE at https://www\.oddsportal\.com/(?:\s|$)", links + ft))
+          rl = re.findall(r"HTTP 429 on (\d+) request", ft)
+          print("VARIANT_RESULT scraped/failed:", m[-1] if m else "none",
+                "| homepage_goto_fail:", home_fail,
+                "| 429_matches:", len(rl),
+                "| ERR_HTTP lines:", (links + ft).count("ERR_HTTP_RESPONSE_CODE_FAILURE"),
+                "| links_found:", (re.findall(r"Collected (\d+) unique links", links) or ["n/a"])[-1])
+          PY
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: block-test-${{ matrix.variant }}-${{ matrix.replica }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: warn
