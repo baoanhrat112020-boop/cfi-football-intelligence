@@ -115,6 +115,39 @@ def match_targets(picks, rows):
     return out
 
 
+def unmatched_report(picks, targets, rows, limit=30):
+    got = {t["fixture_id"] for t in targets}
+    cands = []
+    for r in rows:
+        teams = link_teams(r.get("match_link"))
+        if teams is not None:
+            cands.append((teams, parse_utc(r.get("kickoff_utc"))))
+    pool = sorted({t for (ta, tb), _ in cands for t in (ta, tb)})
+    lines = []
+    for p in picks:
+        if p["fixture_id"] in got:
+            continue
+        nh, na = norm(p["home"]), norm(p["away"])
+        best = None
+        for (ta, tb), ko in cands:
+            score = pair_score(nh, na, ta, tb)
+            if score is not None and (best is None or score > best[0]):
+                best = (score, ta, tb, ko)
+        if best is not None:
+            gap = abs(best[3] - p["kickoff_utc"]) if best[3] is not None else None
+            detail = "name_match=%s/%s score=%.2f gap=%s" % (best[1], best[2], best[0], gap)
+        elif pool:
+            bh = max(pool, key=lambda t: team_sim(nh, t))
+            ba = max(pool, key=lambda t: team_sim(na, t))
+            detail = "no_pair home~%s(%.2f) away~%s(%.2f)" % (bh, team_sim(nh, bh), ba, team_sim(na, ba))
+        else:
+            detail = "no_candidates"
+        lines.append("unmatched %s | %s - %s | %s" % (fmt_utc(p["kickoff_utc"]), p["home"], p["away"], detail))
+        if len(lines) >= limit:
+            break
+    return lines
+
+
 def fetch_picks(sb_url, key, now, hours, tiers):
     path = (
         "suggest_pick_log?select=fixture_id,home_team,away_team,kickoff_at,confidence_tier"
@@ -218,6 +251,8 @@ def cmd_plan(args):
         stats["matched"] = len(matched)
         targets = matched[:args.max_matches]
         stats["selected"] = len(targets)
+        for line in unmatched_report(ordered, matched, rows):
+            print(line)
     for t in targets[:12]:
         print("target %s | %s - %s | %s | %s" % (t["kickoff_utc"], t["home"], t["away"], t["tier"], t["match_link"]))
     print("plan " + json.dumps(stats))
