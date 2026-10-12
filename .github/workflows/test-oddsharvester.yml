@@ -11,18 +11,23 @@ on:
         default: spain-laliga2
       hours:
         description: Only matches kicking off within N hours
-        default: '72'
+        default: '48'
 
 permissions:
   contents: read
 
+concurrency:
+  group: test-oddsharvester
+  cancel-in-progress: true
+
 jobs:
   scrape-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     env:
       LEAGUE: ${{ inputs.league || 'spain-laliga2' }}
-      HOURS: ${{ inputs.hours || '72' }}
+      HOURS: ${{ inputs.hours || '48' }}
+      MARKETS: 1x2,over_under,asian_handicap
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -31,71 +36,141 @@ jobs:
       - name: Install OddsHarvester and Chromium
         shell: bash
         run: |
+          set -eo pipefail
           python --version
           pip install oddsharvester
           pip show oddsharvester | sed -n 1,3p
           playwright install --with-deps chromium
-
-      - name: Scrape FT (1x2 + over_under + asian_handicap)
-        shell: bash
-        run: |
-          set +e
           mkdir -p out
-          start=$(date +%s)
-          timeout 840 oddsharvester upcoming -s football -l "$LEAGUE" \
-            --kickoff-within-hours "$HOURS" -m 1x2,over_under,asian_handicap \
-            --concurrency 2 --headless -f json -o out/ft.json > out/ft.log 2>&1
-          rc=$?
-          echo "ft_exit=$rc elapsed=$(( $(date +%s) - start ))s"
-          echo "--- head ---"; head -50 out/ft.log
-          echo "--- tail ---"; tail -50 out/ft.log
-          ls -la out/
 
-      - name: Scrape HT (--period 1st_half, same markets)
+      - name: Probe league page before FT
         shell: bash
         run: |
-          set +e
-          start=$(date +%s)
-          timeout 840 oddsharvester upcoming -s football -l "$LEAGUE" \
-            --kickoff-within-hours "$HOURS" -m over_under,asian_handicap \
-            --period 1st_half --concurrency 2 --headless -f json -o out/ht.json > out/ht.log 2>&1
-          rc=$?
-          echo "ht_exit=$rc elapsed=$(( $(date +%s) - start ))s"
-          echo "--- head ---"; head -50 out/ht.log
-          echo "--- tail ---"; tail -50 out/ht.log
-          ls -la out/
+          set -eo pipefail
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          code=$(curl -sS -m 25 -A "$UA" -o /dev/null -w '%{http_code}' "https://www.oddsportal.com/football/spain/laliga2/" || echo "curl_failed")
+          echo "probe_before_ft=$code" | tee out/probe_before_ft.txt
 
-      - name: Summarize output format
+      - name: Scrape FT (concurrency 1, delay 5s)
+        shell: bash
+        run: |
+          set -eo pipefail
+          rc=0
+          start=$(date +%s)
+          timeout 1500 oddsharvester upcoming -s football -l "$LEAGUE" \
+            --kickoff-within-hours "$HOURS" -m "$MARKETS" \
+            --concurrency 1 --request-delay 5 --headless \
+            -f json -o out/ft.json > out/ft.stdout.log 2> out/ft.stderr.log || rc=$?
+          echo "ft_exit=$rc elapsed=$(( $(date +%s) - start ))s" | tee out/ft.exit.txt
+          for f in out/ft.stdout.log out/ft.stderr.log; do
+            echo "=== $f: first 100 ==="; head -100 "$f"
+            echo "=== $f: last 100 ===";  tail -100 "$f"
+          done
+          ls -la out/
+          exit $rc
+
+      - name: Wait 5 minutes (avoid cumulative rate limit)
+        if: always()
+        shell: bash
+        run: sleep 300
+
+      - name: Probe league page before HT
         if: always()
         shell: bash
         run: |
-          python - <<'PY'
-          import json, os
-          for name in ("ft", "ht"):
-              path = f"out/{name}.json"
-              print(f"=== {name} ===")
-              if not os.path.exists(path):
-                  print("no output file")
-                  continue
+          set -eo pipefail
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          code=$(curl -sS -m 25 -A "$UA" -o /dev/null -w '%{http_code}' "https://www.oddsportal.com/football/spain/laliga2/" || echo "curl_failed")
+          echo "probe_before_ht=$code" | tee out/probe_before_ht.txt
+
+      - name: Scrape HT (--period 1st_half, concurrency 1, delay 5s)
+        if: always()
+        shell: bash
+        run: |
+          set -eo pipefail
+          rc=0
+          start=$(date +%s)
+          timeout 1500 oddsharvester upcoming -s football -l "$LEAGUE" \
+            --kickoff-within-hours "$HOURS" -m over_under,asian_handicap \
+            --period 1st_half --concurrency 1 --request-delay 5 --headless \
+            -f json -o out/ht.json > out/ht.stdout.log 2> out/ht.stderr.log || rc=$?
+          echo "ht_exit=$rc elapsed=$(( $(date +%s) - start ))s" | tee out/ht.exit.txt
+          for f in out/ht.stdout.log out/ht.stderr.log; do
+            echo "=== $f: first 100 ==="; head -100 "$f"
+            echo "=== $f: last 100 ===";  tail -100 "$f"
+          done
+          ls -la out/
+          exit $rc
+
+      - name: Upload logs and JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oddsharvester-test-logs
+          path: out/
+          retention-days: 3
+          if-no-files-found: warn
+
+      - name: RESULT summary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, re
+          def read(p):
               try:
-                  data = json.load(open(path, encoding="utf-8"))
-              except Exception as e:
-                  print("not valid JSON:", e)
-                  continue
-              rows = data if isinstance(data, list) else data.get("matches") or data.get("data") or [data]
-              print("type:", type(data).__name__, "matches:", len(rows))
-              if not rows:
-                  continue
-              first = rows[0]
-              print("first match keys:", sorted(first.keys()) if isinstance(first, dict) else type(first))
-              counts = {}
-              for m in rows:
-                  if not isinstance(m, dict):
-                      continue
-                  for k, v in m.items():
-                      if isinstance(v, (list, dict)):
-                          counts[k] = counts.get(k, 0) + (len(v) if v else 0)
-              print("nested entries per key (summed over matches):", counts)
-              print("sample (first match, truncated):")
-              print(json.dumps(first, ensure_ascii=False)[:1500])
+                  return open(p, encoding="utf-8", errors="replace").read()
+              except Exception:
+                  return ""
+          print("## RESULT")
+          for k in ("probe_before_ft", "ft.exit", "probe_before_ht", "ht.exit"):
+              for fn in (f"out/{k}.txt",):
+                  t = read(fn).strip()
+                  print(f"- {k}: {t or 'n/a'}")
+          for name in ("ft", "ht"):
+              out, err = read(f"out/{name}.stdout.log"), read(f"out/{name}.stderr.log")
+              both = out + "\n" + err
+              print(f"\n### {name.upper()}")
+              m = re.findall(r"Successfully scraped (\d+) matches \((\d+) failed", both)
+              print("scraped/failed:", m[-1] if m else "no summary line")
+              m2 = re.findall(r"Scraping completed: (.*)", both)
+              print("scraper summary:", m2[-1] if m2 else "n/a")
+              rl = re.findall(r"rate limited by OddsPortal: HTTP 429 on (\d+) request", both)
+              print("rate-limited matches:", len(rl), "| 429 requests (sum):", sum(int(x) for x in rl))
+              print("lines containing '429':", sum(1 for l in both.splitlines() if "429" in l))
+              print("ERR_HTTP_RESPONSE_CODE_FAILURE lines:", both.count("ERR_HTTP_RESPONSE_CODE_FAILURE"))
+              path = f"out/{name}.json"
+              if not os.path.exists(path):
+                  print("no json output")
+              else:
+                  try:
+                      data = json.load(open(path, encoding="utf-8"))
+                  except Exception as e:
+                      print("invalid json:", e)
+                      data = []
+                  rows = data if isinstance(data, list) else [data]
+                  print("matches in json:", len(rows))
+                  periods, books = set(), set()
+                  ou = ah = 0
+                  for r in rows:
+                      if not isinstance(r, dict):
+                          continue
+                      for k, v in r.items():
+                          if k.endswith("_market") and isinstance(v, list) and v:
+                              if k.startswith("over_under"): ou += 1
+                              if k.startswith("asian_handicap"): ah += 1
+                              for e in v:
+                                  if isinstance(e, dict):
+                                      periods.add(e.get("period"))
+                                      books.add(e.get("bookmaker_name"))
+
+                  print("distinct period values:", sorted(map(str, periods)))
+                  print("OU markets (non-empty, summed):", ou, "| AH markets:", ah)
+                  print("bookmakers:", sorted(map(str, books))[:12])
+                  for r in rows[:5]:
+                      if isinstance(r, dict):
+                          print("  -", r.get("match_date"), r.get("home_team"), "-", r.get("away_team"))
+              if name == "ht" and "ht_exit=0" not in read("out/ht.exit.txt"):
+                  print("\nLast 50 stderr lines (HT):")
+                  print("\n".join(err.splitlines()[-50:]))
           PY
