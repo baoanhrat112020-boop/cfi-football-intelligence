@@ -1196,8 +1196,21 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   var sgOpen={};
   function sgPct(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
   var SRC_NAMES={bongdawap:"Bongdawap",oddsportal:"OddsPortal",oddsharvester:"OddsPortal"};
+  function bestSourceRows(list){
+    if(!Array.isArray(list)||!list.length)return [];
+    var cnt={},chosen={};
+    list.forEach(function(x){var s=x.source||"";cnt[s]=(cnt[s]||0)+1});
+    Object.keys(cnt).sort(function(p,q){return cnt[q]-cnt[p]}).forEach(function(s){
+      list.forEach(function(x){
+        if((x.source||"")!==s)return;
+        var k=x.family+"|"+(x.period||"");
+        if(chosen[k]===undefined)chosen[k]=s;
+      });
+    });
+    return list.filter(function(x){return chosen[x.family+"|"+(x.period||"")]===(x.source||"")});
+  }
   function marketOddsHtml(d){
-    var mo=d&&d.market_odds;
+    var mo=bestSourceRows(d&&d.market_odds);
     if(!Array.isArray(mo)||!mo.length)return "";
     var fam={"OVER_UNDER":0,"1X2":1,"ASIAN_HANDICAP":2};
     function odd(v){var n=Number(v);return v!=null&&Number.isFinite(n)?n.toFixed(2):"—"}
@@ -1254,7 +1267,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
     if(d.no_stats||d.pred_home_ft==null||d.p_over075_ht==null)return '<div class="sgf"><div class="sg-warn">&#9888; Ch&#432;a &#273;o</div>'+x.star+(oddsHtml?toggle(oddsHtml):"")+'</div>';
     var lht=d.lht!=null?Number(d.lht):(d.p_over05_ht!=null&&Number(d.p_over05_ht)<1?-Math.log(1-Number(d.p_over05_ht)):null);
-    var mo=Array.isArray(d.market_odds)?d.market_odds:[];
+    var mo=bestSourceRows(d.market_odds);
     function barOdds(c,per){for(var i=0;i<mo.length;i++){var x=mo[i];if(x&&x.family==="OVER_UNDER"&&x.period===per&&Number(x.line)===Number(c[0])){var o=Number(x.odds_over);if(x.odds_over!=null&&Number.isFinite(o))return o.toFixed(2)}}return null}
     function barRow(c,per,withOdds){
       var v=Number(d[c[1]]),w=Number.isFinite(v)?Math.max(0,Math.min(100,v*100)):0,hi=c[2],od=withOdds?barOdds(c,per):null;
