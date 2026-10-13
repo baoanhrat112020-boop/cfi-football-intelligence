@@ -1031,7 +1031,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 5</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 6</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -2048,6 +2048,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     },
     en: {
       "Ẩn đã đá": "Hide played",
+      "Hiện": "Show",
+      "Dự đoán HT": "Pred HT",
+      "Dự đoán FT": "Pred FT",
       "Nhập trận": "Enter match",
       "Trận hôm nay": "Today's matches",
       "Chọn trận để CFI kiểm tra dữ liệu và chuẩn bị prediction.": "Pick a match so CFI can check the data and prepare the prediction.",
@@ -2155,6 +2158,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       { re: /^Dự đoán HT: Home (\d+) - Away (\d+)$/, to: "Pred HT: Home $1 - Away $2" },
       { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Pred FT: Home $1 - Away $2" },
       { re: /^Đã tải (\d+) trận$/, to: "Loaded $1 matches" },
+      { re: /^\/ (\d+) khung giờ$/, to: "/ $1 time slots" },
+      { re: /^Hiện thêm (\d+) trận$/, to: "Show $1 more matches" },
+      { re: /^\((\d+) còn lại\)$/, to: "($1 remaining)" },
+      { re: /^([+−]\d+(?:\.\d+)?)đ$/, to: "$1 pp" },
       { re: /^Đã ẩn (\d+) trận$/, to: "$1 matches hidden" },
       { re: /^Đã đá \((\d+)\)$/, to: "Played ($1)" },
       { re: /^(\d+) trận$/, to: "$1 matches" },
