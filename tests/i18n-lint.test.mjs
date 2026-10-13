@@ -118,7 +118,7 @@ test('confidence tier badge labels translate to English', () => {
 
 function staticTexts() {
   const body = html.slice(html.indexOf('<body>'), html.indexOf('<script', html.indexOf('<body>')));
-  const screens = ['screenSearch', 'screenSelected', 'screenReady', 'screenBlocked', 'screenResult', 'screenSuggest'];
+  const screens = ['screenSearch', 'screenSelected', 'screenReady', 'screenBlocked', 'screenResult', 'screenDNA', 'screenEvidence', 'screenSuggest'];
   const chunks = [];
   for (const id of screens) {
     const s = body.indexOf(`id="${id}"`);
