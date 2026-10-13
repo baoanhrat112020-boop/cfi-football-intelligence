@@ -82,6 +82,11 @@ jobs:
     if: needs.plan.outputs.count != '0' && needs.plan.outputs.count != ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    continue-on-error: ${{ matrix.period == '1st_half' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        period: [full_time, 1st_half]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -109,24 +114,44 @@ jobs:
         with:
           name: fill-odds-plan
           path: plan
-      - name: Scrape full_time
+      - name: Scrape ${{ matrix.period }}
         shell: bash
         env:
           SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           EXTRA=""
           if [ "$DRY_RUN" = "true" ]; then EXTRA="--dry-run"; fi
-          python scripts/fill_odds_gaps.py scrape --period full_time --targets plan/targets.json --budget-min 85 --workdir work $EXTRA | tee scrape.log
-          echo "### full_time (dry_run=$DRY_RUN)" >> "$GITHUB_STEP_SUMMARY"
+          python scripts/fill_odds_gaps.py scrape --period "${{ matrix.period }}" --targets plan/targets.json --budget-min 85 --workdir work $EXTRA | tee scrape.log
+          echo "### ${{ matrix.period }} (dry_run=$DRY_RUN)" >> "$GITHUB_STEP_SUMMARY"
           grep -E '^(result|ok) ' scrape.log >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Count written rows
+        if: always() && env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY" || true
+          import json, os, urllib.request
+          from datetime import datetime, timedelta, timezone
+          since = (datetime.now(timezone.utc) - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+          url = os.environ["SB_URL"] + "/rest/v1/match_odds?select=period,market_family&source=eq.oddsportal&last_seen_at=gte." + since + "&limit=1000"
+          key = os.environ["SB_SERVICE_ROLE_KEY"]
+          req = urllib.request.Request(url, headers={"apikey": key, "Authorization": "Bearer " + key})
+          rows = json.load(urllib.request.urlopen(req, timeout=30))
+          counts = {}
+          for r in rows:
+              k = "%s/%s" % (r["period"], r["market_family"])
+              counts[k] = counts.get(k, 0) + 1
+          print("db oddsportal rows last 3h: " + json.dumps(counts, sort_keys=True))
+          PY
       - name: Harvester log tail
         if: always()
         shell: bash
-        run: tail -60 work/scrape_full_time.log 2>/dev/null || true
+        run: tail -60 work/scrape_${{ matrix.period }}.log 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: fill-odds-scrape-full_time
+          name: fill-odds-scrape-${{ matrix.period }}
           path: |
             scrape.log
             work/
