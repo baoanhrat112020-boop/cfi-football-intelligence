@@ -516,7 +516,7 @@
           <button class="chip active" data-range="1440">24h</button>
           <button class="chip" data-range="2880">48h</button>
           <button class="chip" data-range="tb">Ch&#7881; &ge; TB (0.55)</button>
-          <button class="chip" data-range="hidepast">&#7848;n &#273;&#227; &#273;&aacute;</button>
+          <button class="chip" data-range="hidepast">&#7848;n &#273;&#227; &#273;&#225;</button>
           <button class="chip" data-range="noamateur" style="margin-left:auto">Lo&#7841;i amateur</button>
         </div>
         <div id="suggestContent" style="margin-top:12px">
@@ -2017,6 +2017,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Over 0.75 hit rate:": "Tỉ lệ trúng Over 0.75:"
     },
     en: {
+      "Ẩn đã đá": "Hide played",
       "Nhập trận": "Enter match",
       "Trận hôm nay": "Today's matches",
       "Chọn trận để CFI kiểm tra dữ liệu và chuẩn bị prediction.": "Pick a match so CFI can check the data and prepare the prediction.",
@@ -2124,6 +2125,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       { re: /^Dự đoán HT: Home (\d+) - Away (\d+)$/, to: "Pred HT: Home $1 - Away $2" },
       { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Pred FT: Home $1 - Away $2" },
       { re: /^Đã tải (\d+) trận$/, to: "Loaded $1 matches" },
+      { re: /^Đã ẩn (\d+) trận$/, to: "$1 matches hidden" },
+      { re: /^Đã đá \((\d+)\)$/, to: "Played ($1)" },
       { re: /^(\d+) trận$/, to: "$1 matches" },
       { re: /^(\d+) ngày$/, to: "$1 days" },
       { re: /^Nguồn: (.+)$/, to: "Source: $1", r: [1] },
