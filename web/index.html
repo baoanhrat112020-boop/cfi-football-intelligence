@@ -1031,7 +1031,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 6</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 7</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1919,6 +1919,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   var LANG = window.CFI_LANG === "en" ? "en" : "vi";
   var I18N = {
     vi: {
+      "Back": "Quay lại",
+      "Team Comparison": "So sánh đội",
+      "Goal Profile (Last 10)": "Hồ sơ bàn thắng (10 trận gần nhất)",
+      "Data & Evidence": "Dữ liệu & bằng chứng",
+      "Data Sources": "Nguồn dữ liệu",
+      "Match Info": "Thông tin trận",
+      "Match Verification": "Xác minh trận",
+      "Raw Payload": "Dữ liệu thô",
+      "Market": "Thị trường",
       "SELECT MATCH": "CHỌN TRẬN",
       "Home Team": "Đội nhà",
       "Away Team": "Đội khách",
@@ -2048,6 +2057,22 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     },
     en: {
       "Ẩn đã đá": "Hide played",
+      "Lưu": "Save",
+      "Home thắng": "Home win",
+      "PHỔ THÔNG": "POPULAR",
+      "HIỆP 1 · CHI TIẾT": "1ST HALF · DETAIL",
+      "CẢ TRẬN · CHI TIẾT": "FULL TIME · DETAIL",
+      "DẢI BÀN": "GOAL RANGE",
+      "Không có expert weights.": "No expert weights.",
+      "Không có actionable decision.": "No actionable decision.",
+      "Prediction này không trả về Champion Fusion payload.": "This prediction did not return a Champion Fusion payload.",
+      "Backend đã trả kết quả nhưng client chưa tìm thấy 4 market champion trong payload. Mở Evidence để kiểm tra raw response.": "The backend returned a result but the client found no 4 champion markets in the payload. Open Evidence to inspect the raw response.",
+      "Xấp xỉ — sẽ chính xác hơn sau khi có dữ liệu calibration": "Approximate — will be more accurate once calibration data is available",
+      "Tính trực tiếp từ strict-prior history thật (BigDB), không dùng dữ liệu phút ghi bàn vì chưa có trong hệ thống.": "Computed directly from real strict-prior history (BigDB); goal-minute data is not used because it is not in the system yet.",
+      "Tỉ số các trận gần nhất, sắp xếp theo ngày.": "Recent match scores, sorted by date.",
+      "Trạng thái backend thật tại thời điểm mở màn này.": "Real backend status at the time this screen was opened.",
+      "Response gần nhất từ backend, phục vụ audit thủ công.": "Latest backend response, for manual audit.",
+      "Hit rate tính nửa thắng 0,75 và nửa thua 0,25; Push không tính vào n. * n = số trận thắng/thua đã chốt, không gồm push.": "Hit rate counts a half-win as 0.75 and a half-loss as 0.25; pushes are not counted in n. * n = settled wins/losses, excluding pushes.",
       "Hiện": "Show",
       "Dự đoán HT": "Pred HT",
       "Dự đoán FT": "Pred FT",
@@ -2158,6 +2183,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       { re: /^Dự đoán HT: Home (\d+) - Away (\d+)$/, to: "Pred HT: Home $1 - Away $2" },
       { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Pred FT: Home $1 - Away $2" },
       { re: /^Đã tải (\d+) trận$/, to: "Loaded $1 matches" },
+      { re: /^Không lấy được lịch thi đấu\. (.*)$/, to: "Failed to load the schedule. $1" },
+      { re: /^Không lấy được CFI context(.*)\.$/, to: "Failed to load CFI context$1." },
+      { re: /^(\d+) H2H fixture\(s\) trước (\S+)\.$/, to: "$1 H2H fixture(s) before $2." },
+      { re: /^Thiếu dữ liệu lịch sử cho một hoặc cả hai đội \(home (.+), away (.+)\)\.$/, to: "Missing history for one or both teams (home $1, away $2)." },
       { re: /^\/ (\d+) khung giờ$/, to: "/ $1 time slots" },
       { re: /^Hiện thêm (\d+) trận$/, to: "Show $1 more matches" },
       { re: /^\((\d+) còn lại\)$/, to: "($1 remaining)" },
@@ -2248,6 +2277,21 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if (root.closest(SKIP)) return;
     var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n;
     while ((n = w.nextNode())) fix(n);
+    attrsIn(root);
+  }
+
+  function attrsIn(root) {
+    var list = Array.prototype.slice.call(root.querySelectorAll("[placeholder],[aria-label],[title]"));
+    list.unshift(root);
+    list.forEach(function (el) {
+      if (!el.getAttribute || el.closest(SKIP)) return;
+      ["placeholder", "aria-label", "title"].forEach(function (a) {
+        var v = el.getAttribute(a);
+        if (!v) return;
+        var o = trText(v);
+        if (o !== v) el.setAttribute(a, o);
+      });
+    });
   }
 
   function attrs() {
