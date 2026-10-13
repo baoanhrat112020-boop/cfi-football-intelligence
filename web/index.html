@@ -1210,26 +1210,27 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return list.filter(function(x){return chosen[x.family+"|"+(x.period||"")]===(x.source||"")});
   }
   function marketOddsHtml(d){
-    var mo=bestSourceRows(d&&d.market_odds);
-    if(!Array.isArray(mo)||!mo.length)return "";
+    var mo=Array.isArray(d&&d.market_odds)?d.market_odds:[];
+    if(!mo.length)return "";
     var fam={"OVER_UNDER":0,"1X2":1,"ASIAN_HANDICAP":2};
     function odd(v){var n=Number(v);return v!=null&&Number.isFinite(n)?n.toFixed(2):"—"}
-    function sk(x){var f=fam[x.family],l=Number(x.line),ht=x.family==="ASIAN_HANDICAP"?1:0;return [f==null?3:f,x.period==="HT"?ht:x.period==="FT"?1-ht:2,Number.isFinite(l)?l:0]}
+    function srcKey(x){return x.source==="oddsharvester"?"oddsportal":(x.source||"")}
+    function sk(x){var f=fam[x.family],l=Number(x.line),ht=x.family==="ASIAN_HANDICAP"?1:0;return [f==null?3:f,x.period==="HT"?ht:x.period==="FT"?1-ht:2,Number.isFinite(l)?l:0,srcKey(x)]}
     function pickMain(list){
       var groups={},out=[];
-      list.forEach(function(x){var k=x.family+"|"+(x.period||"");(groups[k]=groups[k]||[]).push(x)});
+      list.forEach(function(x){var k=x.family+"|"+(x.period||"")+"|"+srcKey(x);(groups[k]=groups[k]||[]).push(x)});
       Object.keys(groups).forEach(function(k){
         var g=groups[k],f=g[0].family;
-        if(f==="1X2"){out=out.concat(g.slice(0,2));return}
+        if(f==="1X2"){out=out.concat(g.slice(0,1));return}
         if(f!=="OVER_UNDER"&&f!=="ASIAN_HANDICAP"){out=out.concat(g);return}
         function gap(x){var a=Number(f==="OVER_UNDER"?x.odds_over:x.odds_home),b=Number(f==="OVER_UNDER"?x.odds_under:x.odds_away);return Number.isFinite(a)&&Number.isFinite(b)?Math.abs(a-b):99}
         var best=null;
         g.forEach(function(x){if(best===null||gap(x)<gap(best))best=x});
-        out=out.concat(g.filter(function(x){return Number(x.line)===Number(best.line)}).slice(0,2));
+        out=out.concat(g.filter(function(x){return Number(x.line)===Number(best.line)}).slice(0,1));
       });
       return out;
     }
-    var rows=pickMain(mo).sort(function(a,b){var ka=sk(a),kb=sk(b);for(var i=0;i<3;i++)if(ka[i]!==kb[i])return ka[i]-kb[i];return 0}).map(function(x){
+    var rows=pickMain(mo).sort(function(a,b){var ka=sk(a),kb=sk(b);for(var i=0;i<4;i++)if(ka[i]!==kb[i])return i===3?(ka[i]<kb[i]?-1:1):ka[i]-kb[i];return 0}).map(function(x){
       var p=esc(x.period||""),l=Number(x.line),lb,val,pct="";
       if(x.family==="OVER_UNDER"){
         lb="O/U "+p+" "+l;val=odd(x.odds_over)+" / "+odd(x.odds_under);pct=sgPct(x.p_implied);
