@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Query
+      - name: Dump suggest payload sample
         env:
           SB_URL: https://zbwkowqluwuvsnajkuvc.supabase.co
           KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
@@ -23,35 +23,17 @@ jobs:
           base = os.environ["SB_URL"]
           key = os.environ["KEY"]
           h = {"apikey": key, "Authorization": "Bearer " + key, "Content-Type": "application/json"}
-          def get(path):
-              return json.load(urllib.request.urlopen(urllib.request.Request(base + "/rest/v1/" + path, headers=h), timeout=30))
-          rows = get("match_odds?select=verified_fixture_id,source,market_family,period,line,odds_over,odds_under,odds_home,odds_draw,odds_away,last_seen_at&order=last_seen_at.desc&limit=1000")
-          by = {}
-          for r in rows:
-              by.setdefault(r["verified_fixture_id"], set()).add(r["source"])
-          both = [f for f, s in by.items() if len(s) >= 2]
-          print("fixtures in sample:", len(by), "| with 2+ sources:", len(both))
-          for f in both[:3]:
-              print("FIXTURE", f)
-              for r in sorted([x for x in rows if x["verified_fixture_id"] == f], key=lambda x: (x["market_family"], x["period"], str(x["line"]), x["source"])):
-                  print("  ", r["source"], r["market_family"], r["period"], r["line"], r["odds_over"], r["odds_under"], r["odds_home"], r["odds_draw"], r["odds_away"])
           req = urllib.request.Request(base + "/rest/v1/rpc/cfi_suggest_upcoming", data=json.dumps({"p_minutes": 2880}).encode(), headers=h, method="POST")
           d = json.load(urllib.request.urlopen(req, timeout=60))
-          n = 0
-          srcs = {}
-          shown = 0
+          picked, seen = [], set()
           for s in d.get("slots", []):
               for m in s.get("matches", []):
-                  mo = m.get("market_odds") or []
-                  if mo:
-                      n += 1
-                  for x in mo:
-                      srcs[x.get("source")] = srcs.get(x.get("source"), 0) + 1
-                  kinds = {x.get("source") for x in mo}
-                  if len(kinds) >= 2 and shown < 1:
-                      shown += 1
-                      print("RPC MATCH", m.get("home_team"), "-", m.get("away_team"), m.get("fixture_id"))
-                      for x in mo:
-                          print("  ", json.dumps(x, ensure_ascii=False))
-          print("rpc matches with market_odds:", n, "| source counts in payload:", json.dumps(srcs))
+                  sig = (bool(m.get("no_stats")), bool(m.get("market_odds")), m.get("confidence_tier") or m.get("tier"))
+                  if sig not in seen and len(picked) < 4:
+                      seen.add(sig)
+                      picked.append((s, m))
+          out = {"top_keys": sorted(d.keys()), "slot_keys": sorted(d["slots"][0].keys()) if d.get("slots") else [], "slot_count": len(d.get("slots", []))}
+          print("META " + json.dumps(out))
+          for s, m in picked:
+              print("SAMPLE " + json.dumps({"date": s.get("date"), "hour": s.get("hour"), "match": m}, ensure_ascii=False, separators=(",", ":")))
           PY
