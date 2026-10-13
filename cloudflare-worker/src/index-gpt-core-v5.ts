@@ -303,6 +303,7 @@ async function fetchTeamStatsLambda(env:Env,home:string,away:string){
   }catch(_e){return null}
 }
 
+const OU_FIXTURE_SEEN=new Map<string,number>();
 export default{
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
@@ -394,6 +395,60 @@ export default{
         const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days),p_tier:tierParam||null,p_before_kickoff:beforeKickoff,p_limit:pageLimit,p_before_fixture:beforeFixture||null,...(modelVersion?{p_model_version:modelVersion}:{}),...(marketParam?{p_market:marketParam}:{})}),signal:AbortSignal.timeout(8000)});
         if(!res.ok)return Response.json({error:'track record fetch failed',status:res.status},{status:502});
         return new Response(res.body,{status:200,headers:{'content-type':'application/json','Cache-Control':'public, max-age=300'}});
+      }catch(e:any){
+        return Response.json({error:String(e?.message||e)},{status:500});
+      }
+    }
+
+    if(url.pathname==='/api/observe-ou'&&(request.method==='POST'||request.method==='DELETE')){
+      let input:any=null;try{input=await request.clone().json()}catch{}
+      if(request.method==='DELETE'&&(!input||typeof input!=='object'))input={fixture_id:url.searchParams.get('fixture_id'),period:url.searchParams.get('period')};
+      if(!input||typeof input!=='object')return Response.json({error:'invalid body'},{status:400});
+      const fid=String(input.fixture_id||'');
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fid))return Response.json({error:'invalid fixture_id'},{status:400});
+      const period=String(input.period||'').toUpperCase();
+      if(period!=='HT'&&period!=='FT')return Response.json({error:'invalid period'},{status:400});
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const hdr={'apikey':key,'Authorization':`Bearer ${key}`};
+      try{
+        if(request.method==='DELETE'||input.delete===true){
+          const del=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/user_ou_observations?fixture_id=eq.${fid}&period=eq.${period}`,{method:'DELETE',headers:{...hdr,'Prefer':'return=minimal'},signal:AbortSignal.timeout(8000)});
+          if(!del.ok)return Response.json({error:'delete failed',status:del.status},{status:502});
+          return Response.json({ok:true},{headers:{'Cache-Control':'no-store'}});
+        }
+        const quarter=(v:any)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<10&&Math.abs(v*4-Math.round(v*4))<1e-9;
+        const line=input.line;
+        if(!quarter(line))return Response.json({error:'invalid line'},{status:400});
+        const odds=(v:any)=>v==null?null:(typeof v==='number'&&Number.isFinite(v)&&v>1&&v<20?Math.round(v*1000)/1000:undefined);
+        const oddsOver=odds(input.odds_over),oddsUnder=odds(input.odds_under);
+        if(oddsOver===undefined||oddsUnder===undefined)return Response.json({error:'invalid odds'},{status:400});
+        let modelLine:number|null=null;
+        if(input.model_chosen_line!=null){if(!quarter(input.model_chosen_line))return Response.json({error:'invalid model_chosen_line'},{status:400});modelLine=input.model_chosen_line}
+        const text=(v:any,max:number):string|null|undefined=>{
+          if(v==null)return null;
+          if(typeof v!=='string')return undefined;
+          const t=v.replace(/[\p{C}\p{Z}]+/gu,' ').trim();
+          if([...t].length>max)return undefined;
+          return t||null;
+        };
+        const bookmaker=text(input.bookmaker,30),note=text(input.note,200);
+        if(bookmaker===undefined)return Response.json({error:'invalid bookmaker'},{status:400});
+        if(note===undefined)return Response.json({error:'invalid note'},{status:400});
+        if(oddsOver==null&&oddsUnder==null&&bookmaker==null&&note==null)return Response.json({error:'nothing to save'},{status:400});
+        const seen=OU_FIXTURE_SEEN.get(fid);
+        if(!seen||seen<Date.now()){
+          const chk=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/cfi_living_verified_fixtures?fixture_id=eq.${fid}&select=fixture_id&limit=1`,{headers:hdr,signal:AbortSignal.timeout(5000)});
+          if(chk.ok){
+            const rows:any=await chk.json();
+            if(!Array.isArray(rows)||!rows.length)return Response.json({error:'invalid fixture_id'},{status:400});
+            if(OU_FIXTURE_SEEN.size>500)OU_FIXTURE_SEEN.clear();
+            OU_FIXTURE_SEEN.set(fid,Date.now()+600000);
+          }
+        }
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/user_ou_observations?on_conflict=fixture_id,period`,{method:'POST',headers:{...hdr,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({fixture_id:fid,period,line,odds_over:oddsOver,odds_under:oddsUnder,model_chosen_line:modelLine,bookmaker,note,updated_at:new Date().toISOString()}),signal:AbortSignal.timeout(8000)});
+        if(!res.ok)return Response.json({error:'save failed',status:res.status},{status:502});
+        return Response.json({ok:true},{headers:{'Cache-Control':'no-store'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e)},{status:500});
       }
