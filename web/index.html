@@ -539,6 +539,12 @@
           <button class="chip" data-tier="THAP">THẤP</button>
           <button class="chip" data-tier="RAT_THAP">RẤT THẤP</button>
         </div>
+        <div class="chip-row" id="trackMarketChips" style="display:flex;gap:6px;padding:0 2px 8px;flex-wrap:wrap">
+          <button class="chip" data-market="over_ft">Over FT</button>
+          <button class="chip" data-market="over_ht">Over HT</button>
+          <button class="chip" data-market="btts_yes">BTTS</button>
+          <button class="chip" data-market="1x2_ft_home">1X2 FT</button>
+        </div>
         <div style="padding:0 2px 8px">
           <select id="trackModel" style="background:#111821;color:#c5d4de;border:1px solid #1f2a35;border-radius:8px;padding:6px 10px;font-size:12px;min-height:36px">
             <option value="">Tất cả</option>
@@ -1031,7 +1037,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 7</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 8</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1649,7 +1655,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   });
 
   var TRACK_MIN_N=30,TRACK_TTL=5*60*1000,TRACK_TIER_LABELS={CAO:"CAO",KHA:"KHÁ",TB:"TB",THAP:"THẤP",RAT_THAP:"RẤT THẤP"};
-  state.trackDays="all";state.trackTier="";state.trackModel="";state.trackCache={};state.trackSeq=0;state.trackDetailOpen=false;
+  state.trackDays="all";state.trackTier="";state.trackMarket="";state.trackModel="";state.trackCache={};state.trackSeq=0;state.trackDetailOpen=false;
   function trackResultChip(v){var m={WIN:["WIN","#166534","#ffffff"],HALF_WIN:["HALF","#3b3410","#fde047"],LOSS:["LOSS","#3a1616","#f87171"]}[v];if(!m)return '<span style="color:#7a8a99">—</span>';return '<span style="background:'+m[1]+';color:'+m[2]+';border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800;white-space:nowrap">'+m[0]+'</span>'}
   function trackPct(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
   function trackPair(pred,actual,show){return trackPct(pred)+' → <b style="color:#e8eef3">'+(show?trackPct(actual):"—")+'</b>'}
@@ -1713,12 +1719,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return html;
   }
   async function loadMoreTrack(){
-    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",ck=days+"|"+tier+"|"+mv,c=state.trackCache[ck],btn=$("trackMore");
+    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",mk=state.trackMarket||"",ck=days+"|"+tier+"|"+mv+"|"+mk,c=state.trackCache[ck],btn=$("trackMore");
     if(!c||!btn||btn.disabled)return;
     var rows=c.data.recent_settled||[],last=rows[rows.length-1];if(!last)return;
     btn.disabled=true;btn.textContent="Đang tải...";
     try{
-      var q="/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):"")+"&before_kickoff="+encodeURIComponent(last.kickoff)+(last.fixture_id?"&before_fixture="+encodeURIComponent(last.fixture_id):"")+"&limit=100";
+      var q="/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):"")+(mk?"&market="+encodeURIComponent(mk):"")+"&before_kickoff="+encodeURIComponent(last.kickoff)+(last.fixture_id?"&before_fixture="+encodeURIComponent(last.fixture_id):"")+"&limit=100";
       var r=await api(q,"GET");
       var more=(r.data&&Array.isArray(r.data.recent_settled))?r.data.recent_settled:null;
       if(!more)throw new Error("Empty response");
@@ -1726,7 +1732,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       if(more.length<100)c.data._done=true;
       bmApplyResults(more);
       var body=$("trackRecentBody"),b2=$("trackMore");
-      if(body&&b2&&ck===state.trackDays+"|"+(state.trackTier||"")+"|"+(state.trackModel||"")){
+      if(body&&b2&&ck===state.trackDays+"|"+(state.trackTier||"")+"|"+(state.trackModel||"")+"|"+(state.trackMarket||"")){
         body.insertAdjacentHTML("beforeend",more.map(trackRecentRow).join(""));
         if(c.data._done)b2.parentNode.removeChild(b2);else{b2.disabled=false;b2.textContent="Xem thêm"}
       }
@@ -1736,14 +1742,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
   }
   async function loadTrack(force){
-    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",ck=days+"|"+tier+"|"+mv,el=$("trackContent"),seq=++state.trackSeq,cached=state.trackCache[ck];
+    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",mk=state.trackMarket||"",ck=days+"|"+tier+"|"+mv+"|"+mk,el=$("trackContent"),seq=++state.trackSeq,cached=state.trackCache[ck];
     document.querySelectorAll("#trackChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.days===days)});
     document.querySelectorAll("#trackTierChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.tier===tier)});
+    document.querySelectorAll("#trackMarketChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.market===mk)});
     if($("trackModel"))$("trackModel").value=mv;
     if(cached&&!force&&Date.now()-cached.ts<TRACK_TTL){el.innerHTML=renderTrackHtml(cached.data);return}
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
-      var r=await api("/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):""),"GET");
+      var r=await api("/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):"")+(mk?"&market="+encodeURIComponent(mk):""),"GET");
       if(seq!==state.trackSeq)return;
       var data=r.data;if(!data||typeof data!=="object"||!data.counts)throw new Error("Empty response");
       state.trackCache[ck]={ts:Date.now(),data:data};bmApplyResults(data.recent_settled);el.innerHTML=renderTrackHtml(data);
@@ -1755,6 +1762,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   document.querySelectorAll("#trackChips .chip").forEach(function(btn){btn.onclick=function(){state.trackDays=btn.dataset.days;loadTrack(false)}});
   if($("trackModel"))$("trackModel").onchange=function(){state.trackModel=this.value;loadTrack(false)};
   document.querySelectorAll("#trackTierChips .chip").forEach(function(btn){btn.onclick=function(){state.trackTier=state.trackTier===btn.dataset.tier?"":btn.dataset.tier;loadTrack(false)}});
+  document.querySelectorAll("#trackMarketChips .chip").forEach(function(btn){btn.onclick=function(){state.trackMarket=state.trackMarket===btn.dataset.market?"":btn.dataset.market;loadTrack(false)}});
   document.querySelectorAll("#suggestSubtabs .chip").forEach(function(btn){
     btn.onclick=function(){
       var sub=btn.dataset.sub;
