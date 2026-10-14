@@ -198,6 +198,7 @@
 .mrow{display:grid;grid-template-columns:1fr auto 40px;gap:10px;font-size:12px;padding:9px 2px;border-bottom:1px solid var(--surface3)}.mrow:last-child{border:0}
 .msrc{font-style:normal;font-size:10px;font-weight:600;color:var(--cyan);margin-left:6px}.mrow span:first-child{color:var(--muted);font-weight:600}.mrow span:nth-child(2){font-weight:600}.mrow span:last-child{text-align:right;color:var(--muted)}
 .sg-note{font-size:11px;color:var(--muted)}
+.tc-panel{margin-top:8px;padding:8px;border:1px solid var(--surface3);border-radius:12px;background:var(--surface)}.tc-panel input[type=search]{width:100%;box-sizing:border-box;height:40px;padding:0 10px;margin-bottom:6px;border:1px solid var(--surface3);border-radius:8px;background:var(--surface2);color:inherit;font-size:16px}#trackCompList{max-height:260px;overflow-y:auto;margin-bottom:8px}.tc-row{display:flex;align-items:center;gap:10px;min-height:40px;font-size:13px}.tc-row input{width:20px;height:20px;flex:0 0 auto}.tc-row span{flex:1;min-width:0}.tc-row small{color:var(--muted)}.tc-empty{padding:10px 4px;font-size:12px;color:var(--muted)}
 .ou-observe{margin:10px 0;padding:8px 2px 2px;border-top:1px solid var(--surface3)}.ou-row{display:grid;grid-template-columns:24px 1fr 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}.ou-row>span{font-size:11px;font-weight:700;color:var(--muted)}.ou-row input{width:100%;min-width:0;height:36px;box-sizing:border-box;padding:0 8px;border:1px solid var(--surface3);border-radius:8px;background:var(--surface2);color:inherit;font-size:16px}.ou-row .ou-bm,.ou-row .ou-note{grid-column:2/-1}.ou-act{display:flex;align-items:center;gap:10px}.ou-save{min-height:36px;padding:0 16px;border:0;border-radius:18px;background:var(--cyan);color:#001018;font-size:13px;font-weight:800}.ou-save:disabled{opacity:.5}.ou-del{min-height:36px;padding:0 14px;border:1px solid var(--surface3);border-radius:18px;background:none;color:var(--muted);font-size:13px;font-weight:700}.ou-del:disabled{opacity:.5}.ou-msg b{font-size:12px}.ou-msg .ok{color:var(--green)}.ou-msg .er{color:var(--red)}
 #suggestContent .sg-more{display:block;width:100%;min-height:44px;border-radius:22px;background:var(--surface);border:1px solid var(--line);color:var(--cyan);font-size:13px;font-weight:700;margin-top:6px}.sg-more small{color:var(--muted);font-weight:500;font-size:11px;margin-left:8px}
 .hcard{background:linear-gradient(180deg,var(--hi) 0,var(--surface) 70%);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:inset 0 1px 0 rgba(244,248,252,.06),0 8px 20px -14px #000}
@@ -553,6 +554,14 @@
             <option value="v2_ht050">v2_ht050</option>
             <option value="v1_ht045">v1_ht045</option>
           </select>
+        </div>
+        <div style="padding:0 2px 8px">
+          <button type="button" class="chip" id="trackCompBtn"><span>Giải đấu</span> <small id="trackCompCount"></small></button>
+          <div id="trackCompPanel" class="tc-panel" style="display:none">
+            <input id="trackCompSearch" type="search" placeholder="Tìm giải đấu" autocomplete="off">
+            <div id="trackCompList"></div>
+            <button type="button" class="chip" id="trackCompClear">Xóa chọn</button>
+          </div>
         </div>
         <div id="trackContent" style="margin-top:8px">
           <div class="context-state">Đang tải...</div>
@@ -1038,7 +1047,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 9</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.4 · Build 10</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1704,7 +1713,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   });
 
   var TRACK_MIN_N=30,TRACK_TTL=5*60*1000,TRACK_TIER_LABELS={CAO:"CAO",KHA:"KHÁ",TB:"TB",THAP:"THẤP",RAT_THAP:"RẤT THẤP"};
-  state.trackDays="all";state.trackTier="";state.trackMarket="";state.trackModel="";state.trackCache={};state.trackSeq=0;state.trackDetailOpen=false;
+  state.trackDays="all";state.trackTier="";state.trackMarket="";state.trackModel="";state.trackComps=[];state.trackCompList=[];state.trackCompQ="";state.trackCache={};state.trackSeq=0;state.trackDetailOpen=false;
   function trackResultChip(v){var m={WIN:["WIN","#166534","#ffffff"],HALF_WIN:["HALF","#3b3410","#fde047"],LOSS:["LOSS","#3a1616","#f87171"]}[v];if(!m)return '<span style="color:#7a8a99">—</span>';return '<span style="background:'+m[1]+';color:'+m[2]+';border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800;white-space:nowrap">'+m[0]+'</span>'}
   function trackPct(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
   function trackPair(pred,actual,show){return trackPct(pred)+' → <b style="color:#e8eef3">'+(show?trackPct(actual):"—")+'</b>'}
@@ -1767,13 +1776,24 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     html+=trackCard("100 trận gần nhất",rt);
     return html;
   }
+  function trackCompKey(){return state.trackComps.slice().sort().join("~")}
+  function trackCompQ(){return state.trackComps.length?"&competitions="+encodeURIComponent(JSON.stringify(state.trackComps.slice().sort())):""}
+  function renderTrackComps(){
+    var n=state.trackComps.length,q=state.trackCompQ.toLowerCase(),sel={};
+    state.trackComps.forEach(function(x){sel[x]=1});
+    if($("trackCompCount"))$("trackCompCount").textContent=n?"("+n+")":"";
+    if($("trackCompBtn"))$("trackCompBtn").classList.toggle("active",n>0);
+    var rows=state.trackCompList.filter(function(c){return !q||c.name.toLowerCase().indexOf(q)>=0}).sort(function(a,b){return (sel[b.name]?1:0)-(sel[a.name]?1:0)});
+    var el=$("trackCompList");if(!el)return;
+    el.innerHTML=rows.length?rows.map(function(c){return '<label class="tc-row"><input type="checkbox" data-comp="'+esc(c.name)+'"'+(sel[c.name]?' checked':'')+'><span translate="no">'+esc(c.name)+'</span><small>'+esc(c.n)+'</small></label>'}).join(""):'<div class="tc-empty">Không có giải phù hợp</div>';
+  }
   async function loadMoreTrack(){
-    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",mk=state.trackMarket||"",ck=days+"|"+tier+"|"+mv+"|"+mk,c=state.trackCache[ck],btn=$("trackMore");
+    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",mk=state.trackMarket||"",ck=days+"|"+tier+"|"+mv+"|"+mk+"|"+trackCompKey(),c=state.trackCache[ck],btn=$("trackMore");
     if(!c||!btn||btn.disabled)return;
     var rows=c.data.recent_settled||[],last=rows[rows.length-1];if(!last)return;
     btn.disabled=true;btn.textContent="Đang tải...";
     try{
-      var q="/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):"")+(mk?"&market="+encodeURIComponent(mk):"")+"&before_kickoff="+encodeURIComponent(last.kickoff)+(last.fixture_id?"&before_fixture="+encodeURIComponent(last.fixture_id):"")+"&limit=100";
+      var q="/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):"")+(mk?"&market="+encodeURIComponent(mk):"")+trackCompQ()+"&before_kickoff="+encodeURIComponent(last.kickoff)+(last.fixture_id?"&before_fixture="+encodeURIComponent(last.fixture_id):"")+"&limit=100";
       var r=await api(q,"GET");
       var more=(r.data&&Array.isArray(r.data.recent_settled))?r.data.recent_settled:null;
       if(!more)throw new Error("Empty response");
@@ -1781,7 +1801,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       if(more.length<100)c.data._done=true;
       bmApplyResults(more);
       var body=$("trackRecentBody"),b2=$("trackMore");
-      if(body&&b2&&ck===state.trackDays+"|"+(state.trackTier||"")+"|"+(state.trackModel||"")+"|"+(state.trackMarket||"")){
+      if(body&&b2&&ck===state.trackDays+"|"+(state.trackTier||"")+"|"+(state.trackModel||"")+"|"+(state.trackMarket||"")+"|"+trackCompKey()){
         body.insertAdjacentHTML("beforeend",more.map(trackRecentRow).join(""));
         if(c.data._done)b2.parentNode.removeChild(b2);else{b2.disabled=false;b2.textContent="Xem thêm"}
       }
@@ -1791,7 +1811,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
   }
   async function loadTrack(force){
-    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",mk=state.trackMarket||"",ck=days+"|"+tier+"|"+mv+"|"+mk,el=$("trackContent"),seq=++state.trackSeq,cached=state.trackCache[ck];
+    var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",mk=state.trackMarket||"",ck=days+"|"+tier+"|"+mv+"|"+mk+"|"+trackCompKey(),el=$("trackContent"),seq=++state.trackSeq,cached=state.trackCache[ck];
     document.querySelectorAll("#trackChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.days===days)});
     document.querySelectorAll("#trackTierChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.tier===tier)});
     document.querySelectorAll("#trackMarketChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.market===mk)});
@@ -1799,9 +1819,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(cached&&!force&&Date.now()-cached.ts<TRACK_TTL){el.innerHTML=renderTrackHtml(cached.data);return}
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
-      var r=await api("/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):"")+(mk?"&market="+encodeURIComponent(mk):""),"GET");
+      var r=await api("/api/track-record?days="+encodeURIComponent(days)+(tier?"&tier="+encodeURIComponent(tier):"")+(mv?"&model_version="+encodeURIComponent(mv):"")+(mk?"&market="+encodeURIComponent(mk):"")+trackCompQ(),"GET");
       if(seq!==state.trackSeq)return;
       var data=r.data;if(!data||typeof data!=="object"||!data.counts)throw new Error("Empty response");
+      if(Array.isArray(data.competitions)&&data.competitions.length){state.trackCompList=data.competitions;renderTrackComps()}
       state.trackCache[ck]={ts:Date.now(),data:data};bmApplyResults(data.recent_settled);el.innerHTML=renderTrackHtml(data);
     }catch(e){
       if(seq!==state.trackSeq)return;
@@ -1809,6 +1830,16 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
   }
   document.querySelectorAll("#trackChips .chip").forEach(function(btn){btn.onclick=function(){state.trackDays=btn.dataset.days;loadTrack(false)}});
+  function trackCompApply(){clearTimeout(state.trackCompT);state.trackCompT=setTimeout(function(){loadTrack(false)},350)}
+  if($("trackCompBtn"))$("trackCompBtn").onclick=function(){var p=$("trackCompPanel");p.style.display=p.style.display==="none"?"block":"none";renderTrackComps()};
+  if($("trackCompSearch"))$("trackCompSearch").oninput=function(){state.trackCompQ=this.value;renderTrackComps()};
+  if($("trackCompClear"))$("trackCompClear").onclick=function(){state.trackComps=[];renderTrackComps();trackCompApply()};
+  if($("trackCompList"))$("trackCompList").onchange=function(e){
+    var t=e.target;if(!t||!t.dataset||t.dataset.comp==null)return;
+    var nm=t.dataset.comp,i=state.trackComps.indexOf(nm);
+    if(t.checked&&i<0)state.trackComps.push(nm);else if(!t.checked&&i>=0)state.trackComps.splice(i,1);
+    renderTrackComps();trackCompApply();
+  };
   if($("trackModel"))$("trackModel").onchange=function(){state.trackModel=this.value;loadTrack(false)};
   document.querySelectorAll("#trackTierChips .chip").forEach(function(btn){btn.onclick=function(){state.trackTier=state.trackTier===btn.dataset.tier?"":btn.dataset.tier;loadTrack(false)}});
   document.querySelectorAll("#trackMarketChips .chip").forEach(function(btn){btn.onclick=function(){state.trackMarket=state.trackMarket===btn.dataset.market?"":btn.dataset.market;loadTrack(false)}});
@@ -2191,6 +2222,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Lịch sử": "History",
       "Đã lưu": "Saved",
       "Nhà cái": "Bookmaker",
+      "Giải đấu": "Competition",
+      "Tìm giải đấu": "Search competition",
+      "Xóa chọn": "Clear selection",
+      "Không có giải phù hợp": "No matching competition",
       "Ghi chú": "Note",
       "Đã xóa": "Deleted",
       "Xóa dữ liệu O/U đã nhập cho trận này?": "Delete the O/U data entered for this match?",
