@@ -382,6 +382,13 @@ export default{
         if(modelVersion&&!['v1_ht045','v2_ht050','v3_dynamic'].includes(modelVersion))return Response.json({error:'invalid model_version'},{status:400});
         const marketParam=url.searchParams.get('market')||'';
         if(marketParam&&!['over_ft','over_ht','btts_yes','1x2_ft_home'].includes(marketParam))return Response.json({error:'invalid market'},{status:400});
+        let competitions:string[]|null=null;
+        const compRaw=url.searchParams.get('competitions')||'';
+        if(compRaw){
+          let arr:any;try{arr=JSON.parse(compRaw)}catch{return Response.json({error:'invalid competitions'},{status:400});}
+          if(!Array.isArray(arr)||arr.length<1||arr.length>40||arr.some((x:any)=>typeof x!=='string'||!x||[...x].length>80))return Response.json({error:'invalid competitions'},{status:400});
+          competitions=[...new Set(arr as string[])];
+        }
         const beforeRaw=url.searchParams.get('before_kickoff');
         let beforeKickoff:string|null=null;
         if(beforeRaw){const bt=Date.parse(beforeRaw);if(!Number.isFinite(bt))return Response.json({error:'invalid before_kickoff'},{status:400});beforeKickoff=new Date(bt).toISOString();}
@@ -392,7 +399,7 @@ export default{
         if(!Number.isInteger(pageLimit)||pageLimit<1||pageLimit>200)return Response.json({error:'invalid limit'},{status:400});
         const key=(env as any).SUPABASE_SERVICE_KEY;
         if(!key)return Response.json({error:'not configured'},{status:500});
-        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days),p_tier:tierParam||null,p_before_kickoff:beforeKickoff,p_limit:pageLimit,p_before_fixture:beforeFixture||null,...(modelVersion?{p_model_version:modelVersion}:{}),...(marketParam?{p_market:marketParam}:{})}),signal:AbortSignal.timeout(8000)});
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days==='all'?null:Number(days),p_tier:tierParam||null,p_before_kickoff:beforeKickoff,p_limit:pageLimit,p_before_fixture:beforeFixture||null,...(modelVersion?{p_model_version:modelVersion}:{}),...(marketParam?{p_market:marketParam}:{}),...(competitions?{p_competitions:competitions}:{})}),signal:AbortSignal.timeout(8000)});
         if(!res.ok)return Response.json({error:'track record fetch failed',status:res.status},{status:502});
         return new Response(res.body,{status:200,headers:{'content-type':'application/json','Cache-Control':'public, max-age=300'}});
       }catch(e:any){
