@@ -556,6 +556,7 @@
           </select>
         </div>
         <div style="padding:0 2px 8px">
+          <button type="button" class="chip" id="trackOfflineBtn"><span>Offline</span> <small id="trackOfflineCount"></small></button>
           <button type="button" class="chip" id="trackCompBtn"><span>Giải đấu</span> <small id="trackCompCount"></small></button>
           <div id="trackCompPanel" class="tc-panel" style="display:none">
             <div id="trackRegionChips" class="tc-chips"></div>
@@ -1051,7 +1052,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.5 · Build 2</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.5 · Build 3</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1717,13 +1718,38 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   });
 
   var TRACK_MIN_N=30,TRACK_TTL=5*60*1000,TRACK_TIER_LABELS={CAO:"CAO",KHA:"KHÁ",TB:"TB",THAP:"THẤP",RAT_THAP:"RẤT THẤP"};
-  state.trackDays="all";state.trackTier="";state.trackMarket="";state.trackModel="";state.trackComps=[];state.trackRegions=[];state.trackCountries=[];state.trackCompList=[];state.trackCompQ="";state.trackCache={};state.trackSeq=0;state.trackDetailOpen=false;
+  state.trackDays="all";state.trackTier="";state.trackMarket="";state.trackModel="";state.trackOffline=false;state.trackComps=[];state.trackRegions=[];state.trackCountries=[];state.trackCompList=[];state.trackCompQ="";state.trackCache={};state.trackSeq=0;state.trackDetailOpen=false;
   function trackResultChip(v){var m={WIN:["WIN","#166534","#ffffff"],HALF_WIN:["HALF","#3b3410","#fde047"],LOSS:["LOSS","#3a1616","#f87171"]}[v];if(!m)return '<span style="color:#7a8a99">—</span>';return '<span style="background:'+m[1]+';color:'+m[2]+';border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800;white-space:nowrap">'+m[0]+'</span>'}
   function trackPct(v){return v==null?"—":(Number(v)*100).toFixed(0)+"%"}
   function trackPair(pred,actual,show){return trackPct(pred)+' → <b style="color:#e8eef3">'+(show?trackPct(actual):"—")+'</b>'}
   function trackTierBadge(t){var map={CAO:0,KHA:1,TB:2,THAP:3,RAT_THAP:4},b=SUGGEST_BADGES[map[t]];if(!b)return esc(t);return '<span style="background:'+b.bg+';color:'+b.fg+';border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800;white-space:nowrap">'+esc(TRACK_TIER_LABELS[t]||t)+'</span>'}
   function trackTh(t,left,extra){return '<th style="padding:6px 8px;text-align:'+(left?"left":"right")+';font-size:10px;color:#7f9daf;font-weight:700;white-space:nowrap;border-bottom:1px solid #1f2a35;'+(extra||"")+'">'+t+'</th>'}
   function trackTd(t,left,extra){return '<td style="padding:6px 8px;text-align:'+(left?"left":"right")+';font-size:12px;color:#c5d4de;white-space:nowrap;'+(extra||"")+'">'+t+'</td>'}
+  var PICK_KEY="cfi_pick_history_v1",PICK_MAX=500;
+  function pickLoad(){try{var a=JSON.parse(localStorage.getItem(PICK_KEY)||"[]");return Array.isArray(a)?a:[]}catch(e){return[]}}
+  function pickCount(){var el=$("trackOfflineCount");if(el)el.textContent="("+pickLoad().length+")"}
+  function pickSave(list){
+    var n=list.length;
+    while(n>0){try{localStorage.setItem(PICK_KEY,JSON.stringify(list.slice(0,n)));return}catch(e){if(n<=50)return;n=Math.floor(n/2)}}
+  }
+  function pickMerge(rows){
+    if(!rows||!rows.length)return;
+    var m={};pickLoad().forEach(function(p){if(p&&p.fixture_id)m[p.fixture_id]=p});
+    rows.forEach(function(r){
+      if(!r||!r.fixture_id)return;
+      m[r.fixture_id]={fixture_id:r.fixture_id,kickoff:r.kickoff,home:r.home,away:r.away,league:r.league||null,top_market:r.top_market||null,top_market_prob:r.top_market_prob==null?null:r.top_market_prob,hit_top_market:r.hit==null?null:r.hit,ht_score:r.ht_score||null,ft_score:r.ft_score||null,model_version:r.model_version||null,tier:r.tier||null,top_line:r.top_line==null?null:r.top_line,top_result:r.top_result||null,o075_result:r.o075_result||null};
+    });
+    var list=Object.keys(m).map(function(k){return m[k]}).sort(function(a,b){return (Date.parse(b.kickoff)||0)-(Date.parse(a.kickoff)||0)}).slice(0,PICK_MAX);
+    pickSave(list);pickCount();
+  }
+  function renderOfflineHtml(){
+    var list=pickLoad().sort(function(a,b){return (Date.parse(b.kickoff)||0)-(Date.parse(a.kickoff)||0)});
+    var info='<div style="font-size:11px;color:#7f9daf;margin-bottom:6px"><span>Đã lưu</span> <b>'+list.length+'</b>/'+PICK_MAX+' <span>trận trên máy</span>'+(list.length?' · <span>cũ nhất</span> '+esc(trackSinceDate(list[list.length-1].kickoff)):'')+'</div><div style="font-size:10px;color:#7f9daf;margin-bottom:8px">Bộ lọc không áp dụng ở chế độ Offline</div>';
+    if(!list.length)return trackCard("Offline",info+'<div style="font-size:11px;color:#7f9daf">Chưa có trận nào được lưu. Mở lịch sử khi có mạng để lưu.</div>');
+    var rt='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+trackTh("Trận",true,"padding:6px 4px")+trackTh("Best pick",true,"padding:6px 4px")+trackTh("Tier",false,"padding:6px 4px")+trackTh("0.75",false,"padding:6px 4px")+'</tr></thead><tbody>';
+    list.forEach(function(r){rt+=trackRecentRow(r)});
+    return trackCard("Offline",info+rt+'</tbody></table></div>');
+  }
   function trackCard(title,body){return '<div class="hcard"><div class="ttl">'+title+'<i></i></div>'+body+'</div>'}
   function trackSinceDate(iso){var t=Date.parse(iso);if(!Number.isFinite(t))return "—";var d=new Date(t+7*3600*1000);return d.toISOString().slice(0,10)}
   function rowMarketLabel(r){
@@ -1825,7 +1851,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       if(!more)throw new Error("Empty response");
       c.data.recent_settled=rows.concat(more);
       if(more.length<100)c.data._done=true;
-      bmApplyResults(more);
+      bmApplyResults(more);pickMerge(more);
       var body=$("trackRecentBody"),b2=$("trackMore");
       if(body&&b2&&ck===state.trackDays+"|"+(state.trackTier||"")+"|"+(state.trackModel||"")+"|"+(state.trackMarket||"")+"|"+trackCompKey()){
         body.insertAdjacentHTML("beforeend",more.map(trackRecentRow).join(""));
@@ -1842,6 +1868,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     document.querySelectorAll("#trackTierChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.tier===tier)});
     document.querySelectorAll("#trackMarketChips .chip").forEach(function(c){c.classList.toggle("active",c.dataset.market===mk)});
     if($("trackModel"))$("trackModel").value=mv;
+    if($("trackOfflineBtn"))$("trackOfflineBtn").classList.toggle("active",state.trackOffline);
+    if(state.trackOffline){el.innerHTML=renderOfflineHtml();return}
     if(cached&&!force&&Date.now()-cached.ts<TRACK_TTL){el.innerHTML=renderTrackHtml(cached.data);return}
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
@@ -1849,13 +1877,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       if(seq!==state.trackSeq)return;
       var data=r.data;if(!data||typeof data!=="object"||!data.counts)throw new Error("Empty response");
       if(Array.isArray(data.competitions)&&data.competitions.length){state.trackCompList=data.competitions;renderTrackComps()}
-      state.trackCache[ck]={ts:Date.now(),data:data};bmApplyResults(data.recent_settled);el.innerHTML=renderTrackHtml(data);
+      state.trackCache[ck]={ts:Date.now(),data:data};bmApplyResults(data.recent_settled);pickMerge(data.recent_settled);el.innerHTML=renderTrackHtml(data);
     }catch(e){
       if(seq!==state.trackSeq)return;
       el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
     }
   }
   document.querySelectorAll("#trackChips .chip").forEach(function(btn){btn.onclick=function(){state.trackDays=btn.dataset.days;loadTrack(false)}});
+  if($("trackOfflineBtn"))$("trackOfflineBtn").onclick=function(){state.trackOffline=!state.trackOffline;loadTrack(false)};
+  pickCount();
   function trackCompApply(){clearTimeout(state.trackCompT);state.trackCompT=setTimeout(function(){loadTrack(false)},350)}
   if($("trackCompBtn"))$("trackCompBtn").onclick=function(){var p=$("trackCompPanel");p.style.display=p.style.display==="none"?"block":"none";renderTrackComps()};
   if($("trackCompSearch"))$("trackCompSearch").oninput=function(){state.trackCompQ=this.value;renderTrackComps()};
@@ -2259,6 +2289,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Đã lưu": "Saved",
       "Nhà cái": "Bookmaker",
       "Giải đấu": "Competition",
+      "trận trên máy": "matches on this device",
+      "cũ nhất": "oldest",
+      "Bộ lọc không áp dụng ở chế độ Offline": "Filters do not apply in Offline mode",
+      "Chưa có trận nào được lưu. Mở lịch sử khi có mạng để lưu.": "No matches saved yet. Open History while online to save them.",
       "Quốc gia": "Country",
       "Châu Âu": "Europe",
       "Châu Á": "Asia",
