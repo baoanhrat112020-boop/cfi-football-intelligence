@@ -1,0 +1,49 @@
+name: Probe Livescore round fields (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install curl_cffi
+      - name: Probe
+        run: |
+          python3 - <<'PY'
+          import json, re
+          from datetime import datetime, timedelta
+          from curl_cffi import requests as cf
+          for off in (1, 8):
+              ymd = (datetime.utcnow().date() - timedelta(days=off)).strftime("%Y%m%d")
+              url = f"https://prod-cdn-mev-api.livescore.com/v1/api/app/date/soccer/{ymd}/0?MD=1"
+              r = cf.get(url, impersonate="chrome120", timeout=25)
+              print("DATE", ymd, "http", r.status_code, "bytes", len(r.content))
+              if r.status_code != 200:
+                  continue
+              d = json.loads(r.text)
+              stages = d.get("Stages", [])
+              print("stages", len(stages), "stage keys", sorted(stages[0].keys()))
+              pat = re.compile(r"round|rnd|matchday|week|\brd\b", re.I)
+              seen = set()
+              for s in stages:
+                  for ev in s.get("Events", []):
+                      for k, v in ev.items():
+                          if pat.search(k) or (isinstance(v, str) and pat.search(v)) or k.lower().startswith("er"):
+                              seen.add(k)
+              print("candidate round keys in events:", sorted(seen))
+              shown = 0
+              for s in stages:
+                  if s.get("Cnm") in ("England", "Netherlands", "Germany", "Spain", "Italy") and shown < 4:
+                      ev = s["Events"][0]
+                      print(s.get("Cnm"), "|", s.get("Snm"), "| event keys:", sorted(ev.keys()))
+                      print("   ", {k: ev[k] for k in ev if k in seen})
+                      shown += 1
+          PY
