@@ -2,6 +2,8 @@ name: Probe Livescore round fields (read-only)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [tmp/probe-livescore-round]
 
 permissions:
   contents: read
