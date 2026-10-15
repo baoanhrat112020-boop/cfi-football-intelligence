@@ -372,6 +372,22 @@ export default{
       }
     }
 
+    if(url.pathname==='/api/round-stats'&&request.method==='GET'){
+      try{
+        const country=(url.searchParams.get('country')||'').trim();
+        const league=(url.searchParams.get('league')||'').trim();
+        if([...country].length>60||[...league].length>80)return Response.json({error:'invalid params'},{status:400});
+        if(!!country!==!!league)return Response.json({error:'country and league go together'},{status:400});
+        const key=(env as any).SUPABASE_SERVICE_KEY;
+        if(!key)return Response.json({error:'not configured'},{status:500});
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_round_stats`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(country?{p_country:country,p_league:league}:{}),signal:AbortSignal.timeout(8000)});
+        if(!res.ok)return Response.json({error:'round stats fetch failed',status:res.status},{status:502});
+        return new Response(res.body,{status:200,headers:{'content-type':'application/json','Cache-Control':'public, max-age=300'}});
+      }catch(e:any){
+        return Response.json({error:String(e?.message||e)},{status:500});
+      }
+    }
+
     if(url.pathname==='/api/track-record'&&request.method==='GET'){
       try{
         const days=(url.searchParams.get('days')||'all').toLowerCase();
