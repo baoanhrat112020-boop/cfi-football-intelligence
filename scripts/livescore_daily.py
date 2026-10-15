@@ -245,7 +245,8 @@ for i in range(0, len(rows_list), RPC_BATCH):
                 fx_failed += 1
 
 staged_ok = 0
-for m in all_events:
+SKIP_STAGING = os.environ.get("LIVESCORE_SKIP_STAGING") == "1"
+for m in ([] if SKIP_STAGING else all_events):
     h_name, a_name = team_names(m)
     if not h_name or not a_name:
         drop["staging_skip_no_team_name"] += 1; continue
