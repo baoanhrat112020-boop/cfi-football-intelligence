@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '17 */4 * * *'
   workflow_dispatch:
+    inputs:
+      days_back:
+        description: Days back to crawl (1 = normal run, up to 60 for backfill)
+        default: '1'
 
 concurrency:
   group: livescore-ingest
@@ -26,4 +30,5 @@ jobs:
       - name: LiveScore backfill
         env:
           SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+          LIVESCORE_DAYS_BACK: ${{ inputs.days_back || '1' }}
         run: python scripts/livescore_daily.py

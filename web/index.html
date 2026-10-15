@@ -144,7 +144,7 @@
 #screenSuggest button{transition:transform .12s,background .15s,color .15s,border-color .15s}
 #screenSuggest button:active{transform:scale(.96)}
 #screenSuggest button:focus-visible,#screenSuggest select:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
-#suggestSubtabs{display:grid!important;grid-template-columns:repeat(3,1fr);gap:0!important;padding:0!important;border-bottom:1px solid var(--line)}
+#suggestSubtabs{display:grid!important;grid-template-columns:repeat(4,1fr);gap:0!important;padding:0!important;border-bottom:1px solid var(--line)}
 #suggestSubtabs .chip{min-height:44px;padding:0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--muted);font-size:14px;font-weight:600;margin-bottom:-1px}
 #suggestSubtabs .chip.active,#suggestSubtabs .chip:hover:not(.active){background:none}
 #suggestSubtabs .chip.active{color:var(--text);border-bottom-color:var(--cyan)}
@@ -198,6 +198,7 @@
 .mrow{display:grid;grid-template-columns:1fr auto 40px;gap:10px;font-size:12px;padding:9px 2px;border-bottom:1px solid var(--surface3)}.mrow:last-child{border:0}
 .msrc{font-style:normal;font-size:10px;font-weight:600;color:var(--cyan);margin-left:6px}.mrow span:first-child{color:var(--muted);font-weight:600}.mrow span:nth-child(2){font-weight:600}.mrow span:last-child{text-align:right;color:var(--muted)}
 .sg-note{font-size:11px;color:var(--muted)}
+.rd-wrap{overflow-x:auto}.rd-table{width:100%;min-width:560px;border-collapse:collapse}.rd-table th,.rd-table td{padding:6px 4px;font-size:11px;text-align:center;border-bottom:1px solid var(--surface3)}.rd-table th{color:var(--muted);font-weight:700}.rd-table td small{display:block;color:var(--muted);font-size:10px}.rd-table tr[data-round]{cursor:pointer}.rd-table .rd-r{text-align:left;font-weight:800}.rd-table .rd-m td{text-align:left;color:var(--muted);font-size:11px}.rd-note{font-size:10px;color:var(--muted);margin-top:6px}
 .tc-panel{margin-top:8px;padding:8px;border:1px solid var(--surface3);border-radius:12px;background:var(--surface)}.tc-panel input[type=search]{width:100%;box-sizing:border-box;height:40px;padding:0 10px;margin-bottom:6px;border:1px solid var(--surface3);border-radius:8px;background:var(--surface2);color:inherit;font-size:16px}#trackCompList{max-height:260px;overflow-y:auto;margin-bottom:8px}.tc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.tc-sub{font-size:11px;font-weight:700;color:var(--muted);margin:6px 0 4px}.tc-scroll{max-height:160px;overflow-y:auto;margin-bottom:6px}.tc-row{display:flex;align-items:center;gap:10px;min-height:40px;font-size:13px}.tc-row input{width:20px;height:20px;flex:0 0 auto}.tc-row span{flex:1;min-width:0}.tc-row small{color:var(--muted)}.tc-empty{padding:10px 4px;font-size:12px;color:var(--muted)}
 .ou-observe{margin:10px 0;padding:8px 2px 2px;border-top:1px solid var(--surface3)}.ou-row{display:grid;grid-template-columns:24px 1fr 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}.ou-row>span{font-size:11px;font-weight:700;color:var(--muted)}.ou-row input{width:100%;min-width:0;height:36px;box-sizing:border-box;padding:0 8px;border:1px solid var(--surface3);border-radius:8px;background:var(--surface2);color:inherit;font-size:16px}.ou-row .ou-bm,.ou-row .ou-note{grid-column:2/-1}.ou-act{display:flex;align-items:center;gap:10px}.ou-save{min-height:36px;padding:0 16px;border:0;border-radius:18px;background:var(--cyan);color:#001018;font-size:13px;font-weight:800}.ou-save:disabled{opacity:.5}.ou-del{min-height:36px;padding:0 14px;border:1px solid var(--surface3);border-radius:18px;background:none;color:var(--muted);font-size:13px;font-weight:700}.ou-del:disabled{opacity:.5}.ou-msg b{font-size:12px}.ou-msg .ok{color:var(--green)}.ou-msg .er{color:var(--red)}
 #suggestContent .sg-more{display:block;width:100%;min-height:44px;border-radius:22px;background:var(--surface);border:1px solid var(--line);color:var(--cyan);font-size:13px;font-weight:700;margin-top:6px}.sg-more small{color:var(--muted);font-weight:500;font-size:11px;margin-left:8px}
@@ -506,6 +507,7 @@
       <div class="chip-row" id="suggestSubtabs" style="display:flex;gap:6px;padding:4px 2px 0">
         <button class="chip active" data-sub="picks">Dự đoán</button>
         <button class="chip" data-sub="history">Lịch sử</button>
+        <button class="chip" data-sub="rounds">Vòng</button>
         <button class="chip" data-sub="saved">Đã lưu</button>
       </div>
       <div id="suggestPicks">
@@ -524,6 +526,12 @@
         <div id="suggestContent" style="margin-top:12px">
           <div class="context-state">Đang tải...</div>
         </div>
+      </div>
+      <div id="suggestRounds" style="display:none">
+        <div style="padding:10px 2px 6px">
+          <select id="roundLeague" style="width:100%;background:#111821;color:#c5d4de;border:1px solid #1f2a35;border-radius:8px;padding:8px 10px;font-size:16px;min-height:44px"></select>
+        </div>
+        <div id="roundsContent"></div>
       </div>
       <div id="suggestSaved" style="display:none">
         <div id="savedContent" style="margin-top:8px"></div>
@@ -1052,7 +1060,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.5 · Build 3</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.5 · Build 4</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1839,6 +1847,45 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var el=$("trackCompList");if(!el)return;
     el.innerHTML=rows.length?rows.map(function(c){return '<label class="tc-row"><input type="checkbox" data-comp="'+esc(c.name)+'"'+(K.indexOf(c.name)>=0?' checked':'')+'><span translate="no">'+esc(c.name)+'</span><small>'+esc(c.n)+'</small></label>'}).join(""):'<div class="tc-empty">Không có giải phù hợp</div>';
   }
+  state.roundsLeagues=null;state.roundsSel=null;state.roundsData=null;state.roundsSeq=0;state.roundsOpenMap={};
+  function roundsSelectHtml(){
+    var L=state.roundsLeagues||[];
+    return L.map(function(l,i){return '<option value="'+i+'"'+(state.roundsSel===l?' selected':'')+'>'+esc(l.country+" · "+l.league)+' ('+esc(l.n_rounds)+')</option>'}).join("");
+  }
+  function roundsCell(x,n){return n?'<td>'+esc(x)+'/'+esc(n)+'<small>'+Math.round(100*x/n)+'%</small></td>':'<td>—</td>'}
+  function renderRounds(){
+    var d=state.roundsData,el=$("roundsContent"),R=d&&d.rounds||[];
+    if(!R.length){el.innerHTML='<div class="context-state">Chưa có dữ liệu vòng đấu</div>';return}
+    var h='<div class="rd-wrap"><table class="rd-table"><thead><tr><th class="rd-r">Vòng</th><th>Trận</th><th>O/U 0.5 HT</th><th>O/U 1.5 HT</th><th>O/U 0.5 FT</th><th>O/U 1.5 FT</th><th>O/U 2.5 FT</th><th>O/U 3.5 FT</th><th>BTTS HT</th><th>BTTS FT</th></tr></thead><tbody>',inc=false;
+    R.forEach(function(r){
+      var n=Number(r.n)||0;if(!r.complete)inc=true;
+      h+='<tr data-round="'+esc(r.round)+'"><td class="rd-r">'+esc(r.round)+(r.complete?'':'*')+'</td><td>'+n+'</td>'+roundsCell(r.o05_ht,n)+roundsCell(r.o15_ht,n)+roundsCell(r.o05_ft,n)+roundsCell(r.o15_ft,n)+roundsCell(r.o25_ft,n)+roundsCell(r.o35_ft,n)+roundsCell(r.btts_ht,n)+roundsCell(r.btts_ft,n)+'</tr>';
+      if(state.roundsOpenMap[r.round])(r.matches||[]).forEach(function(m){h+='<tr class="rd-m"><td colspan="10"><span translate="no">'+esc(String(m.date||"").slice(5))+' · '+esc(m.home)+' – '+esc(m.away)+'</span> · HT '+esc(m.ht)+' · FT '+esc(m.ft)+'</td></tr>'});
+    });
+    h+='</tbody></table></div>'+(inc?'<div class="rd-note"><span>*</span> <span>Vòng chưa đủ trận</span></div>':'');
+    el.innerHTML=h;
+  }
+  function roundsLoad(sel){
+    var el=$("roundsContent"),seq=++state.roundsSeq;
+    el.innerHTML='<div class="context-state">Đang tải...</div>';
+    api("/api/round-stats"+(sel?"?country="+encodeURIComponent(sel.country)+"&league="+encodeURIComponent(sel.league):""),"GET").then(function(r){
+      if(seq!==state.roundsSeq)return;
+      var d=r.data||{};
+      if(!sel){
+        state.roundsLeagues=d.leagues||[];
+        if(!state.roundsLeagues.length){$("roundLeague").innerHTML="";el.innerHTML='<div class="context-state">Chưa có dữ liệu vòng đấu</div>';return}
+        state.roundsSel=state.roundsLeagues[0];$("roundLeague").innerHTML=roundsSelectHtml();
+        roundsLoad(state.roundsSel);return;
+      }
+      state.roundsData=d;state.roundsOpenMap={};renderRounds();
+    },function(e){
+      if(seq!==state.roundsSeq)return;
+      el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
+    });
+  }
+  function roundsOpen(){if(!state.roundsLeagues)roundsLoad(null);else if(!state.roundsData)roundsLoad(state.roundsSel)}
+  if($("roundLeague"))$("roundLeague").onchange=function(){var l=(state.roundsLeagues||[])[Number(this.value)];if(!l)return;state.roundsSel=l;state.roundsData=null;roundsLoad(l)};
+  if($("roundsContent"))$("roundsContent").addEventListener("click",function(e){var tr=e.target.closest&&e.target.closest("tr[data-round]");if(!tr)return;var k=tr.dataset.round;state.roundsOpenMap[k]=!state.roundsOpenMap[k];renderRounds()});
   async function loadMoreTrack(){
     var days=state.trackDays,tier=state.trackTier||"",mv=state.trackModel||"",mk=state.trackMarket||"",ck=days+"|"+tier+"|"+mv+"|"+mk+"|"+trackCompKey(),c=state.trackCache[ck],btn=$("trackMore");
     if(!c||!btn||btn.disabled)return;
@@ -1917,8 +1964,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       state.suggestSub=sub;
       $("suggestSaved").style.display=sub==="saved"?"":"none";
       $("suggestHistory").style.display=sub==="history"?"":"none";
+      $("suggestRounds").style.display=sub==="rounds"?"":"none";
       if(sub==="saved")renderSaved();
       if(sub==="history")loadTrack(false);
+      if(sub==="rounds")roundsOpen();
     };
   });
 
@@ -2289,6 +2338,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Đã lưu": "Saved",
       "Nhà cái": "Bookmaker",
       "Giải đấu": "Competition",
+      "Vòng": "Round",
+      "Chưa có dữ liệu vòng đấu": "No round data yet",
+      "Vòng chưa đủ trận": "Round not complete",
       "trận trên máy": "matches on this device",
       "cũ nhất": "oldest",
       "Bộ lọc không áp dụng ở chế độ Offline": "Filters do not apply in Offline mode",

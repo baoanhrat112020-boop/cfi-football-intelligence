@@ -102,7 +102,10 @@ print(f"  Loaded {len(existing_map)} existing fixtures")
 
 all_events = []
 failures = []
-for day in range(-1, 2):
+DAYS_BACK = max(1, min(int(os.environ.get("LIVESCORE_DAYS_BACK", "1") or "1"), 60))
+for day in range(-1, DAYS_BACK + 1):
+    if DAYS_BACK > 1 and day > -1:
+        time.sleep(1)
     try:
         events = crawl_day(day)
     except LivescoreError as e:
@@ -197,7 +200,12 @@ for m in finished:
         drop["fixtures_skip_no_eid"] += 1; continue
     fid = str(U.uuid5(U.NAMESPACE_DNS, f"livescore:{eid}"))
     comp_key = "livescore:" + (m.get("_league") or m.get("_stage") or "unknown").strip().lower().replace(" ","_")[:50]
+    ern = m.get("ErnInf")
+    ern_s = str(ern).strip() if ern is not None else ""
     fixture_rows[fid] = {
+        "round": int(ern_s) if ern_s.isdigit() and int(ern_s) < 100 else None,
+        "round_label": ern_s[:60] or None,
+        "country": (m.get("_stage") or None),
         "fixture_id": fid, "match_date": md,
         "home_team_id": h_id, "away_team_id": a_id,
         "ht_home": ht_h, "ht_away": ht_a,
