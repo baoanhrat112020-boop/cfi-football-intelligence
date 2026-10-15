@@ -31,4 +31,5 @@ jobs:
         env:
           SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
           LIVESCORE_DAYS_BACK: ${{ inputs.days_back || '1' }}
+          LIVESCORE_SKIP_STAGING: ${{ (inputs.days_back && inputs.days_back != '1') && '1' || '0' }}
         run: python scripts/livescore_daily.py
