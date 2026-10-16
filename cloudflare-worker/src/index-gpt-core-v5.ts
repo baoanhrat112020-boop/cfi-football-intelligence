@@ -335,10 +335,10 @@ const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function parlayLogRows(mode:string,parlays:any[]){
   return parlays.filter(x=>x.legs.every((l:any)=>UUID_RE.test(String(l.fixture_id))&&l.kickoff)).map(x=>({mode,pkey:x.pkey,day:String(x.legs[0].kickoff).substring(0,10),scope:x.scope,ptype:x.type,n_legs:x.legs.length,system_p:x.combined_p,legs:x.legs.map((l:any)=>({fixture_id:l.fixture_id,home:l.home,away:l.away,kickoff:l.kickoff,type:l.type,market:l.market,line:l.line,p:l.p,odds:l.odds??null}))}));
 }
-const AMATEUR_RE=/(\s(2|II)$)|(\bU(21|19|18)\b)|(\s(W|\(W\))$)/i;
+const EXCLUDE_RE=/\bU1[0-8]\b|\b(Oberliga|Verbandsliga|Landesliga|Bezirksliga|Kreisliga|Kreisklasse)\b/i;
 function hasOuOdds(m:any):boolean{return Array.isArray(m?.market_odds)&&m.market_odds.some((o:any)=>String(o?.family||'').toUpperCase()==='OVER_UNDER'&&Number(o?.odds_over)>1)}
 function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null,oddsOnly:boolean){
-  const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats&&!AMATEUR_RE.test(String(m.home||'').trim())&&!AMATEUR_RE.test(String(m.away||'').trim())&&(!oddsOnly||hasOuOdds(m)));
+  const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
   const byKick=new Map<string,any[]>();
   up.forEach(m=>{const a=byKick.get(m.kickoff)||[];a.push(m);byKick.set(m.kickoff,a)});
   const out:any[]=[];
