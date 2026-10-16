@@ -239,6 +239,15 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
   });
 }
 
+const HT_ALT_LINES:[number,string][]=[[0.5,'s_over05_ht'],[0.75,'s_over075_ht'],[1,'s_over1_ht'],[1.25,'s_over125_ht'],[1.5,'s_over15_ht'],[1.75,'calc'],[2,'calc']];
+const FT_ALT_LINES:[number,string][]=[[1.5,'s_over_15_ft'],[2,'s_over_2_ft'],[2.25,'s_over_225_ft'],[2.5,'s_over_25_ft'],[2.75,'s_over_275_ft'],[3,'s_over_3_ft'],[3.25,'s_over_325_ft'],[3.5,'s_over_35_ft']];
+function htAltP(m:any,ln:number,key:string):number|undefined{
+  if(key!=='calc')return typeof m[key]==='number'?m[key]:undefined;
+  const p05=m.s_over05_ht;
+  if(typeof p05!=='number'||!(p05>0&&p05<1))return undefined;
+  const l=-Math.log(1-p05),e=Math.exp(-l),q2=l*l/2*e,q3=1-e*(1+l+l*l/2);
+  return ln===1.75?q3+0.75*q2:q3+0.5*q2;
+}
 function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|null){
   const r:any[]=[];
   const add=(t:string,mk:any,raw:any,line:any)=>{
@@ -251,7 +260,16 @@ function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|
       if(h==null)return;
       p=raw*Math.sqrt(h);
     }
-    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:mk,raw,p:Math.round(p*10000)/10000});
+    const alts:any[]=[];
+    const lines=t==='ou_ht'?HT_ALT_LINES:t==='ou_ft'?FT_ALT_LINES:[];
+    for(const [ln,key] of lines){
+      const a=t==='ou_ht'?htAltP(m,ln as number,key as string):m[key as string];
+      if(typeof a!=='number')continue;
+      let ap=a;
+      if(rate){const h2=rate(m,t,ln as number);if(h2==null)continue;ap=a*Math.sqrt(h2)}
+      alts.push({line:ln,p:Math.round(ap*10000)/10000});
+    }
+    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:mk,line:typeof line==='number'?line:null,raw,p:Math.round(p*10000)/10000,alts});
   };
   add('ou_ft',m.selected_ft_market,m.selected_ft_p,m.selected_ft_line);
   add('ou_ht',m.selected_ht_market,m.selected_ht_p,m.selected_ht_line);
