@@ -319,6 +319,11 @@ function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
   finish('mix',legs,0.55,c=>new Set(c.map(l=>l.type)).size>=2);
   return res;
 }
+function parlayPkey(x:any):string{return x.scope+'|'+x.type+'|'+x.legs.map((l:any)=>l.fixture_id+':'+l.type).join(',')}
+const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function parlayLogRows(mode:string,parlays:any[]){
+  return parlays.filter(x=>x.legs.every((l:any)=>UUID_RE.test(String(l.fixture_id))&&l.kickoff)).map(x=>({mode,pkey:x.pkey,day:String(x.legs[0].kickoff).substring(0,10),scope:x.scope,ptype:x.type,n_legs:x.legs.length,system_p:x.combined_p,legs:x.legs.map((l:any)=>({fixture_id:l.fixture_id,home:l.home,away:l.away,kickoff:l.kickoff,type:l.type,market:l.market,line:l.line,p:l.p}))}));
+}
 function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null){
   const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats);
   const byKick=new Map<string,any[]>();
@@ -342,7 +347,7 @@ function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number
     const c=perDay.get(d)||0;
     if(c<6){perDay.set(d,c+1);keepScopes.add(sc)}
   });
-  return out.filter(x=>keepScopes.has(x.scope));
+  return out.filter(x=>keepScopes.has(x.scope)).map(x=>({...x,pkey:parlayPkey(x)}));
 }
 
 const TIER_EVIDENCE_TTL_MS=10*60*1000;
@@ -457,7 +462,10 @@ export default{
             return typeof h[col]==='number'?h[col]:null;
           };
         }
-        return Response.json({mode,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:buildParlays(all,Date.now(),rate)},{headers:{'Cache-Control':'public, max-age=180'}});
+        const built=buildParlays(all,Date.now(),rate);
+        const logRows=parlayLogRows(mode,built);
+        if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
+        return Response.json({mode,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
       }
@@ -564,6 +572,49 @@ export default{
       }catch(e:any){
         return Response.json({error:String(e?.message||e)},{status:500});
       }
+    }
+
+    if(url.pathname==='/api/parlay-edit'&&request.method==='POST'){
+      let input:any=null;try{input=await request.clone().json()}catch{}
+      if(!input||typeof input!=='object')return Response.json({error:'invalid body'},{status:400});
+      const mode=input.mode==='round'?'round':input.mode==='suggest'?'suggest':null;
+      const pk=typeof input.pkey==='string'&&input.pkey.length>0&&input.pkey.length<2000?input.pkey:null;
+      if(!mode||!pk)return Response.json({error:'invalid key'},{status:400});
+      const legsIn=Array.isArray(input.legs)?input.legs:null;
+      if(!legsIn||legsIn.length>10)return Response.json({error:'invalid legs'},{status:400});
+      const quarter=(v:any)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<10&&Math.abs(v*4-Math.round(v*4))<1e-9;
+      const legsOut:any[]=[];
+      for(const e of legsIn){
+        if(!e||!Number.isInteger(e.i)||e.i<0||e.i>9)return Response.json({error:'invalid leg'},{status:400});
+        const o:any={i:e.i};
+        if(e.line!=null){if(!quarter(e.line))return Response.json({error:'invalid line'},{status:400});o.line=e.line}
+        if(e.odds!=null){if(!(typeof e.odds==='number'&&Number.isFinite(e.odds)&&e.odds>1&&e.odds<50))return Response.json({error:'invalid odds'},{status:400});o.odds=Math.round(e.odds*1000)/1000}
+        if(o.line!==undefined||o.odds!==undefined)legsOut.push(o);
+      }
+      let up:number|null=null;
+      if(input.p!=null){if(!(typeof input.p==='number'&&input.p>=0&&input.p<=1))return Response.json({error:'invalid p'},{status:400});up=Math.round(input.p*10000)/10000}
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      try{
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.${mode}&pkey=eq.${encodeURIComponent(pk)}&settled_at=is.null`,{method:'PATCH',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify({user_legs:legsOut.length?legsOut:null,user_p:legsOut.length?up:null,edited_at:new Date().toISOString()}),signal:AbortSignal.timeout(8000)});
+        if(!r.ok)return Response.json({error:'update failed',status:r.status},{status:502});
+        const rows:any=await r.json();
+        if(!Array.isArray(rows)||!rows.length)return Response.json({error:'parlay not found or already settled'},{status:404});
+        return Response.json({ok:true},{headers:{'Cache-Control':'no-store'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
+    if(url.pathname==='/api/parlay-stats'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const days=Math.min(365,Math.max(1,Number.parseInt(url.searchParams.get('days')||'30',10)||30));
+      const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
+      try{
+        await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_settle`,{method:'POST',headers:hdr,body:'{}',signal:AbortSignal.timeout(15000)});
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_stats`,{method:'POST',headers:hdr,body:JSON.stringify({p_days:days}),signal:AbortSignal.timeout(15000)});
+        if(!r.ok)return Response.json({error:'stats failed',status:r.status},{status:502});
+        return Response.json(await r.json(),{headers:{'Cache-Control':'no-store'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
     if(url.pathname==='/api/observe-ou'&&(request.method==='POST'||request.method==='DELETE')){
