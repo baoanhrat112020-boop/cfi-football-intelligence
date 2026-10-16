@@ -330,6 +330,9 @@ function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number
     const ms=up.filter(m=>{const t=Date.parse(m.kickoff);return t>=t0&&t<=t0+4*3600*1000});
     if(ms.length>=5)out.push(...topParlays(ms.flatMap(m=>parlayLegs(m,rate)),5,7,'window_4h:'+s));
   });
+  const byDay=new Map<string,any[]>();
+  up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=byDay.get(d)||[];a.push(m);byDay.set(d,a)});
+  byDay.forEach((ms,d)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(m=>parlayLegs(m,rate)),3,5,'any_time:'+d))});
   const best=new Map<string,number>();
   out.forEach(x=>best.set(x.scope,Math.max(best.get(x.scope)||0,x.combined_p)));
   const perDay=new Map<string,number>();
