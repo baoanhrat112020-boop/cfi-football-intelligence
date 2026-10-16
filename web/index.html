@@ -1069,7 +1069,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.6 · Build 4</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.6 · Build 5</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1932,20 +1932,26 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     parlaySaveT[ci]=setTimeout(function(){
       var c=parlayCards[ci];if(!c||!c.pkey)return;
       var legs=[],pr=1;
-      c.legs.forEach(function(l,li){var e=parlayEdits[ci+":"+li]||{},st=parlayLegState(ci,li);pr*=st.p;var o={i:li};if(e.line!=null)o.line=e.line;if(e.odds>1)o.odds=e.odds;if(o.line!==undefined||o.odds!==undefined)legs.push(o)});
+      c.legs.forEach(function(l,li){var e=parlayEdits[ci+":"+li]||{},st=parlayLegState(ci,li);pr*=st.p;var o={i:li},ch=e.line!=null&&e.line!==l.line;if(ch){o.line=e.line;if(st.odds)o.odds=st.odds}else if(e.odds>1)o.odds=e.odds;if(o.line!==undefined||o.odds!==undefined)legs.push(o)});
       api("/api/parlay-edit","POST",{mode:parlayMode,pkey:c.pkey,legs:legs,p:Math.round(pr*10000)/10000}).catch(function(){});
     },900);
   }
-  function parlayLegState(ci,li){var l=parlayCards[ci].legs[li],e=parlayEdits[ci+":"+li]||{},p=l.p;if(e.line!=null&&l.alts){for(var i=0;i<l.alts.length;i++){if(l.alts[i].line===e.line){p=l.alts[i].p;break}}}return {p:p,odds:e.odds>1?e.odds:null}}
+  function parlayLegState(ci,li){
+    var l=parlayCards[ci].legs[li],e=parlayEdits[ci+":"+li]||{},line=e.line!=null?e.line:l.line,p=l.p,mk=l.odds||null;
+    if(l.alts&&l.alts.length){for(var i=0;i<l.alts.length;i++){if(l.alts[i].line===line){p=l.alts[i].p;mk=l.alts[i].odds||null;break}}}
+    var odds=e.odds>1?e.odds:e.odds===0?null:mk;
+    return {p:p,odds:odds,line:line,mk:mk}
+  }
   function parlayRecalc(ci){
-    var c=parlayCards[ci],pr=1,mn=1,od=1,all=true;
+    var c=parlayCards[ci],pr=1,mn=1,od=1,all=true,r=c.cal_r&&c.cal_r>0?c.cal_r:1;
     c.legs.forEach(function(l,li){var st=parlayLegState(ci,li);pr*=st.p;if(st.p<mn)mn=st.p;if(st.odds)od*=st.odds;else all=false;var el=$("plP"+ci+"_"+li);if(el)el.textContent=(st.p*100).toFixed(0)+"%"});
+    var pc=Math.min(0.99,pr*r);
     var pe=$("pcP"+ci),me=$("pcM"+ci),oe=$("pcO"+ci);
-    if(pe)pe.textContent=(pr*100).toFixed(1)+"%";
+    if(pe)pe.textContent=(pc*100).toFixed(1)+"%";
     if(me)me.textContent=(mn*100).toFixed(0)+"%";
     if(oe){
-      var be='<span>Odds hòa vốn</span> <b>'+(1/pr).toFixed(2)+'</b>';
-      if(all){var ev=pr*od-1,kf=od>1?(pr*od-1)/(od-1)/4:0;oe.innerHTML='<span>Odds gộp</span> <b>'+od.toFixed(2)+'</b> · <span>Kỳ vọng</span> <b style="color:'+(ev>=0?"#35d07f":"#ff6b6b")+'">'+(ev>=0?"+":"")+(ev*100).toFixed(1)+'%</b> · '+be+(kf>0?' · <span translate="no">Kelly 1/4 '+(kf*100).toFixed(1)+'%</span>':'')}
+      var be='<span>Odds hòa vốn</span> <b>'+(1/pc).toFixed(2)+'</b>'+(r!==1?' · <span>Hiệu chỉnh</span> <b translate="no">×'+r.toFixed(2)+'</b>':'');
+      if(all){var ev=pc*od-1,kf=od>1?(pc*od-1)/(od-1)/4:0;oe.innerHTML='<span>Odds gộp</span> <b>'+od.toFixed(2)+'</b> · <span>Kỳ vọng</span> <b style="color:'+(ev>=0?"#35d07f":"#ff6b6b")+'">'+(ev>=0?"+":"")+(ev*100).toFixed(1)+'%</b> · '+be+(kf>0?' · <span translate="no">Kelly 1/4 '+(kf*100).toFixed(1)+'%</span>':'')}
       else oe.innerHTML=be;
     }
   }
@@ -1960,13 +1966,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return order.map(function(g){
       return '<div class="sg-hdr" style="margin-top:14px"><b>'+esc(parlayScopeLabel(g))+'</b></div>'+groups[g].map(function(x){
         var ci=parlayCards.length;parlayCards.push(x);
+        if(Array.isArray(x.user_legs))x.user_legs.forEach(function(u){var ee={};if(u.line!=null)ee.line=u.line;if(u.odds>1)ee.odds=u.odds;parlayEdits[ci+":"+u.i]=ee});
+        var cr=x.cal_r&&x.cal_r>0?x.cal_r:1;
         var pk=parlayKey(x);
-        return '<details class="card pl-card" data-pk="'+esc(pk)+'"'+(parlayClosed[pk]?'':' open')+' style="padding:12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><div><b style="font-size:14px">'+esc(parlayTypeLabel(x.type))+'</b><div style="font-size:11px;color:var(--muted)">'+x.legs.length+' chân</div></div><div style="text-align:right"><b id="pcP'+ci+'" style="font-size:18px;color:var(--cyan)">'+(x.combined_p*100).toFixed(1)+'%</b><div style="font-size:11px;color:var(--muted)"><span>'+lab+'</span> · <span>thấp nhất</span> <span id="pcM'+ci+'">'+(x.min_p*100).toFixed(0)+'%</span></div></div></div><div id="pcO'+ci+'" style="font-size:12px;color:var(--muted)"><span>Odds hòa vốn</span> <b>'+(x.combined_p>0?(1/x.combined_p).toFixed(2):"—")+'</b></div></summary>'+x.legs.map(function(l,li){
-          var ctl;
+        return '<details class="card pl-card" data-pk="'+esc(pk)+'"'+(parlayClosed[pk]?'':' open')+' style="padding:12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><div><b style="font-size:14px">'+esc(parlayTypeLabel(x.type))+'</b><div style="font-size:11px;color:var(--muted)">'+x.legs.length+' chân</div></div><div style="text-align:right"><b id="pcP'+ci+'" style="font-size:18px;color:var(--cyan)">'+(Math.min(0.99,x.combined_p*cr)*100).toFixed(1)+'%</b><div style="font-size:11px;color:var(--muted)"><span>'+lab+'</span> · <span>thấp nhất</span> <span id="pcM'+ci+'">'+(x.min_p*100).toFixed(0)+'%</span></div></div></div><div id="pcO'+ci+'" style="font-size:12px;color:var(--muted)"><span>Odds hòa vốn</span> <b>'+(x.combined_p>0?(1/x.combined_p).toFixed(2):"—")+'</b></div></summary><div style="margin:2px 0 4px"><button type="button" class="chip pl-placed'+(x.placed?' active':'')+'" data-ci="'+ci+'" style="padding:4px 10px;font-size:12px">Đã đặt</button></div>'+x.legs.map(function(l,li){
+          var ctl,lst=parlayLegState(ci,li);
           if(l.alts&&l.alts.length>1&&(l.type==="ou_ht"||l.type==="ou_ft")){
-            ctl='<span style="font-size:12px">'+(l.type==="ou_ht"?'Tài hiệp 1':'Tài cả trận')+'</span> <select class="pl-line" data-ci="'+ci+'" data-li="'+li+'" style="background:var(--surface3);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 4px;font-size:12px">'+l.alts.map(function(a){return '<option value="'+a.line+'"'+(a.line===l.line?' selected':'')+'>'+a.line+'</option>'}).join('')+'</select>';
+            ctl='<span style="font-size:12px">'+(l.type==="ou_ht"?'Tài hiệp 1':'Tài cả trận')+'</span> <select class="pl-line" data-ci="'+ci+'" data-li="'+li+'" style="background:var(--surface3);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 4px;font-size:12px">'+l.alts.map(function(a){return '<option value="'+a.line+'"'+(a.line===lst.line?' selected':'')+'>'+a.line+'</option>'}).join('')+'</select>';
           }else ctl='<span style="font-size:12px">'+esc(parlayMarketLabel(l.market))+'</span>';
-          return '<div style="padding:7px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px;font-size:13px"><div style="min-width:0;font-weight:600;overflow-wrap:anywhere">'+esc(l.home)+' - '+esc(l.away)+'</div><b id="plP'+ci+'_'+li+'" style="color:var(--cyan)">'+(l.p*100).toFixed(0)+'%</b></div><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px"><div style="font-size:11px;color:var(--muted);min-width:0;overflow-wrap:anywhere" translate="no">'+esc(l.kickoff.substring(11,16))+(l.competition?' · '+esc(l.competition):'')+'</div><div style="display:flex;align-items:center;gap:6px;white-space:nowrap">'+ctl+' <input class="pl-odds" data-ci="'+ci+'" data-li="'+li+'" type="text" inputmode="decimal" autocomplete="off" placeholder="Odds" style="width:58px;background:var(--surface3);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:12px"></div></div></div>';
+          return '<div style="padding:7px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px;font-size:13px"><div style="min-width:0;font-weight:600;overflow-wrap:anywhere">'+esc(l.home)+' - '+esc(l.away)+'</div><b id="plP'+ci+'_'+li+'" style="color:var(--cyan)">'+(l.p*100).toFixed(0)+'%</b></div><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px"><div style="font-size:11px;color:var(--muted);min-width:0;overflow-wrap:anywhere" translate="no">'+esc(l.kickoff.substring(11,16))+(l.competition?' · '+esc(l.competition):'')+'</div><div style="display:flex;align-items:center;gap:6px;white-space:nowrap">'+ctl+' <input class="pl-odds" data-ci="'+ci+'" data-li="'+li+'" type="text" inputmode="decimal" autocomplete="off" placeholder="Odds" value="'+(lst.odds?lst.odds:'')+'" style="width:58px;background:var(--surface3);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:12px"></div></div></div>';
         }).join('')+'</details>';
       }).join('');
     }).join('');
@@ -1974,7 +1982,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   $("parlayContent").addEventListener("toggle",function(e){var t=e.target;if(t.classList&&t.classList.contains("pl-card")){var k=t.dataset.pk;if(t.open)delete parlayClosed[k];else parlayClosed[k]=1}},true);
   $("parlayContent").addEventListener("change",function(e){
     var t=e.target;if(!t.classList.contains("pl-line"))return;
-    var k=t.dataset.ci+":"+t.dataset.li;parlayEdits[k]=parlayEdits[k]||{};parlayEdits[k].line=Number(t.value);parlayRecalc(Number(t.dataset.ci));parlaySave(Number(t.dataset.ci));
+    var k=t.dataset.ci+":"+t.dataset.li;parlayEdits[k]=parlayEdits[k]||{};parlayEdits[k].line=Number(t.value);var st=parlayLegState(Number(t.dataset.ci),Number(t.dataset.li));if(!(parlayEdits[k].odds>1)&&parlayEdits[k].odds!==0){var oi=t.closest("details").querySelector('.pl-odds[data-li="'+t.dataset.li+'"]');if(oi)oi.value=st.odds?st.odds:""}parlayRecalc(Number(t.dataset.ci));parlaySave(Number(t.dataset.ci));
   });
   $("parlayContent").addEventListener("input",function(e){
     var t=e.target;if(!t.classList.contains("pl-odds"))return;
@@ -1989,6 +1997,27 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return '<div style="'+PST_COLS+'padding:5px 0;border-top:1px solid var(--line)"><span>'+esc(parlayTypeLabel(g.ptype))+'</span><span>'+g.n+'</span><b>'+pstPct(g.hit)+'</b><span>'+pstPct(g.avg_p)+(d==null?'':' <small style="color:'+(d>=0?"#35d07f":"#ff6b6b")+'">'+(d>=0?"+":"")+d.toFixed(0)+'</small>')+'</span><span style="color:'+(g.roi==null?"var(--muted)":g.roi>=0?"#35d07f":"#ff6b6b")+'">'+(g.roi==null?"—":(g.roi>=0?"+":"")+(g.roi*100).toFixed(0)+"% ("+g.n_odds+")")+'</span></div>';
   }
   function pstHead(){return '<div style="'+PST_COLS+'font-size:11px;color:var(--muted);padding:2px 0"><span>Loại</span><span>Số xiên</span><span>Trúng</span><span>Mô hình</span><span>Lãi/lỗ</span></div>'}
+  function pstTable(title,heads,rows){
+    if(!rows.length)return "";
+    var cols="display:grid;grid-template-columns:1.4fr .7fr .8fr .8fr .9fr;gap:4px;font-size:12px;";
+    return '<div class="card" style="padding:12px;margin-bottom:10px"><b style="display:block;margin-bottom:6px">'+title+'</b><div style="'+cols+'font-size:11px;color:var(--muted);padding:2px 0">'+heads.map(function(h){return '<span>'+h+'</span>'}).join('')+'</div>'+rows.map(function(r){return '<div style="'+cols+'padding:5px 0;border-top:1px solid var(--line)">'+r.map(function(c){return '<span>'+c+'</span>'}).join('')+'</div>'}).join('')+'</div>';
+  }
+  function pstDiff(hit,avg){if(hit==null||avg==null)return "";var d=(hit-avg)*100;return ' <small style="color:'+(d>=0?"#35d07f":"#ff6b6b")+'">'+(d>=0?"+":"")+d.toFixed(0)+'</small>'}
+  function pstRoi(roi,n){return roi==null?"—":'<span style="color:'+(roi>=0?"#35d07f":"#ff6b6b")+'">'+(roi>=0?"+":"")+(roi*100).toFixed(0)+"% ("+n+")</span>"}
+  function renderParlayStatsExtra(d){
+    var out="",KL={same_hour:"Cùng giờ",window_4h:"Cửa sổ 4h",any_time:"Mọi khung giờ"},MN={suggest:"Suggest",round:"Round"};
+    var H=["Loại","Số xiên","Trúng","Mô hình","Lãi/lỗ"];
+    out+=pstTable('<span>Xiên tốt nhất mỗi nhóm</span>',H,(d.top1||[]).map(function(x){return ['<span>'+MN[x.mode]+'</span>',x.n,pstPct(x.hit),pstPct(x.avg_p)+pstDiff(x.hit,x.avg_p),pstRoi(x.roi,x.n_odds)]}));
+    out+=pstTable('<span>Đã đặt</span>',H,(d.placed||[]).map(function(x){return ['<span>'+MN[x.mode]+'</span>',x.n,pstPct(x.hit),pstPct(x.avg_p)+pstDiff(x.hit,x.avg_p),pstRoi(x.roi,x.n_odds)]}));
+    out+=pstTable('<span>Theo số chân</span>',H,(d.by_legs||[]).map(function(x){return ['<span>'+MN[x.mode]+'</span> · <span>'+x.k+' chân</span>',x.n,pstPct(x.hit),pstPct(x.avg_p)+pstDiff(x.hit,x.avg_p),pstRoi(x.roi,x.n_odds)]}));
+    out+=pstTable('<span>Theo nhóm giờ</span>',H,(d.by_kind||[]).map(function(x){return ['<span>'+MN[x.mode]+'</span> · <span>'+(KL[x.k]||esc(x.k))+'</span>',x.n,pstPct(x.hit),pstPct(x.avg_p)+pstDiff(x.hit,x.avg_p),pstRoi(x.roi,x.n_odds)]}));
+    out+=pstTable('<span>Đường cong hiệu chỉnh</span>',["Khoảng xác suất","Số xiên","Trúng","Mô hình",""],(d.buckets||[]).map(function(x){return ['<span translate="no">'+x.lo+"–"+(x.lo+10)+"%</span>",x.n,pstPct(x.hit),pstPct(x.avg_p)+pstDiff(x.hit,x.avg_p),""]}));
+    out+=pstTable('<span>Từng kèo lẻ</span>',["Kèo","Số kèo","Trúng","Mô hình",""],(d.legs||[]).map(function(x){var mk=x.ltype==="btts"?"Hai đội ghi bàn":x.ltype==="btts_ht"?"Hai đội ghi bàn hiệp 1":"Tài "+x.line+(x.ltype==="ou_ht"?" hiệp 1":" cả trận");return ['<span>'+mk+'</span>',x.n,pstPct(x.hit),x.avg_p==null?"—":pstPct(x.avg_p)+pstDiff(x.hit,x.avg_p),""]}));
+    out+=pstTable('<span>14 ngày gần nhất</span>',["Ngày","Số xiên","Trúng","","Lãi"],(d.daily||[]).map(function(x){return ['<span translate="no">'+esc(x.day.substring(8,10)+"/"+x.day.substring(5,7))+'</span>',x.n,pstPct(x.n?x.wins/x.n:null),"",x.n_odds?'<span style="color:'+(x.profit>=0?"#35d07f":"#ff6b6b")+'">'+(x.profit>=0?"+":"")+x.profit+'</span>':"—"]}));
+    var cal=d.calibration||{},ck=Object.keys(cal);
+    out+='<div class="card" style="padding:12px;margin-bottom:10px"><b style="display:block;margin-bottom:6px"><span>Hệ số hiệu chỉnh</span></b>'+(ck.length?ck.map(function(k){var q=k.split("|"),c=cal[k];return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-top:1px solid var(--line)"><span><span>'+MN[q[0]]+'</span> · <span>'+esc(parlayTypeLabel(q[1]))+'</span></span><b translate="no">×'+c.r.toFixed(2)+' (n='+c.n+')</b></div>'}).join(''):'<div style="font-size:12px;color:var(--muted)"><span>Chưa đủ dữ liệu (cần 30 xiên mỗi loại)</span></div>')+'</div>';
+    return out;
+  }
   function renderParlayStats(d){
     var g=d.groups||[],t=d.totals||[],n=0;t.forEach(function(x){n+=x.n});
     var days='<div class="chip-row" id="pstDays" style="display:flex;gap:6px;margin-bottom:8px">'+[7,30,90].map(function(x){return '<button class="chip'+(x===parlayStatDays?' active':'')+'" data-d="'+x+'">'+x+' ngày</button>'}).join('')+'</div>';
@@ -2002,6 +2031,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         out+='<div class="card" style="padding:12px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>'+(m==="round"?"Round":"Suggest")+' · '+(u?'<span>Bạn nhập</span>':'<span>Hệ thống chọn</span>')+'</b>'+(tt?'<b style="color:var(--cyan)">'+pstPct(tt.hit)+'</b>':'')+'</div>'+pstHead()+rows.map(pstRow).join('')+'</div>';
       });
     });
+    out+=renderParlayStatsExtra(d);
     var rc=d.recent||[];
     if(rc.length){
       var nm={WIN:"Thắng",LOSS:"Thua",HALF_LOSS:"Thua nửa"};
@@ -2023,7 +2053,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
     }
   }
-  $("parlayContent").addEventListener("click",function(e){var b=e.target.closest&&e.target.closest("#pstDays .chip");if(b){parlayStatDays=Number(b.dataset.d);loadParlayStats()}});
+  $("parlayContent").addEventListener("click",function(e){
+    var b=e.target.closest&&e.target.closest("#pstDays .chip");if(b){parlayStatDays=Number(b.dataset.d);loadParlayStats();return}
+    var pb=e.target.closest&&e.target.closest(".pl-placed");
+    if(pb){e.preventDefault();var ci=Number(pb.dataset.ci),c=parlayCards[ci];if(!c||!c.pkey)return;c.placed=!c.placed;pb.classList.toggle("active",c.placed);api("/api/parlay-edit","POST",{mode:parlayMode,pkey:c.pkey,placed:c.placed}).catch(function(){c.placed=!c.placed;pb.classList.toggle("active",c.placed)})}
+  });
   async function loadParlay(){
     if(parlayMode==="stats")return loadParlayStats();
     var el=$("parlayContent"),seq=++parlaySeq;
@@ -2032,6 +2066,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var r=await api("/api/suggest-parlays?mode="+parlayMode,"GET");
       if(seq!==parlaySeq)return;
       el.innerHTML=renderParlays(r.data);
+      parlayCards.forEach(function(c,ci){parlayRecalc(ci)});
     }catch(e){
       if(seq!==parlaySeq)return;
       el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>';
@@ -2497,6 +2532,22 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Hai đội ghi bàn hiệp 1": "BTTS HT",
       "Odds gộp": "Combined odds",
       "Odds hòa vốn": "Break-even odds",
+      "Hiệu chỉnh": "Calibration",
+      "Đã đặt": "Placed",
+      "Theo số chân": "By number of legs",
+      "Theo nhóm giờ": "By time group",
+      "Đường cong hiệu chỉnh": "Calibration curve",
+      "Khoảng xác suất": "Probability range",
+      "Xiên tốt nhất mỗi nhóm": "Best parlay per group",
+      "14 ngày gần nhất": "Last 14 days",
+      "Từng kèo lẻ": "Single legs",
+      "Hệ số hiệu chỉnh": "Calibration factors",
+      "Số kèo": "Picks",
+      "Cửa sổ 4h": "4h window",
+      "Mọi khung giờ": "Any time",
+      "Lãi": "Profit",
+      "xiên": "parlays",
+      "Chưa đủ dữ liệu (cần 30 xiên mỗi loại)": "Not enough data (30 parlays per type needed)",
       "Thống kê": "Stats",
       "Loại": "Type",
       "Số xiên": "Parlays",

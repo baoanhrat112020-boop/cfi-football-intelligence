@@ -248,6 +248,17 @@ function htAltP(m:any,ln:number,key:string):number|undefined{
   const l=-Math.log(1-p05),e=Math.exp(-l),q2=l*l/2*e,q3=1-e*(1+l+l*l/2);
   return ln===1.75?q3+0.75*q2:q3+0.5*q2;
 }
+function ouMarketOdds(m:any,t:string,ln:any):number|null{
+  if(typeof ln!=='number'||!Array.isArray(m?.market_odds))return null;
+  const per=t==='ou_ht'?'HT':'FT';
+  for(const o of m.market_odds){
+    if(String(o?.family||'').toUpperCase()!=='OVER_UNDER'||String(o?.period||'').toUpperCase()!==per)continue;
+    if(Math.abs(Number(o.line)-ln)>1e-6)continue;
+    const v=Number(o.odds_over);
+    if(Number.isFinite(v)&&v>1&&v<50)return v;
+  }
+  return null;
+}
 function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|null){
   const r:any[]=[];
   const add=(t:string,mk:any,raw:any,line:any)=>{
@@ -267,9 +278,9 @@ function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|
       if(typeof a!=='number')continue;
       let ap=a;
       if(rate){const h2=rate(m,t,ln as number);if(h2==null)continue;ap=a*Math.sqrt(h2)}
-      alts.push({line:ln,p:Math.round(ap*10000)/10000});
+      alts.push({line:ln,p:Math.round(ap*10000)/10000,odds:ouMarketOdds(m,t,ln)});
     }
-    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:mk,line:typeof line==='number'?line:null,raw,p:Math.round(p*10000)/10000,alts});
+    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:mk,line:typeof line==='number'?line:null,odds:ouMarketOdds(m,t,line),raw,p:Math.round(p*10000)/10000,alts});
   };
   add('ou_ft',m.selected_ft_market,m.selected_ft_p,m.selected_ft_line);
   add('ou_ht',m.selected_ht_market,m.selected_ht_p,m.selected_ht_line);
@@ -322,7 +333,7 @@ function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
 function parlayPkey(x:any):string{return x.scope+'|'+x.type+'|'+x.legs.map((l:any)=>l.fixture_id+':'+l.type).join(',')}
 const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function parlayLogRows(mode:string,parlays:any[]){
-  return parlays.filter(x=>x.legs.every((l:any)=>UUID_RE.test(String(l.fixture_id))&&l.kickoff)).map(x=>({mode,pkey:x.pkey,day:String(x.legs[0].kickoff).substring(0,10),scope:x.scope,ptype:x.type,n_legs:x.legs.length,system_p:x.combined_p,legs:x.legs.map((l:any)=>({fixture_id:l.fixture_id,home:l.home,away:l.away,kickoff:l.kickoff,type:l.type,market:l.market,line:l.line,p:l.p}))}));
+  return parlays.filter(x=>x.legs.every((l:any)=>UUID_RE.test(String(l.fixture_id))&&l.kickoff)).map(x=>({mode,pkey:x.pkey,day:String(x.legs[0].kickoff).substring(0,10),scope:x.scope,ptype:x.type,n_legs:x.legs.length,system_p:x.combined_p,legs:x.legs.map((l:any)=>({fixture_id:l.fixture_id,home:l.home,away:l.away,kickoff:l.kickoff,type:l.type,market:l.market,line:l.line,p:l.p,odds:l.odds??null}))}));
 }
 function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null){
   const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats);
@@ -462,7 +473,18 @@ export default{
             return typeof h[col]==='number'?h[col]:null;
           };
         }
-        const built=buildParlays(all,Date.now(),rate);
+        let built=buildParlays(all,Date.now(),rate);
+        let calib:any={};
+        try{
+          const cr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_calibration`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}',signal:AbortSignal.timeout(4000)});
+          if(cr.ok)calib=await cr.json()||{};
+        }catch{}
+        const saved=new Map<string,any>();
+        try{
+          const sr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.${mode}&day=gte.${today}&or=(user_legs.not.is.null,placed.eq.true)&select=pkey,user_legs,placed&limit=500`,{headers:hdr,signal:AbortSignal.timeout(4000)});
+          if(sr.ok){const rr:any=await sr.json();if(Array.isArray(rr))rr.forEach((x:any)=>saved.set(x.pkey,x))}
+        }catch{}
+        built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
         const logRows=parlayLogRows(mode,built);
         if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
         return Response.json({mode,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':'public, max-age=180'}});
@@ -580,11 +602,13 @@ export default{
       const mode=input.mode==='round'?'round':input.mode==='suggest'?'suggest':null;
       const pk=typeof input.pkey==='string'&&input.pkey.length>0&&input.pkey.length<2000?input.pkey:null;
       if(!mode||!pk)return Response.json({error:'invalid key'},{status:400});
-      const legsIn=Array.isArray(input.legs)?input.legs:null;
-      if(!legsIn||legsIn.length>10)return Response.json({error:'invalid legs'},{status:400});
+      const legsIn=input.legs===undefined?null:Array.isArray(input.legs)?input.legs:undefined;
+      if(legsIn===undefined||(legsIn&&legsIn.length>10))return Response.json({error:'invalid legs'},{status:400});
+      if(input.placed!==undefined&&typeof input.placed!=='boolean')return Response.json({error:'invalid placed'},{status:400});
+      if(!legsIn&&input.placed===undefined)return Response.json({error:'nothing to update'},{status:400});
       const quarter=(v:any)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<10&&Math.abs(v*4-Math.round(v*4))<1e-9;
       const legsOut:any[]=[];
-      for(const e of legsIn){
+      for(const e of (legsIn||[])){
         if(!e||!Number.isInteger(e.i)||e.i<0||e.i>9)return Response.json({error:'invalid leg'},{status:400});
         const o:any={i:e.i};
         if(e.line!=null){if(!quarter(e.line))return Response.json({error:'invalid line'},{status:400});o.line=e.line}
@@ -596,7 +620,7 @@ export default{
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});
       try{
-        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.${mode}&pkey=eq.${encodeURIComponent(pk)}&settled_at=is.null`,{method:'PATCH',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify({user_legs:legsOut.length?legsOut:null,user_p:legsOut.length?up:null,edited_at:new Date().toISOString()}),signal:AbortSignal.timeout(8000)});
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.${mode}&pkey=eq.${encodeURIComponent(pk)}&settled_at=is.null`,{method:'PATCH',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(Object.assign({edited_at:new Date().toISOString()},legsIn?{user_legs:legsOut.length?legsOut:null,user_p:legsOut.length?up:null}:{},input.placed!==undefined?{placed:input.placed}:{})),signal:AbortSignal.timeout(8000)});
         if(!r.ok)return Response.json({error:'update failed',status:r.status},{status:502});
         const rows:any=await r.json();
         if(!Array.isArray(rows)||!rows.length)return Response.json({error:'parlay not found or already settled'},{status:404});
