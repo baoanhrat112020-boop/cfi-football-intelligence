@@ -424,7 +424,7 @@ export default{
             const h=hr[String(m.competition||'').toLowerCase()];
             if(!h)return null;
             if(t==='btts')return h.btts_ft;
-            if(t==='btts_ht')return null;
+            if(t==='btts_ht')return typeof h.btts_ht==='number'?h.btts_ht:null;
             if(line==null)return null;
             const col=t==='ou_ht'?(line<=0.75?'o05_ht':'o15_ht'):(line<=1.75?'o15_ft':line<=2.75?'o25_ft':'o35_ft');
             return typeof h[col]==='number'?h[col]:null;
