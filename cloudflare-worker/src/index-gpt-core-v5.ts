@@ -239,6 +239,71 @@ async function suppliedDiscovery(input:any,env:Env,ctx:ExecutionContext){
   });
 }
 
+function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|null){
+  const r:any[]=[];
+  const add=(t:string,mk:any,raw:any,line:any)=>{
+    if(typeof raw!=='number'||!mk)return;
+    let p=raw;
+    if(rate){
+      const h=rate(m,t,typeof line==='number'?line:null);
+      if(h==null)return;
+      p=raw*Math.sqrt(h);
+    }
+    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:mk,raw,p:Math.round(p*10000)/10000});
+  };
+  add('ou_ft',m.selected_ft_market,m.selected_ft_p,m.selected_ft_line);
+  add('ou_ht',m.selected_ht_market,m.selected_ht_p,m.selected_ht_line);
+  add('btts','btts_yes',m.markets?.m_btts_yes,null);
+  return r;
+}
+function enumerateParlays(pool:any[],k:number,accept:(c:any[])=>boolean){
+  const out:any[][]=[],cur:any[]=[],used=new Set<string>();
+  const rec=(i:number)=>{
+    if(cur.length===k){if(accept(cur))out.push(cur.slice());return}
+    for(let j=i;j<pool.length;j++){
+      if(used.has(pool[j].fixture_id))continue;
+      used.add(pool[j].fixture_id);cur.push(pool[j]);rec(j+1);cur.pop();used.delete(pool[j].fixture_id);
+    }
+  };
+  rec(0);
+  return out;
+}
+function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
+  const res:any[]=[];
+  const finish=(kind:string,pool:any[],minP:number,accept:(c:any[])=>boolean)=>{
+    const p=pool.filter(l=>l.raw>=minP).sort((a,b)=>b.p-a.p).slice(0,12);
+    const all:any[]=[];
+    for(let k=kmin;k<=kmax;k++)for(const c of enumerateParlays(p,k,accept))all.push({type:kind,scope,legs:c,min_p:Math.min(...c.map(l=>l.p)),combined_p:Math.round(c.reduce((a,l)=>a*l.p,1)*10000)/10000});
+    all.sort((a,b)=>b.combined_p-a.combined_p);
+    const keep:any[]=[];
+    for(const x of all){
+      const ids=new Set(x.legs.map((l:any)=>l.fixture_id));
+      if(keep.every(y=>y.legs.filter((l:any)=>ids.has(l.fixture_id)).length<=Math.min(y.legs.length,x.legs.length)-2))keep.push(x);
+      if(keep.length===3)break;
+    }
+    res.push(...keep);
+  };
+  for(const t of ['ou_ft','ou_ht','btts'])finish('same:'+t,legs.filter(l=>l.type===t),0.60,()=>true);
+  finish('mix',legs,0.55,c=>new Set(c.map(l=>l.type)).size>=2);
+  return res;
+}
+function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null){
+  const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats);
+  const byKick=new Map<string,any[]>();
+  up.forEach(m=>{const a=byKick.get(m.kickoff)||[];a.push(m);byKick.set(m.kickoff,a)});
+  const out:any[]=[];
+  byKick.forEach((ms,k)=>{if(ms.length>=3)out.push(...topParlays(ms.flatMap(m=>parlayLegs(m,rate)),3,5,'same_hour:'+k))});
+  [...byKick.keys()].forEach(s=>{
+    const t0=Date.parse(s);
+    const ms=up.filter(m=>{const t=Date.parse(m.kickoff);return t>=t0&&t<=t0+4*3600*1000});
+    if(ms.length>=5)out.push(...topParlays(ms.flatMap(m=>parlayLegs(m,rate)),5,7,'window_4h:'+s));
+  });
+  const best=new Map<string,number>();
+  out.forEach(x=>best.set(x.scope,Math.max(best.get(x.scope)||0,x.combined_p)));
+  const keepScopes=new Set([...best.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(e=>e[0]));
+  return out.filter(x=>keepScopes.has(x.scope));
+}
+
 const TIER_EVIDENCE_TTL_MS=10*60*1000;
 const tierEvidenceCache=new Map<string,{n:number|null;exp:number}>();
 async function enrichFixturesWithTier(rows:any[],env:Env):Promise<any[]>{
@@ -324,6 +389,36 @@ export default{
       let input:any={};try{input=await request.clone().json()}catch{return Response.json({status:'INVALID_REQUEST',error:'INVALID_JSON'},{status:400});}
       if(Array.isArray(input?.fixture_candidates))return suppliedDiscovery(input,env,ctx);
       return v4.fetch(request,env,ctx);
+    }
+
+    if(url.pathname==='/api/suggest-parlays'&&request.method==='GET'){
+      try{
+        const mode=url.searchParams.get('mode')==='round'?'round':'suggest';
+        const key=(env as any).SUPABASE_SERVICE_KEY;
+        const hdr={'apikey':key,'Authorization':`Bearer ${key}`};
+        const today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+        const res=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/suggest_snapshot?snapshot_date=eq.${today}&select=payload,generated_at&limit=1`,{headers:hdr});
+        if(!res.ok)return Response.json({error:'snapshot fetch failed'},{status:500});
+        const rows:any=await res.json();
+        const all:any[]=[];
+        if(Array.isArray(rows?.[0]?.payload?.slots))rows[0].payload.slots.forEach((s:any)=>{if(Array.isArray(s?.matches))s.matches.forEach((m:any)=>all.push(m))});
+        let rate:any=null;
+        if(mode==='round'){
+          const rr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_round_hit_rates`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}'});
+          const hr:any=rr.ok?await rr.json():{};
+          rate=(m:any,t:string,line:number|null)=>{
+            const h=hr[String(m.competition||'').toLowerCase()];
+            if(!h)return null;
+            if(t==='btts')return h.btts_ft;
+            if(line==null)return null;
+            const col=t==='ou_ht'?(line<=0.75?'o05_ht':'o15_ht'):(line<=1.75?'o15_ft':line<=2.75?'o25_ft':'o35_ft');
+            return typeof h[col]==='number'?h[col]:null;
+          };
+        }
+        return Response.json({mode,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:buildParlays(all,Date.now(),rate)},{headers:{'Cache-Control':'public, max-age=180'}});
+      }catch(e:any){
+        return Response.json({error:String(e?.message||e),status:500},{status:500});
+      }
     }
 
     if(url.pathname==='/api/suggest'&&request.method==='GET'){
