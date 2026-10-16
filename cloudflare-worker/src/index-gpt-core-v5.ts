@@ -243,6 +243,7 @@ function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|
   const r:any[]=[];
   const add=(t:string,mk:any,raw:any,line:any)=>{
     if(typeof raw!=='number'||!mk)return;
+    if(t==='ou_ft'&&((typeof line==='number'&&line<2)||/^over_(?:1|15|1_5)_ft$/.test(String(mk))))return;
     let p=raw;
     if(rate){
       const h=rate(m,t,typeof line==='number'?line:null);
