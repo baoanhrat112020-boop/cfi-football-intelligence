@@ -640,7 +640,12 @@ export default{
         await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_settle`,{method:'POST',headers:hdr,body:'{}',signal:AbortSignal.timeout(15000)});
         const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_stats`,{method:'POST',headers:hdr,body:JSON.stringify({p_days:days}),signal:AbortSignal.timeout(15000)});
         if(!r.ok)return Response.json({error:'stats failed',status:r.status},{status:502});
-        return Response.json(await r.json(),{headers:{'Cache-Control':'no-store'}});
+        const out:any=await r.json();
+        try{
+          const rr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_recent`,{method:'POST',headers:hdr,body:JSON.stringify({p_days:days,p_limit:40}),signal:AbortSignal.timeout(8000)});
+          if(rr.ok){const rec:any=await rr.json();if(Array.isArray(rec))out.recent=rec}
+        }catch{}
+        return Response.json(out,{headers:{'Cache-Control':'no-store'}});
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
