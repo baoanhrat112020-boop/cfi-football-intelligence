@@ -1068,7 +1068,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.5 · Build 9</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.6 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1918,8 +1918,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
   }
   var parlayMode="suggest",parlaySeq=0;
-  function parlayTypeLabel(t){return t==="mix"?"Hỗn hợp":t==="same:ou_ft"?"Tài cả trận":t==="same:ou_ht"?"Tài hiệp 1":t==="same:btts"?"Hai đội ghi bàn":t}
-  function parlayMarketLabel(mk){var o=ouLineOf(mk);if(o)return "Tài "+o.line+(o.per==="ht"?" hiệp 1":" cả trận");if(mk==="btts_yes")return "Hai đội ghi bàn";return String(mk).replace(/_/g," ")}
+  function parlayTypeLabel(t){return t==="mix"?"Hỗn hợp":t==="same:ou_ft"?"Tài cả trận":t==="same:ou_ht"?"Tài hiệp 1":t==="same:btts"?"Hai đội ghi bàn":t==="same:btts_ht"?"Hai đội ghi bàn hiệp 1":t}
+  function parlayMarketLabel(mk){var o=ouLineOf(mk);if(o)return "Tài "+o.line+(o.per==="ht"?" hiệp 1":" cả trận");if(mk==="btts_yes")return "Hai đội ghi bàn";if(mk==="btts_ht_yes")return "Hai đội ghi bàn hiệp 1";return String(mk).replace(/_/g," ")}
   function parlayDay(v){return v.substring(8,10)+"/"+v.substring(5,7)}
   function parlayScopeLabel(s){var i=s.indexOf(":"),k=s.slice(0,i),v=s.slice(i+1);return (k==="same_hour"?"Cùng giờ ":"Cửa sổ 4h từ ")+v.substring(11,16)+" · "+parlayDay(v)}
   function parlayStarted(x,now){return x.legs.some(function(l){var t=Date.parse(l.kickoff);return !Number.isFinite(t)||t<=now})}
@@ -2407,6 +2407,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Tài cả trận": "Over FT",
       "Tài hiệp 1": "Over HT",
       "Hai đội ghi bàn": "BTTS",
+      "Hai đội ghi bàn hiệp 1": "BTTS HT",
       "Chưa có dữ liệu vòng đấu": "No round data yet",
       "Vòng chưa đủ trận": "Round not complete",
       "trận trên máy": "matches on this device",

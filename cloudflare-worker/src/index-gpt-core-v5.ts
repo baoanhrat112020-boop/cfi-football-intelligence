@@ -243,7 +243,8 @@ function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|
   const r:any[]=[];
   const add=(t:string,mk:any,raw:any,line:any)=>{
     if(typeof raw!=='number'||!mk)return;
-    if(t==='ou_ft'&&((typeof line==='number'&&line<2)||/^over_(?:1|15|1_5)_ft$/.test(String(mk))))return;
+    if(t==='ou_ft'&&!(typeof line==='number'&&line>=2.5))return;
+    if(t==='ou_ht'&&!(typeof line==='number'&&line>=0.75&&line<=1.75))return;
     let p=raw;
     if(rate){
       const h=rate(m,t,typeof line==='number'?line:null);
@@ -255,7 +256,19 @@ function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|
   add('ou_ft',m.selected_ft_market,m.selected_ft_p,m.selected_ft_line);
   add('ou_ht',m.selected_ht_market,m.selected_ht_p,m.selected_ht_line);
   add('btts','btts_yes',m.markets?.m_btts_yes,null);
+  add('btts_ht','btts_ht_yes',bttsHtP(m),null);
   return r;
+}
+function bttsHtP(m:any):number|undefined{
+  const p15=Number(m?.markets?.m_over_1_5_ft),pb=Number(m?.markets?.m_btts_yes);
+  if(!(p15>0&&p15<1&&pb>0&&pb<1))return undefined;
+  let lo=0.01,hi=12;
+  for(let i=0;i<50;i++){const L=(lo+hi)/2;if(1-Math.exp(-L)*(1+L)<p15)lo=L;else hi=L;}
+  const L=(lo+hi)/2;
+  let a=0.001,b=L/2;
+  for(let i=0;i<50;i++){const x=(a+b)/2;if((1-Math.exp(-x))*(1-Math.exp(-(L-x)))<pb)a=x;else b=x;}
+  const lh=(a+b)/2,la=L-lh;
+  return Math.round((1-Math.exp(-lh/2))*(1-Math.exp(-la/2))*10000)/10000;
 }
 function enumerateParlays(pool:any[],k:number,accept:(c:any[])=>boolean){
   const out:any[][]=[],cur:any[]=[],used=new Set<string>();
@@ -272,7 +285,7 @@ function enumerateParlays(pool:any[],k:number,accept:(c:any[])=>boolean){
 function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
   const res:any[]=[];
   const finish=(kind:string,pool:any[],minP:number,accept:(c:any[])=>boolean)=>{
-    const p=pool.filter(l=>l.raw>=minP).sort((a,b)=>b.p-a.p).slice(0,12);
+    const p=pool.filter(l=>l.raw>=(l.type==='btts_ht'?0.3:minP)).sort((a,b)=>b.p-a.p).slice(0,12);
     const all:any[]=[];
     for(let k=kmin;k<=kmax;k++)for(const c of enumerateParlays(p,k,accept))all.push({type:kind,scope,legs:c,min_p:Math.min(...c.map(l=>l.p)),combined_p:Math.round(c.reduce((a,l)=>a*l.p,1)*10000)/10000});
     all.sort((a,b)=>b.combined_p-a.combined_p);
@@ -284,7 +297,7 @@ function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
     }
     res.push(...keep);
   };
-  for(const t of ['ou_ft','ou_ht','btts'])finish('same:'+t,legs.filter(l=>l.type===t),0.60,()=>true);
+  for(const t of ['ou_ft','ou_ht','btts','btts_ht'])finish('same:'+t,legs.filter(l=>l.type===t),0.60,()=>true);
   finish('mix',legs,0.55,c=>new Set(c.map(l=>l.type)).size>=2);
   return res;
 }
@@ -411,6 +424,7 @@ export default{
             const h=hr[String(m.competition||'').toLowerCase()];
             if(!h)return null;
             if(t==='btts')return h.btts_ft;
+            if(t==='btts_ht')return null;
             if(line==null)return null;
             const col=t==='ou_ht'?(line<=0.75?'o05_ht':'o15_ht'):(line<=1.75?'o15_ft':line<=2.75?'o25_ft':'o35_ft');
             return typeof h[col]==='number'?h[col]:null;
