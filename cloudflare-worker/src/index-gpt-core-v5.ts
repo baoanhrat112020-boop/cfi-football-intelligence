@@ -332,7 +332,13 @@ function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number
   });
   const best=new Map<string,number>();
   out.forEach(x=>best.set(x.scope,Math.max(best.get(x.scope)||0,x.combined_p)));
-  const keepScopes=new Set([...best.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(e=>e[0]));
+  const perDay=new Map<string,number>();
+  const keepScopes=new Set<string>();
+  [...best.entries()].sort((a,b)=>b[1]-a[1]).forEach(([sc])=>{
+    const d=sc.slice(sc.indexOf(':')+1,sc.indexOf(':')+11);
+    const c=perDay.get(d)||0;
+    if(c<6){perDay.set(d,c+1);keepScopes.add(sc)}
+  });
   return out.filter(x=>keepScopes.has(x.scope));
 }
 
