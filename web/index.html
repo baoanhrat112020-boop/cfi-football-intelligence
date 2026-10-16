@@ -540,6 +540,7 @@
           <button class="chip" data-pm="round">Round</button>
           <button class="chip" data-pm="stats">Thống kê</button>
         </div>
+        <div id="parlayOddsRow" style="padding:0 2px 4px"><button class="chip active" id="parlayOddsOnly">Chỉ trận có odds</button></div>
         <div id="parlayContent" style="margin-top:8px"></div>
       </div>
       <div id="suggestSaved" style="display:none">
@@ -1069,7 +1070,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.6 · Build 5</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.6 · Build 6</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1958,7 +1959,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function renderParlays(r){
     var now=Date.now(),list=((r&&r.parlays)||[]).filter(function(x){return !parlayStarted(x,now)});
     parlayCards=[];parlayEdits={};
-    if(!list.length)return '<div class="context-state">Chưa có kèo xiên đủ điều kiện</div>';
+    if(!list.length)return '<div class="context-state">Chưa có kèo xiên đủ điều kiện</div>'+(r&&r.odds_only?'<div class="context-state" style="margin-top:8px">Chưa đủ trận có odds để lập xiên. Tắt bộ lọc "Chỉ trận có odds" để xem tất cả.</div>':'');
     var groups={},order=[];
     list.forEach(function(x){x.legs.sort(function(a,b){return String(a.kickoff)<String(b.kickoff)?-1:String(a.kickoff)>String(b.kickoff)?1:0});var g=x.scope;if(!groups[g]){groups[g]=[];order.push(g)}groups[g].push(x)});
     order.sort(function(a,b){var ta=a.slice(a.indexOf(":")+1),tb=b.slice(b.indexOf(":")+1);return ta<tb?-1:ta>tb?1:a<b?-1:1});
@@ -1989,7 +1990,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var v=t.value.replace(/,/g,".").replace(/[^0-9.]/g,"");if(v!==t.value)t.value=v;
     var k=t.dataset.ci+":"+t.dataset.li;parlayEdits[k]=parlayEdits[k]||{};parlayEdits[k].odds=Number(v)||0;parlayRecalc(Number(t.dataset.ci));parlaySave(Number(t.dataset.ci));
   });
-  var parlayStatDays=30;
+  var parlayStatDays=30,parlayOddsOnly=true;
+  try{parlayOddsOnly=localStorage.getItem("cfi_parlay_odds_only")!=="0"}catch(e){}
+  $("parlayOddsOnly").classList.toggle("active",parlayOddsOnly);
+  $("parlayOddsOnly").onclick=function(){parlayOddsOnly=!parlayOddsOnly;try{localStorage.setItem("cfi_parlay_odds_only",parlayOddsOnly?"1":"0")}catch(e){}this.classList.toggle("active",parlayOddsOnly);loadParlay()};
   function pstPct(v){return v==null?"—":(Number(v)*100).toFixed(1)+"%"}
   var PST_COLS="display:grid;grid-template-columns:1.5fr .6fr .8fr .8fr .9fr;gap:4px;font-size:12px;";
   function pstRow(g){
@@ -2059,11 +2063,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(pb){e.preventDefault();var ci=Number(pb.dataset.ci),c=parlayCards[ci];if(!c||!c.pkey)return;c.placed=!c.placed;pb.classList.toggle("active",c.placed);api("/api/parlay-edit","POST",{mode:parlayMode,pkey:c.pkey,placed:c.placed}).catch(function(){c.placed=!c.placed;pb.classList.toggle("active",c.placed)})}
   });
   async function loadParlay(){
+    $("parlayOddsRow").style.display=parlayMode==="stats"?"none":"";
     if(parlayMode==="stats")return loadParlayStats();
     var el=$("parlayContent"),seq=++parlaySeq;
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
-      var r=await api("/api/suggest-parlays?mode="+parlayMode,"GET");
+      var r=await api("/api/suggest-parlays?mode="+parlayMode+(parlayOddsOnly?"":"&odds=0"),"GET");
       if(seq!==parlaySeq)return;
       el.innerHTML=renderParlays(r.data);
       parlayCards.forEach(function(c,ci){parlayRecalc(ci)});
@@ -2532,6 +2537,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Hai đội ghi bàn hiệp 1": "BTTS HT",
       "Odds gộp": "Combined odds",
       "Odds hòa vốn": "Break-even odds",
+      "Chỉ trận có odds": "Matches with odds only",
+      'Chưa đủ trận có odds để lập xiên. Tắt bộ lọc "Chỉ trận có odds" để xem tất cả.': 'Not enough matches with odds to build parlays. Turn off the "Matches with odds only" filter to see all.',
       "Hiệu chỉnh": "Calibration",
       "Đã đặt": "Placed",
       "Theo số chân": "By number of legs",

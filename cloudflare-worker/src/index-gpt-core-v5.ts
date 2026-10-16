@@ -335,8 +335,10 @@ const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function parlayLogRows(mode:string,parlays:any[]){
   return parlays.filter(x=>x.legs.every((l:any)=>UUID_RE.test(String(l.fixture_id))&&l.kickoff)).map(x=>({mode,pkey:x.pkey,day:String(x.legs[0].kickoff).substring(0,10),scope:x.scope,ptype:x.type,n_legs:x.legs.length,system_p:x.combined_p,legs:x.legs.map((l:any)=>({fixture_id:l.fixture_id,home:l.home,away:l.away,kickoff:l.kickoff,type:l.type,market:l.market,line:l.line,p:l.p,odds:l.odds??null}))}));
 }
-function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null){
-  const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats);
+const AMATEUR_RE=/(\s(2|II)$)|(\bU(21|19|18)\b)|(\s(W|\(W\))$)/i;
+function hasOuOdds(m:any):boolean{return Array.isArray(m?.market_odds)&&m.market_odds.some((o:any)=>String(o?.family||'').toUpperCase()==='OVER_UNDER'&&Number(o?.odds_over)>1)}
+function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null,oddsOnly:boolean){
+  const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats&&!AMATEUR_RE.test(String(m.home||'').trim())&&!AMATEUR_RE.test(String(m.away||'').trim())&&(!oddsOnly||hasOuOdds(m)));
   const byKick=new Map<string,any[]>();
   up.forEach(m=>{const a=byKick.get(m.kickoff)||[];a.push(m);byKick.set(m.kickoff,a)});
   const out:any[]=[];
@@ -473,7 +475,8 @@ export default{
             return typeof h[col]==='number'?h[col]:null;
           };
         }
-        let built=buildParlays(all,Date.now(),rate);
+        const oddsOnly=url.searchParams.get('odds')!=='0';
+        let built=buildParlays(all,Date.now(),rate,oddsOnly);
         let calib:any={};
         try{
           const cr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_calibration`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}',signal:AbortSignal.timeout(4000)});
@@ -486,8 +489,8 @@ export default{
         }catch{}
         built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
         const logRows=parlayLogRows(mode,built);
-        if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
-        return Response.json({mode,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':'public, max-age=180'}});
+        if(oddsOnly&&logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
+        return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
       }
