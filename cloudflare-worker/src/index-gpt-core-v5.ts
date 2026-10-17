@@ -564,7 +564,16 @@ export default{
           };
         }
         const oddsOnly=!isX&&url.searchParams.get('odds')!=='0';
-        let built=mode==='xspecial'?buildExtremeSpecial(all,Date.now()):mode==='xdaily'?buildExtremeDaily(all,Date.now()):mode==='special'?buildSpecialTop(all,Date.now(),oddsOnly):buildParlays(all,Date.now(),rate,oddsOnly);
+        const buildStd=(oo:boolean):any[]=>mode==='special'?buildSpecialTop(all,Date.now(),oo):buildParlays(all,Date.now(),rate,oo);
+        let built:any[];
+        if(mode==='xspecial')built=buildExtremeSpecial(all,Date.now()).map((x:any)=>({...x,odds_ok:true}));
+        else if(mode==='xdaily')built=buildExtremeDaily(all,Date.now()).map((x:any)=>({...x,odds_ok:true}));
+        else if(oddsOnly)built=buildStd(true).map((x:any)=>({...x,odds_ok:true}));
+        else{
+          const withOdds=buildStd(true).map((x:any)=>({...x,odds_ok:true}));
+          const seen=new Set(withOdds.map((x:any)=>x.pkey));
+          built=[...withOdds,...buildStd(false).filter((x:any)=>!seen.has(x.pkey)).map((x:any)=>({...x,odds_ok:false}))];
+        }
         let calib:any={};
         try{
           const cr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_calibration`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}',signal:AbortSignal.timeout(4000)});
@@ -576,8 +585,8 @@ export default{
           if(sr.ok){const rr:any=await sr.json();if(Array.isArray(rr))rr.forEach((x:any)=>saved.set(x.pkey,x))}
         }catch{}
         built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
-        const logRows=parlayLogRows(mode,built);
-        if((oddsOnly||isX)&&logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
+        const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok));
+        if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
         return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
