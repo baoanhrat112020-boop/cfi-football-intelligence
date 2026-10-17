@@ -1077,7 +1077,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 2</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -2043,13 +2043,17 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var mk=XLAB[l.type]?XLAB[l.type]:l.type==="btts"?"Hai đội ghi bàn":l.type==="btts_ht"?"Hai đội ghi bàn hiệp 1":"Tài "+l.line+(l.type==="ou_ht"?" hiệp 1":" cả trận");
     return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0 6px 12px;border-top:1px dashed var(--line)"><div style="min-width:0"><div style="overflow-wrap:anywhere">'+esc(l.home)+' - '+esc(l.away)+'</div><div style="font-size:11px;color:var(--muted)"><span>'+mk+'</span>'+(l.odds?' @<span translate="no">'+Number(l.odds).toFixed(2)+'</span>':'')+' · <span translate="no">'+(l.ft?'HT '+esc(l.ht)+' · FT '+esc(l.ft):esc(String(l.kickoff||"").substring(8,10)+"/"+String(l.kickoff||"").substring(5,7)+" "+String(l.kickoff||"").substring(11,16)))+'</span></div></div><b style="color:'+r[1]+';white-space:nowrap">'+r[0]+'</b></div>';
   }
-  function renderParlayStats(d){
-    var g=d.groups||[],t=d.totals||[],n=0;t.forEach(function(x){n+=x.n});
+  function renderParlayStats(d0){
+    var xg=state.suggestSub==="xparlay",MS=xg?["xspecial","xdaily"]:["suggest","round","special"];
+    var okm=function(x){return MS.indexOf(x.mode)>=0};
+    var d={days:d0.days,pending:d0.pending,groups:(d0.groups||[]).filter(okm),totals:(d0.totals||[]).filter(okm),by_legs:(d0.by_legs||[]).filter(okm),by_kind:(d0.by_kind||[]).filter(okm),placed:(d0.placed||[]).filter(okm),top1:(d0.top1||[]).filter(okm),recent:(d0.recent||[]).filter(okm),placed_list:(d0.placed_list||[]).filter(okm),buckets:d0.buckets||[],daily:d0.daily||[],legs:(d0.legs||[]).filter(function(x){return xg===!!XLAB[x.ltype]}),calibration:{}};
+    Object.keys(d0.calibration||{}).forEach(function(k){if(MS.indexOf(k.split("|")[0])>=0)d.calibration[k]=d0.calibration[k]});
+    var g=d.groups,t=d.totals,n=0;t.forEach(function(x){n+=x.n});
     var days='<div class="chip-row" id="pstDays" style="display:flex;gap:6px;margin-bottom:8px">'+[7,30,90].map(function(x){return '<button class="chip'+(x===parlayStatDays?' active':'')+'" data-d="'+x+'">'+x+' ngày</button>'}).join('')+'</div>';
     var head=days+'<div style="font-size:12px;color:var(--muted);margin-bottom:8px"><b style="color:var(--text)">'+n+'</b> <span>xiên đã có kết quả</span> · <b style="color:var(--text)">'+(d.pending||0)+'</b> <span>đang chờ</span></div>';
     if(!n)return head+'<div class="context-state">Chưa có xiên nào được tính kết quả</div>';
     var out=head;
-    ["suggest","round","special","xspecial","xdaily"].forEach(function(m){
+    MS.forEach(function(m){
       [false,true].forEach(function(u){
         var rows=g.filter(function(x){return x.mode===m&&x.is_user===u});if(!rows.length)return;
         var tt=t.filter(function(x){return x.mode===m&&x.is_user===u})[0];
@@ -2067,7 +2071,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var el=$("parlayContent"),seq=++parlaySeq;
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
-      var r=await api("/api/parlay-stats?days="+parlayStatDays,"GET");
+      var r=await api("/api/parlay-stats?days="+parlayStatDays+"&group="+(state.suggestSub==="xparlay"?"x":"std"),"GET");
       if(seq!==parlaySeq)return;
       el.innerHTML=renderParlayStats(r.data||{});
     }catch(e){
