@@ -337,6 +337,27 @@ function parlayLogRows(mode:string,parlays:any[]){
 }
 const EXCLUDE_RE=/\bU1[0-8]\b|\b(Oberliga|Verbandsliga|Landesliga|Bezirksliga|Kreisliga|Kreisklasse)\b/i;
 function hasOuOdds(m:any):boolean{return Array.isArray(m?.market_odds)&&m.market_odds.some((o:any)=>String(o?.family||'').toUpperCase()==='OVER_UNDER'&&Number(o?.odds_over)>1)}
+const FT_LINE_TABLE:[number,string,string][]=[[1.5,'over_15_ft','s_over_15_ft'],[2,'over_2_ft','s_over_2_ft'],[2.25,'over_225_ft','s_over_225_ft'],[2.5,'over_25_ft','s_over_25_ft'],[2.75,'over_275_ft','s_over_275_ft'],[3,'over_3_ft','s_over_3_ft'],[3.25,'over_325_ft','s_over_325_ft'],[3.5,'over_35_ft','s_over_35_ft']];
+function alignFtPick(m:any):any{
+  let market:string|null=null,line:number|null=null,p:number|null=null;
+  const mk=Array.isArray(m?.market_odds)?m.market_odds.find((o:any)=>String(o?.family||'').toUpperCase()==='OVER_UNDER'&&String(o?.period||'').toUpperCase()==='FT'&&Number.isFinite(Number(o?.line))):null;
+  if(mk){
+    const L=Number(mk.line);
+    const row=FT_LINE_TABLE.find(r=>Math.abs(r[0]-L)<1e-6&&r[0]>=2);
+    if(row&&typeof m[row[2]]==='number'){market=row[1];line=row[0];p=m[row[2]]}
+  }else{
+    for(const r of [...FT_LINE_TABLE].reverse()){
+      if(r[0]<2)continue;
+      const v=m[r[2]];
+      if(typeof v==='number'&&v>=0.55&&v<=0.70){market=r[1];line=r[0];p=v;break}
+    }
+  }
+  if(p!==null&&p<0.5){market=null;line=null;p=null}
+  if(market===(m.selected_ft_market??null))return m;
+  const cands:[string,any][]=[['btts_yes',m?.markets?.m_btts_yes],['1x2_ht_home',m?.markets?.m_1x2_ht_home],['1x2_ft_home',m?.markets?.m_1x2_ft_home],[m.selected_ht_market,m.selected_ht_p],[market as any,p]];
+  const best=cands.filter(c=>c[0]&&typeof c[1]==='number'&&c[1]>=0.5).sort((a,b)=>b[1]-a[1]||(a[0]<b[0]?-1:1))[0];
+  return Object.assign({},m,{selected_ft_market:market,selected_ft_line:line,selected_ft_p:p,top_market:best?best[0]:null,top_market_prob:best?best[1]:null});
+}
 function upcomingMatches(matches:any[],now:number,oddsOnly:boolean,hours:number):any[]{
   return matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+hours*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
 }
@@ -646,7 +667,7 @@ export default{
           if(!groups.has(gk))groups.set(gk,{date,hour,matches:[]});
           const started=t<now;
           const sinceKickoff=started?Math.floor((now-t)/60000):0;
-          groups.get(gk).matches.push(Object.assign({},m,{started:started,minutesSinceKickoff:sinceKickoff,live:started&&sinceKickoff<=30,liveMinutes:started&&sinceKickoff<=30?sinceKickoff:0}));
+          groups.get(gk).matches.push(Object.assign({},alignFtPick(m),{started:started,minutesSinceKickoff:sinceKickoff,live:started&&sinceKickoff<=30,liveMinutes:started&&sinceKickoff<=30?sinceKickoff:0}));
           matchCount++;
         }
         const slots=[...groups.entries()].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0).map(([,s])=>{s.matches.sort((a:any,b:any)=>Date.parse(a.kickoff)-Date.parse(b.kickoff));return s});
