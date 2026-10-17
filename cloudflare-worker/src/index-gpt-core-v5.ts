@@ -448,6 +448,9 @@ function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number
   const byDay=new Map<string,any[]>();
   up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=byDay.get(d)||[];a.push(m);byDay.set(d,a)});
   byDay.forEach((ms,d)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),3,5,'any_time:'+d))});
+  const bySeg=new Map<string,any[]>();
+  up.forEach(m=>{const k=String(m.kickoff);const h=Math.floor(Number(k.substring(11,13))/6)*6;const key=k.substring(0,10)+'T'+String(h).padStart(2,'0')+':00';const a=bySeg.get(key)||[];a.push(m);bySeg.set(key,a)});
+  bySeg.forEach((ms,key)=>{if(ms.length>=2&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),2,4,'seg6:'+key))});
   return capScopesPerBucket(out,2);
 }
 
