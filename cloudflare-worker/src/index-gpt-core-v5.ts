@@ -737,15 +737,21 @@ export default{
       const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
       try{
         await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_settle`,{method:'POST',headers:hdr,body:'{}',signal:AbortSignal.timeout(15000)});
-        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_stats`,{method:'POST',headers:hdr,body:JSON.stringify({p_days:days}),signal:AbortSignal.timeout(15000)});
+        const group=url.searchParams.get('group')==='x'?'x':'std';
+        const rpc=async(name:string,withGroup:any,without:any,ms:number)=>{
+          let r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/${name}`,{method:'POST',headers:hdr,body:JSON.stringify(withGroup),signal:AbortSignal.timeout(ms)});
+          if(!r.ok)r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/${name}`,{method:'POST',headers:hdr,body:JSON.stringify(without),signal:AbortSignal.timeout(ms)});
+          return r;
+        };
+        const r=await rpc('cfi_parlay_stats',{p_days:days,p_group:group},{p_days:days},15000);
         if(!r.ok)return Response.json({error:'stats failed',status:r.status},{status:502});
         const out:any=await r.json();
         try{
-          const rr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_recent`,{method:'POST',headers:hdr,body:JSON.stringify({p_days:days,p_limit:40}),signal:AbortSignal.timeout(8000)});
+          const rr=await rpc('cfi_parlay_recent',{p_days:days,p_limit:40,p_group:group},{p_days:days,p_limit:40},8000);
           if(rr.ok){const rec:any=await rr.json();if(Array.isArray(rec))out.recent=rec}
         }catch{}
         try{
-          const pr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_placed`,{method:'POST',headers:hdr,body:JSON.stringify({p_limit:50}),signal:AbortSignal.timeout(8000)});
+          const pr=await rpc('cfi_parlay_placed',{p_limit:50,p_group:group},{p_limit:50},8000);
           if(pr.ok){const pl:any=await pr.json();if(Array.isArray(pl))out.placed_list=pl}
         }catch{}
         return Response.json(out,{headers:{'Cache-Control':'no-store'}});
