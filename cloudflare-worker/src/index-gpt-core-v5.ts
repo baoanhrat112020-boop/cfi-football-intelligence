@@ -337,8 +337,94 @@ function parlayLogRows(mode:string,parlays:any[]){
 }
 const EXCLUDE_RE=/\bU1[0-8]\b|\b(Oberliga|Verbandsliga|Landesliga|Bezirksliga|Kreisliga|Kreisklasse)\b/i;
 function hasOuOdds(m:any):boolean{return Array.isArray(m?.market_odds)&&m.market_odds.some((o:any)=>String(o?.family||'').toUpperCase()==='OVER_UNDER'&&Number(o?.odds_over)>1)}
+function upcomingMatches(matches:any[],now:number,oddsOnly:boolean,hours:number):any[]{
+  return matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+hours*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
+}
+function capScopesPerDay(out:any[],perDay:number):any[]{
+  const best=new Map<string,number>();
+  out.forEach(x=>best.set(x.scope,Math.max(best.get(x.scope)||0,x.combined_p)));
+  const cnt=new Map<string,number>();
+  const keep=new Set<string>();
+  [...best.entries()].sort((a,b)=>b[1]-a[1]).forEach(([sc])=>{
+    const d=sc.slice(sc.indexOf(':')+1,sc.indexOf(':')+11);
+    const c=cnt.get(d)||0;
+    if(c<perDay){cnt.set(d,c+1);keep.add(sc)}
+  });
+  return out.filter(x=>keep.has(x.scope)).map(x=>({...x,pkey:parlayPkey(x)}));
+}
+function mkParlay(type:string,scope:string,legs:any[]){
+  return {type,scope,legs,min_p:Math.min(...legs.map(l=>l.p)),combined_p:Math.round(legs.reduce((a,l)=>a*l.p,1)*10000)/10000};
+}
+const XM:[string,string,number][]=[['3+ HT','x3ht',0.25],['Other HT','xoht',0.08],['Other FT','xoft',0.20],['7+ FT','x7ft',0.15]];
+function extremeLegs(m:any,hitOnly:boolean):any[]{
+  const r:any[]=[];
+  for(const [name,t,th] of XM){
+    const p=m?.probs?.[name];
+    if(typeof p!=='number'||!(p>0))continue;
+    const hit=Array.isArray(m.hit_markets)&&m.hit_markets.includes(name);
+    if(hitOnly&&!hit)continue;
+    let mult=1;
+    if(Array.isArray(m.flags)){
+      const f=m.flags.find((x:any)=>x?.market===name);
+      if(f?.flag==='HIGH')mult=1.2;else if(f?.flag==='MEDIUM')mult=1.1;
+    }
+    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:t,line:null,odds:null,raw:p,p:Math.round(p*10000)/10000,alts:[],ratio:p/th,w:p*mult,rw:(p/th)*mult});
+  }
+  return r;
+}
+function pickDistinct(sorted:any[],n:number):any[]{
+  const used=new Set<string>(),out:any[]=[];
+  for(const l of sorted){if(used.has(l.fixture_id))continue;used.add(l.fixture_id);out.push(l);if(out.length===n)break}
+  return out;
+}
+function extremeFromPool(pool:any[],scope:string,sameKey:string,mixKey:string):any[]{
+  const res:any[]=[];
+  for(const [,t] of XM){
+    const top=pickDistinct(pool.filter(l=>l.type===t).sort((a,b)=>b[sameKey]-a[sameKey]),3);
+    for(let k=2;k<=top.length;k++)res.push(mkParlay('same:'+t,scope,top.slice(0,k)));
+  }
+  const mixTop=pickDistinct([...pool].sort((a,b)=>b[mixKey]-a[mixKey]),3);
+  for(let k=2;k<=mixTop.length;k++){const c=mixTop.slice(0,k);if(new Set(c.map(l=>l.type)).size>=2)res.push(mkParlay('mix',scope,c))}
+  return res;
+}
+function dedupeByLegs(list:any[]):any[]{
+  const seen=new Set<string>(),out:any[]=[];
+  for(const x of list){const k=x.type+'|'+x.legs.map((l:any)=>l.fixture_id+l.type).join(',');if(seen.has(k))continue;seen.add(k);out.push(x)}
+  return out;
+}
+function buildExtremeSpecial(matches:any[],now:number):any[]{
+  const up=upcomingMatches(matches,now,false,24);
+  const out:any[]=[];
+  [...new Set(up.map(m=>m.kickoff))].forEach((s:any)=>{
+    const t0=Date.parse(s);
+    const ms=up.filter(m=>{const t=Date.parse(m.kickoff);return t>=t0&&t<=t0+8*3600*1000});
+    if(ms.length<2)return;
+    out.push(...extremeFromPool(ms.flatMap(m=>extremeLegs(m,false)),'window_8h:'+s,'p','ratio'));
+  });
+  return capScopesPerDay(dedupeByLegs(out),4);
+}
+function buildExtremeDaily(matches:any[],now:number):any[]{
+  const up=upcomingMatches(matches,now,false,48);
+  const byDay=new Map<string,any[]>();
+  up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=byDay.get(d)||[];a.push(m);byDay.set(d,a)});
+  const out:any[]=[];
+  byDay.forEach((ms,d)=>{out.push(...extremeFromPool(ms.flatMap(m=>extremeLegs(m,true)),'daily:'+d,'w','rw'))});
+  return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
+}
+function buildSpecialTop(matches:any[],now:number,oddsOnly:boolean):any[]{
+  const up=upcomingMatches(matches,now,oddsOnly,24);
+  const out:any[]=[];
+  [...new Set(up.map(m=>m.kickoff))].forEach((s:any)=>{
+    const t0=Date.parse(s);
+    const ms=up.filter(m=>{const t=Date.parse(m.kickoff);return t>=t0&&t<=t0+4*3600*1000});
+    const pool=ms.flatMap(m=>parlayLegs(m,null)).filter(l=>l.type!=='btts_ht'&&l.raw>=0.5);
+    const top=pickDistinct(pool.sort((a,b)=>b.p-a.p),7);
+    for(let k=4;k<=top.length;k++)out.push(mkParlay('special','window_4h:'+s,top.slice(0,k)));
+  });
+  return capScopesPerDay(dedupeByLegs(out),4);
+}
 function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null,oddsOnly:boolean){
-  const up=matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+24*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
+  const up=upcomingMatches(matches,now,oddsOnly,24);
   const byKick=new Map<string,any[]>();
   up.forEach(m=>{const a=byKick.get(m.kickoff)||[];a.push(m);byKick.set(m.kickoff,a)});
   const out:any[]=[];
@@ -452,7 +538,9 @@ export default{
 
     if(url.pathname==='/api/suggest-parlays'&&request.method==='GET'){
       try{
-        const mode=url.searchParams.get('mode')==='round'?'round':'suggest';
+        const modeQ=url.searchParams.get('mode')||'';
+        const mode=['round','special','xspecial','xdaily'].includes(modeQ)?modeQ:'suggest';
+        const isX=mode==='xspecial'||mode==='xdaily';
         const key=(env as any).SUPABASE_SERVICE_KEY;
         const hdr={'apikey':key,'Authorization':`Bearer ${key}`};
         const today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
@@ -475,8 +563,8 @@ export default{
             return typeof h[col]==='number'?h[col]:null;
           };
         }
-        const oddsOnly=url.searchParams.get('odds')!=='0';
-        let built=buildParlays(all,Date.now(),rate,oddsOnly);
+        const oddsOnly=!isX&&url.searchParams.get('odds')!=='0';
+        let built=mode==='xspecial'?buildExtremeSpecial(all,Date.now()):mode==='xdaily'?buildExtremeDaily(all,Date.now()):mode==='special'?buildSpecialTop(all,Date.now(),oddsOnly):buildParlays(all,Date.now(),rate,oddsOnly);
         let calib:any={};
         try{
           const cr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_calibration`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}',signal:AbortSignal.timeout(4000)});
@@ -489,7 +577,7 @@ export default{
         }catch{}
         built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
         const logRows=parlayLogRows(mode,built);
-        if(oddsOnly&&logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
+        if((oddsOnly||isX)&&logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
         return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
@@ -602,7 +690,7 @@ export default{
     if(url.pathname==='/api/parlay-edit'&&request.method==='POST'){
       let input:any=null;try{input=await request.clone().json()}catch{}
       if(!input||typeof input!=='object')return Response.json({error:'invalid body'},{status:400});
-      const mode=input.mode==='round'?'round':input.mode==='suggest'?'suggest':null;
+      const mode=['suggest','round','special','xspecial','xdaily'].includes(input.mode)?input.mode:null;
       const pk=typeof input.pkey==='string'&&input.pkey.length>0&&input.pkey.length<2000?input.pkey:null;
       if(!mode||!pk)return Response.json({error:'invalid key'},{status:400});
       const legsIn=input.legs===undefined?null:Array.isArray(input.legs)?input.legs:undefined;
