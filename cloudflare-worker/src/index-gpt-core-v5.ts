@@ -340,15 +340,20 @@ function hasOuOdds(m:any):boolean{return Array.isArray(m?.market_odds)&&m.market
 function upcomingMatches(matches:any[],now:number,oddsOnly:boolean,hours:number):any[]{
   return matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+hours*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
 }
-function capScopesPerDay(out:any[],perDay:number):any[]{
+function scopeBucket(sc:string):string{
+  const v=sc.slice(sc.indexOf(':')+1);
+  if(v.length<=10)return 'D'+v;
+  return v.substring(0,10)+'T'+Math.floor(Number(v.substring(11,13))/3);
+}
+function capScopesPerBucket(out:any[],perBucket:number):any[]{
   const best=new Map<string,number>();
   out.forEach(x=>best.set(x.scope,Math.max(best.get(x.scope)||0,x.combined_p)));
   const cnt=new Map<string,number>();
   const keep=new Set<string>();
   [...best.entries()].sort((a,b)=>b[1]-a[1]).forEach(([sc])=>{
-    const d=sc.slice(sc.indexOf(':')+1,sc.indexOf(':')+11);
-    const c=cnt.get(d)||0;
-    if(c<perDay){cnt.set(d,c+1);keep.add(sc)}
+    const b=scopeBucket(sc);
+    const c=cnt.get(b)||0;
+    if(c<perBucket){cnt.set(b,c+1);keep.add(sc)}
   });
   return out.filter(x=>keep.has(x.scope)).map(x=>({...x,pkey:parlayPkey(x)}));
 }
@@ -401,7 +406,7 @@ function buildExtremeSpecial(matches:any[],now:number):any[]{
     if(ms.length<2)return;
     out.push(...extremeFromPool(ms.flatMap(m=>extremeLegs(m,false)),'window_8h:'+s,'p','ratio'));
   });
-  return capScopesPerDay(dedupeByLegs(out),4);
+  return capScopesPerBucket(dedupeByLegs(out),1);
 }
 function buildExtremeDaily(matches:any[],now:number):any[]{
   const up=upcomingMatches(matches,now,false,48);
@@ -421,7 +426,7 @@ function buildSpecialTop(matches:any[],now:number,oddsOnly:boolean):any[]{
     const top=pickDistinct(pool.sort((a,b)=>b.p-a.p),7);
     for(let k=4;k<=top.length;k++)out.push(mkParlay('special','window_4h:'+s,top.slice(0,k)));
   });
-  return capScopesPerDay(dedupeByLegs(out),4);
+  return capScopesPerBucket(dedupeByLegs(out),1);
 }
 function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null,oddsOnly:boolean){
   const up=upcomingMatches(matches,now,oddsOnly,24);
@@ -443,16 +448,7 @@ function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number
   const byDay=new Map<string,any[]>();
   up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=byDay.get(d)||[];a.push(m);byDay.set(d,a)});
   byDay.forEach((ms,d)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),3,5,'any_time:'+d))});
-  const best=new Map<string,number>();
-  out.forEach(x=>best.set(x.scope,Math.max(best.get(x.scope)||0,x.combined_p)));
-  const perDay=new Map<string,number>();
-  const keepScopes=new Set<string>();
-  [...best.entries()].sort((a,b)=>b[1]-a[1]).forEach(([sc])=>{
-    const d=sc.slice(sc.indexOf(':')+1,sc.indexOf(':')+11);
-    const c=perDay.get(d)||0;
-    if(c<6){perDay.set(d,c+1);keepScopes.add(sc)}
-  });
-  return out.filter(x=>keepScopes.has(x.scope)).map(x=>({...x,pkey:parlayPkey(x)}));
+  return capScopesPerBucket(out,2);
 }
 
 const TIER_EVIDENCE_TTL_MS=10*60*1000;
