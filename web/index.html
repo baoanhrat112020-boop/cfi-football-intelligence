@@ -1077,7 +1077,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.6 · Build 8</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.6 · Build 9</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -2031,11 +2031,17 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     out+='<div class="card" style="padding:12px;margin-bottom:10px"><b style="display:block;margin-bottom:6px"><span>Hệ số hiệu chỉnh</span></b>'+(ck.length?ck.map(function(k){var q=k.split("|"),c=cal[k];return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-top:1px solid var(--line)"><span>'+MN[q[0]]+' · <span>'+esc(parlayTypeLabel(q[1]))+'</span></span><b translate="no">×'+c.r.toFixed(2)+' (n='+c.n+')</b></div>'}).join(''):'<div style="font-size:12px;color:var(--muted)"><span>Chưa đủ dữ liệu (cần 30 xiên mỗi loại)</span></div>')+'</div>';
     return out;
   }
+  function pstItem(x){
+    var nm={WIN:["Thắng","#35d07f"],LOSS:["Thua","#ff6b6b"],HALF_LOSS:["Thua nửa","#ff6b6b"],PUSH:["Hòa vốn","var(--muted)"],VOID:["Hủy","var(--muted)"]},rs=nm[x.result]||["Chờ","var(--muted)"];
+    var head='<span><span translate="no">'+esc(x.day.substring(8,10)+"/"+x.day.substring(5,7))+'</span> · <span>'+esc(parlayTypeLabel(x.ptype))+'</span> · <span translate="no">'+x.n_legs+'</span> <span>chân</span>'+(x.is_user?' · <span>Bạn nhập</span>':'')+(x.placed?' · <span>Đã đặt</span>':'')+'</span><b style="color:'+rs[1]+'">'+rs[0]+'</b>';
+    if(!x.legs||!x.legs.length)return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--line)">'+head+'</div>';
+    return '<details class="pst-it" style="border-top:1px solid var(--line)"><summary style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0;cursor:pointer;list-style:none">'+head+'</summary>'+x.legs.map(pstLeg).join('')+'</details>';
+  }
   function pstLeg(l){
     var SC={"1":["Thắng","#35d07f"],"0.5":["Thắng nửa","#35d07f"],"0":["Hòa vốn","var(--muted)"],"-0.5":["Thua nửa","#ff6b6b"],"-1":["Thua","#ff6b6b"]};
-    var sc=l.sc==null?null:String(Number(l.sc)),r=SC[sc]||["—","var(--muted)"];
+    var sc=l.sc==null?null:String(Number(l.sc)),r=SC[sc]||["Chờ","var(--muted)"];
     var mk=XLAB[l.type]?XLAB[l.type]:l.type==="btts"?"Hai đội ghi bàn":l.type==="btts_ht"?"Hai đội ghi bàn hiệp 1":"Tài "+l.line+(l.type==="ou_ht"?" hiệp 1":" cả trận");
-    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0 6px 12px;border-top:1px dashed var(--line)"><div style="min-width:0"><div style="overflow-wrap:anywhere">'+esc(l.home)+' - '+esc(l.away)+'</div><div style="font-size:11px;color:var(--muted)"><span>'+mk+'</span>'+(l.odds?' @<span translate="no">'+Number(l.odds).toFixed(2)+'</span>':'')+' · <span translate="no">HT '+esc(l.ht||"?")+' · FT '+esc(l.ft||"?")+'</span></div></div><b style="color:'+r[1]+';white-space:nowrap">'+r[0]+'</b></div>';
+    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0 6px 12px;border-top:1px dashed var(--line)"><div style="min-width:0"><div style="overflow-wrap:anywhere">'+esc(l.home)+' - '+esc(l.away)+'</div><div style="font-size:11px;color:var(--muted)"><span>'+mk+'</span>'+(l.odds?' @<span translate="no">'+Number(l.odds).toFixed(2)+'</span>':'')+' · <span translate="no">'+(l.ft?'HT '+esc(l.ht)+' · FT '+esc(l.ft):esc(String(l.kickoff||"").substring(8,10)+"/"+String(l.kickoff||"").substring(5,7)+" "+String(l.kickoff||"").substring(11,16)))+'</span></div></div><b style="color:'+r[1]+';white-space:nowrap">'+r[0]+'</b></div>';
   }
   function renderParlayStats(d){
     var g=d.groups||[],t=d.totals||[],n=0;t.forEach(function(x){n+=x.n});
@@ -2050,16 +2056,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         out+='<div class="card" style="padding:12px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>'+PST_MODE[m]+' · '+(u?'<span>Bạn nhập</span>':'<span>Hệ thống chọn</span>')+'</b>'+(tt?'<b style="color:var(--cyan)">'+pstPct(tt.hit)+'</b>':'')+'</div>'+pstHead()+rows.map(pstRow).join('')+'</div>';
       });
     });
+    var pl=d.placed_list||[];
+    if(pl.length)out+='<div class="sg-hdr" style="margin-top:14px"><b>Xiên đã đặt</b></div>'+pl.map(pstItem).join('');
     out+=renderParlayStatsExtra(d);
     var rc=d.recent||[];
-    if(rc.length){
-      var nm={WIN:"Thắng",LOSS:"Thua",HALF_LOSS:"Thua nửa"};
-      out+='<div class="sg-hdr" style="margin-top:14px"><b>Gần đây</b></div>'+rc.map(function(x){
-        var head='<span><span translate="no">'+esc(x.day.substring(8,10)+"/"+x.day.substring(5,7))+'</span> · <span>'+esc(parlayTypeLabel(x.ptype))+'</span> · <span translate="no">'+x.n_legs+'</span> <span>chân</span>'+(x.is_user?' · <span>Bạn nhập</span>':'')+(x.placed?' · <span>Đã đặt</span>':'')+'</span><b style="color:'+(x.result==="WIN"?"#35d07f":"#ff6b6b")+'">'+nm[x.result]+'</b>';
-        if(!x.legs||!x.legs.length)return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--line)">'+head+'</div>';
-        return '<details class="pst-it" style="border-top:1px solid var(--line)"><summary style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0;cursor:pointer;list-style:none">'+head+'</summary>'+x.legs.map(pstLeg).join('')+'</details>';
-      }).join('');
-    }
+    if(rc.length)out+='<div class="sg-hdr" style="margin-top:14px"><b>Gần đây</b></div>'+rc.map(pstItem).join('');
     return out;
   }
   async function loadParlayStats(){
@@ -2606,6 +2607,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Thua nửa": "Half loss",
       "Thua": "Loss",
       "Thắng nửa": "Half win",
+      "Chờ": "Pending",
+      "Xiên đã đặt": "Placed parlays",
       "Hòa vốn": "Push",
       "Kỳ vọng": "Expected value",
       "Chưa có dữ liệu vòng đấu": "No round data yet",
