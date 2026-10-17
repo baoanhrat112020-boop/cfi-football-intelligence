@@ -353,10 +353,12 @@ function alignFtPick(m:any):any{
     }
   }
   if(p!==null&&p<0.5){market=null;line=null;p=null}
-  if(market===(m.selected_ft_market??null))return m;
-  const cands:[string,any][]=[['btts_yes',m?.markets?.m_btts_yes],['1x2_ht_home',m?.markets?.m_1x2_ht_home],['1x2_ft_home',m?.markets?.m_1x2_ft_home],[m.selected_ht_market,m.selected_ht_p],[market as any,p]];
+  const dropHt=typeof m.selected_ht_line==='number'&&m.selected_ht_line<0.75;
+  const htMarket=dropHt?null:(m.selected_ht_market??null),htP=dropHt?null:(m.selected_ht_p??null),htLine=dropHt?null:(m.selected_ht_line??null);
+  if(market===(m.selected_ft_market??null)&&!dropHt)return m;
+  const cands:[string,any][]=[['btts_yes',m?.markets?.m_btts_yes],['1x2_ht_home',m?.markets?.m_1x2_ht_home],['1x2_ft_home',m?.markets?.m_1x2_ft_home],[htMarket as any,htP],[market as any,p]];
   const best=cands.filter(c=>c[0]&&typeof c[1]==='number'&&c[1]>=0.5).sort((a,b)=>b[1]-a[1]||(a[0]<b[0]?-1:1))[0];
-  return Object.assign({},m,{selected_ft_market:market,selected_ft_line:line,selected_ft_p:p,top_market:best?best[0]:null,top_market_prob:best?best[1]:null});
+  return Object.assign({},m,{selected_ht_market:htMarket,selected_ht_line:htLine,selected_ht_p:htP,selected_ft_market:market,selected_ft_line:line,selected_ft_p:p,top_market:best?best[0]:null,top_market_prob:best?best[1]:null});
 }
 function upcomingMatches(matches:any[],now:number,oddsOnly:boolean,hours:number):any[]{
   return matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+hours*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
