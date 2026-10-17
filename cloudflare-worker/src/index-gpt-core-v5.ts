@@ -314,7 +314,7 @@ function enumerateParlays(pool:any[],k:number,accept:(c:any[])=>boolean){
 function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
   const res:any[]=[];
   const finish=(kind:string,pool:any[],minP:number,accept:(c:any[])=>boolean)=>{
-    const p=pool.filter(l=>l.raw>=(l.type==='btts_ht'?0.3:minP)).sort((a,b)=>b.p-a.p).slice(0,12);
+    const p=pool.filter(l=>l.raw>=(l.type==='btts_ht'?0.3:minP)).sort((a,b)=>b.p-a.p).slice(0,kmax>=7?9:8);
     const all:any[]=[];
     for(let k=kmin;k<=kmax;k++)for(const c of enumerateParlays(p,k,accept))all.push({type:kind,scope,legs:c,min_p:Math.min(...c.map(l=>l.p)),combined_p:Math.round(c.reduce((a,l)=>a*l.p,1)*10000)/10000});
     all.sort((a,b)=>b.combined_p-a.combined_p);
@@ -425,18 +425,24 @@ function buildSpecialTop(matches:any[],now:number,oddsOnly:boolean):any[]{
 }
 function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null,oddsOnly:boolean){
   const up=upcomingMatches(matches,now,oddsOnly,24);
+  const legCache=new Map<string,any[]>();
+  const legsOf=(m:any):any[]=>{let v=legCache.get(m.fixture_id);if(!v){v=parlayLegs(m,rate);legCache.set(m.fixture_id,v)}return v};
   const byKick=new Map<string,any[]>();
   up.forEach(m=>{const a=byKick.get(m.kickoff)||[];a.push(m);byKick.set(m.kickoff,a)});
   const out:any[]=[];
-  byKick.forEach((ms,k)=>{if(ms.length>=3)out.push(...topParlays(ms.flatMap(m=>parlayLegs(m,rate)),3,5,'same_hour:'+k))});
+  byKick.forEach((ms,k)=>{if(ms.length>=3)out.push(...topParlays(ms.flatMap(legsOf),3,5,'same_hour:'+k))});
+  let lastWin='';
   [...byKick.keys()].forEach(s=>{
     const t0=Date.parse(s);
     const ms=up.filter(m=>{const t=Date.parse(m.kickoff);return t>=t0&&t<=t0+4*3600*1000});
-    if(ms.length>=5)out.push(...topParlays(ms.flatMap(m=>parlayLegs(m,rate)),5,7,'window_4h:'+s));
+    const wk=ms.map((m:any)=>m.fixture_id).join(',');
+    if(wk===lastWin)return;
+    lastWin=wk;
+    if(ms.length>=5)out.push(...topParlays(ms.flatMap(legsOf),5,7,'window_4h:'+s));
   });
   const byDay=new Map<string,any[]>();
   up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=byDay.get(d)||[];a.push(m);byDay.set(d,a)});
-  byDay.forEach((ms,d)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(m=>parlayLegs(m,rate)),3,5,'any_time:'+d))});
+  byDay.forEach((ms,d)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),3,5,'any_time:'+d))});
   const best=new Map<string,number>();
   out.forEach(x=>best.set(x.scope,Math.max(best.get(x.scope)||0,x.combined_p)));
   const perDay=new Map<string,number>();
