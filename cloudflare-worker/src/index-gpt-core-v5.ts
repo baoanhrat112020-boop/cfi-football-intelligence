@@ -311,7 +311,7 @@ function enumerateParlays(pool:any[],k:number,accept:(c:any[])=>boolean){
   rec(0);
   return out;
 }
-function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
+function topParlays(legs:any[],kmin:number,kmax:number,scope:string,minSame:number=0.60,minMix:number=0.55){
   const res:any[]=[];
   const finish=(kind:string,pool:any[],minP:number,accept:(c:any[])=>boolean)=>{
     const p=pool.filter(l=>l.raw>=(l.type==='btts_ht'?0.3:minP)).sort((a,b)=>b.p-a.p).slice(0,kmax>=7?9:8);
@@ -326,8 +326,8 @@ function topParlays(legs:any[],kmin:number,kmax:number,scope:string){
     }
     res.push(...keep);
   };
-  for(const t of ['ou_ft','ou_ht','btts','btts_ht'])finish('same:'+t,legs.filter(l=>l.type===t),0.60,()=>true);
-  finish('mix',legs,0.55,c=>new Set(c.map(l=>l.type)).size>=2);
+  for(const t of ['ou_ft','ou_ht','btts','btts_ht'])finish('same:'+t,legs.filter(l=>l.type===t),minSame,()=>true);
+  finish('mix',legs,minMix,c=>new Set(c.map(l=>l.type)).size>=2);
   return res;
 }
 function parlayPkey(x:any):string{return x.scope+'|'+x.type+'|'+x.legs.map((l:any)=>l.fixture_id+':'+l.type).join(',')}
@@ -450,7 +450,7 @@ function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number
   byDay.forEach((ms,d)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),3,5,'any_time:'+d))});
   const bySeg=new Map<string,any[]>();
   up.forEach(m=>{const k=String(m.kickoff);const h=Math.floor(Number(k.substring(11,13))/6)*6;const key=k.substring(0,10)+'T'+String(h).padStart(2,'0')+':00';const a=bySeg.get(key)||[];a.push(m);bySeg.set(key,a)});
-  bySeg.forEach((ms,key)=>{if(ms.length>=2&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),2,4,'seg6:'+key))});
+  bySeg.forEach((ms,key)=>{if(ms.length>=2&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),2,4,'seg6:'+key,0.5,0.5))});
   return capScopesPerBucket(out,2);
 }
 
