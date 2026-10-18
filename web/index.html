@@ -523,6 +523,7 @@
           <button class="chip active" data-range="1440">24h</button>
           <button class="chip" data-range="2880">48h</button>
           <button class="chip" data-range="tb">Ch&#7881; &ge; TB (0.55)</button>
+          <button class="chip" data-range="samehour">Cùng giờ</button>
           <button class="chip" data-range="hidepast">&#7848;n &#273;&#227; &#273;&#225;</button>
           <button class="chip" data-range="noamateur" style="margin-left:auto">Lo&#7841;i amateur</button>
         </div>
@@ -1092,7 +1093,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 2</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 3</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1634,7 +1635,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   try{state.suggestNoAmateur=localStorage.getItem("cfi_suggest_noamateur")==="1"}catch(e){}
   state.suggestTB=false;
   try{state.suggestTB=localStorage.getItem("cfi_suggest_tb")==="1"}catch(e){}
-  state.suggestHidePast=true;state.suggestPastOpen=false;
+  state.suggestHidePast=true;state.suggestPastOpen=false;state.suggestSameHour=true;
+  try{state.suggestSameHour=localStorage.getItem("cfi_suggest_samehour")!=="0"}catch(e){}
   try{state.suggestHidePast=localStorage.getItem("cfi_suggest_hidepast")!=="0"}catch(e){}
   function suggestIsPast(m){
     var ls=m.live_status;
@@ -1719,9 +1721,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }
     document.querySelectorAll("#suggestChips .chip").forEach(function(c){
       var d=c.dataset.range;
-      c.classList.toggle("active",d==="noamateur"?state.suggestNoAmateur:d==="tb"?state.suggestTB:d==="hidepast"?state.suggestHidePast:d===state.suggestFilter);
+      c.classList.toggle("active",d==="noamateur"?state.suggestNoAmateur:d==="tb"?state.suggestTB:d==="hidepast"?state.suggestHidePast:d==="samehour"?state.suggestSameHour:d===state.suggestFilter);
     });
-    var sig=state.suggestFilter+"|"+state.suggestTB+"|"+state.suggestNoAmateur+"|"+state.suggestHidePast,keep=sig===suggestSig,y=window.scrollY;
+    var sig=state.suggestFilter+"|"+state.suggestTB+"|"+state.suggestNoAmateur+"|"+state.suggestHidePast+"|"+state.suggestSameHour,keep=sig===suggestSig,y=window.scrollY;
     if(!keep){suggestSig=sig;state.suggestShown=10}
     $("suggestContent").innerHTML=renderSuggestHtml({slots:view.slots,total:view.total,hidden:view.hidden});
     if(keep)window.scrollTo(0,y);
@@ -1767,6 +1769,12 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         return !state.suggestNoAmateur||(!teamTags(m.home).length&&!teamTags(m.away).length);
       }).sort(function(a,b){return (a.no_stats?1:0)-(b.no_stats?1:0)||(Number(b.s_over075_ht)||0)-(Number(a.s_over075_ht)||0)})};
     }).filter(function(sl){return sl.matches.length});
+    if(state.suggestSameHour){
+      var sg={},sk=[];
+      slots.forEach(function(sl){sl.matches.forEach(function(m){var k=String(m.kickoff||"").substring(0,16);if(!sg[k]){sg[k]={date:String(m.kickoff||"").substring(0,10)||sl.date,hour:String(m.kickoff||"").substring(11,16)||sl.hour,matches:[]};sk.push(k)}sg[k].matches.push(m)})});
+      sk.sort();
+      slots=sk.map(function(k){var g=sg[k];g.matches.sort(function(a,b){return (a.no_stats?1:0)-(b.no_stats?1:0)||(Number(b.s_over075_ht)||0)-(Number(a.s_over075_ht)||0)});return g});
+    }
     var nSlots=slots.length,pastSlots=[];
     if(!state.suggestHidePast){
       pastSlots=slots.map(function(sl){return {date:sl.date,hour:sl.hour,past:true,matches:sl.matches.filter(suggestIsPast)}}).filter(function(sl){return sl.matches.length});
@@ -1836,6 +1844,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       }else if(r==="tb"){
         state.suggestTB=!state.suggestTB;
         try{localStorage.setItem("cfi_suggest_tb",state.suggestTB?"1":"0")}catch(e){}
+      }else if(r==="samehour"){
+        state.suggestSameHour=!state.suggestSameHour;
+        try{localStorage.setItem("cfi_suggest_samehour",state.suggestSameHour?"1":"0")}catch(e){}
       }else if(r==="hidepast"){
         state.suggestHidePast=!state.suggestHidePast;
         try{localStorage.setItem("cfi_suggest_hidepast",state.suggestHidePast?"1":"0")}catch(e){}
