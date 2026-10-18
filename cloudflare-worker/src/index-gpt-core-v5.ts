@@ -422,14 +422,16 @@ function dedupeByLegs(list:any[]):any[]{
 }
 function buildExtremeSpecial(matches:any[],now:number):any[]{
   const up=upcomingMatches(matches,now,false,24);
+  const byBucket=new Map<number,any[]>();
+  up.forEach(m=>{const b=Math.floor((Date.parse(m.kickoff)+7*3600*1000)/(4*3600*1000));const a=byBucket.get(b)||[];a.push(m);byBucket.set(b,a)});
   const out:any[]=[];
-  [...new Set(up.map(m=>m.kickoff))].forEach((s:any)=>{
-    const t0=Date.parse(s);
-    const ms=up.filter(m=>{const t=Date.parse(m.kickoff);return t>=t0&&t<=t0+4*3600*1000});
+  [...byBucket.keys()].sort((a,b)=>a-b).forEach(b=>{
+    const ms=byBucket.get(b)!;
     if(ms.length<2)return;
-    out.push(...extremeFromPool(ms.flatMap(m=>extremeLegs(m,false)),'window_4h:'+s,'p','ratio'));
+    const first=ms.map(m=>m.kickoff).sort()[0];
+    out.push(...extremeFromPool(ms.flatMap(m=>extremeLegs(m,false)),'window_4h:'+first,'p','ratio'));
   });
-  return capScopesPerBucket(dedupeByLegs(out),1);
+  return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
 }
 function buildExtremeDaily(matches:any[],now:number):any[]{
   const up=upcomingMatches(matches,now,false,48);
