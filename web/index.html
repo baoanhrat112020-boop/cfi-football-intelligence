@@ -1092,7 +1092,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 8</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 9</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1567,11 +1567,14 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   var goldAt=0;
   function goldMarket(m,l){return m==="over_ht"?"Tài "+l+" hiệp 1":m==="over_ft"?"Tài "+l+" cả trận":m?marketLabel(m):""}
   function goldRender(d){
-    var S=d.summary||[],R=d.rows||[];
+    var S=d.summary||[],R=d.rows||[],F=state.goldF||"all";
+    var cnt={};R.forEach(function(x){(x.hit||[]).forEach(function(t){cnt[t]=(cnt[t]||0)+1})});
+    var chips='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="chip'+(F==="all"?" active":"")+'" data-goldf="all"><span>Tất cả</span> <span translate="no">'+R.length+'</span></button>'+["x3ht","xoht","xoft","x7ft"].map(function(t){return '<button class="chip'+(F===t?" active":"")+'" data-goldf="'+t+'" translate="no">'+XLAB[t]+' '+(cnt[t]||0)+'</button>'}).join("")+'</div>';
+    if(F!=="all")R=R.filter(function(x){return (x.hit||[]).indexOf(F)>=0});
     var h='<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Cực đoan đã diễn ra · đối chiếu dấu hiệu</span> · <span translate="no">'+(d.days||30)+'d · '+(d.total||0)+'</span></div>'
       +S.map(function(x){return '<div style="padding:6px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between"><b translate="no">'+esc(XLAB[x.type]||x.type)+'</b><span><span>Tỉ lệ ra</span> <b translate="no" style="color:var(--cyan)">'+(x.rate==null?"—":(x.rate*100).toFixed(1)+"%")+' ('+x.hits+'/'+x.n+')</b></span></div><div style="font-size:11px;color:var(--muted);margin-top:2px"><span>Mô hình</span> <span translate="no">'+(x.p_all==null?"—":(x.p_all*100).toFixed(1)+"%")+'</span> · <span>Khi ra</span> <span translate="no">'+(x.p_hit==null?"—":(x.p_hit*100).toFixed(1)+"%")+'</span> · <span>Có cờ</span> <span translate="no">'+x.flag_hits+'/'+x.flag_n+'</span></div></div>'}).join("")+'</div>';
-    if(!R.length)return h+'<div class="context-state">Chưa có trận cực đoan nào</div>';
-    return h+R.map(function(x){
+    if(!R.length)return h+chips+'<div class="context-state">Chưa có trận cực đoan nào</div>';
+    return h+chips+R.map(function(x){
       var k=String(x.kickoff||""),fl=x.flagged||[],pr=x.probs||{};
       var pl=["3+ HT","Other HT","Other FT","7+ FT"].map(function(n){var v=pr[n];return '<span translate="no" style="'+(fl.indexOf(n)>=0?'color:#ffb347;font-weight:700':'')+'">'+n+' '+(typeof v==="number"?(v*100).toFixed(0)+"%":"—")+'</span>'}).join(" · ");
       var ht=goldMarket(x.ht_market,x.ht_line),ft=goldMarket(x.ft_market,x.ft_line);
@@ -1590,11 +1593,17 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
       var r=await api("/api/goldme","GET");
-      var html=goldRender(r.data||{});
+      state.goldRaw=r.data||{};
+      var html=goldRender(state.goldRaw);
       state.goldData=html;goldAt=Date.now();el.innerHTML=html;
     }catch(e){el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>'}
   }
-  state.mvpSub="top";
+  state.mvpSub="top";state.goldF="all";state.goldRaw=null;
+  $("mvpContent").addEventListener("click",function(e){
+    var b=e.target.closest("[data-goldf]");if(!b||!state.goldRaw)return;
+    state.goldF=b.dataset.goldf;
+    state.goldData=goldRender(state.goldRaw);$("mvpContent").innerHTML=state.goldData;
+  });
   $("mvpSubtabs").addEventListener("click",function(e){
     var b=e.target.closest("[data-mvpsub]");if(!b)return;
     state.mvpSub=b.dataset.mvpsub;
