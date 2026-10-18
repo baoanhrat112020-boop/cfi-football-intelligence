@@ -777,6 +777,17 @@ export default{
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
+    if(url.pathname==='/api/goldme'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const days=Math.min(120,Math.max(1,Number.parseInt(url.searchParams.get('days')||'30',10)||30));
+      try{
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days}),signal:AbortSignal.timeout(20000)});
+        if(!r.ok)return Response.json({error:'goldme failed',status:r.status},{status:502});
+        return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=1800'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
     if(url.pathname==='/api/mvp'&&request.method==='GET'){
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});

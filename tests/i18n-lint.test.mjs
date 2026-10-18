@@ -25,7 +25,7 @@ const NEUTRAL_EN_STATIC = new Set([
   'Strict-Prior', 'Champion Fusion', 'CFI App', 'CFI Production API', 'Engine', 'No Data', 'Raw Payload',
   '3+ HT', '7+ FT', 'Other HT', 'Other FT', 'HT', 'FT', 'CI 95%',
   'Over 2.5 FT', 'BTTS Yes', 'FT Home', 'HT Home', 'Over 1 HT', 'Settings', 'Ngôn ngữ / Language', 'Tiếng Việt',
-  'English', 'MVP', 'WIN', 'HALF', 'LOSS', 'TB (0.55)', 'Over FT', 'Over HT', 'BTTS', '1X2 FT'
+  'English', 'MVP', 'GoldMe', 'WIN', 'HALF', 'LOSS', 'TB (0.55)', 'Over FT', 'Over HT', 'BTTS', '1X2 FT'
 ]);
 const NEUTRAL_VI_STATIC = new Set(['Ngôn ngữ / Language', 'Tiếng Việt']);
 

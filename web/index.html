@@ -608,6 +608,7 @@
       <div style="padding:14px 4px 90px">
         <div style="font-size:20px;font-weight:800">MVP</div>
         <div style="font-size:12px;color:var(--muted);margin:2px 0 10px"><span>Markets thắng nhiều nhất</span> · <span>60 ngày gần nhất · cập nhật hằng ngày</span></div>
+        <div class="chip-row" id="mvpSubtabs" style="display:flex;gap:6px;padding:0 0 10px"><button class="chip active" data-mvpsub="top">Top kèo</button><button class="chip" data-mvpsub="gold">GoldMe</button></div>
         <div id="mvpContent"><div class="context-state">Đang tải...</div></div>
       </div>
     </section>
@@ -1091,7 +1092,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 7</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 8</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1563,8 +1564,46 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       +row('Brier Over 1 HT',l.brier_o1_ht,p.brier_o1_ht,false,false)
       +'<div style="font-size:11px;color:var(--muted);margin-top:6px"><span translate="no">'+l.n+' / '+p.n+'</span> <span>trận</span></div></div>';
   }
+  var goldAt=0;
+  function goldMarket(m,l){return m==="over_ht"?"Tài "+l+" hiệp 1":m==="over_ft"?"Tài "+l+" cả trận":m?marketLabel(m):""}
+  function goldRender(d){
+    var S=d.summary||[],R=d.rows||[];
+    var h='<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Cực đoan đã diễn ra · đối chiếu dấu hiệu</span> · <span translate="no">'+(d.days||30)+'d · '+(d.total||0)+'</span></div>'
+      +S.map(function(x){return '<div style="padding:6px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between"><b translate="no">'+esc(XLAB[x.type]||x.type)+'</b><span><span>Tỉ lệ ra</span> <b translate="no" style="color:var(--cyan)">'+(x.rate==null?"—":(x.rate*100).toFixed(1)+"%")+' ('+x.hits+'/'+x.n+')</b></span></div><div style="font-size:11px;color:var(--muted);margin-top:2px"><span>Mô hình</span> <span translate="no">'+(x.p_all==null?"—":(x.p_all*100).toFixed(1)+"%")+'</span> · <span>Khi ra</span> <span translate="no">'+(x.p_hit==null?"—":(x.p_hit*100).toFixed(1)+"%")+'</span> · <span>Có cờ</span> <span translate="no">'+x.flag_hits+'/'+x.flag_n+'</span></div></div>'}).join("")+'</div>';
+    if(!R.length)return h+'<div class="context-state">Chưa có trận cực đoan nào</div>';
+    return h+R.map(function(x){
+      var k=String(x.kickoff||""),fl=x.flagged||[],pr=x.probs||{};
+      var pl=["3+ HT","Other HT","Other FT","7+ FT"].map(function(n){var v=pr[n];return '<span translate="no" style="'+(fl.indexOf(n)>=0?'color:#ffb347;font-weight:700':'')+'">'+n+' '+(typeof v==="number"?(v*100).toFixed(0)+"%":"—")+'</span>'}).join(" · ");
+      var ht=goldMarket(x.ht_market,x.ht_line),ft=goldMarket(x.ft_market,x.ft_line);
+      var picks=[x.top_market?marketLabel(x.top_market):"",ht,ft].filter(function(z,i,a){return z&&a.indexOf(z)===i}).join(" · ");
+      return '<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted)"><span translate="no">'+k.substring(8,10)+'/'+k.substring(5,7)+' · '+k.substring(11,16)+'</span><span style="text-align:right">'+esc(x.competition||"")+'</span></div>'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px"><b style="font-size:14px;overflow-wrap:anywhere">'+esc(x.home)+' - '+esc(x.away)+'</b><b translate="no" style="color:var(--cyan);white-space:nowrap">'+esc(x.ht)+' · '+esc(x.ft)+'</b></div>'
+        +'<div style="margin-top:4px">'+(x.hit||[]).map(function(t){return '<span translate="no" style="font-size:11px;font-weight:700;color:#35d07f;border:1px solid #35d07f;border-radius:6px;padding:1px 6px;margin-right:4px">'+esc(XLAB[t]||t)+'</span>'}).join("")+'</div>'
+        +'<div style="font-size:12px;margin-top:6px"><span style="color:var(--muted)">Hệ thống dự đoán</span>: '+(picks?esc(picks):"—")+(x.top_p?' <span translate="no">('+(x.top_p*100).toFixed(0)+'%)</span>':'')+'</div>'
+        +'<div style="font-size:12px;margin-top:3px">'+pl+'</div>'
+        +(x.pred_ht||x.pred_ft?'<div style="font-size:12px;margin-top:3px;color:var(--muted)"><span>Dự đoán tỉ số</span> <span translate="no">'+esc(x.pred_ht||"—")+' · '+esc(x.pred_ft||"—")+(x.lh!=null&&x.la!=null?' · λ '+Number(x.lh).toFixed(2)+'-'+Number(x.la).toFixed(2):'')+'</span></div>':'')+'</div>';
+    }).join("");
+  }
+  async function loadGold(){
+    var el=$("mvpContent");
+    if(state.goldData&&Date.now()-goldAt<30*60*1000){el.innerHTML=state.goldData;return}
+    el.innerHTML='<div class="context-state">Đang tải...</div>';
+    try{
+      var r=await api("/api/goldme","GET");
+      var html=goldRender(r.data||{});
+      state.goldData=html;goldAt=Date.now();el.innerHTML=html;
+    }catch(e){el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>'}
+  }
+  state.mvpSub="top";
+  $("mvpSubtabs").addEventListener("click",function(e){
+    var b=e.target.closest("[data-mvpsub]");if(!b)return;
+    state.mvpSub=b.dataset.mvpsub;
+    Array.prototype.forEach.call($("mvpSubtabs").children,function(c){c.classList.toggle("active",c===b)});
+    loadMvp();
+  });
   async function loadMvp(){
     var el=$("mvpContent");
+    if(state.mvpSub==="gold"){loadGold();return}
     if(state.mvpData&&Date.now()-mvpAt<30*60*1000){el.innerHTML=state.mvpData;return}
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
@@ -2663,6 +2702,14 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Odds gộp": "Combined odds",
       "Odds hòa vốn": "Break-even odds",
       "trận": "matches",
+      "Top kèo": "Top markets",
+      "Hệ thống dự đoán": "System prediction",
+      "Tỉ lệ ra": "Hit rate",
+      "Khi ra": "When hit",
+      "Dự đoán tỉ số": "Predicted score",
+      "Chưa có trận cực đoan nào": "No extreme matches yet",
+      "Có cờ": "Flagged",
+      "Cực đoan đã diễn ra · đối chiếu dấu hiệu": "Extreme results that happened · cross-check signals",
       "Markets thắng nhiều nhất": "Top winning markets",
       "60 ngày gần nhất · cập nhật hằng ngày": "Last 60 days · updated daily",
       "Độ chính xác 4 ngày gần nhất": "Accuracy, last 4 days",
