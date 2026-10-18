@@ -360,8 +360,8 @@ function alignFtPick(m:any):any{
   const best=cands.filter(c=>c[0]&&typeof c[1]==='number'&&c[1]>=0.5).sort((a,b)=>b[1]-a[1]||(a[0]<b[0]?-1:1))[0];
   return Object.assign({},m,{selected_ht_market:htMarket,selected_ht_line:htLine,selected_ht_p:htP,selected_ft_market:market,selected_ft_line:line,selected_ft_p:p,top_market:best?best[0]:null,top_market_prob:best?best[1]:null});
 }
-function upcomingMatches(matches:any[],now:number,oddsOnly:boolean,hours:number):any[]{
-  return matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now&&Date.parse(m.kickoff)<=now+hours*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
+function upcomingMatches(matches:any[],now:number,oddsOnly:boolean,hours:number,graceMin:number=0):any[]{
+  return matches.filter(m=>m?.kickoff&&Date.parse(m.kickoff)>now-graceMin*60000&&Date.parse(m.kickoff)<=now+hours*3600*1000&&!m.no_stats&&!EXCLUDE_RE.test(String(m.home||''))&&!EXCLUDE_RE.test(String(m.away||''))&&!EXCLUDE_RE.test(String(m.competition||''))&&(!oddsOnly||hasOuOdds(m)));
 }
 function scopeBucket(sc:string):string{
   const v=sc.slice(sc.indexOf(':')+1);
@@ -442,7 +442,7 @@ function buildExtremeDaily(matches:any[],now:number):any[]{
   return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
 }
 function buildSingles(matches:any[],now:number,oddsOnly:boolean):any[]{
-  const up=upcomingMatches(matches,now,oddsOnly,24);
+  const up=upcomingMatches(matches,now,oddsOnly,24,45);
   const all:any[]=[];
   for(const m of up){
     for(const l of parlayLegs(m,null)){
@@ -623,6 +623,20 @@ export default{
           const seen=new Set(withOdds.map((x:any)=>x.pkey));
           built=[...withOdds,...buildStd(false).filter((x:any)=>!seen.has(x.pkey)).map((x:any)=>({...x,odds_ok:false}))];
         }
+        let anyLive=false;
+        if(mode==='single'){
+          const nowT=Date.now();
+          const startedM=all.filter((m:any)=>m?.kickoff&&Date.parse(m.kickoff)<nowT);
+          if(startedM.length){try{await enrichLive(startedM,nowT,false)}catch{}}
+          const byId=new Map<string,any>();
+          startedM.forEach((m:any)=>byId.set(m.fixture_id,m));
+          built=built.map((x:any)=>({...x,legs:x.legs.map((l:any)=>{
+            const m=byId.get(l.fixture_id);
+            if(!m)return l;
+            anyLive=true;
+            return {...l,live:m.live_status?{h:m.live_score_home,a:m.live_score_away,min:m.live_minute,mt:m.live_minute_text,st:m.live_status}:null};
+          })}));
+        }
         let calib:any={};
         try{
           const cr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_calibration`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}',signal:AbortSignal.timeout(4000)});
@@ -634,9 +648,9 @@ export default{
           if(sr.ok){const rr:any=await sr.json();if(Array.isArray(rr))rr.forEach((x:any)=>saved.set(x.pkey,x))}
         }catch{}
         built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
-        const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok));
+        const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok&&x.legs.every((l:any)=>Date.parse(l.kickoff)>Date.now())));
         if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
-        return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':'public, max-age=180'}});
+        return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
       }
