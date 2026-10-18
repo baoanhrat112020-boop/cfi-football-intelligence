@@ -799,12 +799,12 @@ export default{
         const rows:any[]=[];
         for(const a of agg.values()){
           const n=a.w+a.hw+a.hl+a.l;
-          if(n<30)continue;
+          if(n<30||(a.market==='over_ft'&&Number(a.line)<2)||(a.market==='over_ht'&&Number(a.line)<0.75))continue;
           const hit=(a.w+0.75*a.hw+0.25*a.hl)/n,avg=a.pn?a.pw/a.pn:null;
           rows.push({src:'pick',market:a.market,line:a.line,n,hit:Math.round(hit*1e4)/1e4,avg_p:avg==null?null:Math.round(avg*1e4)/1e4,low:Math.round(wil(hit,n)*1e4)/1e4});
         }
         for(const l of (ps?.legs||[])){
-          if(!(l.n>=20)||l.hit==null)continue;
+          if(!(l.n>=20)||l.hit==null||(l.ltype==='ou_ft'&&Number(l.line)<2)||(l.ltype==='ou_ht'&&Number(l.line)<0.75))continue;
           rows.push({src:'leg',market:l.ltype,line:l.line??null,n:l.n,hit:l.hit,avg_p:l.avg_p??null,low:Math.round(wil(l.hit,l.n)*1e4)/1e4});
         }
         rows.sort((a,b)=>b.low-a.low);
