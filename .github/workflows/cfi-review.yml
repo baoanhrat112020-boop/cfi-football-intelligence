@@ -1,0 +1,48 @@
+name: CFI Review Collect
+
+on:
+  schedule:
+    - cron: '23 0 1,5,9,13,17,21,25,29 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: cfi-review
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Collect
+        env:
+          SB_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: node scripts/review_collect.mjs
+      - name: Publish to review-data branch
+        run: |
+          git config user.name "cfi-review"
+          git config user.email "cfi-review@users.noreply.github.com"
+          cp -r /tmp/review /tmp/review_out
+          if git ls-remote --exit-code --heads origin review-data >/dev/null 2>&1; then
+            git fetch origin review-data
+            git checkout -q -B review-data origin/review-data
+          else
+            git checkout -q --orphan review-data
+            git rm -rf -q .
+          fi
+          mkdir -p reports/review
+          cp /tmp/review_out/latest.md /tmp/review_out/latest.json reports/review/
+          cat /tmp/review_out/line.json >> reports/review/history.jsonl
+          git add reports/review
+          git commit -q -m "review: $(date -u +%F) [skip ci]"
+          git push -q origin review-data
