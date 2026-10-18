@@ -442,7 +442,7 @@ function buildExtremeDaily(matches:any[],now:number):any[]{
   return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
 }
 function buildSingles(matches:any[],now:number,oddsOnly:boolean):any[]{
-  const up=upcomingMatches(matches,now,oddsOnly,24,45);
+  const up=upcomingMatches(matches,now,oddsOnly,24,120);
   const all:any[]=[];
   for(const m of up){
     for(const l of parlayLegs(m,null)){

@@ -1092,7 +1092,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 2</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -2089,7 +2089,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     },60000);
   }
   function renderParlays(r){
-    var now=Date.now(),gr=parlayMode==="single"?45*60000:0,list=((r&&r.parlays)||[]).filter(function(x){return !x.legs.some(function(l){var t=Date.parse(l.kickoff);return !Number.isFinite(t)||t<=now-gr})});
+    var now=Date.now(),gr=parlayMode==="single"?120*60000:0,list=((r&&r.parlays)||[]).filter(function(x){return !x.legs.some(function(l){var t=Date.parse(l.kickoff);return !Number.isFinite(t)||t<=now-gr})});
     parlayCards=[];parlayEdits={};
     if(!list.length)return '<div class="context-state">Chưa có kèo xiên đủ điều kiện</div>'+(r&&r.odds_only?'<div class="context-state" style="margin-top:8px">Chưa đủ trận có odds để lập xiên. Tắt bộ lọc "Chỉ trận có odds" để xem tất cả.</div>':'');
     var groups={},order=[];
