@@ -624,18 +624,36 @@ export default{
           built=[...withOdds,...buildStd(false).filter((x:any)=>!seen.has(x.pkey)).map((x:any)=>({...x,odds_ok:false}))];
         }
         let anyLive=false;
+        const nowT=Date.now();
+        const startedM=all.filter((m:any)=>m?.kickoff&&Date.parse(m.kickoff)<nowT);
+        const byId=new Map<string,any>();
+        startedM.forEach((m:any)=>byId.set(m.fixture_id,m));
+        let liveDone=false;
+        const ensureLive=async()=>{if(liveDone||!startedM.length)return;liveDone=true;try{await enrichLive(startedM,nowT,false)}catch{}};
+        const liveOf=(l:any)=>{const m=byId.get(l.fixture_id);return m&&m.live_status?{h:m.live_score_home,a:m.live_score_away,min:m.live_minute,mt:m.live_minute_text,st:m.live_status}:null};
         if(mode==='single'){
-          const nowT=Date.now();
-          const startedM=all.filter((m:any)=>m?.kickoff&&Date.parse(m.kickoff)<nowT);
-          if(startedM.length){try{await enrichLive(startedM,nowT,false)}catch{}}
-          const byId=new Map<string,any>();
-          startedM.forEach((m:any)=>byId.set(m.fixture_id,m));
+          await ensureLive();
           built=built.map((x:any)=>({...x,legs:x.legs.map((l:any)=>{
-            const m=byId.get(l.fixture_id);
-            if(!m)return l;
+            if(!byId.get(l.fixture_id))return l;
             anyLive=true;
-            return {...l,live:m.live_status?{h:m.live_score_home,a:m.live_score_away,min:m.live_minute,mt:m.live_minute_text,st:m.live_status}:null};
+            return {...l,live:liveOf(l)};
           })}));
+        }
+        const inplay:any[]=[];
+        if(mode!=='single'){
+          try{
+            const yday=new Date(Date.now()+7*3600*1000-86400000).toISOString().slice(0,10);
+            const ir=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.${mode}&placed=eq.true&result=is.null&day=gte.${yday}&select=pkey,scope,ptype,system_p,legs,user_legs&limit=100`,{headers:hdr,signal:AbortSignal.timeout(4000)});
+            if(ir.ok){
+              const rows2:any=await ir.json();
+              const cand=(Array.isArray(rows2)?rows2:[]).filter((x:any)=>Array.isArray(x.legs)&&x.legs.some((l:any)=>Date.parse(l.kickoff)<=nowT)&&Math.max(...x.legs.map((l:any)=>Date.parse(l.kickoff)))>nowT-150*60000);
+              if(cand.length){
+                await ensureLive();
+                cand.forEach((x:any)=>inplay.push({pkey:x.pkey,scope:x.scope,type:x.ptype,combined_p:x.system_p,user_legs:x.user_legs??null,placed:true,legs:x.legs.map((l:any)=>({...l,live:liveOf(l)}))}));
+                if(inplay.length)anyLive=true;
+              }
+            }
+          }catch{}
         }
         let calib:any={};
         try{
@@ -650,7 +668,7 @@ export default{
         built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
         const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok&&x.legs.every((l:any)=>Date.parse(l.kickoff)>Date.now())));
         if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
-        return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
+        return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built,inplay},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
       }
