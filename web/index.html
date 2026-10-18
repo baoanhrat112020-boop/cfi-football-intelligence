@@ -114,7 +114,7 @@
     .markets{display:grid;gap:8px}.market{display:grid;grid-template-columns:1.2fr .8fr .75fr;align-items:center;padding:11px 12px;border:1px solid #16425e;border-radius:10px;background:#092237}.market b{font-size:13px}.prob{font-size:15px;font-weight:900;text-align:right}.signal{text-align:right;font-size:10px;font-weight:800}.sig-strong{color:var(--green)}.sig-watch{color:var(--amber)}.sig-pass{color:#829aaa}.sig-block{color:var(--red)}
     .result-panel{display:none}.result-panel.active{display:block}.fusion-grid,.insight-grid{display:grid;gap:10px}.fusion-card,.insight-card{padding:13px;border:1px solid #174863;border-radius:11px;background:#082238}.fusion-card h3,.insight-card h3{margin:0 0 8px;font-size:13px;color:#d9edf8}.kv{display:flex;justify-content:space-between;gap:14px;padding:6px 0;border-top:1px solid #12384f;font-size:11px}.kv:first-of-type{border-top:0}.kv span{color:#7f9daf}.kv b{text-align:right}.weights{display:grid;gap:6px}.weight-row{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11px}.weight-bar{grid-column:1/-1;height:5px;border-radius:999px;background:#12384f;overflow:hidden}.weight-bar i{display:block;height:100%;background:#2aa8ff}.pill-line{display:flex;gap:6px;flex-wrap:wrap}.pill{padding:5px 8px;border:1px solid #245572;border-radius:999px;font-size:10px;color:#9ec3d8;background:#071d2f}
 
-    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(4,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
+    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
     .nav-btn{border:0;background:transparent;color:#7896aa;display:grid;place-items:center;align-content:center;gap:2px;font-size:10px}.nav-btn.active{color:#49aeff}.nav-btn svg{width:20px;height:20px}
     .toast{position:fixed;left:50%;bottom:82px;transform:translate(-50%,14px);width:min(460px,calc(100% - 32px));padding:12px 14px;background:#102b40;border:1px solid #2a6b91;border-radius:11px;color:#dbeaf3;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:60;box-shadow:var(--shadow)}.toast.show{opacity:1;transform:translate(-50%,0)}
     .modal-wrap{position:fixed;inset:0;background:rgba(0,8,14,.72);backdrop-filter:blur(8px);display:none;align-items:flex-end;z-index:80}.modal-wrap.show{display:flex}.modal{width:min(540px,100%);max-height:72vh;overflow:auto;background:#092136;border:1px solid #216084;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -16px 50px rgba(0,0,0,.4)}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.modal h3{margin:0}.modal pre{white-space:pre-wrap;word-break:break-word;color:#9db5c6;font-size:11px;line-height:1.5;background:#061725;border:1px solid #173b53;border-radius:10px;padding:12px}
@@ -604,6 +604,13 @@
         </div>
       </div>
     </section>
+    <section id="screenMvp" class="screen">
+      <div style="padding:14px 4px 90px">
+        <div style="font-size:20px;font-weight:800">MVP</div>
+        <div style="font-size:12px;color:var(--muted);margin:2px 0 10px"><span>Markets thắng nhiều nhất</span> · <span>60 ngày gần nhất · cập nhật hằng ngày</span></div>
+        <div id="mvpContent"><div class="context-state">Đang tải...</div></div>
+      </div>
+    </section>
   </main>
 
   <button id="scrollTopBtn" class="scroll-top-btn" aria-label="Về đầu trang"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>
@@ -612,6 +619,7 @@
     <button class="nav-btn active" data-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 11 9-8 9 8v10h-6v-6H9v6H3z"/></svg><span>Home</span></button>
     <button class="nav-btn" data-nav="discover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Discover</span></button>
     <button class="nav-btn" data-nav="suggest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 15 8l6 1-4.5 4.5L18 20l-6-3-6 3 1.5-6.5L3 9l6-1z"/></svg><span>Suggest</span></button>
+    <button class="nav-btn" data-nav="mvp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg><span>MVP</span></button>
     <button class="nav-btn" data-nav="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
   </nav>
 </div>
@@ -627,7 +635,7 @@
 <script>
 (function(){
   var state={match:null,status:null,prediction:null,current:"search",pending:{},ouInputs:{},searchMode:"manual",todayFixtures:[],context:null,contextLoading:false,contextError:null};
-  var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult"),dna:document.getElementById("screenDNA"),evidence:document.getElementById("screenEvidence"),suggest:document.getElementById("screenSuggest")};
+  var screens={search:document.getElementById("screenSearch"),selected:document.getElementById("screenSelected"),ready:document.getElementById("screenReady"),blocked:document.getElementById("screenBlocked"),result:document.getElementById("screenResult"),dna:document.getElementById("screenDNA"),evidence:document.getElementById("screenEvidence"),suggest:document.getElementById("screenSuggest"),mvp:document.getElementById("screenMvp")};
 
   function $(id){return document.getElementById(id)}
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
@@ -1083,7 +1091,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 6</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.7 · Build 7</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1529,8 +1537,48 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(btn.dataset.nav==="home"){showScreen("search");setSearchMode("manual")}
     else if(btn.dataset.nav==="discover"){showScreen("search");setSearchMode("today")}
     else if(btn.dataset.nav==="suggest"){showScreen("suggest");if(!state.suggestData||Date.now()-state.suggestCache>SUGGEST_TTL)loadSuggest();else renderSuggestFromCache(false);}
+    else if(btn.dataset.nav==="mvp"){showScreen("mvp");loadMvp()}
     else $("settingsBtn").click();
   }});
+  var mvpAt=0;
+  function mvpLabel(x){
+    var l=x.line;
+    if(x.src==="leg"){return x.market==="btts"?"Hai đội ghi bàn":x.market==="btts_ht"?"Hai đội ghi bàn hiệp 1":(XLAB[x.market]||("Tài "+l+(x.market==="ou_ht"?" hiệp 1":" cả trận")))}
+    if(x.market==="over_ht")return "Tài "+l+" hiệp 1";
+    if(x.market==="over_ft")return "Tài "+l+" cả trận";
+    if(x.market==="btts_yes")return "Hai đội ghi bàn";
+    return marketLabel(x.market);
+  }
+  function mvpAcc(a){
+    var l=a&&a.last4,p=a&&a.prev4;
+    if(!l||!p||l.n<10||p.n<10)return '<div class="context-state">Chưa đủ dữ liệu</div>';
+    var row=function(name,x,y,hi,pct){
+      if(x==null||y==null)return "";
+      var d=x-y,good=hi?d>=0:d<=0,v=function(z){return pct?(z*100).toFixed(1)+"%":z.toFixed(3)};
+      return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-top:1px solid var(--line)"><span>'+name+'</span><span><b>'+v(x)+'</b> <small style="color:var(--muted)">('+v(y)+')</small> <b style="color:'+(good?"#35d07f":"#ff6b6b")+'">'+(d>=0?"▲":"▼")+'</b></span></div>';
+    };
+    return '<div class="card" style="padding:12px;margin-bottom:12px"><b><span>Độ chính xác 4 ngày gần nhất</span></b> <small style="color:var(--muted)">(<span>so với 4 ngày trước</span>)</small>'
+      +row('<span>Tỉ lệ trúng kèo chính</span>',l.top_hit,p.top_hit,true,true)
+      +row('Brier Over 0.5 HT',l.brier_o05_ht,p.brier_o05_ht,false,false)
+      +row('Brier Over 1 HT',l.brier_o1_ht,p.brier_o1_ht,false,false)
+      +'<div style="font-size:11px;color:var(--muted);margin-top:6px"><span translate="no">'+l.n+' / '+p.n+'</span> <span>trận</span></div></div>';
+  }
+  async function loadMvp(){
+    var el=$("mvpContent");
+    if(state.mvpData&&Date.now()-mvpAt<30*60*1000){el.innerHTML=state.mvpData;return}
+    el.innerHTML='<div class="context-state">Đang tải...</div>';
+    try{
+      var r=await api("/api/mvp","GET"),d=r.data||{},rows=d.markets||[];
+      var html=mvpAcc(d.accuracy);
+      if(!rows.length)html+='<div class="context-state">Chưa đủ dữ liệu</div>';
+      else html+=rows.map(function(x,i){
+        var gap=x.avg_p==null?null:(x.hit-x.avg_p)*100;
+        return '<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div style="font-size:11px;color:var(--muted)"><span translate="no">#'+(i+1)+'</span> · <span>'+(x.src==="leg"?"Kèo từ xiên":"Kèo từ dự đoán")+'</span></div><b style="font-size:15px">'+esc(mvpLabel(x))+'</b></div><div style="text-align:right"><b style="font-size:20px;color:var(--cyan)">'+(x.hit*100).toFixed(1)+'%</b><div style="font-size:11px;color:var(--muted)"><span>Tỉ lệ thắng</span></div></div></div>'
+          +'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px"><span><span translate="no">'+x.n+'</span> <span>trận</span></span><span><span>Mô hình</span> <span translate="no">'+(x.avg_p==null?"—":(x.avg_p*100).toFixed(1)+"%")+'</span>'+(gap==null?'':' <b translate="no" style="color:'+(gap>=0?"#35d07f":"#ff6b6b")+'">'+(gap>=0?"+":"")+gap.toFixed(1)+'</b>')+'</span><span><span>Chắc chắn từ</span> <b translate="no" style="color:var(--text)">'+(x.low*100).toFixed(0)+'%</b></span></div></div>';
+      }).join("");
+      state.mvpData=html;mvpAt=Date.now();el.innerHTML=html;
+    }catch(e){el.innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>'}
+  }
 
   var suggestSeq=0,SUGGEST_TTL=2*60*1000,suggestSig="";
   state.suggestShown=10;
@@ -2614,6 +2662,17 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Hai đội ghi bàn hiệp 1": "BTTS HT",
       "Odds gộp": "Combined odds",
       "Odds hòa vốn": "Break-even odds",
+      "trận": "matches",
+      "Markets thắng nhiều nhất": "Top winning markets",
+      "60 ngày gần nhất · cập nhật hằng ngày": "Last 60 days · updated daily",
+      "Độ chính xác 4 ngày gần nhất": "Accuracy, last 4 days",
+      "so với 4 ngày trước": "vs previous 4 days",
+      "Tỉ lệ trúng kèo chính": "Main pick hit rate",
+      "Kèo từ dự đoán": "From picks",
+      "Kèo từ xiên": "From parlays",
+      "Tỉ lệ thắng": "Win rate",
+      "Chắc chắn từ": "Confident from",
+      "Chưa đủ dữ liệu": "Not enough data",
       "Nhóm giờ": "Time group",
       "Loại xiên": "Parlay type",
       "Số chân": "Legs",

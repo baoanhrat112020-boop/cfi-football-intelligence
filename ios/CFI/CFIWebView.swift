@@ -59,6 +59,7 @@ struct CFIWebView: UIViewRepresentable {
             "/api/suggest-parlays",
             "/api/parlay-edit",
             "/api/parlay-stats",
+            "/api/mvp",
             "/api/track-record",
             "/api/observe-ou",
             "/api/round-stats"

@@ -775,6 +775,49 @@ export default{
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
+    if(url.pathname==='/api/mvp'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
+      const days=60;
+      const wil=(h:number,n:number)=>n>0?Math.max(0,(h+1.9208/n-1.96*Math.sqrt(h*(1-h)/n+0.9604/(n*n)))/(1+3.8416/n)):0;
+      try{
+        const [tr,ps,pl]=await Promise.all([
+          fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_suggest_track_record`,{method:'POST',headers:hdr,body:JSON.stringify({p_days:days}),signal:AbortSignal.timeout(20000)}).then(r=>r.ok?r.json():null).catch(()=>null),
+          fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_stats`,{method:'POST',headers:hdr,body:JSON.stringify({p_days:days,p_group:'std'}),signal:AbortSignal.timeout(20000)}).then(r=>r.ok?r.json():null).catch(()=>null),
+          fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/suggest_pick_log?select=kickoff_at,p_over05_ht,p_over1_ht,hit_o05_ht,hit_o1_ht,top_market_prob,hit_top_market&settled_at=not.is.null&void_reason=is.null&kickoff_at=gte.${new Date(Date.now()-8*86400000).toISOString()}&limit=6000`,{headers:hdr,signal:AbortSignal.timeout(20000)}).then(r=>r.ok?r.json():null).catch(()=>null)
+        ]);
+        const agg=new Map<string,any>();
+        for(const m of (tr?.by_top_market||[])){
+          const k=m.market+'|'+(m.line??'');
+          const a=agg.get(k)||{market:m.market,line:m.line??null,w:0,hw:0,hl:0,l:0,pn:0,pw:0};
+          a.w+=m.n_win||0;a.hw+=m.n_half_win||0;a.hl+=m.n_half_loss||0;a.l+=m.n_loss||0;a.pn+=m.n||0;a.pw+=(m.prob_avg||0)*(m.n||0);
+          agg.set(k,a);
+        }
+        const rows:any[]=[];
+        for(const a of agg.values()){
+          const n=a.w+a.hw+a.hl+a.l;
+          if(n<30)continue;
+          const hit=(a.w+0.75*a.hw+0.25*a.hl)/n,avg=a.pn?a.pw/a.pn:null;
+          rows.push({src:'pick',market:a.market,line:a.line,n,hit:Math.round(hit*1e4)/1e4,avg_p:avg==null?null:Math.round(avg*1e4)/1e4,low:Math.round(wil(hit,n)*1e4)/1e4});
+        }
+        for(const l of (ps?.legs||[])){
+          if(!(l.n>=20)||l.hit==null)continue;
+          rows.push({src:'leg',market:l.ltype,line:l.line??null,n:l.n,hit:l.hit,avg_p:l.avg_p??null,low:Math.round(wil(l.hit,l.n)*1e4)/1e4});
+        }
+        rows.sort((a,b)=>b.low-a.low);
+        const win=(from:number,to:number)=>{
+          const r=(pl||[]).filter((x:any)=>{const t=Date.parse(x.kickoff_at);return t>=from&&t<to});
+          const avg=(f:(x:any)=>number|null)=>{const v=r.map(f).filter((z:any)=>typeof z==='number');return v.length?v.reduce((a:number,b:number)=>a+b,0)/v.length:null};
+          const br=(p:string,h:string)=>avg((x:any)=>typeof x[p]==='number'&&typeof x[h]==='boolean'?Math.pow(x[p]-(x[h]?1:0),2):null);
+          const r4=(v:number|null)=>v==null?null:Math.round(v*1e4)/1e4;
+          return {n:r.length,top_hit:r4(avg((x:any)=>typeof x.hit_top_market==='boolean'?(x.hit_top_market?1:0):null)),top_p:r4(avg((x:any)=>typeof x.top_market_prob==='number'?x.top_market_prob:null)),brier_o05_ht:r4(br('p_over05_ht','hit_o05_ht')),brier_o1_ht:r4(br('p_over1_ht','hit_o1_ht'))};
+        };
+        const now=Date.now(),d4=4*86400000;
+        return Response.json({generated_at:new Date().toISOString(),days,markets:rows.slice(0,15),accuracy:{last4:win(now-d4,now),prev4:win(now-2*d4,now-d4)}},{headers:{'Cache-Control':'public, max-age=21600'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
     if(url.pathname==='/api/parlay-stats'&&request.method==='GET'){
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});
