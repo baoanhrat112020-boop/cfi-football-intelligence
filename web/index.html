@@ -1093,7 +1093,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 7</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 8</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1618,6 +1618,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var det=(x.legs||[]).map(function(q){return '<div class="dl"><span>'+esc(q.name)+' · '+esc(rpLeg(q.t,q.l))+(q.ft?' <i class="m">'+esc(q.ft)+'</i>':'')+'</span><b class="g">✓</b></div>'}).join("");
       return rpIt((i+1)+'. <b>'+esc(parlayTypeLabel(x.type))+'</b> · '+x.n_legs+' <span>chân</span><div class="m">'+esc(RP_MODE[x.mode]||x.mode)+' · '+(x.p*100).toFixed(0)+'%</div>','<span class="g">'+(x.ret?'×'+Number(x.ret).toFixed(2):'—')+'</span>',det)}).join(""):'<div class="m" style="padding:8px 0">Chưa có xiên thắng</div>',full);
     if(PT.length)h+=rpSec('<span>Loại xiên hiệu quả nhất</span>',rpPct(PT[0].wins,PT[0].n),PT.map(function(x){return rpIt('<b>'+esc(parlayTypeLabel(x.type))+'</b><div class="m">'+esc(RP_MODE[x.mode]||x.mode)+' · '+x.wins+'/'+x.n+(x.n_odds>=5&&x.roi!=null?' · ROI <b class="'+(x.roi>=0?"g":"r")+'">'+(x.roi>=0?"+":"")+(x.roi*100).toFixed(0)+'%</b>':'')+'</div>','<span class="g">'+rpPct(x.wins,x.n)+'</span>',"")}).join(""),full);
+    var HR=d.hours||[];
+    if(HR.length){
+      var hb=HR.slice().sort(function(a,b){return b.hits/b.n-a.hits/a.n});
+      h+=rpSec('<span>Theo khung giờ</span>',hb[0].b+'–'+(hb[0].b+4)+'h · '+rpPct(hb[0].hits,hb[0].n),HR.map(function(x){var r=x.hits/x.n;return rpIt('<b translate="no">'+String(x.b).padStart(2,"0")+'–'+String(x.b+4).padStart(2,"0")+'h</b>'+(x.n<10?'<span class="tag">mẫu nhỏ</span>':'')+'<div class="m">'+x.hits+'/'+x.n+' <span>trận</span>'+rpGap(r,x.p)+'</div>','<span class="'+(x.p==null||r>=x.p?"g":"r")+'">'+(r*100).toFixed(0)+'%</span>',"")}).join(""),full);
+    }
     var ins='';
     if(P.avg_p!=null&&P.settled)ins+=rpIt('<span>Mô hình kỳ vọng / thực tế (kèo chính)</span>','<b>'+(P.avg_p*100).toFixed(0)+'% / '+rpPct(P.hits,P.settled)+'</b>',"");
     ins+=rpIt('<span>Trận có kết quả cực đoan</span>','<b>3+ HT '+(E.x3ht||0)+' · Other HT '+(E.xoht||0)+'<br>Other FT '+(E.xoft||0)+' · 7+ FT '+(E.x7ft||0)+'</b>',"");
@@ -2918,6 +2923,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "mẫu nhỏ": "small sample",
       "mô hình": "model",
       "Tỉ lệ": "Rate",
+      "Theo khung giờ": "By time of day",
       "Báo cáo ngày": "Daily report",
       "Top giải đấu dự đoán chuẩn nhất": "Top leagues by hit rate",
       "Kèo nên tránh": "Markets to avoid",
