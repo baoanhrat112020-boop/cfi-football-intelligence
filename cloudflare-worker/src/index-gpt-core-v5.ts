@@ -259,7 +259,36 @@ function ouMarketOdds(m:any,t:string,ln:any):number|null{
   }
   return null;
 }
-function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|null){
+function interpLine(arr:any,line:number):number|null{
+  if(!Array.isArray(arr))return null;
+  const pos=line-0.5,lo=Math.floor(pos),hi=Math.ceil(pos);
+  if(lo<0||hi>=arr.length)return null;
+  const a=Number(arr[lo]),b=Number(arr[hi]);
+  if(!Number.isFinite(a)||!Number.isFinite(b))return null;
+  return a+(b-a)*(pos-lo);
+}
+function leagueBaseP(m:any,t:string,line:number|null,base:any):number|null{
+  const b=base?.[String(m?.competition||'').toLowerCase()];
+  if(!b)return null;
+  if(t==='ou_ft')return typeof line==='number'?interpLine(b.ft,line):null;
+  if(t==='ou_ht')return typeof line==='number'?interpLine(b.ht,line):null;
+  const v=t==='btts'?b.btts:t==='btts_ht'?b.btts_ht:null;
+  return typeof v==='number'?v:null;
+}
+let leagueBaseCache:{v:any;exp:number}|null=null;
+async function loadLeagueBase(hdr:any):Promise<any|null>{
+  const now=Date.now();
+  if(leagueBaseCache&&leagueBaseCache.exp>now)return leagueBaseCache.v;
+  try{
+    const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_league_base`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}',signal:AbortSignal.timeout(6000)});
+    if(!r.ok)return null;
+    const v:any=await r.json();
+    if(!v||typeof v!=='object'||!Object.keys(v).length)return null;
+    leagueBaseCache={v,exp:now+3600*1000};
+    return v;
+  }catch{return null}
+}
+function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|null,base:any=null){
   const r:any[]=[];
   const add=(t:string,mk:any,raw:any,line:any)=>{
     if(typeof raw!=='number'||!mk)return;
@@ -280,7 +309,12 @@ function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|
       if(rate){const h2=rate(m,t,ln as number);if(h2==null)continue;ap=a*Math.sqrt(h2)}
       alts.push({line:ln,p:Math.round(ap*10000)/10000,odds:ouMarketOdds(m,t,ln)});
     }
-    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:mk,line:typeof line==='number'?line:null,odds:ouMarketOdds(m,t,line),raw,p:Math.round(p*10000)/10000,alts});
+    let extra:any={};
+    if(base){
+      const bp=leagueBaseP(m,t,typeof line==='number'?line:null,base);
+      extra=bp==null?{edge:null,base_p:null}:{edge:Math.round((raw-bp)*10000)/10000,base_p:Math.round(bp*10000)/10000};
+    }
+    r.push({fixture_id:m.fixture_id,home:m.home,away:m.away,kickoff:m.kickoff,competition:m.competition||null,type:t,market:mk,line:typeof line==='number'?line:null,odds:ouMarketOdds(m,t,line),raw,p:Math.round(p*10000)/10000,alts,...extra});
   };
   add('ou_ft',m.selected_ft_market,m.selected_ft_p,m.selected_ft_line);
   add('ou_ht',m.selected_ht_market,m.selected_ht_p,m.selected_ht_line);
@@ -311,7 +345,27 @@ function enumerateParlays(pool:any[],k:number,accept:(c:any[])=>boolean){
   rec(0);
   return out;
 }
-function topParlays(legs:any[],kmin:number,kmax:number,scope:string,minSame:number=0.60,minMix:number=0.55){
+function topParlaysEdge(legs:any[],scope:string){
+  const res:any[]=[];
+  const finish=(kind:string,pool:any[],accept:(c:any[])=>boolean)=>{
+    const p=pool.filter(l=>typeof l.edge==='number'&&l.edge>0).sort((a,b)=>b.edge-a.edge).slice(0,8);
+    const all:any[]=[];
+    for(const c of enumerateParlays(p,3,accept))all.push({type:kind,scope,rank:'edge',legs:c,edge:Math.round(c.reduce((a,l)=>a+l.edge,0)/3*10000)/10000,min_p:Math.min(...c.map(l=>l.p)),combined_p:Math.round(c.reduce((a,l)=>a*l.p,1)*10000)/10000});
+    all.sort((a,b)=>b.edge-a.edge||b.combined_p-a.combined_p);
+    const keep:any[]=[];
+    for(const x of all){
+      const ids=new Set(x.legs.map((l:any)=>l.fixture_id));
+      if(keep.every(y=>y.legs.filter((l:any)=>ids.has(l.fixture_id)).length<=1))keep.push(x);
+      if(keep.length===3)break;
+    }
+    res.push(...keep);
+  };
+  for(const t of ['ou_ft','ou_ht','btts','btts_ht'])finish('same:'+t,legs.filter(l=>l.type===t),()=>true);
+  finish('mix',legs,c=>new Set(c.map(l=>l.type)).size>=2);
+  return res;
+}
+function topParlays(legs:any[],kmin:number,kmax:number,scope:string,minSame:number=0.60,minMix:number=0.55,rank:string='prob'){
+  if(rank==='edge')return topParlaysEdge(legs,scope);
   const res:any[]=[];
   const finish=(kind:string,pool:any[],minP:number,accept:(c:any[])=>boolean)=>{
     const p=pool.filter(l=>l.raw>=(l.type==='btts_ht'?0.3:minP)).sort((a,b)=>b.p-a.p).slice(0,kmax>=7?9:8);
@@ -472,13 +526,23 @@ function buildSpecialTop(matches:any[],now:number,oddsOnly:boolean):any[]{
   });
   return capScopesPerBucket(dedupeByLegs(out),1);
 }
-function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null,oddsOnly:boolean){
+function buildParlays(matches:any[],now:number,rate:((m:any,t:string,line:number|null)=>number|null)|null,oddsOnly:boolean,rank:string='prob',base:any=null){
   const up=upcomingMatches(matches,now,oddsOnly,24);
   const legCache=new Map<string,any[]>();
-  const legsOf=(m:any):any[]=>{let v=legCache.get(m.fixture_id);if(!v){v=parlayLegs(m,rate);legCache.set(m.fixture_id,v)}return v};
+  const legsOf=(m:any):any[]=>{let v=legCache.get(m.fixture_id);if(!v){v=parlayLegs(m,rate,rank==='edge'?base:null);legCache.set(m.fixture_id,v)}return v};
   const byKick=new Map<string,any[]>();
   up.forEach(m=>{const a=byKick.get(m.kickoff)||[];a.push(m);byKick.set(m.kickoff,a)});
   const out:any[]=[];
+  if(rank==='edge'){
+    byKick.forEach((ms,k)=>{if(ms.length>=3)out.push(...topParlays(ms.flatMap(legsOf),3,3,'same_hour:'+k,0.6,0.55,'edge'))});
+    const dayE=new Map<string,any[]>();
+    up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=dayE.get(d)||[];a.push(m);dayE.set(d,a)});
+    dayE.forEach((ms,d)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),3,3,'any_time:'+d,0.6,0.55,'edge'))});
+    const segE=new Map<string,any[]>();
+    up.forEach(m=>{const k=String(m.kickoff);const h=Math.floor(Number(k.substring(11,13))/6)*6;const key=k.substring(0,10)+'T'+String(h).padStart(2,'0')+':00';const a=segE.get(key)||[];a.push(m);segE.set(key,a)});
+    segE.forEach((ms,key)=>{if(ms.length>=3&&new Set(ms.map(m=>m.kickoff)).size>1)out.push(...topParlays(ms.flatMap(legsOf),3,3,'seg6:'+key,0.6,0.55,'edge'))});
+    return capScopesPerBucket(out,2);
+  }
   byKick.forEach((ms,k)=>{if(ms.length>=3)out.push(...topParlays(ms.flatMap(legsOf),3,5,'same_hour:'+k))});
   let lastWin='';
   [...byKick.keys()].forEach(s=>{
@@ -590,6 +654,12 @@ export default{
         const modeQ=url.searchParams.get('mode')||'';
         const mode=['round','special','xspecial','xdaily','single'].includes(modeQ)?modeQ:'suggest';
         const isX=mode==='xspecial'||mode==='xdaily';
+        const key0=(env as any).SUPABASE_SERVICE_KEY;
+        let rankApplied='prob',leagueBase:any=null;
+        if(url.searchParams.get('rank')==='edge'&&(mode==='suggest'||mode==='round')&&key0){
+          leagueBase=await loadLeagueBase({'apikey':key0,'Authorization':`Bearer ${key0}`});
+          if(leagueBase)rankApplied='edge';
+        }
         const key=(env as any).SUPABASE_SERVICE_KEY;
         const hdr={'apikey':key,'Authorization':`Bearer ${key}`};
         const today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
@@ -613,7 +683,7 @@ export default{
           };
         }
         const oddsOnly=!isX&&url.searchParams.get('odds')!=='0';
-        const buildStd=(oo:boolean):any[]=>mode==='special'?buildSpecialTop(all,Date.now(),oo):mode==='single'?buildSingles(all,Date.now(),oo):buildParlays(all,Date.now(),rate,oo);
+        const buildStd=(oo:boolean):any[]=>mode==='special'?buildSpecialTop(all,Date.now(),oo):mode==='single'?buildSingles(all,Date.now(),oo):buildParlays(all,Date.now(),rate,oo,rankApplied,leagueBase);
         let built:any[];
         if(mode==='xspecial')built=buildExtremeSpecial(all,Date.now()).map((x:any)=>({...x,odds_ok:true}));
         else if(mode==='xdaily')built=buildExtremeDaily(all,Date.now()).map((x:any)=>({...x,odds_ok:true}));
@@ -655,6 +725,7 @@ export default{
             }
           }catch{}
         }
+        if(rankApplied==='edge')built=built.map((x:any)=>({...x,pkey:'edge|'+x.pkey,rank_mode:'edge'}));
         let calib:any={};
         try{
           const cr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_calibration`,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr),body:'{}',signal:AbortSignal.timeout(4000)});
@@ -666,9 +737,9 @@ export default{
           if(sr.ok){const rr:any=await sr.json();if(Array.isArray(rr))rr.forEach((x:any)=>saved.set(x.pkey,x))}
         }catch{}
         built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
-        const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok&&x.legs.every((l:any)=>Date.parse(l.kickoff)>Date.now())));
+        const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok&&x.legs.every((l:any)=>Date.parse(l.kickoff)>Date.now()))).map((r:any)=>String(r.pkey).startsWith('edge|')?{...r,rank_mode:'edge'}:r);
         if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
-        return Response.json({mode,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built,inplay},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
+        return Response.json({mode,rank:rankApplied,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built,inplay},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
       }
