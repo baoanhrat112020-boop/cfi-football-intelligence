@@ -1,6 +1,8 @@
-# CFI 4-day review playbook
+# CFI review playbook
 
 Run every 4 days after the `CFI Review Collect` workflow. Goal: small, cheap, safe.
+
+First step: read the `ACTION:` line of `latest.md`. If it says `KHÔNG`, answer one Vietnamese line (`Không có gì cần làm` plus the accuracy verdict) and stop. Do not read anything else.
 
 ## Inputs (read only these)
 - `git fetch origin review-data` then `reports/review/latest.md` (about 10 lines) and the last 3 lines of `reports/review/history.jsonl`.
@@ -22,7 +24,7 @@ Map alerts to files:
 
 ## 2. Prediction research (one candidate per cycle)
 Candidates in order: bin calibration per market (report line `ỨNG VIÊN HIỆU CHỈNH`), bias shift, HT share fitted per league (replace the fixed 0.50), tier thresholds, elo-to-lambda scale.
-Accept only if walk-forward test Brier improves at least 1 percent and the previous window is not worse. Otherwise log it and take the next candidate next cycle. Append 3 lines to `docs/review/RESEARCH_LOG.md`: date, candidate, result.
+Accuracy is judged on 14-day windows with a z-test (`z` in the report); a gap below 2 sigma is noise, never act on 4-day swings. Start a candidate only if the last `RESEARCH_LOG.md` entry is 14 or more days old, or an ACC_DROP/BRIER_UP alert fired. Accept only if walk-forward test (last 7 days) Brier improves at least 1 percent and z is above -2. Otherwise log it and wait for the next eligible cycle. Append 3 lines to `docs/review/RESEARCH_LOG.md`: date, candidate, result.
 Accepted candidates become a PR (Worker post-processing first, SQL migration second).
 
 ## 3. Multi-user readiness backlog (one item per cycle, tick when merged)
@@ -37,4 +39,4 @@ Accepted candidates become a PR (Worker post-processing first, SQL migration sec
 Automatic: Worker `/api/mvp`. Alert `MVP_EMPTY` only.
 
 ## 5. Notification (Vietnamese, at most 12 lines)
-`Đã tự sửa:` PR links. `Cần duyệt:` proposals and SQL. `Dự đoán:` 4 ngày gần nhất tốt hơn/kém hơn kèm 2 số. `Tiếp theo:` one line.
+`Đã tự sửa:` PR links. `Cần duyệt:` proposals and SQL. `Dự đoán:` 14 ngày so với 14 ngày trước (verdict and z) kèm 2 số. `Tiếp theo:` one line.

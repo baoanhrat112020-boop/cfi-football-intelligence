@@ -77,19 +77,23 @@ const win = (a, b) => {
   const r = rows.filter((x) => x.t >= now - b * DAY && x.t < now - a * DAY);
   const mean = (f) => { const v = r.map(f).filter((z) => typeof z === 'number'); return v.length ? v.reduce((s, z) => s + z, 0) / v.length : null; };
   const br = (p, h) => mean((x) => (typeof x[p] === 'number' && typeof x[h] === 'boolean' ? (x[p] - (x[h] ? 1 : 0)) ** 2 : null));
-  return { n: r.length, top_hit: r4(mean((x) => (typeof x.hit_top_market === 'boolean' ? +x.hit_top_market : null))), top_p: r4(mean((x) => x.top_market_prob)), b05: r4(br('p_over05_ht', 'hit_o05_ht')), b1: r4(br('p_over1_ht', 'hit_o1_ht')) };
+  const nt = r.filter((x) => typeof x.hit_top_market === 'boolean').length;
+  return { n: r.length, nt, top_hit: r4(mean((x) => (typeof x.hit_top_market === 'boolean' ? +x.hit_top_market : null))), top_p: r4(mean((x) => x.top_market_prob)), b05: r4(br('p_over05_ht', 'hit_o05_ht')), b1: r4(br('p_over1_ht', 'hit_o1_ht')) };
 };
-const A = win(0, 4), B = win(4, 8), C = win(8, 12);
-if (A.n >= 30 && B.n >= 30) {
-  if (A.top_hit != null && B.top_hit != null && A.top_hit < B.top_hit - 0.05) alert('ACC_DROP', `tỉ lệ trúng kèo chính ${pct(A.top_hit)} < ${pct(B.top_hit)}`);
-  if (A.b05 != null && B.b05 != null && A.b05 > B.b05 * 1.03) alert('BRIER_UP', `Brier O0.5HT ${A.b05} > ${B.b05}`);
+const A = win(0, 4), R = win(0, 14), P = win(14, 28);
+const zs = (p1, n1, p2, n2) => { const sd = Math.sqrt((p1 * (1 - p1)) / n1 + (p2 * (1 - p2)) / n2); return sd > 0 ? (p1 - p2) / sd : 0; };
+let z = 0;
+if (R.nt >= 200 && P.nt >= 200) {
+  z = zs(R.top_hit, R.nt, P.top_hit, P.nt);
+  if (z <= -2) alert('ACC_DROP', `14 ngày ${pct(R.top_hit)} < 14 ngày trước ${pct(P.top_hit)} (z ${z.toFixed(1)})`);
+  if (R.b05 != null && P.b05 != null && R.b05 > P.b05 * 1.05) alert('BRIER_UP', `Brier O0.5HT 14 ngày ${R.b05} > ${P.b05}`);
 }
 
 const cand = [];
 const fit = (pk_, hk) => {
-  const tr = rows.filter((x) => x.t < now - 4 * DAY && typeof x[pk_] === 'number' && typeof x[hk] === 'boolean');
-  const te = rows.filter((x) => x.t >= now - 4 * DAY && typeof x[pk_] === 'number' && typeof x[hk] === 'boolean');
-  if (tr.length < 200 || te.length < 40) return;
+  const tr = rows.filter((x) => x.t < now - 7 * DAY && typeof x[pk_] === 'number' && typeof x[hk] === 'boolean');
+  const te = rows.filter((x) => x.t >= now - 7 * DAY && typeof x[pk_] === 'number' && typeof x[hk] === 'boolean');
+  if (tr.length < 200 || te.length < 100) return;
   const bins = Array.from({ length: 10 }, () => ({ n: 0, h: 0 }));
   const bi = (p) => Math.min(9, Math.floor(p * 10));
   for (const x of tr) { const b = bins[bi(x[pk_])]; b.n++; b.h += x[hk] ? 1 : 0; }
@@ -108,21 +112,24 @@ for (const [g, n] of [['std', 'std'], ['s', 'single'], ['x', 'extreme']]) {
 }
 
 const d = new Date(now).toISOString().slice(0, 10);
-const verdict = A.top_hit != null && B.top_hit != null ? (A.top_hit >= B.top_hit ? 'tốt hơn' : 'kém hơn') : 'chưa đủ mẫu';
+const verdict = R.nt >= 200 && P.nt >= 200 ? (Math.abs(z) < 2 ? 'khác biệt không đáng kể' : z > 0 ? 'tốt hơn thật' : 'kém hơn thật') : 'chưa đủ mẫu';
+const bestGain = Math.max(0, ...cand.map((c) => Math.max(c.bin_cal_gain_pct ?? 0, c.bias_gain_pct ?? 0)));
+const action = alerts.length > 0 || bestGain >= 1;
 const md = [
   `# CFI review ${d}`,
+  `ACTION: ${action ? 'CÓ' : 'KHÔNG — trả lời 1 dòng rồi dừng'}`,
   `ALERTS (${alerts.length}): ${alerts.length ? alerts.map((a) => `${a.code}[${a.msg}]`).join('; ') : 'không'}`,
   `HEALTH: snapshot ${health.snapshot ? health.snapshot.age_h + 'h/' + health.snapshot.matches + ' trận' : '?'}; chưa chấm>8h ${health.unsettled_old}; parlay_log mới nhất ${health.parlay_last_h}h, chờ chấm ${health.parlay_unsettled}; odds ${health.odds_age_h}h`,
   `WORKER: ${Object.entries(wk).filter(([, v]) => v && v.ms != null).map(([k, v]) => `${k} ${v.status}/${v.ms}ms`).join(', ')}; thẻ xiên ${wk.parlay_cards ?? '?'}; MVP ${wk.mvp_rows ?? '?'} dòng`,
   `CI fail 4 ngày: ${Object.keys(ci).length ? JSON.stringify(ci) : 'không'}`,
-  `ĐỘ CHÍNH XÁC (4 ngày, trước đó, trước nữa): n ${A.n}/${B.n}/${C.n}; trúng kèo chính ${pct(A.top_hit)}/${pct(B.top_hit)}/${pct(C.top_hit)}; Brier O0.5HT ${A.b05}/${B.b05}/${C.b05}; O1HT ${A.b1}/${B.b1}/${C.b1} → 4 ngày gần nhất ${verdict}`,
-  `ỨNG VIÊN HIỆU CHỈNH (train 32 ngày → test 4 ngày): ${cand.length ? cand.map((c) => `${c.market}: bin ${c.bin_cal_gain_pct}%, shift ${c.bias_shift} → ${c.bias_gain_pct}% (n ${c.n_train}/${c.n_test})`).join(' | ') : 'chưa đủ mẫu'}`,
+  `ĐỘ CHÍNH XÁC (14 ngày vs 14 ngày trước; 4 ngày chỉ tham khảo): n ${R.nt}/${P.nt}; trúng kèo chính ${pct(R.top_hit)}/${pct(P.top_hit)} z ${z.toFixed(1)}; Brier O0.5HT ${R.b05}/${P.b05}; O1HT ${R.b1}/${P.b1}; 4 ngày ${pct(A.top_hit)} → ${verdict}`,
+  `ỨNG VIÊN HIỆU CHỈNH (train 29 ngày → test 7 ngày): ${cand.length ? cand.map((c) => `${c.market}: bin ${c.bin_cal_gain_pct}%, shift ${c.bias_shift} → ${c.bias_gain_pct}% (n ${c.n_train}/${c.n_test})`).join(' | ') : 'chưa đủ mẫu'}`,
   `XIÊN 30 ngày: ${Object.entries(ps).map(([k, v]) => `${k} đã chấm ${v.settled} trúng ${pct(v.hit)} chờ ${v.pending}`).join('; ')}`,
   `MVP top: ${(wk.mvp_top || []).map((m) => `${m.market}${m.line ?? ''}(${m.src}) ${pct(m.hit)} n${m.n}`).join('; ') || '—'}`,
 ].join('\n') + '\n';
 
 mkdirSync(OUT, { recursive: true });
 writeFileSync(`${OUT}/latest.md`, md);
-writeFileSync(`${OUT}/latest.json`, JSON.stringify({ date: d, alerts, health, worker: wk, ci, acc: { A, B, C }, cand, parlay: ps }));
-writeFileSync(`${OUT}/line.json`, JSON.stringify({ d, alerts: alerts.map((a) => a.code), A, B, cand: cand.map((c) => ({ m: c.market, g: c.bin_cal_gain_pct })) }) + '\n');
+writeFileSync(`${OUT}/latest.json`, JSON.stringify({ date: d, alerts, health, worker: wk, ci, acc: { A, R, P, z }, cand, parlay: ps }));
+writeFileSync(`${OUT}/line.json`, JSON.stringify({ d, alerts: alerts.map((a) => a.code), A, R, P, z, action, cand: cand.map((c) => ({ m: c.market, g: c.bin_cal_gain_pct })) }) + '\n');
 console.log(md);
