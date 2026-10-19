@@ -553,7 +553,7 @@
           <button class="chip" data-pm="xdaily">Daily</button>
           <button class="chip" data-pm="stats">Thống kê</button>
         </div>
-        <div id="parlayOddsRow" style="padding:0 2px 4px"><button class="chip active" id="parlayOddsOnly">Chỉ trận có odds</button></div>
+        <div id="parlayOddsRow" style="padding:0 2px 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="chip active" id="parlayOddsOnly">Chỉ trận có odds</button><span id="parlayRankBox" style="display:none;gap:6px"><button class="chip active" data-rank="prob">Mặc định</button><button class="chip" data-rank="edge">Thử nghiệm: Edge</button></span></div>
         <div id="parlayFilters" style="margin-top:6px"></div>
         <div id="parlayContent" style="margin-top:8px"></div>
       </div>
@@ -1093,7 +1093,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 8</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 9</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -2243,7 +2243,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         if(Array.isArray(x.user_legs))x.user_legs.forEach(function(u){var ee={};if(u.line!=null)ee.line=u.line;if(u.odds>1)ee.odds=u.odds;parlayEdits[ci+":"+u.i]=ee});
         var cr=x.cal_r&&x.cal_r>0?x.cal_r:1;
         var pk=parlayKey(x);
-        return '<details class="card pl-card" data-pk="'+esc(pk)+'"'+(parlayClosed[pk]?'':' open')+' style="padding:12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><div><b style="font-size:14px">'+esc(parlayTypeLabel(x.type))+'</b>'+(x.odds_ok&&!r.odds_only&&parlayMode.charAt(0)!=="x"?' <span style="font-size:10px;font-weight:700;color:#35d07f;border:1px solid #35d07f;border-radius:4px;padding:0 4px;vertical-align:middle">Có odds</span>':'')+'<div style="font-size:11px;color:var(--muted)">'+x.legs.length+' chân</div></div><div style="text-align:right"><b id="pcP'+ci+'" style="font-size:18px;color:var(--cyan)">'+(Math.min(0.99,x.combined_p*cr)*100).toFixed(1)+'%</b><div style="font-size:11px;color:var(--muted)"><span>'+lab+'</span> · <span>thấp nhất</span> <span id="pcM'+ci+'">'+(x.min_p*100).toFixed(0)+'%</span></div></div></div><div id="pcO'+ci+'" style="font-size:12px;color:var(--muted)"><span>Odds hòa vốn</span> <b>'+(x.combined_p>0?(1/x.combined_p).toFixed(2):"—")+'</b></div></summary><div style="margin:2px 0 4px"><button type="button" class="chip pl-placed'+(x.placed?' active':'')+'" data-ci="'+ci+'" style="padding:4px 10px;font-size:12px">Đã đặt</button></div>'+x.legs.map(function(l,li){
+        return '<details class="card pl-card" data-pk="'+esc(pk)+'"'+(parlayClosed[pk]?'':' open')+' style="padding:12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><div><b style="font-size:14px">'+esc(parlayTypeLabel(x.type))+'</b>'+(x.rank_mode==="edge"?' <span translate="no" style="font-size:10px;font-weight:700;color:#fbbf24;border:1px solid #fbbf24;border-radius:4px;padding:0 4px;vertical-align:middle">Edge '+(x.edge>=0?"+":"")+(x.edge*100).toFixed(1)+'</span>':'')+(x.odds_ok&&!r.odds_only&&parlayMode.charAt(0)!=="x"?' <span style="font-size:10px;font-weight:700;color:#35d07f;border:1px solid #35d07f;border-radius:4px;padding:0 4px;vertical-align:middle">Có odds</span>':'')+'<div style="font-size:11px;color:var(--muted)">'+x.legs.length+' chân</div></div><div style="text-align:right"><b id="pcP'+ci+'" style="font-size:18px;color:var(--cyan)">'+(Math.min(0.99,x.combined_p*cr)*100).toFixed(1)+'%</b><div style="font-size:11px;color:var(--muted)"><span>'+lab+'</span> · <span>thấp nhất</span> <span id="pcM'+ci+'">'+(x.min_p*100).toFixed(0)+'%</span></div></div></div><div id="pcO'+ci+'" style="font-size:12px;color:var(--muted)"><span>Odds hòa vốn</span> <b>'+(x.combined_p>0?(1/x.combined_p).toFixed(2):"—")+'</b></div></summary><div style="margin:2px 0 4px"><button type="button" class="chip pl-placed'+(x.placed?' active':'')+'" data-ci="'+ci+'" style="padding:4px 10px;font-size:12px">Đã đặt</button></div>'+x.legs.map(function(l,li){
           var ctl,lst=parlayLegState(ci,li);
           if(l.alts&&l.alts.length>1&&(l.type==="ou_ht"||l.type==="ou_ft")){
             ctl='<span style="font-size:12px">'+(l.type==="ou_ht"?'Tài hiệp 1':'Tài cả trận')+'</span> <select class="pl-line" data-ci="'+ci+'" data-li="'+li+'" style="background:var(--surface3);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 4px;font-size:12px">'+l.alts.map(function(a){return '<option value="'+a.line+'"'+(a.line===lst.line?' selected':'')+'>'+a.line+'</option>'}).join('')+'</select>';
@@ -2381,13 +2381,27 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var pb=e.target.closest&&e.target.closest(".pl-placed");
     if(pb){e.preventDefault();var ci=Number(pb.dataset.ci),c=parlayCards[ci];if(!c||!c.pkey)return;c.placed=!c.placed;pb.classList.toggle("active",c.placed);api("/api/parlay-edit","POST",{mode:parlayMode,pkey:c.pkey,placed:c.placed}).catch(function(){c.placed=!c.placed;pb.classList.toggle("active",c.placed)})}
   });
+  var parlayRank="prob";
+  try{parlayRank=localStorage.getItem("cfi_parlay_rank")==="edge"?"edge":"prob"}catch(e){}
+  function parlayRankOn(){return parlayRank==="edge"&&(parlayMode==="suggest"||parlayMode==="round")}
+  function parlayRankSync(){
+    $("parlayRankBox").style.display=parlayMode==="suggest"||parlayMode==="round"?"inline-flex":"none";
+    document.querySelectorAll("#parlayRankBox .chip").forEach(function(c){c.classList.toggle("active",c.dataset.rank===parlayRank)});
+  }
+  $("parlayRankBox").addEventListener("click",function(e){
+    var b=e.target.closest("[data-rank]");if(!b||b.dataset.rank===parlayRank)return;
+    parlayRank=b.dataset.rank;
+    try{localStorage.setItem("cfi_parlay_rank",parlayRank)}catch(x){}
+    parlayRankSync();loadParlay();
+  });
   async function loadParlay(silent){
-    $("parlayOddsRow").style.display=parlayMode==="stats"||parlayMode.charAt(0)==="x"?"none":"";
+    $("parlayOddsRow").style.display=parlayMode==="stats"||parlayMode.charAt(0)==="x"?"none":"flex";
+    parlayRankSync();
     if(parlayMode==="stats"){$("parlayFilters").innerHTML="";return loadParlayStats()}
     var el=$("parlayContent"),seq=++parlaySeq;
     if(!silent)el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
-      var r=await api("/api/suggest-parlays?mode="+parlayMode+(parlayOddsOnly||parlayMode.charAt(0)==="x"?"":"&odds=0"),"GET");
+      var r=await api("/api/suggest-parlays?mode="+parlayMode+(parlayOddsOnly||parlayMode.charAt(0)==="x"?"":"&odds=0")+(parlayRankOn()?"&rank=edge":""),"GET");
       if(seq!==parlaySeq)return;
       parlayLast=r.data;
       parlayRender();
@@ -2944,6 +2958,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Loại xiên": "Parlay type",
       "Số chân": "Legs",
       "Buổi": "Session",
+      "Mặc định": "Default",
+      "Thử nghiệm: Edge": "Experimental: Edge",
       "Có odds": "Has odds",
       "Cực đoan": "Extreme",
       "Kèo lẻ": "Singles",

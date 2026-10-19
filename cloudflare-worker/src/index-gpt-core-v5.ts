@@ -347,8 +347,8 @@ function enumerateParlays(pool:any[],k:number,accept:(c:any[])=>boolean){
 }
 function topParlaysEdge(legs:any[],scope:string){
   const res:any[]=[];
-  const finish=(kind:string,pool:any[],accept:(c:any[])=>boolean)=>{
-    const p=pool.filter(l=>typeof l.edge==='number'&&l.edge>0).sort((a,b)=>b.edge-a.edge).slice(0,8);
+  const finish=(kind:string,pool:any[],minRaw:number,accept:(c:any[])=>boolean)=>{
+    const p=pool.filter(l=>typeof l.edge==='number'&&l.edge>0&&l.raw>=minRaw).sort((a,b)=>b.edge-a.edge).slice(0,8);
     const all:any[]=[];
     for(const c of enumerateParlays(p,3,accept))all.push({type:kind,scope,rank:'edge',legs:c,edge:Math.round(c.reduce((a,l)=>a+l.edge,0)/3*10000)/10000,min_p:Math.min(...c.map(l=>l.p)),combined_p:Math.round(c.reduce((a,l)=>a*l.p,1)*10000)/10000});
     all.sort((a,b)=>b.edge-a.edge||b.combined_p-a.combined_p);
@@ -360,8 +360,8 @@ function topParlaysEdge(legs:any[],scope:string){
     }
     res.push(...keep);
   };
-  for(const t of ['ou_ft','ou_ht','btts','btts_ht'])finish('same:'+t,legs.filter(l=>l.type===t),()=>true);
-  finish('mix',legs,c=>new Set(c.map(l=>l.type)).size>=2);
+  for(const t of ['ou_ft','ou_ht','btts','btts_ht'])finish('same:'+t,legs.filter(l=>l.type===t),0.55,()=>true);
+  finish('mix',legs,0.5,c=>new Set(c.map(l=>l.type)).size>=2);
   return res;
 }
 function topParlays(legs:any[],kmin:number,kmax:number,scope:string,minSame:number=0.60,minMix:number=0.55,rank:string='prob'){
@@ -736,7 +736,7 @@ export default{
           const sr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.${mode}&day=gte.${today}&or=(user_legs.not.is.null,placed.eq.true)&select=pkey,user_legs,placed&limit=500`,{headers:hdr,signal:AbortSignal.timeout(4000)});
           if(sr.ok){const rr:any=await sr.json();if(Array.isArray(rr))rr.forEach((x:any)=>saved.set(x.pkey,x))}
         }catch{}
-        built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);return {...x,cal_r:c&&typeof c.r==='number'?c.r:1,cal_n:c?.n??0,user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
+        built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);const isE=x.rank_mode==='edge';return {...x,cal_r:!isE&&c&&typeof c.r==='number'?c.r:1,cal_n:isE?0:(c?.n??0),user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
         const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok&&x.legs.every((l:any)=>Date.parse(l.kickoff)>Date.now()))).map((r:any)=>String(r.pkey).startsWith('edge|')?{...r,rank_mode:'edge'}:r);
         if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
         return Response.json({mode,rank:rankApplied,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built,inplay},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
