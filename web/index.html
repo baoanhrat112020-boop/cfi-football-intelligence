@@ -1620,7 +1620,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(PT.length)h+=rpSec('<span>Loại xiên hiệu quả nhất</span>',rpPct(PT[0].wins,PT[0].n),PT.map(function(x){return rpIt('<b>'+esc(parlayTypeLabel(x.type))+'</b><div class="m">'+esc(RP_MODE[x.mode]||x.mode)+' · '+x.wins+'/'+x.n+(x.n_odds>=5&&x.roi!=null?' · ROI <b class="'+(x.roi>=0?"g":"r")+'">'+(x.roi>=0?"+":"")+(x.roi*100).toFixed(0)+'%</b>':'')+'</div>','<span class="g">'+rpPct(x.wins,x.n)+'</span>',"")}).join(""),full);
     var HR=d.hours||[];
     if(HR.length){
-      var hb=HR.slice().sort(function(a,b){return b.hits/b.n-a.hits/a.n});
+      var hb=HR.filter(function(x){return x.n>=10}).sort(function(a,b){return b.hits/b.n-a.hits/a.n});if(!hb.length)hb=HR;
       h+=rpSec('<span>Theo khung giờ</span>',hb[0].b+'–'+(hb[0].b+4)+'h · '+rpPct(hb[0].hits,hb[0].n),HR.map(function(x){var r=x.hits/x.n;return rpIt('<b translate="no">'+String(x.b).padStart(2,"0")+'–'+String(x.b+4).padStart(2,"0")+'h</b>'+(x.n<10?'<span class="tag">mẫu nhỏ</span>':'')+'<div class="m">'+x.hits+'/'+x.n+' <span>trận</span>'+rpGap(r,x.p)+'</div>','<span class="'+(x.p==null||r>=x.p?"g":"r")+'">'+(r*100).toFixed(0)+'%</span>',"")}).join(""),full);
     }
     var ins='';
