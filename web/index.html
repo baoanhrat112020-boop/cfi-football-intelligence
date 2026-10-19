@@ -1093,7 +1093,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 5</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.8 · Build 6</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1580,12 +1580,20 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       return '<tr><td>'+t[0]+'</td><td>'+n+'</td><td>'+se+'</td><td class="g">'+h+'</td><td class="r">'+(se-h)+'</td><td><b>'+rpPct(h,se)+'</b></td></tr>';
     }).join("");
     var sumSe=(P.settled||0)+PL.reduce(function(a,x){return a+x.wins+x.losses},0),sumH=(P.hits||0)+PL.reduce(function(a,x){return a+x.wins},0);
-    var h='<div class="rp"><div class="kp"><div class="k"><b>'+tot+'</b><span>Dự đoán</span></div><div class="k"><b>'+sumSe+'</b><span>Đã chốt</span></div><div class="k"><b>'+rpPct(sumH,sumSe)+'</b><span>Tỉ lệ trúng</span></div></div>';
+    var dl="",pv=d.prev;
+    if(pv&&pv.picks&&sumSe){
+      var pse=(pv.picks.settled||0)+(pv.parlays||[]).reduce(function(a,x){return a+x.wins+x.losses},0),ph=(pv.picks.hits||0)+(pv.parlays||[]).reduce(function(a,x){return a+x.wins},0);
+      if(pse>0){var df=(sumH/sumSe-ph/pse)*100;dl='<div class="'+(df>=0?"g":"r")+'" style="font-size:11px;margin-top:6px;text-align:center">'+(df>=0?"▲ +":"▼ ")+df.toFixed(1)+'đ '+(kind==="week"?"so với tuần trước":"so với hôm trước")+'</div>'}
+    }
+    var h='<div class="rp"><div class="kp"><div class="k"><b>'+tot+'</b><span>Dự đoán</span></div><div class="k"><b>'+sumSe+'</b><span>Đã chốt</span></div><div class="k"><b>'+rpPct(sumH,sumSe)+'</b><span>Tỉ lệ trúng</span></div></div>'+dl;
     h+='<h2>Theo từng tab</h2><div class="c"><table><tr><th>Tab</th><th>Dự đoán</th><th>Chốt</th><th>Trúng</th><th>Trật</th><th>Tỉ lệ</th></tr>'+rows+'</table></div>';
     var M=d.markets||[];
     h+='<h2>Top 5 kèo trúng nhiều nhất</h2><div class="c">'+(M.length?M.map(function(x,i){return '<div class="row"><div>'+(i+1)+'. <b>'+esc(marketLabel(x.market))+'</b><div class="m">'+x.hits+'/'+x.n+' trận · mô hình '+(x.p==null?"—":(x.p*100).toFixed(0)+"%")+'</div></div><div class="g">'+(x.hit*100).toFixed(0)+'%</div></div>'}).join(""):'<div class="m">Chưa đủ dữ liệu</div>')+'</div>';
+    var LG=d.leagues||[],WM=d.worst_markets||[];
+    h+=(LG.length?'<h2>Top giải đấu dự đoán chuẩn nhất</h2><div class="c">'+LG.map(function(x,i){return '<div class="row"><div>'+(i+1)+'. <b>'+esc(x.comp)+'</b><div class="m">'+x.hits+'/'+x.n+' trận</div></div><div class="g">'+(x.hit*100).toFixed(0)+'%</div></div>'}).join("")+'</div>':"")
+      +(WM.length?'<h2>Kèo nên tránh</h2><div class="c">'+WM.map(function(x){return '<div class="row"><div><b>'+esc(marketLabel(x.market))+'</b><div class="m">'+x.hits+'/'+x.n+' trận · mô hình '+(x.p==null?"—":(x.p*100).toFixed(0)+"%")+'</div></div><div class="r">'+(x.hit*100).toFixed(0)+'%</div></div>'}).join("")+'</div>':"");
     var TM=d.top_matches||[];
-    h+='<h2>Top 10 trận dự đoán đúng nhiều nhất</h2><div class="c">'+(TM.length?TM.map(function(x,i){return '<div class="row"><div>'+(i+1)+'. <b>'+esc(x.home)+' - '+esc(x.away)+'</b><div class="m">'+esc(x.kickoff.substring(8,10)+"/"+x.kickoff.substring(5,7)+" "+x.kickoff.substring(11,16))+' · HT '+esc(x.ht)+' · FT '+esc(x.ft)+'</div></div><div class="g">'+x.hits+'/'+x.n+'</div></div>'}).join(""):'<div class="m">Chưa đủ dữ liệu</div>')+'</div>';
+    h+='<h2>Top 10 trận dự đoán đúng nhiều nhất</h2><div class="c">'+(TM.length?TM.map(function(x,i){return '<div class="row"><div>'+(i+1)+'. <b>'+esc(x.home)+' - '+esc(x.away)+'</b><div class="m">'+esc((x.comp?x.comp+" · ":"")+x.kickoff.substring(8,10)+"/"+x.kickoff.substring(5,7)+" "+x.kickoff.substring(11,16))+' · HT '+esc(x.ht)+' · FT '+esc(x.ft)+'</div></div><div class="g">'+x.hits+'/'+x.n+'</div></div>'}).join(""):'<div class="m">Chưa đủ dữ liệu</div>')+'</div>';
     var TT=d.top_teams||[];
     h+='<h2>Top 10 đội dự đoán đúng nhiều nhất</h2><div class="c">'+(TT.length?TT.map(function(x,i){return '<div class="row"><div>'+(i+1)+'. <b>'+esc(x.team)+'</b><div class="m">'+x.matches+' trận · '+x.n+' dự đoán</div></div><div class="g">'+x.hits+'</div></div>'}).join(""):'<div class="m">Chưa đủ dữ liệu</div>')+'</div>';
     var TP=d.top_parlays||[];
@@ -1606,6 +1614,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   state.rpOff={day:0,week:0};state.rpRaw=null;
   async function loadReport(){
     var el=$("mvpContent"),kind=state.mvpSub,off=state.rpOff[kind];
+    rpMark(kind);
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
       var r=await api("/api/report?kind="+kind+"&offset="+off,"GET"),d=r.data||{};
@@ -1627,6 +1636,18 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));a.download=name;document.body.appendChild(a);a.click();a.remove();toast("Đã tạo file "+name);
     }catch(x){toast("Thiết bị không hỗ trợ lưu file")}
   });
+  function rpVnDay(off){return new Date(Date.now()+7*3600000+off*86400000).toISOString().slice(0,10)}
+  function rpKey(k){var t=rpVnDay(0);if(k==="week"){var w=new Date(t+"T00:00:00Z");t=new Date(w.getTime()-((w.getUTCDay()+6)%7)*86400000).toISOString().slice(0,10)}return t}
+  function rpSeen(k){try{return localStorage.getItem("cfi_rp_"+k)===rpKey(k)}catch(e){return true}}
+  function rpMark(k){try{localStorage.setItem("cfi_rp_"+k,rpKey(k))}catch(e){}rpDots()}
+  function rpDots(){
+    var dot='<i data-rpdot style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff4d4d;margin-left:5px;vertical-align:middle"></i>';
+    document.querySelectorAll("[data-rpdot]").forEach(function(n){n.remove()});
+    var nd=!rpSeen("day"),nw=!rpSeen("week");
+    [["day",nd],["week",nw]].forEach(function(x){var b=document.querySelector('[data-mvpsub="'+x[0]+'"]');if(b&&x[1])b.insertAdjacentHTML("beforeend",dot)});
+    var nav=document.querySelector('[data-nav="mvp"]');if(nav&&(nd||nw))nav.insertAdjacentHTML("beforeend",dot);
+  }
+  rpDots();
   var goldAt=0;
   function goldMarket(m,l){return m==="over_ht"?"Tài "+l+" hiệp 1":m==="over_ft"?"Tài "+l+" cả trận":m?marketLabel(m):""}
   function goldRender(d){
@@ -2853,7 +2874,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Trận có kết quả cực đoan": "Matches with extreme results",
       "Đã tạo file": "File created",
       "Thiết bị không hỗ trợ lưu file": "This device cannot save files",
+      "so với tuần trước": "vs last week",
+      "so với hôm trước": "vs previous day",
       "Báo cáo ngày": "Daily report",
+      "Top giải đấu dự đoán chuẩn nhất": "Top leagues by hit rate",
+      "Kèo nên tránh": "Markets to avoid",
       "Báo cáo tuần": "Weekly report",
       "Lưu báo cáo (HTML)": "Save report (HTML)",
       "Cực đoan đã diễn ra · đối chiếu dấu hiệu": "Extreme results that happened · cross-check signals",
