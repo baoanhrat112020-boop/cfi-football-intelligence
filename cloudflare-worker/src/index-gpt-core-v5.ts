@@ -823,9 +823,13 @@ export default{
       try{
         const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
         await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_settle`,{method:'POST',headers:hdr,body:'{}',signal:AbortSignal.timeout(10000)}).catch(()=>null);
-        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_report`,{method:'POST',headers:hdr,body:JSON.stringify({p_from:iso(from),p_to:iso(to),p_min_n:kind==='week'?8:3}),signal:AbortSignal.timeout(20000)});
+        const span=kind==='week'?7:1;
+        const call=(f:Date,t:Date)=>fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_report`,{method:'POST',headers:hdr,body:JSON.stringify({p_from:iso(f),p_to:iso(t),p_min_n:kind==='week'?8:3}),signal:AbortSignal.timeout(20000)});
+        const [r,pr]=await Promise.all([call(from,to),call(new Date(from.getTime()-span*86400000),new Date(to.getTime()-span*86400000)).catch(()=>null)]);
         if(!r.ok)return Response.json({error:'report failed',status:r.status},{status:502});
-        return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=300'}});
+        const out:any=await r.json();
+        if(pr&&pr.ok){const pv:any=await pr.json();out.prev={picks:pv.picks,parlays:pv.parlays}}
+        return Response.json(out,{headers:{'Cache-Control':'public, max-age=300'}});
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 

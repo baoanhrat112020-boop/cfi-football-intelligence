@@ -4,7 +4,15 @@ LANGUAGE sql
 STABLE SECURITY DEFINER
 SET search_path TO 'public'
 AS $function$
-WITH pk AS (
+WITH snap AS (
+  SELECT DISTINCT ON ((m->>'fixture_id')::uuid) (m->>'fixture_id')::uuid AS fid, m->>'competition' AS comp
+  FROM public.suggest_snapshot s
+  CROSS JOIN LATERAL jsonb_array_elements(s.payload->'slots') sl
+  CROSS JOIN LATERAL jsonb_array_elements(sl->'matches') m
+  WHERE s.snapshot_date BETWEEN p_from - 1 AND p_to + 1 AND m ? 'fixture_id'
+  ORDER BY (m->>'fixture_id')::uuid, s.snapshot_date DESC
+),
+pk AS (
   SELECT l.fixture_id, l.home_team, l.away_team, l.kickoff_at, l.top_market, l.top_market_prob,
          l.settled_at, l.void_reason, l.ht_home, l.ht_away, l.ft_home, l.ft_away, l.hit_top_market
   FROM public.suggest_pick_log l
@@ -36,10 +44,10 @@ preds AS (
   FROM legs_s WHERE sc IS NOT NULL AND sc <> 0
 ),
 tm AS (
-  SELECT fid, max(home_team) AS home, max(away_team) AS away, max(kickoff_at) AS ko,
+  SELECT preds.fid, max(sn.comp) AS comp, max(home_team) AS home, max(away_team) AS away, max(kickoff_at) AS ko,
          max(ht_home) AS hh, max(ht_away) AS ha, max(ft_home) AS fh, max(ft_away) AS fa,
          count(*) AS n, count(*) FILTER (WHERE hit) AS h
-  FROM preds GROUP BY fid
+  FROM preds LEFT JOIN snap sn ON sn.fid = preds.fid GROUP BY preds.fid
 ),
 teams AS (
   SELECT team, sum(n)::int AS n, sum(h)::int AS h, count(*)::int AS matches
@@ -59,6 +67,12 @@ pm AS (
 pt AS (
   SELECT mode, ptype, count(*) AS n, count(*) FILTER (WHERE result = 'WIN') AS wins
   FROM pl WHERE result IN ('WIN','LOSS','HALF_LOSS') GROUP BY mode, ptype
+),
+lg AS (
+  SELECT sn.comp AS comp, count(*) AS n, count(*) FILTER (WHERE s.hit_top_market) AS h
+  FROM pks s JOIN snap sn ON sn.fid = s.fixture_id
+  WHERE s.top_market IS NOT NULL AND s.hit_top_market IS NOT NULL AND sn.comp IS NOT NULL
+  GROUP BY sn.comp
 ),
 pw AS (
   SELECT mode, ptype, n_legs, system_p, ret, legs FROM pl WHERE result = 'WIN'
@@ -90,10 +104,14 @@ SELECT jsonb_build_object(
   'placed', (SELECT to_jsonb(pp) FROM pp),
   'markets', COALESCE((SELECT jsonb_agg(jsonb_build_object('market', top_market, 'n', n, 'hits', h, 'hit', round(h::numeric / n, 4), 'p', p) ORDER BY h::numeric / n DESC, n DESC)
       FROM (SELECT * FROM mk WHERE n >= GREATEST(p_min_n, 1) ORDER BY h::numeric / n DESC, n DESC LIMIT 5) t), '[]'::jsonb),
+  'worst_markets', COALESCE((SELECT jsonb_agg(jsonb_build_object('market', top_market, 'n', n, 'hits', h, 'hit', round(h::numeric / n, 4), 'p', p) ORDER BY h::numeric / n ASC, n DESC)
+      FROM (SELECT * FROM mk WHERE n >= GREATEST(p_min_n, 1) ORDER BY h::numeric / n ASC, n DESC LIMIT 3) t), '[]'::jsonb),
+  'leagues', COALESCE((SELECT jsonb_agg(jsonb_build_object('comp', comp, 'n', n, 'hits', h, 'hit', round(h::numeric / n, 4)) ORDER BY h::numeric / n DESC, n DESC)
+      FROM (SELECT * FROM lg WHERE n >= GREATEST(p_min_n, 1) ORDER BY h::numeric / n DESC, n DESC LIMIT 5) t), '[]'::jsonb),
   'top_teams', COALESCE((SELECT jsonb_agg(jsonb_build_object('team', team, 'hits', h, 'n', n, 'matches', matches) ORDER BY h DESC, n ASC)
       FROM (SELECT * FROM teams WHERE h > 0 ORDER BY h DESC, n ASC LIMIT 10) t), '[]'::jsonb),
   'top_matches', COALESCE((SELECT jsonb_agg(jsonb_build_object('home', home, 'away', away, 'kickoff', to_char(ko AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD HH24:MI'),
-      'ht', hh || '-' || ha, 'ft', fh || '-' || fa, 'hits', h, 'n', n) ORDER BY h DESC, n ASC)
+      'comp', comp, 'ht', hh || '-' || ha, 'ft', fh || '-' || fa, 'hits', h, 'n', n) ORDER BY h DESC, n ASC)
       FROM (SELECT * FROM tm WHERE h > 0 ORDER BY h DESC, n ASC, ko LIMIT 10) t), '[]'::jsonb),
   'extreme', (SELECT to_jsonb(ex) FROM ex)
 );
