@@ -812,24 +812,31 @@ export default{
     if(url.pathname==='/api/report'&&request.method==='GET'){
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});
-      const kind=url.searchParams.get('kind')==='week'?'week':'day';
-      const off=Math.min(0,Math.max(-52,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
+      const kq=url.searchParams.get('kind')||'day';
+      const kind=['day','week','month','quarter','season'].includes(kq)?kq:'day';
+      const off=Math.min(0,Math.max(-60,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
       const vn=new Date(Date.now()+7*3600*1000);
-      let from=new Date(Date.UTC(vn.getUTCFullYear(),vn.getUTCMonth(),vn.getUTCDate()));
-      if(kind==='week')from=new Date(from.getTime()-((from.getUTCDay()+6)%7)*86400000+off*7*86400000);
-      else from=new Date(from.getTime()+off*86400000);
-      const to=new Date(from.getTime()+(kind==='week'?6:0)*86400000);
+      const y=vn.getUTCFullYear(),mo=vn.getUTCMonth(),dd=vn.getUTCDate();
+      const U=(a:number,b:number,c:number)=>new Date(Date.UTC(a,b,c));
+      const rng=(o:number):[Date,Date]=>{
+        if(kind==='day'){const f=U(y,mo,dd+o);return [f,f]}
+        if(kind==='week'){const f=U(y,mo,dd-((U(y,mo,dd).getUTCDay()+6)%7)+o*7);return [f,new Date(f.getTime()+6*86400000)]}
+        if(kind==='month')return [U(y,mo+o,1),U(y,mo+o+1,0)];
+        if(kind==='quarter'){const q=Math.floor(mo/3)*3+o*3;return [U(y,q,1),U(y,q+3,0)]}
+        const sy=(mo>=7?y:y-1)+o;return [U(sy,7,1),U(sy+1,7,0)];
+      };
       const iso=(d:Date)=>d.toISOString().slice(0,10);
+      const minN={day:3,week:8,month:15,quarter:30,season:50}[kind];
       try{
         const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
         await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_settle`,{method:'POST',headers:hdr,body:'{}',signal:AbortSignal.timeout(10000)}).catch(()=>null);
-        const span=kind==='week'?7:1;
-        const call=(f:Date,t:Date)=>fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_report`,{method:'POST',headers:hdr,body:JSON.stringify({p_from:iso(f),p_to:iso(t),p_min_n:kind==='week'?8:3}),signal:AbortSignal.timeout(20000)});
-        const [r,pr]=await Promise.all([call(from,to),call(new Date(from.getTime()-span*86400000),new Date(to.getTime()-span*86400000)).catch(()=>null)]);
+        const call=(r:[Date,Date])=>fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_report`,{method:'POST',headers:hdr,body:JSON.stringify({p_from:iso(r[0]),p_to:iso(r[1]),p_min_n:minN}),signal:AbortSignal.timeout(25000)});
+        const [r,pr]=await Promise.all([call(rng(off)),call(rng(off-1)).catch(()=>null)]);
         if(!r.ok)return Response.json({error:'report failed',status:r.status},{status:502});
         const out:any=await r.json();
+        out.kind=kind;
         if(pr&&pr.ok){const pv:any=await pr.json();out.prev={picks:pv.picks,parlays:pv.parlays}}
-        return Response.json(out,{headers:{'Cache-Control':'public, max-age=300'}});
+        return Response.json(out,{headers:{'Cache-Control':`public, max-age=${kind==='day'||kind==='week'?300:1800}`}});
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
