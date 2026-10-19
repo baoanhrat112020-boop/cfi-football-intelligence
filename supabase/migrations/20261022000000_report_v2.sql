@@ -40,14 +40,24 @@ legs_s AS (
   FROM legs g JOIN pks s ON s.fixture_id = g.fid
   WHERE NOT (g.ltype = 'ou_ft' AND g.line < 2) AND NOT (g.ltype = 'ou_ht' AND g.line < 0.75)
 ),
-preds AS (
+preds0 AS (
   SELECT fixture_id AS fid, home_team, away_team, kickoff_at, ft_home, ft_away, ht_home, ht_away,
-         COALESCE(hit_top_market, false) AS hit, jsonb_build_object('m', top_market) AS lab
+         COALESCE(hit_top_market, false) AS hit, jsonb_build_object('m', top_market) AS lab, 0 AS pri,
+         CASE WHEN top_market = 'btts_yes' THEN 'btts'
+              WHEN top_market ~ '^over_\d_?\d*_(ht|ft)$' THEN
+                'ou_' || substring(top_market from '(ht|ft)$') || '|' ||
+                trim_scale((substring(top_market from '^over_(\d)') || CASE WHEN substring(top_market from '^over_\d_?(\d*)_') = '' THEN '' ELSE '.' || substring(top_market from '^over_\d_?(\d*)_') END)::numeric)::text
+              ELSE top_market END AS ck
   FROM pks WHERE top_market IS NOT NULL AND hit_top_market IS NOT NULL
   UNION ALL
   SELECT fid, home_team, away_team, kickoff_at, ft_home, ft_away, ht_home, ht_away, sc > 0,
-         jsonb_build_object('t', ltype, 'l', line)
+         jsonb_build_object('t', ltype, 'l', line), 1,
+         CASE WHEN line IS NULL THEN ltype ELSE ltype || '|' || trim_scale(line)::text END
   FROM legs_s WHERE sc IS NOT NULL AND sc <> 0
+),
+preds AS (
+  SELECT DISTINCT ON (fid, ck) fid, home_team, away_team, kickoff_at, ft_home, ft_away, ht_home, ht_away, hit, lab
+  FROM preds0 ORDER BY fid, ck, pri
 ),
 tm AS (
   SELECT preds.fid, max(sn.comp) AS comp, max(home_team) AS home, max(away_team) AS away, max(kickoff_at) AS ko,
