@@ -809,6 +809,26 @@ export default{
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
+    if(url.pathname==='/api/report'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const kind=url.searchParams.get('kind')==='week'?'week':'day';
+      const off=Math.min(0,Math.max(-52,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
+      const vn=new Date(Date.now()+7*3600*1000);
+      let from=new Date(Date.UTC(vn.getUTCFullYear(),vn.getUTCMonth(),vn.getUTCDate()));
+      if(kind==='week')from=new Date(from.getTime()-((from.getUTCDay()+6)%7)*86400000+off*7*86400000);
+      else from=new Date(from.getTime()+off*86400000);
+      const to=new Date(from.getTime()+(kind==='week'?6:0)*86400000);
+      const iso=(d:Date)=>d.toISOString().slice(0,10);
+      try{
+        const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
+        await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_settle`,{method:'POST',headers:hdr,body:'{}',signal:AbortSignal.timeout(10000)}).catch(()=>null);
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_report`,{method:'POST',headers:hdr,body:JSON.stringify({p_from:iso(from),p_to:iso(to),p_min_n:kind==='week'?8:3}),signal:AbortSignal.timeout(20000)});
+        if(!r.ok)return Response.json({error:'report failed',status:r.status},{status:502});
+        return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=300'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
     if(url.pathname==='/api/goldme'&&request.method==='GET'){
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});
