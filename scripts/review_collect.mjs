@@ -71,8 +71,8 @@ if (GHT) {
 }
 
 const since = new Date(now - 36 * DAY).toISOString();
-const pk = await sb(`suggest_pick_log?select=kickoff_at,p_over05_ht,p_over1_ht,hit_o05_ht,hit_o1_ht,top_market_prob,hit_top_market&settled_at=not.is.null&void_reason=is.null&kickoff_at=gte.${since}&limit=30000`);
-const rows = (pk.data || []).map((x) => ({ ...x, t: Date.parse(x.kickoff_at) }));
+const pk = await sb(`suggest_pick_log?select=kickoff_at,p_over05_ht,p_over075_ht,p_over1_ht,hit_o05_ht,hit_o1_ht,result_o075,top_market_prob,hit_top_market&settled_at=not.is.null&void_reason=is.null&kickoff_at=gte.${since}&limit=30000`);
+const rows = (pk.data || []).map((x) => ({ ...x, t: Date.parse(x.kickoff_at), h075: x.result_o075 === 'WIN' ? 1 : x.result_o075 === 'HALF_WIN' ? 0.5 : x.result_o075 === 'LOSS' ? 0 : null }));
 const win = (a, b) => {
   const r = rows.filter((x) => x.t >= now - b * DAY && x.t < now - a * DAY);
   const mean = (f) => { const v = r.map(f).filter((z) => typeof z === 'number'); return v.length ? v.reduce((s, z) => s + z, 0) / v.length : null; };
@@ -91,19 +91,25 @@ if (R.nt >= 200 && P.nt >= 200) {
 
 const cand = [];
 const fit = (pk_, hk) => {
-  const tr = rows.filter((x) => x.t < now - 7 * DAY && typeof x[pk_] === 'number' && typeof x[hk] === 'boolean');
-  const te = rows.filter((x) => x.t >= now - 7 * DAY && typeof x[pk_] === 'number' && typeof x[hk] === 'boolean');
+  const yv = (x) => (typeof x[hk] === 'boolean' ? +x[hk] : typeof x[hk] === 'number' ? x[hk] : null);
+  const ok = (x) => typeof x[pk_] === 'number' && yv(x) != null;
+  const tr = rows.filter((x) => x.t < now - 7 * DAY && ok(x));
+  const te = rows.filter((x) => x.t >= now - 7 * DAY && ok(x));
   if (tr.length < 200 || te.length < 100) return;
   const bins = Array.from({ length: 10 }, () => ({ n: 0, h: 0 }));
   const bi = (p) => Math.min(9, Math.floor(p * 10));
-  for (const x of tr) { const b = bins[bi(x[pk_])]; b.n++; b.h += x[hk] ? 1 : 0; }
+  for (const x of tr) { const b = bins[bi(x[pk_])]; b.n++; b.h += yv(x); }
   const cal = (p) => { const b = bins[bi(p)]; return b.n >= 15 ? b.h / b.n : p; };
-  const bias = tr.reduce((s, x) => s + ((x[hk] ? 1 : 0) - x[pk_]), 0) / tr.length;
-  const mse = (f) => te.reduce((s, x) => s + (f(x[pk_]) - (x[hk] ? 1 : 0)) ** 2, 0) / te.length;
-  const raw = mse((p) => p), c1 = mse(cal), c2 = mse((p) => Math.min(0.99, Math.max(0.01, p + bias)));
-  cand.push({ market: pk_, n_train: tr.length, n_test: te.length, raw: r4(raw), bin_cal_gain_pct: r4(((raw - c1) / raw) * 100), bias_shift: r4(bias), bias_gain_pct: r4(((raw - c2) / raw) * 100) });
+  const bias = tr.reduce((s, x) => s + (yv(x) - x[pk_]), 0) / tr.length;
+  const mp = tr.reduce((s, x) => s + x[pk_], 0) / tr.length, my = tr.reduce((s, x) => s + yv(x), 0) / tr.length;
+  let sxy = 0, sxx = 0;
+  for (const x of tr) { sxy += (x[pk_] - mp) * (yv(x) - my); sxx += (x[pk_] - mp) ** 2; }
+  const slope = sxx > 0 ? sxy / sxx : 1;
+  const mse = (f) => te.reduce((s, x) => s + (f(x[pk_]) - yv(x)) ** 2, 0) / te.length;
+  const raw = mse((p) => p), c1 = mse(cal), c2 = mse((p) => Math.min(0.99, Math.max(0.01, p + bias))), c3 = mse((p) => Math.min(0.99, Math.max(0.01, my + slope * (p - mp))));
+  cand.push({ market: pk_, n_train: tr.length, n_test: te.length, raw: r4(raw), bin_cal_gain_pct: r4(((raw - c1) / raw) * 100), bias_shift: r4(bias), bias_gain_pct: r4(((raw - c2) / raw) * 100), slope: r4(slope), shrink_gain_pct: r4(((raw - c3) / raw) * 100) });
 };
-fit('p_over05_ht', 'hit_o05_ht'); fit('p_over1_ht', 'hit_o1_ht');
+fit('p_over05_ht', 'hit_o05_ht'); fit('p_over1_ht', 'hit_o1_ht'); fit('p_over075_ht', 'h075');
 
 const ps = {};
 for (const [g, n] of [['std', 'std'], ['s', 'single'], ['x', 'extreme']]) {
@@ -113,7 +119,7 @@ for (const [g, n] of [['std', 'std'], ['s', 'single'], ['x', 'extreme']]) {
 
 const d = new Date(now).toISOString().slice(0, 10);
 const verdict = R.nt >= 200 && P.nt >= 200 ? (Math.abs(z) < 2 ? 'khác biệt không đáng kể' : z > 0 ? 'tốt hơn thật' : 'kém hơn thật') : 'chưa đủ mẫu';
-const bestGain = Math.max(0, ...cand.map((c) => Math.max(c.bin_cal_gain_pct ?? 0, c.bias_gain_pct ?? 0)));
+const bestGain = Math.max(0, ...cand.map((c) => Math.max(c.bin_cal_gain_pct ?? 0, c.bias_gain_pct ?? 0, c.shrink_gain_pct ?? 0)));
 const action = alerts.length > 0 || bestGain >= 1;
 const md = [
   `# CFI review ${d}`,
@@ -123,7 +129,7 @@ const md = [
   `WORKER: ${Object.entries(wk).filter(([, v]) => v && v.ms != null).map(([k, v]) => `${k} ${v.status}/${v.ms}ms`).join(', ')}; thẻ xiên ${wk.parlay_cards ?? '?'}; MVP ${wk.mvp_rows ?? '?'} dòng`,
   `CI fail 4 ngày: ${Object.keys(ci).length ? JSON.stringify(ci) : 'không'}`,
   `ĐỘ CHÍNH XÁC (14 ngày vs 14 ngày trước; 4 ngày chỉ tham khảo): n ${R.nt}/${P.nt}; trúng kèo chính ${pct(R.top_hit)}/${pct(P.top_hit)} z ${z.toFixed(1)}; Brier O0.5HT ${R.b05}/${P.b05}; O1HT ${R.b1}/${P.b1}; 4 ngày ${pct(A.top_hit)} → ${verdict}`,
-  `ỨNG VIÊN HIỆU CHỈNH (train 29 ngày → test 7 ngày): ${cand.length ? cand.map((c) => `${c.market}: bin ${c.bin_cal_gain_pct}%, shift ${c.bias_shift} → ${c.bias_gain_pct}% (n ${c.n_train}/${c.n_test})`).join(' | ') : 'chưa đủ mẫu'}`,
+  `ỨNG VIÊN HIỆU CHỈNH (train 29 ngày → test 7 ngày): ${cand.length ? cand.map((c) => `${c.market}: bin ${c.bin_cal_gain_pct}%, shift ${c.bias_shift} → ${c.bias_gain_pct}%, co ${c.slope} → ${c.shrink_gain_pct}% (n ${c.n_train}/${c.n_test})`).join(' | ') : 'chưa đủ mẫu'}`,
   `XIÊN 30 ngày: ${Object.entries(ps).map(([k, v]) => `${k} đã chấm ${v.settled} trúng ${pct(v.hit)} chờ ${v.pending}`).join('; ')}`,
   `MVP top: ${(wk.mvp_top || []).map((m) => `${m.market}${m.line ?? ''}(${m.src}) ${pct(m.hit)} n${m.n}`).join('; ') || '—'}`,
 ].join('\n') + '\n';
