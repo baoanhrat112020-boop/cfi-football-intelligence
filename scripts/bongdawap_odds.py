@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sys
+import time
 import unicodedata
 import urllib.parse
 import urllib.request
@@ -300,10 +301,43 @@ def to_records(inserts):
     return out
 
 
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+    "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
+
 def fetch_html(date_vn):
-    req = urllib.request.Request(BASE_URL + date_vn, headers={"User-Agent": "Mozilla/5.0"})
+    url = BASE_URL + date_vn
+    try:
+        from curl_cffi import requests as cffi_requests
+    except ImportError:
+        cffi_requests = None
+    if cffi_requests is not None:
+        resp = cffi_requests.get(url, impersonate="chrome", headers=BROWSER_HEADERS, timeout=40)
+        return resp.status_code, resp.text
+    req = urllib.request.Request(url, headers=BROWSER_HEADERS)
     with urllib.request.urlopen(req, timeout=40) as resp:
-        return resp.read().decode("utf-8", "replace")
+        return resp.status, resp.read().decode("utf-8", "replace")
+
+
+def fetch_rows(ref_date, tz, attempts=3):
+    html = ""
+    for i in range(1, attempts + 1):
+        try:
+            status, html = fetch_html(ref_date.strftime("%d/%m/%Y"))
+        except Exception as e:
+            status, html = "error", ""
+            print("attempt %d: fetch error %s" % (i, type(e).__name__))
+        rows = parse_bongdawap_handicap(html, tz, ref_date) if html else []
+        if rows:
+            return html, rows
+        print("attempt %d: status=%s size=%d head=%r" % (i, status, len(html), " ".join(html[:200].split())))
+        if i < attempts:
+            time.sleep(20 * i)
+    return html, []
 
 
 def sb_request(sb_url, key, method, path, body=None, headers=None):
@@ -396,14 +430,14 @@ def main():
             html = fh.read()
         ref_date = datetime.strptime(args.date, "%Y-%m-%d").date()
         picks = load_picks(args.picks)
+        rows = parse_bongdawap_handicap(html, args.tz, ref_date)
         sb_url = key = None
     else:
         sb_url = os.environ["SB_URL"].rstrip("/")
         key = os.environ["SB_SERVICE_ROLE_KEY"]
         ref_date = now_utc.astimezone(ZoneInfo(args.tz)).date()
-        html = fetch_html(ref_date.strftime("%d/%m/%Y"))
+        html, rows = fetch_rows(ref_date, args.tz)
         picks = fetch_picks(sb_url, key, now_utc)
-    rows = parse_bongdawap_handicap(html, args.tz, ref_date)
     if not rows:
         print("no matches parsed (size=%d)" % len(html))
         if not args.dry_run:
