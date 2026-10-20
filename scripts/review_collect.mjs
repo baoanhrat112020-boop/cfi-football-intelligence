@@ -39,7 +39,11 @@ if (snap.ok && snap.data?.[0]) {
 } else alert('SNAPSHOT_MISSING', 'không đọc được suggest_snapshot');
 
 health.unsettled_old = await count(`suggest_pick_log?select=fixture_id&settled_at=is.null&kickoff_at=lt.${new Date(now - 8 * 3600000).toISOString()}`);
-if (health.unsettled_old > 50) alert('SETTLE_LAG', `${health.unsettled_old} kèo quá 8h chưa chấm`);
+const win72 = `kickoff_at=lt.${new Date(now - 8 * 3600000).toISOString()}&kickoff_at=gte.${new Date(now - 72 * 3600000).toISOString()}`;
+health.recent_total = await count(`suggest_pick_log?select=fixture_id&${win72}`);
+health.recent_unsettled = await count(`suggest_pick_log?select=fixture_id&settled_at=is.null&${win72}`);
+health.unsettled_ratio = health.recent_total ? r4(health.recent_unsettled / health.recent_total) : null;
+if (health.recent_total >= 100 && health.unsettled_ratio > 0.15) alert('SETTLE_LAG', `${pct(health.unsettled_ratio)} kèo 8-72h chưa chấm (${health.recent_unsettled}/${health.recent_total})`);
 
 const pl = await sb('parlay_log?select=created_at&order=created_at.desc&limit=1');
 health.parlay_last_h = pl.ok && pl.data?.[0] ? r4((now - Date.parse(pl.data[0].created_at)) / 3600000) : null;
@@ -125,7 +129,7 @@ const md = [
   `# CFI review ${d}`,
   `ACTION: ${action ? 'CÓ' : 'KHÔNG — trả lời 1 dòng rồi dừng'}`,
   `ALERTS (${alerts.length}): ${alerts.length ? alerts.map((a) => `${a.code}[${a.msg}]`).join('; ') : 'không'}`,
-  `HEALTH: snapshot ${health.snapshot ? health.snapshot.age_h + 'h/' + health.snapshot.matches + ' trận' : '?'}; chưa chấm>8h ${health.unsettled_old}; parlay_log mới nhất ${health.parlay_last_h}h, chờ chấm ${health.parlay_unsettled}; odds ${health.odds_age_h}h`,
+  `HEALTH: snapshot ${health.snapshot ? health.snapshot.age_h + 'h/' + health.snapshot.matches + ' trận' : '?'}; chưa chấm>8h ${health.unsettled_old} (8-72h: ${pct(health.unsettled_ratio)}, mức nền ~6% là kèo không có kết quả); parlay_log mới nhất ${health.parlay_last_h}h, chờ chấm ${health.parlay_unsettled}; odds ${health.odds_age_h}h`,
   `WORKER: ${Object.entries(wk).filter(([, v]) => v && v.ms != null).map(([k, v]) => `${k} ${v.status}/${v.ms}ms`).join(', ')}; thẻ xiên ${wk.parlay_cards ?? '?'}; MVP ${wk.mvp_rows ?? '?'} dòng`,
   `CI fail 4 ngày: ${Object.keys(ci).length ? JSON.stringify(ci) : 'không'}`,
   `ĐỘ CHÍNH XÁC (14 ngày vs 14 ngày trước; 4 ngày chỉ tham khảo): n ${R.nt}/${P.nt}; trúng kèo chính ${pct(R.top_hit)}/${pct(P.top_hit)} z ${z.toFixed(1)}; Brier O0.5HT ${R.b05}/${P.b05}; O1HT ${R.b1}/${P.b1}; 4 ngày ${pct(A.top_hit)} → ${verdict}`,
