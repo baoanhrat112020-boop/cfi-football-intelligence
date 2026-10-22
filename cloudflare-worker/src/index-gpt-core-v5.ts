@@ -1,6 +1,7 @@
 import v4 from './index-gpt-core-v4.ts';
 import { isDryRun } from './dry-run.ts';
 import { enrichLive } from './live-livescore.ts';
+import { getSchedule } from './schedule-livescore.ts';
 import { handleMatchContext } from '../../src/runtime/match-context.ts';
 import { fixtureCohort, normalizeAiFixtureCandidates, scorePrediction, CFI_DISCOVERY_VERSION } from '../../src/discovery/cfi-discovery.ts';
 import { FINAL_VERSION } from '../../src/prediction/final-engine.ts';
@@ -915,6 +916,16 @@ export default{
         if(pr&&pr.ok){const pv:any=await pr.json();out.prev={picks:pv.picks,parlays:pv.parlays}}
         return Response.json(out,{headers:{'Cache-Control':`public, max-age=${kind==='day'||kind==='week'?300:1800}`}});
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
+    if(url.pathname==='/api/schedule'&&request.method==='GET'){
+      const vnToday=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+      const day=url.searchParams.get('day')||vnToday;
+      const diff=(Date.parse(day)-Date.parse(vnToday))/86400000;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!(diff>=-3&&diff<=7))return Response.json({error:'bad day'},{status:400});
+      const r=await getSchedule(day,(n:string)=>EXCLUDE_RE.test(n));
+      if(!r||r.status==='off')return Response.json({error:'source unavailable',status:'off'},{status:503,headers:{'Cache-Control':'no-store'}});
+      return Response.json({day,status:r.status,total:r.total,stages:r.stages,generated_at:new Date().toISOString()},{headers:{'Cache-Control':`public, max-age=${day===vnToday?30:300}`}});
     }
 
     if(url.pathname==='/api/goldme'&&request.method==='GET'){
