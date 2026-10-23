@@ -1,6 +1,6 @@
 import { toLive, type LsEvent } from './live-livescore.ts';
 
-export type SchedMatch={id:string;h:string;a:string;t:string;st:'ns'|'live'|'ht'|'ir'|'ft'|'postponed'|'cancelled'|'unknown';m:string|null;hs:number|null;as:number|null};
+export type SchedMatch={id:string;h:string;a:string;t:string;st:'ns'|'live'|'ht'|'ir'|'ft'|'postponed'|'cancelled'|'unknown';m:string|null;hs:number|null;as:number|null;hh:number|null;ha:number|null};
 export type SchedStage={n:string;c:string;e:SchedMatch[]};
 export type SchedResult={stages:SchedStage[];status:'ok'|'degraded'|'off';total:number};
 
@@ -58,12 +58,15 @@ export function mapEvent(e:any):SchedMatch|null{
     rtm:Number.isFinite(Number(e?.Etm?.RTm))&&Number(e?.Etm?.RTm)>=0?Number(e.Etm.RTm):null
   };
   const live=toLive(ev);
+  const started=live!=null&&live.live_status!=='postponed'&&live.live_status!=='cancelled';
   return{
     id:ev.eid,h:ev.home,a:ev.away,t:new Date(ms).toISOString(),
     st:live?.live_status??'ns',
     m:live?.live_minute_text??null,
     hs:live?.live_score_home??null,
-    as:live?.live_score_away??null
+    as:live?.live_score_away??null,
+    hh:started?toInt(e.Trh1):null,
+    ha:started?toInt(e.Trh2):null
   };
 }
 
