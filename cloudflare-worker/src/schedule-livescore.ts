@@ -113,6 +113,7 @@ export function createScheduleClient(opts?:{fetchImpl?:Fetcher;now?:()=>number})
     let ok=0,miss=0,degraded=false;
     const stages=new Map<string,SchedStage>();
     let total=0;
+    const seen=new Set<string>();
     for(const d of days){
       const {raw,fresh}=await getRaw(d);
       if(!raw){miss++;continue}
@@ -126,7 +127,8 @@ export function createScheduleClient(opts?:{fetchImpl?:Fetcher;now?:()=>number})
           const ms=esdToMs(e?.Esd);
           if(ms==null||ms<w.start||ms>=w.end)continue;
           const m=mapEvent(e);
-          if(!m)continue;
+          if(!m||seen.has(m.id))continue;
+          seen.add(m.id);
           const key=`${s?.Cnm??''}|${name}`;
           let st=stages.get(key);
           if(!st){st={n:name,c:String(s?.Cnm??''),e:[]};stages.set(key,st)}

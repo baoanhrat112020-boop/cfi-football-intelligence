@@ -20,6 +20,46 @@ const COMPACT_CONTRACT='CFI_GPT_PREDICT_COMPACT_V2_EXTREME_THRESHOLD_SAFETY';
 const TIER_C_MIN_EVIDENCE=3;
 const THRESHOLD_TARGETS=['3+ HT','7+ FT','Other HT','Other FT'] as const;
 
+const dayPicksCache=new Map<string,{ts:number;map:Map<string,any>}>();
+async function loadDayPicks(day:string,key:string,today:string){
+  const hit=dayPicksCache.get(day);
+  const ttl=day===today?120000:600000;
+  if(hit&&Date.now()-hit.ts<ttl)return hit.map;
+  const map=new Map<string,any>();
+  try{
+    const hdr={'apikey':key,'Authorization':`Bearer ${key}`};
+    const [sr,lr]=await Promise.all([
+      fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/suggest_snapshot?snapshot_date=eq.${day}&select=payload&limit=1`,{headers:hdr,signal:AbortSignal.timeout(4000)}),
+      fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/suggest_pick_log?target_date=eq.${day}&select=fixture_id,top_market,top_market_prob,hit_top_market,settled_at,void_reason,official&limit=2000`,{headers:hdr,signal:AbortSignal.timeout(4000)})
+    ]);
+    const snap:any=sr.ok?await sr.json():[];
+    const logs:any=lr.ok?await lr.json():[];
+    const byFx=new Map<string,any>();
+    if(Array.isArray(logs))for(const r of logs)byFx.set(String(r.fixture_id),r);
+    const slots=snap?.[0]?.payload?.slots;
+    if(Array.isArray(slots))for(const sl of slots)for(const m of (Array.isArray(sl?.matches)?sl.matches:[])){
+      if(m?.provider_id==null||!m?.fixture_id)continue;
+      if(HIDE_COMP_RE.test(String(m.competition||'')))continue;
+      const lg=byFx.get(String(m.fixture_id));
+      const a:any=alignFtPick(m);
+      const mk=lg?.top_market??a?.top_market??null;
+      const pr=lg?.top_market_prob??a?.top_market_prob??null;
+      const official=lg?lg.official===true:(typeof m.p_over075_ht==='number'&&m.p_over075_ht>=0.55);
+      if(!mk||!official)continue;
+      let r:string|null=null;
+      if(lg){
+        if(lg.void_reason)r='v';
+        else if(lg.settled_at&&typeof lg.hit_top_market==='boolean')r=lg.hit_top_market?'w':'l';
+      }
+      map.set(String(m.provider_id),{mk,p:typeof pr==='number'?Math.round(pr*1000)/1000:null,r});
+    }
+    dayPicksCache.set(day,{ts:Date.now(),map});
+  }catch(_e){
+    if(hit)return hit.map;
+  }
+  return map;
+}
+
 async function readJson(response:Response){try{return await response.clone().json()}catch{return null}}
 const finite=(value:any)=>Number.isFinite(Number(value))?Number(value):null;
 
@@ -925,6 +965,11 @@ export default{
       if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!(diff>=-3&&diff<=7))return Response.json({error:'bad day'},{status:400});
       const r=await getSchedule(day,(n:string)=>EXCLUDE_RE.test(n));
       if(!r||r.status==='off')return Response.json({error:'source unavailable',status:'off'},{status:503,headers:{'Cache-Control':'no-store'}});
+      const sk=(env as any).SUPABASE_SERVICE_KEY;
+      if(sk){
+        const picks=await loadDayPicks(day,sk,vnToday);
+        if(picks.size)for(const st of r.stages)for(const e of st.e){const pk=picks.get(e.id);if(pk)(e as any).pk=pk}
+      }
       return Response.json({day,status:r.status,total:r.total,stages:r.stages,generated_at:new Date().toISOString()},{headers:{'Cache-Control':`public, max-age=${day===vnToday?30:300}`}});
     }
 
