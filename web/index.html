@@ -1105,7 +1105,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.9 · Build 4</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.9 · Build 5</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1576,8 +1576,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(LV_F==="pick")return !!m.pk;
     if(LV_F==="live")return m.st==="live"||m.st==="ht"||m.st==="ir";
     if(LV_F==="ft")return m.st==="ft";
-    return m.st==="ns";
+    return m.st==="ns"&&Date.parse(m.t)>Date.now();
   }
+  function lvStale(m){return m.st==="ns"&&Date.parse(m.t)<=Date.now()}
   function lvPick(m){
     var k=m.pk;if(!k)return "";
     var mark=k.r==="w"?" ✓":k.r==="l"?" ✗":"";
@@ -1586,8 +1587,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function lvRow(m,lg){
     var live=m.st==="live"||m.st==="ht"||m.st==="ir",tm,sc="";
     if(m.st==="live")tm=m.m||"LIVE";else if(m.st==="ht")tm="HT";else if(m.st==="ir")tm="Tạm dừng";else if(m.st==="ft")tm="FT";else if(m.st==="postponed")tm="Hoãn";else if(m.st==="cancelled")tm="Hủy";else tm=lvTime(m.t);
+    var wait=lvStale(m)?'<small>Chờ cập nhật</small>':"";
     if(m.hs!=null&&m.as!=null)sc='<span>'+m.hs+'</span><span>'+m.as+'</span>';
-    var ht=m.hh!=null&&m.ha!=null&&m.st!=="ht"?'<small>HT '+m.hh+'-'+m.ha+'</small>':"";
+    var ht=m.hh!=null&&m.ha!=null&&m.st!=="ht"?'<small>HT '+m.hh+'-'+m.ha+'</small>':wait;
     return '<div class="lv-row"><div class="lv-tm'+(live?" live":"")+'">'+esc(tm)+ht+'</div><div class="lv-t">'+(lg?'<span class="lv-lg">'+esc(lg.n)+(lg.c?" · "+esc(lg.c):"")+'</span>':"")+'<span>'+esc(m.h)+'</span><span>'+esc(m.a)+'</span>'+lvPick(m)+'</div><div class="lv-sc'+(live?" lv-live live":"")+'" style="display:flex;flex-direction:column;gap:2px">'+sc+'</div></div>';
   }
   function lvKey(s){return s.c+"|"+s.n}
@@ -3177,6 +3179,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Về đầu trang": "Back to top",
       "Đang cập nhật": "Updating",
       "Hoãn": "Postponed",
+      "Chờ cập nhật": "Awaiting update",
       "Có kèo CFI": "CFI picks",
       "Tìm giải, đội...": "Search league or team...",
       "Theo giải": "By league",
