@@ -18,6 +18,10 @@ test('mapEvent maps live, finished and not started',()=>{
   const l=mapEvent(ev('2','20261022130000',1,1,0,"34'"))!;
   assert.deepEqual([l.st,l.m,l.hs,l.as],['live',"34'",1,0]);
   assert.equal(mapEvent(ev('3','20261022130000',2,2,2,'FT'))!.st,'ft');
+  const h=mapEvent({...ev('4','20261022130000',2,3,1,'FT'),Trh1:'1',Trh2:'0'})!;
+  assert.deepEqual([h.hh,h.ha],[1,0]);
+  const n=mapEvent({...ev('5','20261022130000',0,null,null),Trh1:'0',Trh2:'0'})!;
+  assert.deepEqual([n.hh,n.ha],[null,null]);
 });
 
 test('getSchedule filters to the VN day, hides leagues, groups and sorts',async()=>{
