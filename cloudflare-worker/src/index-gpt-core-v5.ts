@@ -364,6 +364,8 @@ function parlayLegs(m:any,rate:((m:any,t:string,line:number|null)=>number|null)|
   return r;
 }
 function bttsHtP(m:any):number|undefined{
+  const lh0=Number(m?.lambda_home_ft),la0=Number(m?.lambda_away_ft);
+  if(Number.isFinite(lh0)&&Number.isFinite(la0)&&lh0>0&&la0>0)return Math.round((1-Math.exp(-lh0/2))*(1-Math.exp(-la0/2))*10000)/10000;
   const p15=Number(m?.markets?.m_over_1_5_ft),pb=Number(m?.markets?.m_btts_yes);
   if(!(p15>0&&p15<1&&pb>0&&pb<1))return undefined;
   let lo=0.01,hi=12;
