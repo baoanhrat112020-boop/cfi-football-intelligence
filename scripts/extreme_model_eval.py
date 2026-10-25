@@ -378,6 +378,24 @@ def print_leagues(rows, share_g, top=10):
         print(f"{r['league'][:45]:<46}{r['n']:>7}{fmt(r['share_lam'], 4):>9}{fmt(r['share_ft'], 4):>9}{r['z']:>+8.1f}")
 
 
+def period_table(dates, idx, lam_tot, ht_tot, ft_tot, key, title, last=None):
+    groups = defaultdict(list)
+    for i in idx:
+        groups[key(dates[i])].append(i)
+    keys = sorted(groups)
+    if last:
+        keys = keys[-last:]
+    print(f"\n== {title}")
+    print(f"{'period':<10}{'n':>8}{'exp_total':>11}{'act_total':>11}{'HT/exp':>9}{'HT/FT':>9}")
+    for k in keys:
+        ii = np.array(groups[k])
+        print(f"{k:<10}{len(ii):>8}{fmt(lam_tot[ii].mean(), 3):>11}{fmt(ft_tot[ii].mean(), 3):>11}{fmt(ht_tot[ii].sum() / lam_tot[ii].sum(), 4):>9}{fmt(ht_tot[ii].sum() / max(ft_tot[ii].sum(), 1), 4):>9}")
+
+
+def quarter(d):
+    return f"{d[:4]}Q{(int(d[5:7]) - 1) // 3 + 1}"
+
+
 def run(args):
     rows = load_rows(args)
     if len(rows) < 2000:
@@ -423,6 +441,13 @@ def run(args):
     y_tail_tr = {"7+ FT": (ft_tot[tr] >= 7).astype(float), "Other FT": (np.maximum(fh[tr], fa[tr]) >= 5).astype(float)}
     r_tail = fit_tail_dispersion(lam_h[tr], lam_a[tr], share, y_tail_tr)
     print(f"tail dispersion r fitted on 7+ FT and Other FT events (train): {'poisson' if r_tail is None else r_tail}")
+
+    dates = [r[0] for r in rows]
+    allh0 = idx[ht_ok[idx]]
+    period_table(dates, allh0, lam_tot, ht_tot, ft_tot, lambda d: d[:4], "HT share by year (all eligible)")
+    period_table(dates, allh0, lam_tot, ht_tot, ft_tot, quarter, "HT share by quarter (last 8)", last=8)
+    teh = te[ht_ok[te]]
+    print(f"\nHT share fitted on train={fmt(share)} fitted on test (oracle)={fmt(float(ht_tot[teh].sum() / lam_tot[teh].sum()))}")
 
     edges = np.quantile(lam_tot[trh], np.linspace(0, 1, args.bins + 1)[1:-1])
     allh = idx[ht_ok[idx]]
