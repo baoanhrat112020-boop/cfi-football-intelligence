@@ -17,7 +17,7 @@ WINDOW = 30
 DECAY = 0.94
 SHRINK_N = 10
 K = 20
-MARKETS = ("HT>=1", "HT>=2", "3+ HT", "7+ FT", "Other HT", "Other FT")
+MARKETS = ("HT>=1", "HT>=2", "3+ HT", "FT>=3", "FT>=4", "BTTS", "7+ FT", "Other HT", "Other FT")
 R_GRID = [0.8, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 20.0, 40.0, 100.0, 1000.0]
 BASE_SHARE = 0.50
 LG = np.array([math.lgamma(i + 1) for i in range(80)])
@@ -213,6 +213,9 @@ def event_probs(lam_h, lam_a, share, r_ft, r_ht):
     ph, pa = pmf_table(lam_h, r_ft), pmf_table(lam_a, r_ft)
     qh, qa = pmf_table(lam_h * share, r_ht), pmf_table(lam_a * share, r_ht)
     return {
+        "FT>=3": tail_total(ph, pa, 3),
+        "FT>=4": tail_total(ph, pa, 4),
+        "BTTS": np.clip((1.0 - ph[:, 0]) * (1.0 - pa[:, 0]), 1e-6, 1 - 1e-6),
         "HT>=1": np.clip(1.0 - qh[:, 0] * qa[:, 0], 1e-6, 1 - 1e-6),
         "HT>=2": tail_total(qh, qa, 2),
         "3+ HT": tail_total(qh, qa, 3),
@@ -230,6 +233,28 @@ def fit_dispersion(y_h, y_a, lam_h, lam_a):
         if ll > best_ll:
             best, best_ll = rr, ll
     return best
+
+
+def fit_slope(lam_tot, ft_tot):
+    best = None
+    for b in np.arange(0.4, 1.31, 0.02):
+        x = lam_tot ** b
+        a = math.log(ft_tot.sum() / x.sum())
+        mu = np.exp(a) * x
+        ll = float((ft_tot * np.log(mu) - mu).sum())
+        if best is None or ll > best[0]:
+            best = (ll, float(b), a)
+    return best[1], best[2]
+
+
+def print_calibration(lam_raw, lam_cal, ft_tot, nbins):
+    edges = np.quantile(lam_raw, np.linspace(0, 1, nbins + 1)[1:-1])
+    b = np.searchsorted(edges, lam_raw, side="right")
+    print(f"{'bin':>4}{'n':>8}{'exp_raw':>10}{'exp_cal':>10}{'actual':>10}")
+    for k in range(nbins):
+        m = b == k
+        if m.any():
+            print(f"{k + 1:>4}{int(m.sum()):>8}{fmt(lam_raw[m].mean(), 3):>10}{fmt(lam_cal[m].mean(), 3):>10}{fmt(ft_tot[m].mean(), 3):>10}")
 
 
 def metrics(p, y):
@@ -341,6 +366,15 @@ def run(args):
     r_ht = fit_dispersion(hh[trh], ha[trh], lam_h[trh] * share, lam_a[trh] * share)
     print(f"fit: ft_dispersion_r={'poisson' if r_ft is None else r_ft} ht_share={fmt(share)} ht_dispersion_r={'poisson' if r_ht is None else r_ht}")
 
+    slope, icpt = fit_slope(lam_tot[tr], ft_tot[tr])
+    f = np.exp(icpt) * lam_tot ** (slope - 1.0)
+    lam_hc, lam_ac = lam_h * f, lam_a * f
+    lam_tot_c = lam_hc + lam_ac
+    share_c = float(ht_tot[trh].sum() / lam_tot_c[trh].sum())
+    print(f"lambda calibration (train): slope={fmt(slope, 2)} intercept={fmt(icpt, 4)} ht_share_after={fmt(share_c)}")
+    print("\n== expected vs actual total goals on test, before and after calibration")
+    print_calibration(lam_tot[te], lam_tot_c[te], ft_tot[te], args.bins)
+
     edges = np.quantile(lam_tot[trh], np.linspace(0, 1, args.bins + 1)[1:-1])
     allh = idx[ht_ok[idx]]
     print("\n== HT share by expected total goals (all eligible, bins from train quantiles)")
@@ -372,9 +406,13 @@ def run(args):
     }
     if has_league:
         models["share_by_league"] = event_probs(lam_h[te], lam_a[te], s_lg, None, None)
+    models["lam_cal"] = event_probs(lam_hc[te], lam_ac[te], share_c, None, None)
     if r_ft is not None or r_ht is not None:
         models["negbin_fit"] = event_probs(lam_h[te], lam_a[te], share, r_ft, r_ht)
     ys = {
+        "FT>=3": (ft_tot[te] >= 3).astype(float),
+        "FT>=4": (ft_tot[te] >= 4).astype(float),
+        "BTTS": ((fh[te] >= 1) & (fa[te] >= 1)).astype(float),
         "HT>=1": (ht_tot[te] >= 1).astype(float),
         "HT>=2": (ht_tot[te] >= 2).astype(float),
         "3+ HT": (ht_tot[te] >= 3).astype(float),
@@ -389,7 +427,7 @@ def run(args):
     for mk in MARKETS:
         m = ok[mk]
         y = ys[mk][m]
-        names = list(models) if mk in ht_markets else ["poisson_0.50"]
+        names = list(models) if mk in ht_markets else ["poisson_0.50", "lam_cal"]
         print(f"\n== {mk} | n={int(m.sum())} events={int(y.sum())} base={fmt(y.mean())}")
         print(f"{'model':<17}{'pred':>8}{'pred/obs':>10}{'logloss':>10}{'brier':>10}{'top5% pred':>12}{'top5% obs':>11}{'z vs 0.50':>11}{'z vs global':>13}")
         lls = {}
