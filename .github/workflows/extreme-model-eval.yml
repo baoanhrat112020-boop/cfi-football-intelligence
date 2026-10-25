@@ -1,0 +1,38 @@
+name: Extreme Model Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Use only the latest N fixtures (0 = all)'
+        default: '0'
+      min_n:
+        description: 'Minimum prior matches per team'
+        default: '15'
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy
+      - name: Evaluate
+        env:
+          SUPABASE_URL: https://zbwkowqluwuvsnajkuvc.supabase.co
+          SUPABASE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/extreme_model_eval.py --limit "${{ inputs.limit }}" --min-n "${{ inputs.min_n }}" --json /tmp/extreme_eval.json | tee /tmp/extreme_eval.txt
+          { echo '```'; cat /tmp/extreme_eval.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extreme-model-eval
+          path: |
+            /tmp/extreme_eval.json
+            /tmp/extreme_eval.txt
