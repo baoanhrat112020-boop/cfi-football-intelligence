@@ -247,14 +247,54 @@ def fit_slope(lam_tot, ft_tot):
     return best[1], best[2]
 
 
-def print_calibration(lam_raw, lam_cal, ft_tot, nbins):
+def fit_isotonic(x, y, nb=40):
+    order = np.argsort(x)
+    xs, ys = x[order], y[order]
+    parts = np.array_split(np.arange(len(xs)), nb)
+    cx = np.array([xs[i].mean() for i in parts])
+    cy = np.array([ys[i].mean() for i in parts])
+    cw = np.array([len(i) for i in parts], dtype=float)
+    blocks = [[cy[i], cw[i], 1] for i in range(nb)]
+    out = []
+    for blk in blocks:
+        out.append(blk)
+        while len(out) > 1 and out[-2][0] > out[-1][0]:
+            b2 = out.pop()
+            b1 = out.pop()
+            w = b1[1] + b2[1]
+            out.append([(b1[0] * b1[1] + b2[0] * b2[1]) / w, w, b1[2] + b2[2]])
+    vals = np.concatenate([[blk[0]] * blk[2] for blk in out])
+    return cx, vals
+
+
+def apply_isotonic(x, cx, vals):
+    return np.interp(x, cx, vals)
+
+
+def fit_tail_dispersion(lam_h, lam_a, share, y_tail):
+    best, best_ll = None, 1e18
+    for r in R_GRID:
+        rr = None if r >= 1000.0 else r
+        probs = event_probs(lam_h, lam_a, share, rr, None)
+        tot = 0.0
+        for mk in ("7+ FT", "Other FT"):
+            p = probs[mk]
+            y = y_tail[mk]
+            tot += float(-(y * np.log(p) + (1 - y) * np.log(1 - p)).mean())
+        if tot < best_ll:
+            best, best_ll = rr, tot
+    return best
+
+
+def print_calibration(lam_raw, lam_cal, ft_tot, nbins, lam_iso=None):
     edges = np.quantile(lam_raw, np.linspace(0, 1, nbins + 1)[1:-1])
     b = np.searchsorted(edges, lam_raw, side="right")
-    print(f"{'bin':>4}{'n':>8}{'exp_raw':>10}{'exp_cal':>10}{'actual':>10}")
+    print(f"{'bin':>4}{'n':>8}{'exp_raw':>10}{'exp_cal':>10}{'exp_iso':>10}{'actual':>10}")
     for k in range(nbins):
         m = b == k
         if m.any():
-            print(f"{k + 1:>4}{int(m.sum()):>8}{fmt(lam_raw[m].mean(), 3):>10}{fmt(lam_cal[m].mean(), 3):>10}{fmt(ft_tot[m].mean(), 3):>10}")
+            iso = fmt(lam_iso[m].mean(), 3) if lam_iso is not None else ""
+            print(f"{k + 1:>4}{int(m.sum()):>8}{fmt(lam_raw[m].mean(), 3):>10}{fmt(lam_cal[m].mean(), 3):>10}{iso:>10}{fmt(ft_tot[m].mean(), 3):>10}")
 
 
 def metrics(p, y):
@@ -372,8 +412,17 @@ def run(args):
     lam_tot_c = lam_hc + lam_ac
     share_c = float(ht_tot[trh].sum() / lam_tot_c[trh].sum())
     print(f"lambda calibration (train): slope={fmt(slope, 2)} intercept={fmt(icpt, 4)} ht_share_after={fmt(share_c)}")
-    print("\n== expected vs actual total goals on test, before and after calibration")
-    print_calibration(lam_tot[te], lam_tot_c[te], ft_tot[te], args.bins)
+    cx, vals = fit_isotonic(lam_tot[tr], ft_tot[tr])
+    lam_tot_i = apply_isotonic(lam_tot, cx, vals)
+    fi = lam_tot_i / lam_tot
+    lam_hi, lam_ai = lam_h * fi, lam_a * fi
+    share_i = float(ht_tot[trh].sum() / lam_tot_i[trh].sum())
+    print(f"isotonic calibration (train): ht_share_after={fmt(share_i)}")
+    print("\n== expected vs actual total goals on test: raw, slope-calibrated, isotonic")
+    print_calibration(lam_tot[te], lam_tot_c[te], ft_tot[te], args.bins, lam_tot_i[te])
+    y_tail_tr = {"7+ FT": (ft_tot[tr] >= 7).astype(float), "Other FT": (np.maximum(fh[tr], fa[tr]) >= 5).astype(float)}
+    r_tail = fit_tail_dispersion(lam_h[tr], lam_a[tr], share, y_tail_tr)
+    print(f"tail dispersion r fitted on 7+ FT and Other FT events (train): {'poisson' if r_tail is None else r_tail}")
 
     edges = np.quantile(lam_tot[trh], np.linspace(0, 1, args.bins + 1)[1:-1])
     allh = idx[ht_ok[idx]]
@@ -407,6 +456,8 @@ def run(args):
     if has_league:
         models["share_by_league"] = event_probs(lam_h[te], lam_a[te], s_lg, None, None)
     models["lam_cal"] = event_probs(lam_hc[te], lam_ac[te], share_c, None, None)
+    models["lam_iso"] = event_probs(lam_hi[te], lam_ai[te], share_i, None, None)
+    models["negbin_tail"] = event_probs(lam_h[te], lam_a[te], share, r_tail, None)
     if r_ft is not None or r_ht is not None:
         models["negbin_fit"] = event_probs(lam_h[te], lam_a[te], share, r_ft, r_ht)
     ys = {
@@ -427,7 +478,7 @@ def run(args):
     for mk in MARKETS:
         m = ok[mk]
         y = ys[mk][m]
-        names = list(models) if mk in ht_markets else ["poisson_0.50", "lam_cal"]
+        names = [n for n in models if n != "negbin_tail"] if mk in ht_markets else ["poisson_0.50", "lam_cal", "lam_iso", "negbin_tail"]
         print(f"\n== {mk} | n={int(m.sum())} events={int(y.sum())} base={fmt(y.mean())}")
         print(f"{'model':<17}{'pred':>8}{'pred/obs':>10}{'logloss':>10}{'brier':>10}{'top5% pred':>12}{'top5% obs':>11}{'z vs 0.50':>11}{'z vs global':>13}")
         lls = {}
