@@ -17,15 +17,19 @@ WINDOW = 30
 DECAY = 0.94
 SHRINK_N = 10
 K = 20
-MARKETS = ("3+ HT", "7+ FT", "Other HT", "Other FT")
+MARKETS = ("HT>=1", "HT>=2", "3+ HT", "FT>=3", "FT>=4", "BTTS", "7+ FT", "Other HT", "Other FT")
 R_GRID = [0.8, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 20.0, 40.0, 100.0, 1000.0]
 BASE_SHARE = 0.50
 LG = np.array([math.lgamma(i + 1) for i in range(80)])
 WT = {n: [DECAY ** (n - 1 - i) for i in range(n)] for n in range(1, WINDOW + 1)}
 WSUM = {n: sum(WT[n]) for n in WT}
 
+BASE_COLS = "fixture_id,match_date,home_team_id,away_team_id,ht_home,ht_away,ft_home,ft_away"
+LEAGUE_COLS = BASE_COLS + ",competition_key,competition_name,country"
+
 QUERY = (
-    "SELECT fixture_id, match_date, home_team_id, away_team_id, ht_home, ht_away, ft_home, ft_away "
+    "SELECT fixture_id, match_date, home_team_id, away_team_id, ht_home, ht_away, ft_home, ft_away, "
+    "competition_key, competition_name, country "
     "FROM fixtures WHERE ft_home IS NOT NULL AND ft_away IS NOT NULL "
     "AND match_date IS NOT NULL AND home_team_id IS NOT NULL AND away_team_id IS NOT NULL"
 )
@@ -37,9 +41,16 @@ def to_int(v):
     return int(v)
 
 
-def fetch_page(base, key, last):
+def league_of(key, name, country):
+    k = str(key or "").strip()
+    if k:
+        return k
+    return f"{country or ''}|{name or ''}".strip("|")
+
+
+def fetch_page(base, key, last, cols):
     q = {
-        "select": "fixture_id,match_date,home_team_id,away_team_id,ht_home,ht_away,ft_home,ft_away",
+        "select": cols,
         "ft_home": "not.is.null",
         "ft_away": "not.is.null",
         "match_date": "not.is.null",
@@ -64,15 +75,22 @@ def fetch_page(base, key, last):
 
 
 def load_rest(base, key):
+    cols = LEAGUE_COLS
+    try:
+        fetch_page(base.rstrip("/"), key, None, cols)
+    except Exception as e:
+        print(f"league columns unavailable ({e}), continuing without league analysis", file=sys.stderr)
+        cols = BASE_COLS
     rows = []
     last = None
     while True:
-        page = fetch_page(base.rstrip("/"), key, last)
+        page = fetch_page(base.rstrip("/"), key, last, cols)
         if not page:
             break
         for r in page:
             rows.append((str(r["match_date"]), str(r["fixture_id"]), str(r["home_team_id"]), str(r["away_team_id"]),
-                         to_int(r.get("ht_home")), to_int(r.get("ht_away")), int(r["ft_home"]), int(r["ft_away"])))
+                         to_int(r.get("ht_home")), to_int(r.get("ht_away")), int(r["ft_home"]), int(r["ft_away"]),
+                         league_of(r.get("competition_key"), r.get("competition_name"), r.get("country"))))
         last = str(page[-1]["fixture_id"])
         if len(page) < 1000:
             break
@@ -85,7 +103,8 @@ def load_rows(args):
         with open(args.csv, newline="", encoding="utf-8") as fh:
             for r in csv.DictReader(fh):
                 rows.append((str(r["match_date"]), str(r["fixture_id"]), str(r["home_team_id"]), str(r["away_team_id"]),
-                             to_int(r.get("ht_home")), to_int(r.get("ht_away")), int(r["ft_home"]), int(r["ft_away"])))
+                             to_int(r.get("ht_home")), to_int(r.get("ht_away")), int(r["ft_home"]), int(r["ft_away"]),
+                             league_of(r.get("competition_key"), r.get("competition_name"), r.get("country")) if "competition_key" in r or "country" in r else ""))
     elif os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_KEY"):
         rows = load_rest(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
     else:
@@ -96,8 +115,8 @@ def load_rows(args):
         conn = psycopg2.connect(url)
         with conn.cursor() as cur:
             cur.execute(QUERY)
-            for fid, d, h, a, hth, hta, fh, fa in cur.fetchall():
-                rows.append((str(d), str(fid), str(h), str(a), hth, hta, int(fh), int(fa)))
+            for fid, d, h, a, hth, hta, fh, fa, ck, cn, co in cur.fetchall():
+                rows.append((str(d), str(fid), str(h), str(a), hth, hta, int(fh), int(fa), league_of(ck, cn, co)))
         conn.close()
     rows.sort(key=lambda x: (x[0], x[1]))
     if args.limit and len(rows) > args.limit:
@@ -129,7 +148,7 @@ def walk_forward(rows):
     lam_a = np.zeros(n)
     prior_h = np.zeros(n, dtype=int)
     prior_a = np.zeros(n, dtype=int)
-    for i, (_, _, h, a, _, _, fh, fa) in enumerate(rows):
+    for i, (_, _, h, a, _, _, fh, fa, _) in enumerate(rows):
         avg_h = sum_h / m if m else 1.5
         avg_a = sum_a / m if m else 1.2
         nh, na = cnt[h], cnt[a]
@@ -194,6 +213,11 @@ def event_probs(lam_h, lam_a, share, r_ft, r_ht):
     ph, pa = pmf_table(lam_h, r_ft), pmf_table(lam_a, r_ft)
     qh, qa = pmf_table(lam_h * share, r_ht), pmf_table(lam_a * share, r_ht)
     return {
+        "FT>=3": tail_total(ph, pa, 3),
+        "FT>=4": tail_total(ph, pa, 4),
+        "BTTS": np.clip((1.0 - ph[:, 0]) * (1.0 - pa[:, 0]), 1e-6, 1 - 1e-6),
+        "HT>=1": np.clip(1.0 - qh[:, 0] * qa[:, 0], 1e-6, 1 - 1e-6),
+        "HT>=2": tail_total(qh, qa, 2),
         "3+ HT": tail_total(qh, qa, 3),
         "7+ FT": tail_total(ph, pa, 7),
         "Other HT": tail_team(qh, qa, 4),
@@ -209,6 +233,68 @@ def fit_dispersion(y_h, y_a, lam_h, lam_a):
         if ll > best_ll:
             best, best_ll = rr, ll
     return best
+
+
+def fit_slope(lam_tot, ft_tot):
+    best = None
+    for b in np.arange(0.4, 1.31, 0.02):
+        x = lam_tot ** b
+        a = math.log(ft_tot.sum() / x.sum())
+        mu = np.exp(a) * x
+        ll = float((ft_tot * np.log(mu) - mu).sum())
+        if best is None or ll > best[0]:
+            best = (ll, float(b), a)
+    return best[1], best[2]
+
+
+def fit_isotonic(x, y, nb=40):
+    order = np.argsort(x)
+    xs, ys = x[order], y[order]
+    parts = np.array_split(np.arange(len(xs)), nb)
+    cx = np.array([xs[i].mean() for i in parts])
+    cy = np.array([ys[i].mean() for i in parts])
+    cw = np.array([len(i) for i in parts], dtype=float)
+    blocks = [[cy[i], cw[i], 1] for i in range(nb)]
+    out = []
+    for blk in blocks:
+        out.append(blk)
+        while len(out) > 1 and out[-2][0] > out[-1][0]:
+            b2 = out.pop()
+            b1 = out.pop()
+            w = b1[1] + b2[1]
+            out.append([(b1[0] * b1[1] + b2[0] * b2[1]) / w, w, b1[2] + b2[2]])
+    vals = np.concatenate([[blk[0]] * blk[2] for blk in out])
+    return cx, vals
+
+
+def apply_isotonic(x, cx, vals):
+    return np.interp(x, cx, vals)
+
+
+def fit_tail_dispersion(lam_h, lam_a, share, y_tail):
+    best, best_ll = None, 1e18
+    for r in R_GRID:
+        rr = None if r >= 1000.0 else r
+        probs = event_probs(lam_h, lam_a, share, rr, None)
+        tot = 0.0
+        for mk in ("7+ FT", "Other FT"):
+            p = probs[mk]
+            y = y_tail[mk]
+            tot += float(-(y * np.log(p) + (1 - y) * np.log(1 - p)).mean())
+        if tot < best_ll:
+            best, best_ll = rr, tot
+    return best
+
+
+def print_calibration(lam_raw, lam_cal, ft_tot, nbins, lam_iso=None):
+    edges = np.quantile(lam_raw, np.linspace(0, 1, nbins + 1)[1:-1])
+    b = np.searchsorted(edges, lam_raw, side="right")
+    print(f"{'bin':>4}{'n':>8}{'exp_raw':>10}{'exp_cal':>10}{'exp_iso':>10}{'actual':>10}")
+    for k in range(nbins):
+        m = b == k
+        if m.any():
+            iso = fmt(lam_iso[m].mean(), 3) if lam_iso is not None else ""
+            print(f"{k + 1:>4}{int(m.sum()):>8}{fmt(lam_raw[m].mean(), 3):>10}{fmt(lam_cal[m].mean(), 3):>10}{iso:>10}{fmt(ft_tot[m].mean(), 3):>10}")
 
 
 def metrics(p, y):
@@ -233,6 +319,83 @@ def fmt(v, d=4):
     return f"{v:.{d}f}"
 
 
+def share_by_bins(lam_tot, ht_tot, ft_tot, edges):
+    b = np.searchsorted(edges, lam_tot, side="right")
+    out = []
+    for k in range(len(edges) + 1):
+        m = b == k
+        if not m.any():
+            out.append(None)
+            continue
+        out.append({
+            "n": int(m.sum()),
+            "lam": float(lam_tot[m].mean()),
+            "ft": float(ft_tot[m].mean()),
+            "ht": float(ht_tot[m].mean()),
+            "share_lam": float(ht_tot[m].sum() / lam_tot[m].sum()),
+            "share_ft": float(ht_tot[m].sum() / max(ft_tot[m].sum(), 1)),
+        })
+    return b, out
+
+
+def print_bins(table):
+    print(f"{'bin':>4}{'n':>8}{'exp_total':>11}{'act_total':>11}{'act_HT':>9}{'HT/exp':>9}{'HT/FT':>9}")
+    for k, t in enumerate(table):
+        if t:
+            print(f"{k + 1:>4}{t['n']:>8}{fmt(t['lam'], 3):>11}{fmt(t['ft'], 3):>11}{fmt(t['ht'], 3):>9}{fmt(t['share_lam'], 4):>9}{fmt(t['share_ft'], 4):>9}")
+
+
+def league_stats(leagues, lam_tot, ht_tot, ft_tot, share_g, min_n):
+    acc = defaultdict(lambda: [0, 0.0, 0.0, 0.0])
+    for lg, l, h, f in zip(leagues, lam_tot, ht_tot, ft_tot):
+        a = acc[lg]
+        a[0] += 1
+        a[1] += l
+        a[2] += h
+        a[3] += f
+    rows = []
+    for lg, (n, sl, sh, sf) in acc.items():
+        if n < min_n or not lg:
+            continue
+        z = (sh - share_g * sl) / math.sqrt(max(sh, 1.0))
+        rows.append({"league": lg, "n": n, "share_lam": sh / sl, "share_ft": sh / max(sf, 1.0), "z": z})
+    return rows
+
+
+def print_leagues(rows, share_g, top=10):
+    if not rows:
+        print("no league data")
+        return
+    big = sum(1 for r in rows if abs(r["z"]) > 3)
+    print(f"leagues={len(rows)} |z|>3: {big} ({fmt(100.0 * big / len(rows), 1)}%) global_share={fmt(share_g)}")
+    ordered = sorted(rows, key=lambda r: r["share_lam"])
+    print(f"{'league':<46}{'n':>7}{'HT/exp':>9}{'HT/FT':>9}{'z':>8}")
+    shown = ordered if len(ordered) <= 2 * top else ordered[:top] + [None] + ordered[-top:]
+    for r in shown:
+        if r is None:
+            print("  ...")
+            continue
+        print(f"{r['league'][:45]:<46}{r['n']:>7}{fmt(r['share_lam'], 4):>9}{fmt(r['share_ft'], 4):>9}{r['z']:>+8.1f}")
+
+
+def period_table(dates, idx, lam_tot, ht_tot, ft_tot, key, title, last=None):
+    groups = defaultdict(list)
+    for i in idx:
+        groups[key(dates[i])].append(i)
+    keys = sorted(groups)
+    if last:
+        keys = keys[-last:]
+    print(f"\n== {title}")
+    print(f"{'period':<10}{'n':>8}{'exp_total':>11}{'act_total':>11}{'HT/exp':>9}{'HT/FT':>9}")
+    for k in keys:
+        ii = np.array(groups[k])
+        print(f"{k:<10}{len(ii):>8}{fmt(lam_tot[ii].mean(), 3):>11}{fmt(ft_tot[ii].mean(), 3):>11}{fmt(ht_tot[ii].sum() / lam_tot[ii].sum(), 4):>9}{fmt(ht_tot[ii].sum() / max(ft_tot[ii].sum(), 1), 4):>9}")
+
+
+def quarter(d):
+    return f"{d[:4]}Q{(int(d[5:7]) - 1) // 3 + 1}"
+
+
 def run(args):
     rows = load_rows(args)
     if len(rows) < 2000:
@@ -243,6 +406,7 @@ def run(args):
     ht_ok = np.array([r[4] is not None and r[5] is not None for r in rows])
     hh = np.array([r[4] if r[4] is not None else 0 for r in rows])
     ha = np.array([r[5] if r[5] is not None else 0 for r in rows])
+    leagues = np.array([r[8] for r in rows], dtype=object)
     elig = (ph_ >= args.min_n) & (pa_ >= args.min_n)
     idx = np.where(elig)[0]
     cut = int(len(idx) * (1 - args.test_frac))
@@ -251,45 +415,114 @@ def run(args):
     if len(tr) < 1000 or len(te) < 500:
         sys.exit("not enough eligible rows")
 
+    lam_tot = lam_h + lam_a
+    ht_tot = (hh + ha).astype(float)
+    ft_tot = (fh + fa).astype(float)
     r_ft = fit_dispersion(fh[tr], fa[tr], lam_h[tr], lam_a[tr])
     trh = tr[ht_ok[tr]]
-    share = float((hh[trh] + ha[trh]).sum() / (lam_h[trh] + lam_a[trh]).sum())
+    share = float(ht_tot[trh].sum() / lam_tot[trh].sum())
     r_ht = fit_dispersion(hh[trh], ha[trh], lam_h[trh] * share, lam_a[trh] * share)
     print(f"fit: ft_dispersion_r={'poisson' if r_ft is None else r_ft} ht_share={fmt(share)} ht_dispersion_r={'poisson' if r_ht is None else r_ht}")
 
+    slope, icpt = fit_slope(lam_tot[tr], ft_tot[tr])
+    f = np.exp(icpt) * lam_tot ** (slope - 1.0)
+    lam_hc, lam_ac = lam_h * f, lam_a * f
+    lam_tot_c = lam_hc + lam_ac
+    share_c = float(ht_tot[trh].sum() / lam_tot_c[trh].sum())
+    print(f"lambda calibration (train): slope={fmt(slope, 2)} intercept={fmt(icpt, 4)} ht_share_after={fmt(share_c)}")
+    cx, vals = fit_isotonic(lam_tot[tr], ft_tot[tr])
+    lam_tot_i = apply_isotonic(lam_tot, cx, vals)
+    fi = lam_tot_i / lam_tot
+    lam_hi, lam_ai = lam_h * fi, lam_a * fi
+    share_i = float(ht_tot[trh].sum() / lam_tot_i[trh].sum())
+    print(f"isotonic calibration (train): ht_share_after={fmt(share_i)}")
+    print("\n== expected vs actual total goals on test: raw, slope-calibrated, isotonic")
+    print_calibration(lam_tot[te], lam_tot_c[te], ft_tot[te], args.bins, lam_tot_i[te])
+    y_tail_tr = {"7+ FT": (ft_tot[tr] >= 7).astype(float), "Other FT": (np.maximum(fh[tr], fa[tr]) >= 5).astype(float)}
+    r_tail = fit_tail_dispersion(lam_h[tr], lam_a[tr], share, y_tail_tr)
+    print(f"tail dispersion r fitted on 7+ FT and Other FT events (train): {'poisson' if r_tail is None else r_tail}")
+
+    dates = [r[0] for r in rows]
+    allh0 = idx[ht_ok[idx]]
+    period_table(dates, allh0, lam_tot, ht_tot, ft_tot, lambda d: d[:4], "HT share by year (all eligible)")
+    period_table(dates, allh0, lam_tot, ht_tot, ft_tot, quarter, "HT share by quarter (last 8)", last=8)
+    teh = te[ht_ok[te]]
+    print(f"\nHT share fitted on train={fmt(share)} fitted on test (oracle)={fmt(float(ht_tot[teh].sum() / lam_tot[teh].sum()))}")
+
+    edges = np.quantile(lam_tot[trh], np.linspace(0, 1, args.bins + 1)[1:-1])
+    allh = idx[ht_ok[idx]]
+    print("\n== HT share by expected total goals (all eligible, bins from train quantiles)")
+    _, table_all = share_by_bins(lam_tot[allh], ht_tot[allh], ft_tot[allh], edges)
+    print_bins(table_all)
+    _, table_tr = share_by_bins(lam_tot[trh], ht_tot[trh], ft_tot[trh], edges)
+    bin_share = np.array([t["share_lam"] if t else share for t in table_tr])
+
+    has_league = any(r[8] for r in rows)
+    league_share = {}
+    if has_league:
+        print(f"\n== HT share by league (all eligible, min {args.min_league} matches)")
+        stats = league_stats(leagues[allh], lam_tot[allh], ht_tot[allh], ft_tot[allh], share, args.min_league)
+        print_leagues(stats, share)
+        acc = defaultdict(lambda: [0.0, 0.0])
+        for lg, l, h in zip(leagues[trh], lam_tot[trh], ht_tot[trh]):
+            acc[lg][0] += h
+            acc[lg][1] += l
+        a0 = args.league_prior
+        league_share = {lg: (sh + a0 * share) / (sl + a0) for lg, (sh, sl) in acc.items() if lg}
+
+    te_b = np.searchsorted(edges, lam_tot[te], side="right")
+    s_bin = bin_share[te_b]
+    s_lg = np.array([league_share.get(lg, share) for lg in leagues[te]]) if has_league else None
     models = {
         "poisson_0.50": event_probs(lam_h[te], lam_a[te], BASE_SHARE, None, None),
-        "poisson_fit": event_probs(lam_h[te], lam_a[te], share, None, None),
-        "negbin_fit": event_probs(lam_h[te], lam_a[te], share, r_ft, r_ht),
+        "share_global": event_probs(lam_h[te], lam_a[te], share, None, None),
+        "share_by_bin": event_probs(lam_h[te], lam_a[te], s_bin, None, None),
     }
+    if has_league:
+        models["share_by_league"] = event_probs(lam_h[te], lam_a[te], s_lg, None, None)
+    models["lam_cal"] = event_probs(lam_hc[te], lam_ac[te], share_c, None, None)
+    models["lam_iso"] = event_probs(lam_hi[te], lam_ai[te], share_i, None, None)
+    models["negbin_tail"] = event_probs(lam_h[te], lam_a[te], share, r_tail, None)
+    if r_ft is not None or r_ht is not None:
+        models["negbin_fit"] = event_probs(lam_h[te], lam_a[te], share, r_ft, r_ht)
     ys = {
-        "3+ HT": ((hh[te] + ha[te]) >= 3).astype(float),
-        "7+ FT": ((fh[te] + fa[te]) >= 7).astype(float),
+        "FT>=3": (ft_tot[te] >= 3).astype(float),
+        "FT>=4": (ft_tot[te] >= 4).astype(float),
+        "BTTS": ((fh[te] >= 1) & (fa[te] >= 1)).astype(float),
+        "HT>=1": (ht_tot[te] >= 1).astype(float),
+        "HT>=2": (ht_tot[te] >= 2).astype(float),
+        "3+ HT": (ht_tot[te] >= 3).astype(float),
+        "7+ FT": (ft_tot[te] >= 7).astype(float),
         "Other HT": (np.maximum(hh[te], ha[te]) >= 4).astype(float),
         "Other FT": (np.maximum(fh[te], fa[te]) >= 5).astype(float),
     }
-    ok = {"3+ HT": ht_ok[te], "Other HT": ht_ok[te], "7+ FT": np.ones(len(te), bool), "Other FT": np.ones(len(te), bool)}
+    ht_markets = ("HT>=1", "HT>=2", "3+ HT", "Other HT")
+    ok = {mk: (ht_ok[te] if mk in ht_markets else np.ones(len(te), bool)) for mk in MARKETS}
 
-    report = {"fit": {"ft_r": r_ft, "ht_share": share, "ht_r": r_ht}, "markets": {}}
+    report = {"fit": {"ft_r": r_ft, "ht_share": share, "ht_r": r_ht}, "bins": table_all, "markets": {}}
     for mk in MARKETS:
         m = ok[mk]
         y = ys[mk][m]
+        names = [n for n in models if n != "negbin_tail"] if mk in ht_markets else ["poisson_0.50", "lam_cal", "lam_iso", "negbin_tail"]
         print(f"\n== {mk} | n={int(m.sum())} events={int(y.sum())} base={fmt(y.mean())}")
-        print(f"{'model':<14}{'pred':>8}{'pred/obs':>10}{'logloss':>10}{'brier':>10}{'top5% pred':>12}{'top5% obs':>11}{'dLL vs 0.50 (z)':>18}")
-        base_ll = None
+        print(f"{'model':<17}{'pred':>8}{'pred/obs':>10}{'logloss':>10}{'brier':>10}{'top5% pred':>12}{'top5% obs':>11}{'z vs 0.50':>11}{'z vs global':>13}")
+        lls = {}
         report["markets"][mk] = {}
-        for name, probs in models.items():
-            p = probs[mk][m]
+        for name in names:
+            p = models[name][mk][m]
             mt, ll = metrics(p, y)
+            lls[name] = ll
             tp, to = top_slice(p, y)
-            if base_ll is None:
-                base_ll = ll
-                z = ""
-            else:
-                d = base_ll - ll
+
+            def zs(ref):
+                if ref not in lls or ref == name:
+                    return ""
+                d = lls[ref] - ll
                 se = d.std(ddof=1) / math.sqrt(len(d))
-                z = f"{d.mean() / se:+.2f}" if se > 0 else "n/a"
-            print(f"{name:<14}{fmt(mt['pred']):>8}{fmt(mt['pred'] / mt['obs'], 2) if mt['obs'] else 'n/a':>10}{fmt(mt['logloss'], 5):>10}{fmt(mt['brier'], 5):>10}{fmt(tp):>12}{fmt(to):>11}{z:>18}")
+                return f"{d.mean() / se:+.2f}" if se > 0 else "n/a"
+
+            ratio = fmt(mt["pred"] / mt["obs"], 2) if mt["obs"] else "n/a"
+            print(f"{name:<17}{fmt(mt['pred']):>8}{ratio:>10}{fmt(mt['logloss'], 5):>10}{fmt(mt['brier'], 5):>10}{fmt(tp):>12}{fmt(to):>11}{zs('poisson_0.50'):>11}{zs('share_global'):>13}")
             report["markets"][mk][name] = {**mt, "top5_pred": tp, "top5_obs": to}
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh_:
@@ -302,6 +535,9 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--min-n", type=int, default=15)
     ap.add_argument("--test-frac", type=float, default=0.4)
+    ap.add_argument("--bins", type=int, default=10)
+    ap.add_argument("--min-league", type=int, default=800)
+    ap.add_argument("--league-prior", type=float, default=400.0)
     ap.add_argument("--json")
     run(ap.parse_args())
 
