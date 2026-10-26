@@ -112,6 +112,14 @@ for tr in (1, 2, 3):
         r["o25_calib"] = log_loss(y25[ok], np.clip(cal["over25_ft"][ok], eps, 1 - eps))
         r["o25_market"] = log_loss(y25[ok], np.clip(p25[ok], eps, 1 - eps))
     print(r)
+for m, col in (("home_win_ft", "m_h"), ("over35_ft", "m_ou_FT_3.5"), ("over25_ft", "m_ou_FT_2.5")):
+    pm = d[col].values
+    ok = ~np.isnan(pm)
+    yy = y[m].values.astype(int)
+    res = {}
+    for w in np.arange(0, 1.01, 0.1):
+        res[round(w, 1)] = round(log_loss(yy[ok], np.clip(w * pm[ok] + (1 - w) * cal[m][ok], eps, 1 - eps)), 4)
+    print("blend", m, int(ok.sum()), res)
 out = []
 for m, yy in y.items():
     yy = yy.values.astype(int)
