@@ -1909,7 +1909,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   var BCD_TIMER=null,BCD_REQ=0,BCD_MAX=7;
   state.bcdOff=0;state.bcdRaw=null;
-  function bcdBase(){var n=new Date(Date.now()+7*3600000);return rpVnDay(n.getUTCHours()<6?-1:0)}
+  function bcdBase(){return rpVnDay(0)}
   function bcdDay(){return new Date(Date.parse(bcdBase())+state.bcdOff*86400000).toISOString().slice(0,10)}
   function bcdKick(t){return new Date(t).toLocaleString("vi-VN",{timeZone:LV_TZ,day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false})}
   function bcdScore(x){if(x.hs!=null&&x.as!=null)return x.hs+" - "+x.as;if(x.fh!=null&&x.fa!=null)return x.fh+" - "+x.fa;return ""}
@@ -1936,7 +1936,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var picks=d.picks||[];
     if(!picks.length)return nav+'<div class="context-state"><span>Chưa có danh sách cho ngày này</span></div>';
     var sum='<div class="card" style="padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--muted)"><span translate="no">'+picks.length+'</span> <span>kèo</span>'+(s.settled>0?' · <span>Đã chốt</span> <span translate="no">'+s.settled+'</span> · <b style="color:#35d07f" translate="no">'+s.hits+'</b> <span>Thắng</span> <span translate="no">('+rpPct(s.hits,s.settled)+')</span>'+(s.avg_p!=null?' · <span>Mô hình</span> <span translate="no">'+Math.round(s.avg_p*100)+'%</span>':""):"")+'</div>';
-    var note='<div style="font-size:11px;color:var(--muted);text-align:center;margin:10px 0"><span>Danh sách chốt lúc 06:00 mỗi ngày, ưu tiên giải lớn (★). Khả năng thắng là ước tính từ mô hình, không phải cam kết.</span></div>';
+    var note='<div style="font-size:11px;color:var(--muted);text-align:center;margin:10px 0"><span>Danh sách chốt lúc 00:00 mỗi ngày, ưu tiên giải lớn (★). Khả năng thắng là ước tính từ mô hình, không phải cam kết.</span></div>';
     return nav+sum+picks.map(bcdCard).join("")+note;
   }
   async function loadBcd(silent){
@@ -3124,7 +3124,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Giải khác": "Other leagues",
       "kèo": "picks",
       "Chưa có danh sách cho ngày này": "No list for this day yet",
-      "Danh sách chốt lúc 06:00 mỗi ngày, ưu tiên giải lớn (★). Khả năng thắng là ước tính từ mô hình, không phải cam kết.": "List locked at 06:00 daily, top leagues first (★). Win chance is a model estimate, not a guarantee.",
+      "Danh sách chốt lúc 00:00 mỗi ngày, ưu tiên giải lớn (★). Khả năng thắng là ước tính từ mô hình, không phải cam kết.": "List locked at 00:00 daily, top leagues first (★). Win chance is a model estimate, not a guarantee.",
       "Hệ thống dự đoán": "System prediction",
       "Tỉ lệ ra": "Hit rate",
       "Khi ra": "When hit",

@@ -983,7 +983,7 @@ export default{
       };
       try{
         let rows:any=await read();
-        if(Array.isArray(rows)&&!rows.length&&day===vnToday&&vnNow.getUTCHours()>=6){
+        if(Array.isArray(rows)&&!rows.length&&day===vnToday){
           await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_best_choice_build`,{method:'POST',headers:hdr,body:JSON.stringify({p_day:day}),signal:AbortSignal.timeout(20000)}).catch(()=>null);
           rows=await read();
         }
