@@ -22,7 +22,7 @@ TIME_WINDOW = timedelta(hours=4)
 BATCH_SIZE = 500
 RETENTION_DAYS = 90
 PICK_HORIZON = timedelta(hours=48)
-MIN_MATCHES = 50
+MIN_MATCHES = 20
 NUM = re.compile(r"-?\d+(?:\.\d+)?")
 
 
