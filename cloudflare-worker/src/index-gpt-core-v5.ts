@@ -744,14 +744,51 @@ export default{
         startedM.forEach((m:any)=>byId.set(m.fixture_id,m));
         let liveDone=false;
         const ensureLive=async()=>{if(liveDone||!startedM.length)return;liveDone=true;try{await enrichLive(startedM,nowT,false)}catch{}};
-        const liveOf=(l:any)=>{const m=byId.get(l.fixture_id);return m&&m.live_status?{h:m.live_score_home,a:m.live_score_away,min:m.live_minute,mt:m.live_minute_text,st:m.live_status}:null};
+        const htMap=new Map<string,any>();
+        const snapBy=new Map<string,any>();
+        all.forEach((m:any)=>{if(m?.fixture_id)snapBy.set(m.fixture_id,m)});
+        const predOf=(l:any)=>{const m=snapBy.get(l.fixture_id);return m&&Number.isInteger(m.pred_home_ht)&&Number.isInteger(m.pred_away_ht)&&Number.isInteger(m.pred_home_ft)&&Number.isInteger(m.pred_away_ft)?{ht:[m.pred_home_ht,m.pred_away_ht],ft:[m.pred_home_ft,m.pred_away_ft]}:null};
+        const liveOf=(l:any)=>{const m=byId.get(l.fixture_id);if(!(m&&m.live_status))return null;const hh=htMap.get(String(m.provider_id));return {h:m.live_score_home,a:m.live_score_away,min:m.live_minute,mt:m.live_minute_text,st:m.live_status,hh:hh?hh.h:null,ha:hh?hh.a:null}};
+        let done:any[]=[];
         if(mode==='single'){
           await ensureLive();
+          if(startedM.length){
+            try{
+              const sch:any=await getSchedule(today,(n:string)=>EXCLUDE_RE.test(n));
+              if(sch&&sch.status!=='off')for(const st of sch.stages)for(const e of st.e)if(e.hh!=null&&e.ha!=null)htMap.set(String(e.id),{h:e.hh,a:e.ha});
+            }catch{}
+          }
           built=built.map((x:any)=>({...x,legs:x.legs.map((l:any)=>{
-            if(!byId.get(l.fixture_id))return l;
+            const pr=predOf(l);
+            const b0=pr?{...l,pred:pr}:l;
+            if(!byId.get(l.fixture_id))return b0;
             anyLive=true;
-            return {...l,live:liveOf(l)};
+            return {...b0,live:liveOf(l)};
           })}));
+          try{
+            const y2=new Date(Date.now()+7*3600*1000-86400000).toISOString().slice(0,10);
+            const dr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.single&day=gte.${y2}&select=pkey,scope,ptype,system_p,legs,user_legs,placed,result&order=day.desc&limit=400`,{headers:hdr,signal:AbortSignal.timeout(5000)});
+            const dj:any=dr.ok?await dr.json():[];
+            const have=new Set(built.map((x:any)=>x.pkey));
+            const rowsD=(Array.isArray(dj)?dj:[]).filter((x:any)=>!have.has(x.pkey)&&Array.isArray(x.legs)&&x.legs.length>0&&x.legs.every((l:any)=>{const t=Date.parse(l.kickoff);return t<=nowT-120*60000&&t>=nowT-5*3600*1000}));
+            const ids=[...new Set(rowsD.flatMap((x:any)=>x.legs.map((l:any)=>String(l.fixture_id))))].filter((i:any)=>UUID_RE.test(i)).slice(0,300);
+            const pk=new Map<string,any>();
+            if(ids.length){
+              const pr2=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/suggest_pick_log?fixture_id=in.(${ids.join(',')})&select=fixture_id,ht_home,ht_away,ft_home,ft_away,pred_home_ht,pred_away_ht,pred_home_ft,pred_away_ft,void_reason&limit=400`,{headers:hdr,signal:AbortSignal.timeout(5000)});
+              const pj:any=pr2.ok?await pr2.json():[];
+              if(Array.isArray(pj))pj.forEach((r:any)=>pk.set(r.fixture_id,r));
+            }
+            done=rowsD.map((x:any)=>({pkey:x.pkey,scope:x.scope,type:x.ptype,combined_p:x.system_p,user_legs:x.user_legs??null,placed:!!x.placed,result:x.result??null,legs:x.legs.map((l:any)=>{
+              const r=pk.get(l.fixture_id);
+              const o:any={...l};
+              if(r){
+                if(r.ht_home!=null&&r.ht_away!=null)o.res_ht=[r.ht_home,r.ht_away];
+                if(r.ft_home!=null&&r.ft_away!=null&&!r.void_reason)o.res_ft=[r.ft_home,r.ft_away];
+                if(r.pred_home_ft!=null&&r.pred_away_ft!=null)o.pred={ht:r.pred_home_ht!=null&&r.pred_away_ht!=null?[r.pred_home_ht,r.pred_away_ht]:null,ft:[r.pred_home_ft,r.pred_away_ft]};
+              }
+              return o;
+            })})).sort((a:any,b:any)=>String(b.legs[0].kickoff).localeCompare(String(a.legs[0].kickoff))).slice(0,200);
+          }catch{}
         }
         const inplay:any[]=[];
         if(mode!=='single'){
@@ -783,7 +820,7 @@ export default{
         built=built.map((x:any)=>{const c=calib[mode+'|'+x.type],sv=saved.get(x.pkey);const isE=x.rank_mode==='edge';return {...x,cal_r:!isE&&c&&typeof c.r==='number'?c.r:1,cal_n:isE?0:(c?.n??0),user_legs:sv?.user_legs??null,placed:!!sv?.placed}});
         const logRows=parlayLogRows(mode,built.filter((x:any)=>x.odds_ok&&x.legs.every((l:any)=>Date.parse(l.kickoff)>Date.now()))).map((r:any)=>String(r.pkey).startsWith('edge|')?{...r,rank_mode:'edge'}:r);
         if(logRows.length)ctx.waitUntil(fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?on_conflict=mode,pkey`,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'},hdr),body:JSON.stringify(logRows),signal:AbortSignal.timeout(8000)}).catch(()=>null));
-        return Response.json({mode,rank:rankApplied,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built,inplay},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
+        return Response.json({mode,rank:rankApplied,odds_only:oddsOnly,snapshot_date:today,generated_at:rows?.[0]?.generated_at||null,parlays:built,inplay,done},{headers:{'Cache-Control':anyLive?'public, max-age=30':'public, max-age=180'}});
       }catch(e:any){
         return Response.json({error:String(e?.message||e),status:500},{status:500});
       }
@@ -1045,6 +1082,16 @@ export default{
         const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days}),signal:AbortSignal.timeout(20000)});
         if(!r.ok)return Response.json({error:'goldme failed',status:r.status},{status:502});
         return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=1800'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
+    if(url.pathname==='/api/goldme-top'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      try{
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme_top_latest`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(25000)});
+        if(!r.ok)return Response.json({error:'goldme top failed',status:r.status},{status:502});
+        return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=900'}});
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
