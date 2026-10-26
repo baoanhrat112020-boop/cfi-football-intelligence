@@ -2,6 +2,9 @@ name: CFI ML Calibration Eval
 
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/ml-calib-eval]
+    paths: ['scripts/ml_calib_eval.py', '.github/workflows/ml-calib-eval.yml']
 
 permissions:
   contents: read
