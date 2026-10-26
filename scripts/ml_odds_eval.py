@@ -44,14 +44,26 @@ for per, lines in (("FT", (2.5, 3.5)), ("HT", (1.5,))):
     for L in lines:
         s = ou[(ou.period == per) & (ou.line.sub(L).abs() < 1e-9)].groupby("verified_fixture_id").p_implied_over.mean()
         feat[f"m_ou_{per}_{L}"] = s
-lg = o.dropna(subset=["league"]).groupby("verified_fixture_id").league.first()
+comp = {}
+snaps = sb.table("suggest_snapshot").select("snapshot_date").order("snapshot_date", desc=True).limit(400).execute().data
+fids = set(ids)
+for sd in sorted({r["snapshot_date"] for r in snaps}):
+    r = sb.table("suggest_snapshot").select("payload").eq("snapshot_date", sd).order("generated_at", desc=True).limit(1).execute().data
+    if not r:
+        continue
+    for sl in r[0]["payload"].get("slots", []):
+        for m in sl.get("matches", []):
+            if m.get("fixture_id") in fids and m.get("competition"):
+                comp[m["fixture_id"]] = m["competition"]
+print("fixtures with competition", len(comp))
 tiers = {}
-for name in lg.unique():
+for name in set(comp.values()):
     try:
         tiers[name] = sb.rpc("cfi_league_tier", {"p_comp": name}).execute().data
     except Exception:
         tiers[name] = None
-feat["tier"] = lg.map(tiers).astype(float)
+lg = pd.Series(comp)
+feat["tier"] = lg.map(tiers).reindex(feat.index).astype(float)
 print("tier counts", feat.tier.value_counts(dropna=False).to_dict())
 
 d = d.merge(feat, left_on="fixture_id", right_index=True)
@@ -84,6 +96,22 @@ Fi = np.where(mi, np.nanmean(F, axis=0), F)
 XA = np.column_stack([B, Fi, mi.astype(float)])
 XG = np.column_stack([B, F])
 eps = 1e-6
+for tr in (1, 2, 3):
+    mt = (d.tier == tr).values
+    if mt.sum() < 30:
+        continue
+    r = {"tier": tr, "n": int(mt.sum())}
+    yh = y["home_win_ft"].values.astype(int)
+    r["hw_calib"] = log_loss(yh[mt], np.clip(cal["home_win_ft"][mt], eps, 1 - eps))
+    r["hw_market"] = log_loss(yh[mt], np.clip(d.m_h.values[mt], eps, 1 - eps))
+    y25 = y["over25_ft"].values.astype(int)
+    p25 = d["m_ou_FT_2.5"].values
+    ok = mt & ~np.isnan(p25)
+    if ok.sum() >= 30:
+        r["o25_n"] = int(ok.sum())
+        r["o25_calib"] = log_loss(y25[ok], np.clip(cal["over25_ft"][ok], eps, 1 - eps))
+        r["o25_market"] = log_loss(y25[ok], np.clip(p25[ok], eps, 1 - eps))
+    print(r)
 out = []
 for m, yy in y.items():
     yy = yy.values.astype(int)
