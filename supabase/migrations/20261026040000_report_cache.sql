@@ -3,6 +3,7 @@ RETURNS jsonb
 LANGUAGE sql
 STABLE SECURITY DEFINER
 SET search_path TO 'public'
+SET enable_nestloop TO off
 AS $function$
 WITH snap AS (
   SELECT DISTINCT ON ((m->>'fixture_id')::uuid) (m->>'fixture_id')::uuid AS fid, m->>'competition' AS comp
