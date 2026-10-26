@@ -2555,7 +2555,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       if(vd&&(vd.k==="win"||vd.k==="hwin"))w++;else if(vd&&(vd.k==="lose"||vd.k==="hlose"))lo++;
       return parlayDoneCard(x);
     }).join("");
-    return '<details class="card" id="plDone"'+(state.parlayDoneOpen?' open':'')+' style="padding:10px 12px;margin-top:18px"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px"><b><span>Đã đá</span> <span translate="no">('+D.length+')</span></b><span translate="no" style="font-size:12px"><b style="color:#35d07f">WIN '+w+'</b> · <b style="color:#ff6b6b">LOSE '+lo+'</b></span></summary>'+cards+'</details>';
+    return '<details class="card" id="plDone"'+(state.parlayDoneOpen?' open':'')+' style="padding:10px 12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px"><b><span>Đã đá</span> <span translate="no">('+D.length+')</span></b><span translate="no" style="font-size:12px"><b style="color:#35d07f">WIN '+w+'</b> · <b style="color:#ff6b6b">LOSE '+lo+'</b></span></summary>'+cards+'</details>';
   }
   function parlayInplayHtml(r){
     var now=Date.now(),L=(r&&r.inplay)||[];
@@ -2572,7 +2572,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function renderParlays(r){
     var ip=parlayInplayHtml(r);
-    return renderParlaysMain(r)+ip+(parlayMode==="single"?parlayDoneHtml(r):"");
+    return (parlayMode==="single"?parlayDoneHtml(r):"")+renderParlaysMain(r)+ip;
   }
   function renderParlaysMain(r){
     var now=Date.now(),gr=parlayMode==="single"?120*60000:0,list=((r&&r.parlays)||[]).filter(function(x){return !x.legs.some(function(l){var t=Date.parse(l.kickoff);return !Number.isFinite(t)||t<=now-gr})});
