@@ -1,0 +1,24 @@
+name: Odds API Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/odds-api-probe]
+    paths: ['scripts/apifootball_probe.py', '.github/workflows/odds-api-probe.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Probe
+        env:
+          APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
+        run: python scripts/apifootball_probe.py
