@@ -1,0 +1,36 @@
+name: API-Football Odds
+
+on:
+  workflow_dispatch:
+    inputs:
+      write:
+        description: 'Ghi vao match_odds (true/false)'
+        default: 'false'
+  push:
+    branches: [feat/odds-api-probe]
+    paths: ['scripts/apifootball_odds.py', '.github/workflows/apifootball-odds.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apifootball-odds
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Sync
+        env:
+          APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
+          SB_URL: https://zbwkowqluwuvsnajkuvc.supabase.co
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+          WRITE: ${{ inputs.write }}
+        run: |
+          if [ "$WRITE" = "true" ]; then python scripts/apifootball_odds.py --write; else python scripts/apifootball_odds.py; fi
