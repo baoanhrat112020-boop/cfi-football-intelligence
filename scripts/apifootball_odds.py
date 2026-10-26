@@ -140,35 +140,87 @@ def have_bdw(sb_url, key, ids):
     return have
 
 
+def bc_picks(sb_url, sb_key, days):
+    out = {}
+    for d in days:
+        q = "best_choice_daily?day=eq.%s&select=fixture_id,home_team,away_team,kickoff_at,market,competition&order=rank.asc" % d
+        for r in bdw.sb_request(sb_url, sb_key, "GET", q) or []:
+            e = out.setdefault(r["fixture_id"], {
+                "fixture_id": r["fixture_id"],
+                "home": r["home_team"],
+                "away": r["away_team"],
+                "kickoff_utc": datetime.fromisoformat(r["kickoff_at"].replace("Z", "+00:00")),
+                "markets": [],
+                "comp": r["competition"],
+            })
+            e["markets"].append(r["market"])
+    return list(out.values())
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true")
+    ap.add_argument("--max-odds", type=int, default=40)
     args = ap.parse_args()
     key = os.environ["APIFOOTBALL_KEY"]
     sb_url = os.environ["SB_URL"].rstrip("/")
     sb_key = os.environ["SB_SERVICE_ROLE_KEY"]
     now = datetime.now(timezone.utc)
-    fixtures, odds = {}, []
-    for d in (now.date(), now.date() + timedelta(days=1), now.date() + timedelta(days=2)):
-        fx = fixtures_for(d, key)
-        fixtures.update(fx)
-        od = odds_for(d, key)
-        odds += od
-        print(str(d), "fixtures", len(fx), "with odds", len(od))
+    vn_today = (now + timedelta(hours=7)).date()
+    picks = bc_picks(sb_url, sb_key, [vn_today - timedelta(days=1), vn_today, vn_today + timedelta(days=1)])
+    fixtures = {}
+    for d in (now.date() - timedelta(days=1), now.date(), now.date() + timedelta(days=1)):
+        fixtures.update(fixtures_for(d, key))
+    cands = {}
+    for fid, f in fixtures.items():
+        cands[fid] = {
+            "home": f["teams"]["home"]["name"],
+            "away": f["teams"]["away"]["name"],
+            "kickoff_utc": datetime.fromisoformat(f["fixture"]["date"]).astimezone(timezone.utc),
+        }
+    used, pairs = set(), []
+    for pick in picks:
+        hit = bdw.match_pick(pick, cands, bdw.TZ_DEFAULT, used)
+        if hit is None:
+            continue
+        used.add(hit[1])
+        pairs.append((pick, hit[1]))
+    print("api fixtures", len(fixtures), "best choice picks", len(picks), "matched to api fixture", len(pairs))
+    odds = []
+    for pick, fid in pairs[:args.max_odds]:
+        body = api("/odds?fixture=%d" % fid, key)
+        odds += body.get("response") or []
+        time.sleep(0.4)
     rows = build_rows(odds, fixtures)
-    picks = bdw.fetch_picks(sb_url, sb_key, now)
-    inserts, stats = bdw.build_inserts(picks, rows, bdw.TZ_DEFAULT)
-    matched = {p["fixture_id"] for p, _, _ in inserts}
-    already = have_bdw(sb_url, sb_key, sorted(matched)) if matched else set()
-    print(json.dumps({"api_matches_with_rows": len({r["provider_id"] for r in rows}), "rows": len(rows), "picks": len(picks),
-                      "matched": len(matched), "match_rate": round(len(matched) / max(len(picks), 1), 3),
-                      "already_have_bongdawap": len(already), "new_coverage": len(matched - already), "stats": stats}))
-    seen = {p["fixture_id"] for p, _, _ in inserts}
-    miss = [p for p in picks if p["fixture_id"] not in seen][:15]
-    print("unmatched sample", [(p["home"], p["away"]) for p in miss])
+    by_prov = {}
+    for r in rows:
+        by_prov.setdefault(r["provider_id"], []).append(r)
+    inserts, usable = [], {}
+    for pick, fid in pairs:
+        rs = by_prov.get("AF-%d" % fid, [])
+        for r in rs:
+            inserts.append((pick, r, timedelta(0)))
+        fam = {(r["market_family"], r["period"], str(r["line"])) for r in rs}
+        usable[pick["fixture_id"]] = {
+            "home_win": ("1X2", "FT", "None") in fam,
+            "over35": ("OVER_UNDER", "FT", "3.5") in fam,
+        }
+    need_hw = [p for p in picks if "1x2_ft_home" in p["markets"]]
+    need_o35 = [p for p in picks if "over_35_ft" in p["markets"]]
+    print(json.dumps({
+        "picks": len(picks),
+        "matched_fixture": len(pairs),
+        "with_any_odds": sum(1 for p, _ in pairs if by_prov.get("AF-%d" % _)),
+        "home_win_picks": len(need_hw),
+        "home_win_with_1x2": sum(1 for p in need_hw if usable.get(p["fixture_id"], {}).get("home_win")),
+        "over35_picks": len(need_o35),
+        "over35_with_line": sum(1 for p in need_o35 if usable.get(p["fixture_id"], {}).get("over35")),
+    }))
+    matched_ids = {p["fixture_id"] for p, _ in pairs}
+    print("unmatched", [(p["home"], p["away"], p["comp"]) for p in picks if p["fixture_id"] not in matched_ids][:20])
     if args.write:
-        n = 0
         recs = to_records(inserts)
+        n = 0
         for i in range(0, len(recs), bdw.BATCH_SIZE):
             n += bdw.sb_request(sb_url, sb_key, "POST", "rpc/cfi_upsert_match_odds", {"p_rows": recs[i:i + bdw.BATCH_SIZE]})
         print("upserted", n)
