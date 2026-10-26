@@ -16,7 +16,7 @@ BASE_URL = "https://bongdawap.com/ajax/load_handicap.htm?d="
 TZ_DEFAULT = "Asia/Ho_Chi_Minh"
 STOP = {"fc", "cf", "ac", "as", "sc", "us", "ssc", "afc", "rc", "ud", "cd", "fk", "sv", "vfl", "vfb", "tsg", "fsv", "1", "de", "calcio", "club", "the"}
 CATEGORIES = {"u15", "u16", "u17", "u18", "u19", "u20", "u21", "u22", "u23", "w", "ii"}
-CATEGORY_ALIASES = {"women": "w", "woman": "w", "nu": "w", "reserve": "ii", "reserves": "ii", "b": "ii"}
+CATEGORY_ALIASES = {"women": "w", "woman": "w", "nu": "w", "reserve": "ii", "reserves": "ii", "b": "ii", "2": "ii"}
 SIM_MIN = 0.6
 TIME_WINDOW = timedelta(hours=4)
 BATCH_SIZE = 500
