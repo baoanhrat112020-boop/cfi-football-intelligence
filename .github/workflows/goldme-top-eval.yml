@@ -2,6 +2,11 @@ name: GoldMe Top Eval
 
 on:
   workflow_dispatch:
+    inputs:
+      lookback:
+        default: '14'
+      min_n:
+        default: '3'
   push:
     branches: [feat/goldme-top-eval]
     paths: ['scripts/goldme_top_eval.py', '.github/workflows/goldme-top-eval.yml']
@@ -22,4 +27,6 @@ jobs:
       - name: Evaluate
         env:
           SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+          LOOKBACK: ${{ inputs.lookback || '14' }}
+          MIN_N: ${{ inputs.min_n || '3' }}
         run: python scripts/goldme_top_eval.py

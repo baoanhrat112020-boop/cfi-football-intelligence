@@ -6,8 +6,8 @@ import pandas as pd
 from supabase import create_client
 
 sb = create_client("https://zbwkowqluwuvsnajkuvc.supabase.co", os.environ["SB_SERVICE_ROLE_KEY"])
-LOOKBACK = 60
-MIN_N = 5
+LOOKBACK = int(os.environ.get("LOOKBACK", "60"))
+MIN_N = int(os.environ.get("MIN_N", "5"))
 
 rows, off = [], 0
 cols = "fixture_id,kickoff_at,home_team,away_team,home_team_id,away_team_id,ht_home,ht_away,ft_home,ft_away"
@@ -53,7 +53,7 @@ def top_for(day, k):
     return g.sort_values(["rate", "size"], ascending=False).head(k)
 
 
-first = d.day.min() + timedelta(days=LOOKBACK // 2)
+first = d.day.min() + timedelta(days=LOOKBACK)
 test_days = sorted(x for x in d.day.unique() if x >= first)
 print("test days", len(test_days), "from", test_days[0] if test_days else None)
 
@@ -80,6 +80,6 @@ for k in (10, 20, 40):
 
 last = d.day.max() + timedelta(days=1)
 cur = top_for(last, 20)
-print("Top 20 hien tai (60 ngay, toi thieu %d tran):" % MIN_N)
+print("Top 20 hien tai (%d ngay, toi thieu %d tran):" % (LOOKBACK, MIN_N))
 for i, (t, r) in enumerate(cur.iterrows(), 1):
     print(i, names.get(t, t), int(r["size"]), int(r["sum"]), round(r["rate"], 3))
