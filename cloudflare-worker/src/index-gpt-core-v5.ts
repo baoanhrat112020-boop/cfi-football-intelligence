@@ -1048,6 +1048,16 @@ export default{
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
+    if(url.pathname==='/api/goldme-top'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      try{
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme_top_latest`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(25000)});
+        if(!r.ok)return Response.json({error:'goldme top failed',status:r.status},{status:502});
+        return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=900'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
     if(url.pathname==='/api/mvp'&&request.method==='GET'){
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});

@@ -653,6 +653,9 @@
 
   function $(id){return document.getElementById(id)}
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
+  var GT_SET={},GT_AT=0,GT_BADGE=' <span translate="no" title="GoldMe Top 20" style="font-size:11px">\uD83D\uDD25</span>';
+  function gtKey(n){return String(n==null?"":n).normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
+  function gtn(n){return esc(n)+(GT_SET[gtKey(n)]?GT_BADGE:"")}
   function showScreen(name){Object.keys(screens).forEach(function(k){screens[k].classList.toggle("active",k===name)});state.current=name;window.scrollTo({top:0,behavior:"instant"});if(typeof syncSuggestPoll==="function")syncSuggestPoll();if(typeof syncLivePoll==="function")syncLivePoll();if(typeof syncBcdPoll==="function")syncBcdPoll()}
   function toast(msg){var t=$("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._timer);t._timer=setTimeout(function(){t.classList.remove("show")},2400)}
   function modal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modalWrap").classList.add("show")}
@@ -1105,7 +1108,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.9 · Build 8</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.9 · Build 9</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1591,7 +1594,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(m.hs!=null&&m.as!=null)sc='<span>'+m.hs+'</span><span>'+m.as+'</span>';
     var early=m.st==="ft"&&Date.parse(m.t)>Date.now()?'<small>Trước giờ đá</small>':"";
     var ht=m.hh!=null&&m.ha!=null&&m.st!=="ht"?'<small>HT '+m.hh+'-'+m.ha+'</small>':(wait||early);
-    return '<div class="lv-row"><div class="lv-tm'+(live?" live":"")+'">'+esc(tm)+ht+'</div><div class="lv-t">'+(lg?'<span class="lv-lg">'+esc(lg.n)+(lg.c?" · "+esc(lg.c):"")+'</span>':"")+'<span>'+esc(m.h)+'</span><span>'+esc(m.a)+'</span>'+lvPick(m)+'</div><div class="lv-sc'+(live?" lv-live live":"")+'" style="display:flex;flex-direction:column;gap:2px">'+sc+'</div></div>';
+    return '<div class="lv-row"><div class="lv-tm'+(live?" live":"")+'">'+esc(tm)+ht+'</div><div class="lv-t">'+(lg?'<span class="lv-lg">'+esc(lg.n)+(lg.c?" · "+esc(lg.c):"")+'</span>':"")+'<span>'+gtn(m.h)+'</span><span>'+gtn(m.a)+'</span>'+lvPick(m)+'</div><div class="lv-sc'+(live?" lv-live live":"")+'" style="display:flex;flex-direction:column;gap:2px">'+sc+'</div></div>';
   }
   function lvKey(s){return s.c+"|"+s.n}
   function lvIsLive(m){return m.st==="live"||m.st==="ht"}
@@ -1782,6 +1785,16 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var bcR=BC.hits/BC.settled;
       h+=rpSec('<span>Best Choice Daily</span>',rpPct(BC.hits,BC.settled),rpIt('<b><span>Tất cả</span></b><div class="m">'+BC.hits+'/'+BC.settled+' <span>trận</span>'+rpGap(bcR,BC.avg_p)+'</div>','<span class="'+(BC.avg_p==null||bcR>=BC.avg_p?"g":"r")+'">'+rpPct(BC.hits,BC.settled)+'</span>',"")+(BC.by_tier||[]).filter(function(t){return t.n>0}).map(function(t){return rpIt('<b><span>'+BT[t.tier]+'</span></b><div class="m">'+t.hits+'/'+t.n+' <span>trận</span>'+rpGap(t.hits/t.n,t.avg_p)+'</div>','<span class="'+(t.avg_p==null||t.hits/t.n>=t.avg_p?"g":"r")+'">'+rpPct(t.hits,t.n)+'</span>',"")}).join(""),full);
     }
+    var GM=d.goldme;
+    if(GM&&GM.all&&GM.all.n>0){
+      var gA=GM.all,gS=GM.star||{n:0,hits:0};
+      var gRows=rpIt('<b><span>T\u1ea5t c\u1ea3 tr\u1eadn c\u00f3 k\u1ebft qu\u1ea3</span></b><div class="m">'+gA.hits+'/'+gA.n+' <span>tr\u1eadn ra GoldMe</span></div>','<span>'+rpPct(gA.hits,gA.n)+'</span>',"");
+      if(gS.n>0)gRows+=rpIt('<b>\uD83D\uDD25 <span>Tr\u1eadn c\u00f3 \u0111\u1ed9i Top 20</span></b><div class="m">'+gS.hits+'/'+gS.n+' <span>tr\u1eadn</span></div>','<span class="g">'+rpPct(gS.hits,gS.n)+'</span>',"");
+      gRows+=(GM.types||[]).map(function(x){return rpIt('<b translate="no">'+esc(XLAB[x.type]||x.type)+'</b><div class="m">'+x.hits+'/'+x.n+(x.p_all!=null?' \u00b7 <span>m\u00f4 h\u00ecnh</span> '+Math.round(x.p_all*100)+'%':'')+(x.flag_n>0?' \u00b7 <span>d\u1ea5u hi\u1ec7u</span> '+x.flag_hits+'/'+x.flag_n:'')+'</div>','<span>'+rpPct(x.hits,x.n)+'</span>',"")}).join("");
+      h+=rpSec('<span>GoldMe</span>',rpPct(gA.hits,gA.n),gRows,full);
+      var gT=(GM.top||[]).map(function(x,i){return rpIt((i+1)+'. <b>'+esc(x.name)+'</b><div class="m">'+x.hits+'/'+x.n+'</div>','<span class="g">'+rpPct(x.hits,x.n)+'</span>',"")}).join("");
+      if(gT)h+=rpSec('<span>Top 20 \u0111\u1ed9i GoldMe</span>','',gT,full);
+    }
     var HR=d.hours||[];
     if(HR.length){
       var hb=HR.filter(function(x){return x.n>=10}).sort(function(a,b){return b.hits/b.n-a.hits/a.n});if(!hb.length)hb=HR;
@@ -1839,12 +1852,29 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   rpDots();
   var goldAt=0;
   function goldMarket(m,l){return m==="over_ht"?"Tài "+l+" hiệp 1":m==="over_ft"?"Tài "+l+" cả trận":m?marketLabel(m):""}
+  function goldTopHtml(){
+    var T=state.goldTop||[];if(!T.length)return "";
+    var rows=T.map(function(x){
+      var roles=(x.att?'<span>ghi \u22654</span> <span translate="no">'+x.att+'</span>':'')+(x.att&&x.def?' \u00b7 ':'')+(x.def?'<span>th\u1ee7ng \u22654</span> <span translate="no">'+x.def+'</span>':'');
+      return '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><div style="min-width:0"><div style="font-weight:700;overflow-wrap:anywhere"><span translate="no">'+x.rk+'.</span> '+esc(x.name)+GT_BADGE+'</div><div style="font-size:11px;color:var(--muted)">'+roles+'</div></div><div style="text-align:right;white-space:nowrap"><b translate="no" style="color:var(--cyan)">'+Math.round(x.rate*100)+'%</b><div style="font-size:11px;color:var(--muted)" translate="no">'+x.hits+'/'+x.n+'</div></div></div>'}).join("");
+    return '<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Top 20 \u0111\u1ed9i ra GoldMe nhi\u1ec1u nh\u1ea5t</span> \u00b7 <span translate="no">60d \u00b7 \u22655</span></div>'+rows+'<div style="font-size:11px;color:var(--muted);margin-top:8px"><span>\u0110\u1ed9i trong Top 20 c\u00f3 t\u1ec9 l\u1ec7 ra GoldMe cao h\u01a1n kho\u1ea3ng 2 l\u1ea7n m\u1ee9c trung b\u00ecnh theo th\u1ed1ng k\u00ea qu\u00e1 kh\u1ee9, kh\u00f4ng ph\u1ea3i cam k\u1ebft.</span></div></div>'
+  }
+  async function ensureGoldTop(){
+    if(state.goldTop&&Date.now()-GT_AT<6*3600*1000)return state.goldTop;
+    try{
+      var r=await api("/api/goldme-top","GET"),dd=r.data||{},t=dd.teams||[],set={};
+      t.forEach(function(x){set[gtKey(x.name)]=1});
+      GT_SET=set;state.goldTop=t;GT_AT=Date.now();
+    }catch(e){}
+    return state.goldTop||[];
+  }
+  setTimeout(ensureGoldTop,800);
   function goldRender(d){
     var S=d.summary||[],R=d.rows||[],F=state.goldF||"all";
     var cnt={};R.forEach(function(x){(x.hit||[]).forEach(function(t){cnt[t]=(cnt[t]||0)+1})});
     var chips='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="chip'+(F==="all"?" active":"")+'" data-goldf="all"><span>Tất cả</span> <span translate="no">'+R.length+'</span></button>'+["x3ht","xoht","xoft","x7ft"].map(function(t){return '<button class="chip'+(F===t?" active":"")+'" data-goldf="'+t+'" translate="no">'+XLAB[t]+' '+(cnt[t]||0)+'</button>'}).join("")+'</div>';
     if(F!=="all")R=R.filter(function(x){return (x.hit||[]).indexOf(F)>=0});
-    var h='<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Cực đoan đã diễn ra · đối chiếu dấu hiệu</span> · <span translate="no">'+(d.days||30)+'d · '+(d.total||0)+'</span></div>'
+    var h=goldTopHtml()+'<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Cực đoan đã diễn ra · đối chiếu dấu hiệu</span> · <span translate="no">'+(d.days||30)+'d · '+(d.total||0)+'</span></div>'
       +S.map(function(x){return '<div style="padding:6px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between"><b translate="no">'+esc(XLAB[x.type]||x.type)+'</b><span><span>Tỉ lệ ra</span> <b translate="no" style="color:var(--cyan)">'+(x.rate==null?"—":(x.rate*100).toFixed(1)+"%")+' ('+x.hits+'/'+x.n+')</b></span></div><div style="font-size:11px;color:var(--muted);margin-top:2px"><span>Mô hình</span> <span translate="no">'+(x.p_all==null?"—":(x.p_all*100).toFixed(1)+"%")+'</span> · <span>Khi ra</span> <span translate="no">'+(x.p_hit==null?"—":(x.p_hit*100).toFixed(1)+"%")+'</span> · <span>Có cờ</span> <span translate="no">'+x.flag_hits+'/'+x.flag_n+'</span></div></div>'}).join("")+'</div>';
     if(!R.length)return h+chips+'<div class="context-state">Chưa có trận cực đoan nào</div>';
     return h+chips+R.map(function(x){
@@ -1853,7 +1883,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var ht=goldMarket(x.ht_market,x.ht_line),ft=goldMarket(x.ft_market,x.ft_line);
       var picks=[x.top_market?marketLabel(x.top_market):"",ht,ft].filter(function(z,i,a){return z&&a.indexOf(z)===i}).join(" · ");
       return '<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted)"><span translate="no">'+k.substring(8,10)+'/'+k.substring(5,7)+' · '+k.substring(11,16)+'</span><span style="text-align:right">'+esc(x.competition||"")+'</span></div>'
-        +'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px"><b style="font-size:14px;overflow-wrap:anywhere">'+esc(x.home)+' - '+esc(x.away)+'</b><b translate="no" style="color:var(--cyan);white-space:nowrap">'+esc(x.ht)+' · '+esc(x.ft)+'</b></div>'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px"><b style="font-size:14px;overflow-wrap:anywhere">'+gtn(x.home)+' - '+gtn(x.away)+'</b><b translate="no" style="color:var(--cyan);white-space:nowrap">'+esc(x.ht)+' · '+esc(x.ft)+'</b></div>'
         +'<div style="margin-top:4px">'+(x.hit||[]).map(function(t){return '<span translate="no" style="font-size:11px;font-weight:700;color:#35d07f;border:1px solid #35d07f;border-radius:6px;padding:1px 6px;margin-right:4px">'+esc(XLAB[t]||t)+'</span>'}).join("")+'</div>'
         +'<div style="font-size:12px;margin-top:6px"><span style="color:var(--muted)">Hệ thống dự đoán</span>: '+(picks?esc(picks):"—")+(x.top_p?' <span translate="no">('+(x.top_p*100).toFixed(0)+'%)</span>':'')+'</div>'
         +'<div style="font-size:12px;margin-top:3px">'+pl+'</div>'
@@ -1865,6 +1895,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(state.goldData&&Date.now()-goldAt<30*60*1000){el.innerHTML=state.goldData;return}
     el.innerHTML='<div class="context-state">Đang tải...</div>';
     try{
+      await ensureGoldTop();
       var r=await api("/api/goldme","GET");
       state.goldRaw=r.data||{};
       var html=goldRender(state.goldRaw);
@@ -1928,7 +1959,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function bcdCard(x,i){
     var pv=x.pa!=null?x.pa:x.p,pc=Math.round(pv*100),pm=Math.round(x.pm*100),col=pv>=0.75?"#35d07f":pv>=0.65?"#4cc9f0":"#fbbf24";
-    return '<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div style="font-size:11px;color:var(--muted)"><span translate="no">#'+(i+1)+'</span>'+(x.tier===1?' <span style="color:#fbbf24">★</span>':'')+' · '+esc(x.c||"")+'</div><div style="font-weight:700;margin:3px 0;overflow-wrap:anywhere">'+esc(x.h)+' - '+esc(x.a)+'</div><div style="font-size:12px;color:var(--muted)"><span translate="no">'+bcdKick(x.t)+'</span> · <b>'+esc(marketLabel(x.mk))+'</b></div></div><div style="text-align:right;white-space:nowrap"><div style="font-size:22px;font-weight:800;color:'+col+'" translate="no">'+pc+'%</div><div style="font-size:10px;color:var(--muted)"><span>Khả năng thắng</span></div><div style="font-size:10px;color:var(--muted)"><span>Mô hình</span> <span translate="no">'+pm+'%</span></div>'+(x.po!=null?'<div style="font-size:10px;color:var(--muted)"><span>Nhà cái</span> <span translate="no">'+Math.round(x.po*100)+'%</span></div>':'')+'</div></div><div style="margin-top:8px;font-size:13px">'+bcdStatus(x)+'</div></div>';
+    return '<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div style="font-size:11px;color:var(--muted)"><span translate="no">#'+(i+1)+'</span>'+(x.tier===1?' <span style="color:#fbbf24">★</span>':'')+' · '+esc(x.c||"")+'</div><div style="font-weight:700;margin:3px 0;overflow-wrap:anywhere">'+gtn(x.h)+' - '+gtn(x.a)+'</div><div style="font-size:12px;color:var(--muted)"><span translate="no">'+bcdKick(x.t)+'</span> · <b>'+esc(marketLabel(x.mk))+'</b></div></div><div style="text-align:right;white-space:nowrap"><div style="font-size:22px;font-weight:800;color:'+col+'" translate="no">'+pc+'%</div><div style="font-size:10px;color:var(--muted)"><span>Khả năng thắng</span></div><div style="font-size:10px;color:var(--muted)"><span>Mô hình</span> <span translate="no">'+pm+'%</span></div>'+(x.po!=null?'<div style="font-size:10px;color:var(--muted)"><span>Nhà cái</span> <span translate="no">'+Math.round(x.po*100)+'%</span></div>':'')+'</div></div><div style="margin-top:8px;font-size:13px">'+bcdStatus(x)+'</div></div>';
   }
   function bcdRender(d){
     var s=d.summary||{},day=d.day||bcdDay();
@@ -1991,7 +2022,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return t;
   }
   function tagBadges(name){
-    return teamTags(name).map(function(x){return ' <span style="background:#1c242c;color:#8fa1af;padding:1px 5px;border-radius:4px;font-size:9px;font-weight:600;vertical-align:middle">'+x+'</span>'}).join("");
+    return (GT_SET[gtKey(name)]?GT_BADGE:"")+teamTags(name).map(function(x){return ' <span style="background:#1c242c;color:#8fa1af;padding:1px 5px;border-radius:4px;font-size:9px;font-weight:600;vertical-align:middle">'+x+'</span>'}).join("");
   }
   async function loadSuggest(){
     var el=$("suggestContent");
@@ -2235,7 +2266,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
         var tm={WIN:["✓","#4ade80"],HALF_WIN:["½✓","#86efac"],PUSH:["=","#8fa6b6"],HALF_LOSS:["½✗","#fca5a5"],LOSS:["✗","#f87171"]}[r.top_result];
         var mark=tm?' <span style="color:'+tm[1]+';font-weight:800;font-size:10px;white-space:nowrap">'+tm[0]+'</span>':' <span style="color:#7a8a99;font-weight:800;font-size:10px">–</span>';
         var cp="padding:6px 4px;font-size:11px";
-        return '<tr>'+trackTd('<div>'+bmStarHtml({fixture_id:r.fixture_id,home:r.home,away:r.away,kickoff:r.kickoff,tier:r.tier,top_market:r.top_market})+'<span translate="no">'+esc(r.home)+" – "+esc(r.away)+'</span></div><div style="font-size:11px;color:#87a2b8;margin-top:2px">'+esc(r.ht_score||"—")+' · '+esc(r.ft_score||"—")+'</div>',true,cp+";white-space:normal;min-width:90px;max-width:150px;line-height:1.25")+trackTd(esc(r.top_market?marketLabel(r.top_market):"—")+mark,true,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
+        return '<tr>'+trackTd('<div>'+bmStarHtml({fixture_id:r.fixture_id,home:r.home,away:r.away,kickoff:r.kickoff,tier:r.tier,top_market:r.top_market})+'<span translate="no">'+gtn(r.home)+" – "+gtn(r.away)+'</span></div><div style="font-size:11px;color:#87a2b8;margin-top:2px">'+esc(r.ht_score||"—")+' · '+esc(r.ft_score||"—")+'</div>',true,cp+";white-space:normal;min-width:90px;max-width:150px;line-height:1.25")+trackTd(esc(r.top_market?marketLabel(r.top_market):"—")+mark,true,cp)+trackTd(trackTierBadge(r.tier),false,cp)+trackTd(trackResultChip(r.o075_result),false,cp)+'</tr>';
   }
   function renderTrackHtml(d){
     var c=d.counts||{},scored=Number(c.scored)||0,voided=(Number(c.void_no_result)||0)+(Number(c.void_no_ht)||0),recent=d.recent_settled||[],since=trackSinceDate(c.logging_since);
@@ -3116,6 +3147,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "trận": "matches",
       "Top kèo": "Top markets",
       "Khả năng thắng": "Win chance",
+      "Top 20 đội ra GoldMe nhiều nhất": "Top 20 teams by GoldMe hits",
+      "Đội trong Top 20 có tỉ lệ ra GoldMe cao hơn khoảng 2 lần mức trung bình theo thống kê quá khứ, không phải cam kết.": "Top 20 teams hit GoldMe about twice as often as average in past data; this is not a guarantee.",
+      "ghi ≥4": "scored ≥4",
+      "thủng ≥4": "conceded ≥4",
+      "Tất cả trận có kết quả": "All matches with results",
+      "trận ra GoldMe": "matches hit GoldMe",
+      "Trận có đội Top 20": "Matches with a Top 20 team",
+      "Top 20 đội GoldMe": "GoldMe Top 20 teams",
+      "dấu hiệu": "signals",
       "Chưa đá": "Not started",
       "Không tính": "Void",
       "Chờ kết quả": "Awaiting result",
