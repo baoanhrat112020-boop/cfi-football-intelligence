@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [feat/ml-calib-eval]
-    paths: ['scripts/ml_calib_eval.py', '.github/workflows/ml-calib-eval.yml']
+    paths: ['scripts/ml_calib_eval.py', 'scripts/ml_odds_probe.py', '.github/workflows/ml-calib-eval.yml']
 
 permissions:
   contents: read
@@ -22,4 +22,4 @@ jobs:
       - name: Evaluate
         env:
           SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/ml_calib_eval.py
+        run: python scripts/ml_odds_probe.py
