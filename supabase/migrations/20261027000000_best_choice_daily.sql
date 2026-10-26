@@ -183,13 +183,13 @@ INSERT INTO public.cfi_league_tiers (pattern, tier) VALUES
   ('^Netherlands · Eredivisie( ·|:|$)', 1),
   ('^Portugal · (Liga Portugal|Primeira Liga)( ·|:|$)', 1),
   ('^Belgium · Belgian Pro League( ·|:|$)', 1),
-  ('^Turkey · (Super Lig|Süper Lig|Trendyol Super Lig)( ·|:|$)', 1),
+  ('^(Turkey|Turkiye|Türkiye) · (Super Lig|Süper Lig|Trendyol Super Lig)( ·|:|$)', 1),
   ('^Scotland · Premiership( ·|:|$)', 1),
   ('^(World Cup|Euro Championship|European Championship)( ·|:|$)', 1),
   ('^England · (Championship|EFL Championship|FA Cup|League Cup|EFL Cup)( ·|:|$)', 2),
   ('^Spain · (LaLiga 2|Segunda Division|Copa del Rey)( ·|:|$)', 2),
   ('^Italy · (Serie B|Coppa Italia)( ·|:|$)', 2),
-  ('^Germany · (2\. Bundesliga|DFB[ -]Pokal)( ·|:|$)', 2),
+  ('^Germany · (2\. Bundesliga|DFB[ -]Pokal|DFB Cup)( ·|:|$)', 2),
   ('^France · (Ligue 2|Coupe de France)( ·|:|$)', 2),
   ('^(USA|United States) · (MLS|Major League Soccer)( ·|:|$)', 2),
   ('^Mexico · Liga MX( ·|:|$)', 2),
@@ -211,7 +211,12 @@ INSERT INTO public.cfi_league_tiers (pattern, tier) VALUES
   ('^Croatia · (HNL|SuperSport HNL)( ·|:|$)', 2),
   ('^Ukraine · Premier League( ·|:|$)', 2),
   ('^(CONMEBOL )?(Copa )?(Libertadores|Sudamericana)( ·|:|$)', 2),
-  ('^(Nations League|World Cup Qualification|Euro Qualification)( ·|:|$)', 2)
+  ('^(Nations League|World Cup Qualification|Euro Qualification)( ·|:|$)', 2),
+  ('^Asia · AFC Champions League Elite( ·|:|$)', 2),
+  ('^Netherlands · KNVB Beker( ·|:|$)', 2),
+  ('^Portugal · (League Cup|Liga Portugal 2)( ·|:|$)', 2),
+  ('^England · (League 1|League One|League 2|League Two)( ·|:|$)', 2),
+  ('^Colombia · Primera A( ·|:|$)', 2)
 ON CONFLICT (pattern) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION public.cfi_league_tier(p_comp text)
