@@ -978,7 +978,7 @@ export default{
       if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!(diff<=0&&diff>=-60))return Response.json({error:'bad day'},{status:400});
       const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
       const read=async()=>{
-        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/best_choice_daily?day=eq.${day}&select=rank,provider_id,kickoff_at,home_team,away_team,competition,tier,market,p_model,p_win,hit,void,settled_at,ft_home,ft_away&order=rank.asc`,{headers:hdr,signal:AbortSignal.timeout(8000)});
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/best_choice_daily?day=eq.${day}&select=rank,fixture_id,provider_id,kickoff_at,home_team,away_team,competition,tier,market,p_model,p_win,hit,void,settled_at,ft_home,ft_away&order=rank.asc`,{headers:hdr,signal:AbortSignal.timeout(8000)});
         return r.ok?await r.json():null;
       };
       try{
@@ -994,10 +994,27 @@ export default{
           const sch=await Promise.all([day,next].map(d=>getSchedule(d,(n:string)=>EXCLUDE_RE.test(n)).catch(()=>null)));
           for(const r of sch)if(r&&r.status!=='off')for(const st of r.stages)for(const e of st.e)live.set(String(e.id),e);
         }
+        const mkt=new Map<string,number>();
+        const oddsIds=rows.filter((r:any)=>r.fixture_id&&(r.market==='1x2_ft_home'||r.market==='over_35_ft')).map((r:any)=>r.fixture_id);
+        if(oddsIds.length){
+          const orr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/match_odds?verified_fixture_id=in.(${oddsIds.join(',')})&period=eq.FT&market_family=in.(1X2,OVER_UNDER)&select=verified_fixture_id,market_family,line,p_implied_over,odds_home,odds_draw,odds_away&limit=2000`,{headers:hdr,signal:AbortSignal.timeout(8000)}).catch(()=>null);
+          const od=orr&&orr.ok?await orr.json().catch(()=>null):null;
+          if(Array.isArray(od))for(const o of od){
+            if(o.market_family==='1X2'){
+              const h=1/Number(o.odds_home),d=1/Number(o.odds_draw),a=1/Number(o.odds_away);
+              if(h>0&&d>0&&a>0&&isFinite(h+d+a))mkt.set(o.verified_fixture_id+'|1x2_ft_home',h/(h+d+a));
+            }else if(o.market_family==='OVER_UNDER'&&Number(o.line)===3.5&&o.p_implied_over!=null){
+              const p=Number(o.p_implied_over);
+              if(p>0&&p<1)mkt.set(o.verified_fixture_id+'|over_35_ft',p);
+            }
+          }
+        }
         const picks=rows.map((r:any)=>{
           const e=live.get(String(r.provider_id));
+          const po=mkt.get(r.fixture_id+'|'+r.market);
+          const pa=po!=null?0.8*po+0.2*Number(r.p_win):null;
           const res=r.settled_at?(r.void?'v':(r.hit===true?'w':r.hit===false?'l':'v')):null;
-          return{rk:r.rank,t:r.kickoff_at,h:r.home_team,a:r.away_team,c:r.competition,tier:r.tier,mk:r.market,p:Number(r.p_win),pm:Number(r.p_model),r:res,fh:r.ft_home,fa:r.ft_away,st:e?e.st:null,m:e?e.m:null,hs:e?e.hs:null,as:e?e.as:null,hh:e?e.hh:null,ha:e?e.ha:null};
+          return{rk:r.rank,t:r.kickoff_at,h:r.home_team,a:r.away_team,c:r.competition,tier:r.tier,mk:r.market,p:Number(r.p_win),pm:Number(r.p_model),po:po!=null?po:null,pa:pa,r:res,fh:r.ft_home,fa:r.ft_away,st:e?e.st:null,m:e?e.m:null,hs:e?e.hs:null,as:e?e.as:null,hh:e?e.hh:null,ha:e?e.ha:null};
         });
         const done=picks.filter((x:any)=>x.r==='w'||x.r==='l');
         const avgP=done.length?done.reduce((a:number,x:any)=>a+x.p,0)/done.length:null;
