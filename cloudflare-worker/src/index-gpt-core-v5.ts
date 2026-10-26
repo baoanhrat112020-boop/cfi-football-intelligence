@@ -754,8 +754,9 @@ export default{
           await ensureLive();
           if(startedM.length){
             try{
-              const sch:any=await getSchedule(today,(n:string)=>EXCLUDE_RE.test(n));
-              if(sch&&sch.status!=='off')for(const st of sch.stages)for(const e of st.e)if(e.hh!=null&&e.ha!=null)htMap.set(String(e.id),{h:e.hh,a:e.ha});
+              const yst=new Date(Date.now()+7*3600*1000-86400000).toISOString().slice(0,10);
+              const schs:any[]=await Promise.all([today,yst].map((d:string)=>getSchedule(d,(n:string)=>EXCLUDE_RE.test(n)).catch(()=>null)));
+              for(const sch of schs)if(sch&&sch.status!=='off')for(const st of sch.stages)for(const e of st.e)if(e.hh!=null&&e.ha!=null)htMap.set(String(e.id),{h:e.hh,a:e.ha});
             }catch{}
           }
           built=built.map((x:any)=>({...x,legs:x.legs.map((l:any)=>{
