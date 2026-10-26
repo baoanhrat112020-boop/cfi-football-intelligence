@@ -968,6 +968,43 @@ export default{
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
+    if(url.pathname==='/api/bestchoice'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const vnNow=new Date(Date.now()+7*3600*1000);
+      const vnToday=vnNow.toISOString().slice(0,10);
+      const day=url.searchParams.get('day')||vnToday;
+      const diff=(Date.parse(day)-Date.parse(vnToday))/86400000;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!(diff<=0&&diff>=-60))return Response.json({error:'bad day'},{status:400});
+      const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
+      const read=async()=>{
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/best_choice_daily?day=eq.${day}&select=rank,provider_id,kickoff_at,home_team,away_team,competition,tier,market,p_model,p_win,hit,void,settled_at,ft_home,ft_away&order=rank.asc`,{headers:hdr,signal:AbortSignal.timeout(8000)});
+        return r.ok?await r.json():null;
+      };
+      try{
+        let rows:any=await read();
+        if(Array.isArray(rows)&&!rows.length&&day===vnToday&&vnNow.getUTCHours()>=6){
+          await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_best_choice_build`,{method:'POST',headers:hdr,body:JSON.stringify({p_day:day}),signal:AbortSignal.timeout(20000)}).catch(()=>null);
+          rows=await read();
+        }
+        if(!Array.isArray(rows))return Response.json({error:'bestchoice failed'},{status:502});
+        const live=new Map<string,any>();
+        if(rows.length&&diff>=-3){
+          const next=new Date(Date.parse(day)+86400000).toISOString().slice(0,10);
+          const sch=await Promise.all([day,next].map(d=>getSchedule(d,(n:string)=>EXCLUDE_RE.test(n)).catch(()=>null)));
+          for(const r of sch)if(r&&r.status!=='off')for(const st of r.stages)for(const e of st.e)live.set(String(e.id),e);
+        }
+        const picks=rows.map((r:any)=>{
+          const e=live.get(String(r.provider_id));
+          const res=r.settled_at?(r.void?'v':(r.hit===true?'w':r.hit===false?'l':'v')):null;
+          return{rk:r.rank,t:r.kickoff_at,h:r.home_team,a:r.away_team,c:r.competition,tier:r.tier,mk:r.market,p:Number(r.p_win),pm:Number(r.p_model),r:res,fh:r.ft_home,fa:r.ft_away,st:e?e.st:null,m:e?e.m:null,hs:e?e.hs:null,as:e?e.as:null,hh:e?e.hh:null,ha:e?e.ha:null};
+        });
+        const done=picks.filter((x:any)=>x.r==='w'||x.r==='l');
+        const avgP=done.length?done.reduce((a:number,x:any)=>a+x.p,0)/done.length:null;
+        return Response.json({day,built:picks.length>0,picks,summary:{n:picks.length,settled:done.length,hits:done.filter((x:any)=>x.r==='w').length,avg_p:avgP},generated_at:new Date().toISOString()},{headers:{'Cache-Control':`public, max-age=${day===vnToday?30:300}`}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
     if(url.pathname==='/api/schedule'&&request.method==='GET'){
       const vnToday=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
       const day=url.searchParams.get('day')||vnToday;
