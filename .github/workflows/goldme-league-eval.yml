@@ -20,4 +20,4 @@ jobs:
       - name: Evaluate
         env:
           SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/goldme_league_eval.py
+        run: python scripts/goldme_league_eval2.py
