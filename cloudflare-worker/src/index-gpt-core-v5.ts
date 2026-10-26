@@ -770,7 +770,7 @@ export default{
             const dr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.single&day=gte.${y2}&select=pkey,scope,ptype,system_p,legs,user_legs,placed,result&order=day.desc&limit=400`,{headers:hdr,signal:AbortSignal.timeout(5000)});
             const dj:any=dr.ok?await dr.json():[];
             const have=new Set(built.map((x:any)=>x.pkey));
-            const rowsD=(Array.isArray(dj)?dj:[]).filter((x:any)=>!have.has(x.pkey)&&Array.isArray(x.legs)&&x.legs.length>0&&x.legs.every((l:any)=>Date.parse(l.kickoff)<=nowT-120*60000));
+            const rowsD=(Array.isArray(dj)?dj:[]).filter((x:any)=>!have.has(x.pkey)&&Array.isArray(x.legs)&&x.legs.length>0&&x.legs.every((l:any)=>{const t=Date.parse(l.kickoff);return t<=nowT-120*60000&&t>=nowT-5*3600*1000}));
             const ids=[...new Set(rowsD.flatMap((x:any)=>x.legs.map((l:any)=>String(l.fixture_id))))].filter((i:any)=>UUID_RE.test(i)).slice(0,300);
             const pk=new Map<string,any>();
             if(ids.length){
