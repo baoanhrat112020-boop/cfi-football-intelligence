@@ -1,0 +1,25 @@
+name: GoldMe Top Eval
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldme-top-eval]
+    paths: ['scripts/goldme_top_eval.py', '.github/workflows/goldme-top-eval.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install supabase pandas
+      - name: Evaluate
+        env:
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/goldme_top_eval.py
