@@ -448,8 +448,9 @@ BEGIN
       ('1x2_ht_home', (m->'markets'->>'m_1x2_ht_home')::numeric),
       ('1x2_ft_home', (m->'markets'->>'m_1x2_ft_home')::numeric),
       ('btts_yes', (m->'markets'->>'m_btts_yes')::numeric),
-      (m->>'selected_ht_market', (m->>'selected_ht_p')::numeric),
-      (m->>'selected_ft_market', (m->>'selected_ft_p')::numeric)
+      ('over_25_ft', (m->>'s_over_25_ft')::numeric),
+      ('over_35_ft', (m->>'s_over_35_ft')::numeric),
+      ('over_15_ht', (m->>'s_over15_ht')::numeric)
     ) pr(market, p)
     WHERE m ? 'fixture_id' AND pr.market IS NOT NULL AND pr.p IS NOT NULL
   ), scored AS (
