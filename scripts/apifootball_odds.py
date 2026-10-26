@@ -160,7 +160,7 @@ def bc_picks(sb_url, sb_key, days):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true")
-    ap.add_argument("--max-odds", type=int, default=40)
+    ap.add_argument("--max-odds", type=int, default=20)
     args = ap.parse_args()
     key = os.environ["APIFOOTBALL_KEY"]
     sb_url = os.environ["SB_URL"].rstrip("/")
@@ -169,8 +169,11 @@ def main():
     vn_today = (now + timedelta(hours=7)).date()
     picks = bc_picks(sb_url, sb_key, [vn_today - timedelta(days=1), vn_today, vn_today + timedelta(days=1)])
     fixtures = {}
-    for d in (now.date() - timedelta(days=1), now.date(), now.date() + timedelta(days=1)):
-        fixtures.update(fixtures_for(d, key))
+    dates = sorted({p["kickoff_utc"].date() for p in picks})
+    lo, hi = now.date() - timedelta(days=1), now.date() + timedelta(days=1)
+    for d in dates:
+        if lo <= d <= hi:
+            fixtures.update(fixtures_for(d, key))
     cands = {}
     for fid, f in fixtures.items():
         cands[fid] = {

@@ -1,14 +1,16 @@
 name: API-Football Odds
 
 on:
+  schedule:
+    - cron: '35 17 * * *'
+    - cron: '35 23 * * *'
+    - cron: '35 5 * * *'
+    - cron: '35 11 * * *'
   workflow_dispatch:
     inputs:
       write:
         description: 'Ghi vao match_odds (true/false)'
         default: 'false'
-  push:
-    branches: [feat/odds-api-probe]
-    paths: ['scripts/apifootball_odds.py', '.github/workflows/apifootball-odds.yml']
 
 permissions:
   contents: read
@@ -31,6 +33,6 @@ jobs:
           APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
           SB_URL: https://zbwkowqluwuvsnajkuvc.supabase.co
           SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-          WRITE: ${{ inputs.write }}
+          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
         run: |
           if [ "$WRITE" = "true" ]; then python scripts/apifootball_odds.py --write; else python scripts/apifootball_odds.py; fi
