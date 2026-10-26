@@ -7,7 +7,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import log_loss
 
-sb = create_client("https://kovmddkkzttquupdgmel.supabase.co", os.environ["SB_SERVICE_ROLE_KEY"])
+sb = create_client("https://zbwkowqluwuvsnajkuvc.supabase.co", os.environ["SB_SERVICE_ROLE_KEY"])
 cols = "kickoff_at,lambda_home_ft,lambda_away_ft,ht_home,ht_away,ft_home,ft_away"
 rows, off = [], 0
 while True:
