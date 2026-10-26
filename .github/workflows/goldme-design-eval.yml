@@ -1,0 +1,23 @@
+name: GoldMe Design Eval
+
+on:
+  push:
+    branches: [research/goldme-design]
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install supabase pandas
+      - name: Evaluate
+        env:
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/goldme_design_eval.py
