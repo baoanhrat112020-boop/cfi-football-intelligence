@@ -1052,7 +1052,7 @@ export default{
           const po=mkt.get(r.fixture_id+'|'+r.market);
           const pa=po!=null?0.8*po+0.2*Number(r.p_win):null;
           const res=r.settled_at?(r.void?'v':(r.hit===true?'w':r.hit===false?'l':'v')):null;
-          return{rk:r.rank,t:r.kickoff_at,h:r.home_team,a:r.away_team,c:r.competition,tier:r.tier,mk:r.market,p:Number(r.p_win),pm:Number(r.p_model),po:po!=null?po:null,pa:pa,r:res,fh:r.ft_home,fa:r.ft_away,st:e?e.st:null,m:e?e.m:null,hs:e?e.hs:null,as:e?e.as:null,hh:e?e.hh:null,ha:e?e.ha:null};
+          return{rk:r.rank,fx:r.fixture_id,pid:r.provider_id,t:r.kickoff_at,h:r.home_team,a:r.away_team,c:r.competition,tier:r.tier,mk:r.market,p:Number(r.p_win),pm:Number(r.p_model),po:po!=null?po:null,pa:pa,r:res,fh:r.ft_home,fa:r.ft_away,st:e?e.st:null,m:e?e.m:null,hs:e?e.hs:null,as:e?e.as:null,hh:e?e.hh:null,ha:e?e.ha:null};
         });
         const done=picks.filter((x:any)=>x.r==='w'||x.r==='l');
         const avgP=done.length?done.reduce((a:number,x:any)=>a+x.p,0)/done.length:null;
@@ -1083,6 +1083,16 @@ export default{
         const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_days:days}),signal:AbortSignal.timeout(20000)});
         if(!r.ok)return Response.json({error:'goldme failed',status:r.status},{status:502});
         return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=1800'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
+    if(url.pathname==='/api/goldme-radar'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      try{
+        const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme_radar_latest`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(25000)});
+        if(!r.ok)return Response.json({error:'goldme radar failed',status:r.status},{status:502});
+        return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=600'}});
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
