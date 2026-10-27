@@ -7,6 +7,22 @@ ALTER TABLE public.goldme_top_teams DROP CONSTRAINT IF EXISTS goldme_top_teams_p
 ALTER TABLE public.goldme_top_teams ADD PRIMARY KEY (as_of, grp, rank);
 DELETE FROM public.goldme_top_teams;
 
+CREATE TABLE IF NOT EXISTS public.goldme_top_leagues (
+  as_of date NOT NULL,
+  rank integer NOT NULL,
+  league_key text NOT NULL,
+  league_name text,
+  country text,
+  n integer NOT NULL,
+  hits integer NOT NULL,
+  rate numeric NOT NULL,
+  eng boolean NOT NULL DEFAULT false,
+  PRIMARY KEY (as_of, rank)
+);
+ALTER TABLE public.goldme_top_leagues ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.goldme_top_leagues FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.goldme_top_leagues TO service_role;
+
 CREATE OR REPLACE FUNCTION public.cfi_goldme_top_build(p_day date DEFAULT NULL, p_force boolean DEFAULT false)
 RETURNS integer
 LANGUAGE plpgsql
@@ -21,6 +37,26 @@ BEGIN
     RETURN (SELECT count(*) FROM public.goldme_top_teams WHERE as_of = v_day)::integer;
   END IF;
   DELETE FROM public.goldme_top_teams WHERE as_of = v_day;
+  DELETE FROM public.goldme_top_leagues WHERE as_of = v_day;
+  INSERT INTO public.goldme_top_leagues (as_of, rank, league_key, league_name, country, n, hits, rate, eng)
+  SELECT v_day, x.rk::integer, x.lk, x.ln, x.country, x.n, x.hits, round(x.hits::numeric / x.n, 4), x.eng
+  FROM (
+    SELECT l.*, row_number() OVER (ORDER BY l.hits::numeric / l.n DESC, l.n DESC, l.lk) AS rk
+    FROM (
+      SELECT COALESCE(f.competition_key, 'UNK') AS lk, max(f.competition_name) AS ln, max(f.country) AS country,
+             count(*)::integer AS n,
+             (count(*) FILTER (WHERE f.ht_home + f.ht_away >= 3 OR f.ht_home >= 4 OR f.ht_away >= 4 OR f.ft_home >= 5 OR f.ft_away >= 5 OR f.ft_home + f.ft_away >= 7))::integer AS hits,
+             (COALESCE(max(f.country), 'England') = 'England'
+              AND COALESCE(max(f.competition_name), '') ~* '(Isthmian|Southern League|Northern Premier|FA Trophy|FA Cup: Qualification|FA Vase|Combined Counties|Spartan|Wessex|United Counties|Eastern Counties|Hellenic|Western League|North West Counties|Northern Counties|Midland League|Essex Senior|Kent League|Sussex County|Northern League)') AS eng
+      FROM public.fixtures f
+      WHERE f.match_date >= v_day - 60 AND f.match_date < v_day
+        AND f.ht_home IS NOT NULL AND f.ft_home IS NOT NULL AND f.competition_key IS NOT NULL
+        AND COALESCE(f.competition_name, '') !~* '\m(U1[0-8]|Baller League|Oberliga|Verbandsliga|Landesliga|Bezirksliga|Kreisliga|Kreisklasse)\M'
+      GROUP BY COALESCE(f.competition_key, 'UNK')
+      HAVING count(*) >= 80
+    ) l
+  ) x
+  WHERE x.rk <= 20;
   WITH mm AS (
     SELECT f.match_date, f.home_team_id, f.away_team_id,
            COALESCE(f.competition_key, 'UNK') AS lk, f.competition_name AS ln, f.country,
@@ -111,6 +147,9 @@ BEGIN
     'as_of', v_as,
     'lookback_days', 60,
     'min_n', 8,
+    'leagues', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('rk', g.rank, 'league', g.league_name, 'country', g.country, 'n', g.n, 'hits', g.hits, 'rate', g.rate, 'eng', g.eng) ORDER BY g.rank)
+      FROM public.goldme_top_leagues g WHERE g.as_of = v_as), '[]'::jsonb),
     'teams', COALESCE((
       SELECT jsonb_agg(jsonb_build_object('rk', t.rank, 'id', t.team_id, 'name', t.team_name, 'n', t.n, 'hits', t.hits, 'rate', t.rate, 'att', t.att, 'def', t.def, 'league', t.league_name, 'country', t.country, 'lrate', t.league_rate, 'excess', t.excess) ORDER BY t.rank)
       FROM public.goldme_top_teams t WHERE t.as_of = v_as AND t.grp = 'main'), '[]'::jsonb),
