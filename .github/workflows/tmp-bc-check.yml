@@ -1,0 +1,24 @@
+name: Tmp BC Check
+
+on:
+  push:
+    branches: [tmp/bc-check]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Radar route
+        env:
+          W: https://cfi-football-intelligence.baoanhrat112020.workers.dev
+        run: |
+          curl -sS --max-time 90 -o rd.json -w "goldme-radar %{http_code}\n" "$W/api/goldme-radar"
+          node -e "const j=require('./rd.json');const it=j.items||[];console.log(JSON.stringify({day:j.day,n:j.n,items:it.length,base:j.base,test:j.test}));for(const x of it.slice(0,6))console.log([x.rk,x.home,'-',x.away,'|',x.c,'| p='+x.p,JSON.stringify(x.f)].join(' '));const lg=new Set(it.map(x=>x.c));console.log('distinct competitions in flagged',lg.size)"
+          curl -sS --max-time 60 -o bc.json -w "bestchoice %{http_code}\n" "$W/api/bestchoice"
+          node -e "const j=require('./bc.json');console.log(JSON.stringify((j.picks||[]).slice(0,2).map(p=>({h:p.h,fx:p.fx,pid:p.pid}))))"
+          curl -sS --max-time 90 -o r.json -w "report %{http_code}\n" "$W/api/report?kind=day&offset=-1"
+          node -e "const j=require('./r.json');console.log(JSON.stringify({radar:j.radar,goldme_all:j.goldme&&j.goldme.all}))"
