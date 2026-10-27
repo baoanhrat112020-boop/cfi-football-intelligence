@@ -75,11 +75,16 @@ te = ok & (d.day >= cut_test)
 print("train", int(tr.sum()), "test", int(te.sum()), "test base rate", round(y[te].mean(), 4))
 
 
-def report(name, p):
-    yt = y[te]
+ENG = d.competition_name.fillna("").str.contains(r"Isthmian|Southern League|Northern Premier|FA Trophy|FA Cup: Qualification|FA Vase|Combined Counties|Spartan|Wessex|United Counties|Eastern Counties|Hellenic|Western League|North West Counties|Northern Counties|Midland League|Essex Senior|Kent League|Sussex County|Northern League", case=False, regex=True).values
+
+
+def report(name, p, mask=None):
+    sel = np.ones(te.sum(), dtype=bool) if mask is None else mask
+    p = p[sel]
+    yt = y[te][sel]
     o = np.argsort(-p)
     n = len(p)
-    out = {"model": name, "logloss": round(log_loss(yt, np.clip(p, 1e-4, 1 - 1e-4)), 4), "auc": round(roc_auc_score(yt, p), 4)}
+    out = {"model": name, "n": int(len(yt)), "base": round(float(yt.mean()), 3), "logloss": round(log_loss(yt, np.clip(p, 1e-4, 1 - 1e-4)), 4), "auc": round(roc_auc_score(yt, p), 4)}
     for q in (0.05, 0.10, 0.20):
         k = max(int(n * q), 1)
         out["prec@top%d%%" % int(q * 100)] = round(float(yt[o[:k]].mean()), 3)
@@ -97,4 +102,15 @@ for name, cols in (("B + team gold rate", cols_B), ("C + goals attack/defense", 
     report("GBM " + name, gb.predict_proba(X[te])[:, 1])
 X = F[cols_C].fillna(F[cols_C].mean())
 lr = LogisticRegression(max_iter=2000, C=0.5).fit((X[tr] - X[tr].mean()) / X[tr].std(), y[tr])
-report("LOGIT C", lr.predict_proba((X[te] - X[tr].mean()) / X[tr].std())[:, 1])
+pl = lr.predict_proba((X[te] - X[tr].mean()) / X[tr].std())[:, 1]
+report("LOGIT C", pl)
+ne = ~ENG[te.values]
+print("--- only NOT English low-league matches")
+report("A league base rate only", F.lrate[te].values, ne)
+report("LOGIT C", pl, ne)
+for name, cs in (("LOGIT exp_total+gap+lrate", ["lrate", "exp_total", "gap"]), ("LOGIT exp_total only", ["exp_total"])):
+    X2 = F[cs].fillna(F[cs].mean())
+    l2 = LogisticRegression(max_iter=2000).fit((X2[tr] - X2[tr].mean()) / X2[tr].std(), y[tr])
+    pp = l2.predict_proba((X2[te] - X2[tr].mean()) / X2[tr].std())[:, 1]
+    report(name + " (all)", pp)
+    report(name + " (not eng)", pp, ne)
