@@ -48,38 +48,23 @@ print("rows", len(d), "span", d.day.min().date(), d.day.max().date(), "base", ro
 team = defaultdict(deque)
 lgq = defaultdict(deque)
 gq = deque()
-lg_n, lg_g = defaultdict(int), defaultdict(int)
-g_n = g_g = 0
+G0 = d.gold.mean()
+feat = [None] * len(d)
 
 
-def purge(q, cutoff, cn, cg, key=None):
-    while q and q[0][0] < cutoff:
-        dt, gd = q.popleft()[:2]
-        if key is None:
-            cn[0] -= 1
-            cg[0] -= gd
-        else:
-            cn[key] -= 1
-            cg[key] -= gd
-
-
-feat = []
-gn, gg = [0], [0]
-for r in d.itertuples(index=False):
-    day = r.day
-    cutoff_l = day - pd.Timedelta(days=LEAGUE_DAYS)
-    while gq and gq[0][0] < cutoff_l:
-        gq.popleft()
-        gn[0] -= 1
-    gg[0] = sum(x[1] for x in gq) if False else gg[0]
-    q = lgq[r.lg]
+def lrate_of(lk, cutoff_l, gr):
+    q = lgq[lk]
     while q and q[0][0] < cutoff_l:
         q.popleft()
-    n_l = len(q)
-    g_l = sum(x[1] for x in q)
-    gr = (sum(x[1] for x in gq) / len(gq)) if gq else d.gold.mean()
-    lrate = (g_l + 30 * gr) / (n_l + 30)
+    return (sum(x[1] for x in q) + 30 * gr) / (len(q) + 30)
+
+
+for day, idx in d.groupby("day").groups.items():
+    cutoff_l = day - pd.Timedelta(days=LEAGUE_DAYS)
     cutoff_f = day - pd.Timedelta(days=FORM_DAYS)
+    while gq and gq[0][0] < cutoff_l:
+        gq.popleft()
+    gr = (sum(x[1] for x in gq) / len(gq)) if gq else G0
 
     def form(t):
         qq = team[t]
@@ -88,20 +73,29 @@ for r in d.itertuples(index=False):
         k = list(qq)[-FORM_N:]
         if len(k) < MIN_FORM:
             return None
-        return np.mean([x[1] for x in k]), np.mean([x[2] for x in k]), np.mean([x[3] for x in k])
+        lks = [x[4] for x in k]
+        lk = max(set(lks), key=lks.count)
+        return np.mean([x[1] for x in k]), np.mean([x[2] for x in k]), np.mean([x[3] for x in k]), lk
 
-    fh, fa = form(r.home_team_id), form(r.away_team_id)
-    if fh is None or fa is None:
-        feat.append([np.nan] * len(FEATURES))
-    else:
-        hgf, hga, hgr = fh
-        agf, aga, agr = fa
-        feat.append([lrate, hgf, hga, agf, aga, (hgf + aga) / 2 + (agf + hga) / 2, abs((hgf - hga) - (agf - aga)), (hgr + agr) / 2])
-    gold = r.gold
-    team[r.home_team_id].append((day, r.ft_home, r.ft_away, gold))
-    team[r.away_team_id].append((day, r.ft_away, r.ft_home, gold))
-    q.append((day, gold))
-    gq.append((day, gold))
+    cache = {}
+    for i in idx:
+        r = d.loc[i]
+        fh = cache.setdefault(r.home_team_id, form(r.home_team_id))
+        fa = cache.setdefault(r.away_team_id, form(r.away_team_id))
+        if fh is None or fa is None:
+            feat[i] = [np.nan] * len(FEATURES)
+            continue
+        hgf, hga, hgr, lkh = fh
+        agf, aga, agr, lka = fa
+        lrate = (lrate_of(lkh, cutoff_l, gr) + lrate_of(lka, cutoff_l, gr)) / 2
+        feat[i] = [lrate, hgf, hga, agf, aga, (hgf + aga) / 2 + (agf + hga) / 2, abs((hgf - hga) - (agf - aga)), (hgr + agr) / 2]
+    for i in idx:
+        r = d.loc[i]
+        gold = int(r.gold)
+        team[r.home_team_id].append((day, r.ft_home, r.ft_away, gold, r.lg))
+        team[r.away_team_id].append((day, r.ft_away, r.ft_home, gold, r.lg))
+        lgq[r.lg].append((day, gold))
+        gq.append((day, gold))
 F = pd.DataFrame(feat, columns=FEATURES)
 ok = F.notna().all(axis=1) & (d.day >= pd.Timestamp(date.today() - timedelta(days=210)))
 y = d.gold.values
