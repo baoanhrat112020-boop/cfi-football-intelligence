@@ -1,0 +1,34 @@
+name: GoldMe Radar Train
+
+on:
+  schedule:
+    - cron: '30 18 * * 0'
+  workflow_dispatch:
+    inputs:
+      write:
+        description: 'Luu mo hinh moi vao DB (true/false)'
+        default: 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: goldme-radar-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install supabase pandas numpy scikit-learn
+      - name: Train
+        env:
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
+        run: |
+          if [ "$WRITE" = "true" ]; then python scripts/goldme_radar_train.py --write; else python scripts/goldme_radar_train.py; fi
