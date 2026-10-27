@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -18,8 +19,15 @@ SOURCE = "apifootball"
 def api(path, key):
     for attempt in range(4):
         req = urllib.request.Request(BASE + path, headers={"x-apisports-key": key})
-        with urllib.request.urlopen(req, timeout=40) as r:
-            body = json.load(r)
+        try:
+            with urllib.request.urlopen(req, timeout=40) as r:
+                body = json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code != 429:
+                raise
+            print("http 429", path, "attempt", attempt + 1)
+            time.sleep(20 * (attempt + 1))
+            continue
         errs = body.get("errors")
         if errs and "rate" in json.dumps(errs).lower():
             time.sleep(20 * (attempt + 1))
@@ -27,7 +35,7 @@ def api(path, key):
         if errs:
             print("api error", path, errs)
         return body
-    return {"response": [], "paging": {"current": 1, "total": 1}}
+    return {"response": [], "paging": {"current": 1, "total": 1}, "limited": True}
 
 
 def fixtures_for(date, key):
@@ -192,6 +200,9 @@ def main():
     odds = []
     for pick, fid in pairs[:args.max_odds]:
         body = api("/odds?fixture=%d" % fid, key)
+        if body.get("limited"):
+            print("rate limited, stopping after", len(odds), "odds rows")
+            break
         odds += body.get("response") or []
         time.sleep(0.4)
     rows = build_rows(odds, fixtures)

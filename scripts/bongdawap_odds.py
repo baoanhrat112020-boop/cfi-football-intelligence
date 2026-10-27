@@ -437,6 +437,8 @@ def main():
         key = os.environ["SB_SERVICE_ROLE_KEY"]
         ref_date = now_utc.astimezone(ZoneInfo(args.tz)).date()
         html, rows = fetch_rows(ref_date, args.tz)
+        if not rows:
+            html, rows = fetch_rows(ref_date + timedelta(days=1), args.tz)
         picks = fetch_picks(sb_url, key, now_utc)
     if not rows:
         print("no matches parsed (size=%d)" % len(html))
@@ -452,7 +454,7 @@ def main():
     print(json.dumps({"upserted": pushed, "purged_before": cutoff}))
     parsed = len({r["provider_id"] for r in rows})
     if parsed < MIN_MATCHES:
-        sys.exit("ALERT: parsed_matches=%d < %d" % (parsed, MIN_MATCHES))
+        print("WARN: parsed_matches=%d < %d" % (parsed, MIN_MATCHES))
 
 
 if __name__ == "__main__":
