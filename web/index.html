@@ -1114,7 +1114,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.1 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.2 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -2029,11 +2029,13 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function bcdRender(d){
     var s=d.summary||{},day=d.day||bcdDay();
     var nav='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><button class="chip" data-bcdnav="-1"'+(state.bcdOff<=-BCD_MAX?' disabled style="opacity:.4"':'')+'>‹</button><b translate="no">'+day.slice(8,10)+'/'+day.slice(5,7)+'/'+day.slice(0,4)+'</b><button class="chip" data-bcdnav="1"'+(state.bcdOff>=0?' disabled style="opacity:.4"':'')+'>›</button></div>';
-    var picks=d.picks||[];
-    if(!picks.length)return nav+'<div class="context-state"><span>Chưa có danh sách cho ngày này</span></div>';
+    var picks=d.picks||[],htp=(d.ht&&d.ht.picks)||[];
+    if(!picks.length&&!htp.length)return nav+'<div class="context-state"><span>Chưa có danh sách cho ngày này</span></div>';
     var sum='<div class="card" style="padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--muted)"><span translate="no">'+picks.length+'</span> <span>kèo</span>'+(s.settled>0?' · <span>Đã chốt</span> <span translate="no">'+s.settled+'</span> · <b style="color:#35d07f" translate="no">'+s.hits+'</b> <span>Thắng</span> <span translate="no">('+rpPct(s.hits,s.settled)+')</span>'+(s.avg_p!=null?' · <span>Mô hình</span> <span translate="no">'+Math.round(s.avg_p*100)+'%</span>':""):"")+'</div>';
     var note='<div style="font-size:11px;color:var(--muted);text-align:center;margin:10px 0"><span>Danh sách chốt lúc 00:00 mỗi ngày, ưu tiên giải lớn (★). Khả năng thắng là ước tính từ mô hình, không phải cam kết.</span></div>';
-    return nav+sum+picks.map(bcdCard).join("")+note;
+    var hs=(d.ht&&d.ht.summary)||{},htSec="";
+    if(htp.length)htSec='<div style="font-weight:700;margin:14px 0 6px"><span>Best Choice hiệp 1</span> <span style="font-size:11px;font-weight:400;color:var(--muted)" translate="no">'+htp.length+(hs.settled>0?' · '+hs.hits+'/'+hs.settled:'')+'</span></div>'+htp.map(bcdCard).join("");
+    return nav+(picks.length?sum+picks.map(bcdCard).join(""):"")+htSec+note;
   }
   async function loadBcd(silent){
     if(silent&&(state.current!=="mvp"||state.mvpSub!=="bcd"||document.hidden)){syncBcdPoll();return}
@@ -3307,6 +3309,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "trận": "matches",
       "Top kèo": "Top markets",
       "Khả năng thắng": "Win chance",
+      "Best Choice hiệp 1": "Best Choice first half",
       "Top 20 đội ra GoldMe nhiều nhất": "Top 20 teams by GoldMe hits",
       "Radar GoldMe hôm nay": "GoldMe Radar today",
       "Giải nhiều bàn": "High-scoring league",
