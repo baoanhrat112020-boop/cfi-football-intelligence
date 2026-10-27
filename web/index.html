@@ -653,9 +653,10 @@
 
   function $(id){return document.getElementById(id)}
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
-  var GT_SET={},GT_AT=0,GT_BADGE=' <span translate="no" title="GoldMe Top 20" style="font-size:11px">\uD83D\uDD25</span>';
+  var GT_SET={},GT_ENG={},GT_AT=0,GT_BADGE=' <span translate="no" title="GoldMe Top 20" style="font-size:11px">\uD83D\uDD25</span>',GT_ENG_BADGE=' <span translate="no" title="GoldMe England low league" style="font-size:11px">\u26A1</span>';
   function gtKey(n){return String(n==null?"":n).normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
-  function gtn(n){return esc(n)+(GT_SET[gtKey(n)]?GT_BADGE:"")}
+  function gtBadge(n){var k=gtKey(n);return GT_SET[k]?GT_BADGE:GT_ENG[k]?GT_ENG_BADGE:""}
+  function gtn(n){return esc(n)+gtBadge(n)}
   function showScreen(name){Object.keys(screens).forEach(function(k){screens[k].classList.toggle("active",k===name)});state.current=name;window.scrollTo({top:0,behavior:"instant"});if(typeof syncSuggestPoll==="function")syncSuggestPoll();if(typeof syncLivePoll==="function")syncLivePoll();if(typeof syncBcdPoll==="function")syncBcdPoll()}
   function toast(msg){var t=$("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._timer);t._timer=setTimeout(function(){t.classList.remove("show")},2400)}
   function modal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modalWrap").classList.add("show")}
@@ -1108,7 +1109,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.10 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.3.10 · Build 2</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1790,9 +1791,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var gA=GM.all,gS=GM.star||{n:0,hits:0};
       var gRows=rpIt('<b><span>T\u1ea5t c\u1ea3 tr\u1eadn c\u00f3 k\u1ebft qu\u1ea3</span></b><div class="m">'+gA.hits+'/'+gA.n+' <span>tr\u1eadn ra GoldMe</span></div>','<span>'+rpPct(gA.hits,gA.n)+'</span>',"");
       if(gS.n>0)gRows+=rpIt('<b>\uD83D\uDD25 <span>Tr\u1eadn c\u00f3 \u0111\u1ed9i Top 20</span></b><div class="m">'+gS.hits+'/'+gS.n+' <span>tr\u1eadn</span></div>','<span class="g">'+rpPct(gS.hits,gS.n)+'</span>',"");
+      var gE=GM.star_eng||{n:0,hits:0};
+      if(gE.n>0)gRows+=rpIt('<b>\u26A1 <span>Tr\u1eadn c\u00f3 \u0111\u1ed9i h\u1ea1ng th\u1ea5p Anh</span></b><div class="m">'+gE.hits+'/'+gE.n+' <span>tr\u1eadn</span></div>','<span>'+rpPct(gE.hits,gE.n)+'</span>',"");
       gRows+=(GM.types||[]).map(function(x){return rpIt('<b translate="no">'+esc(XLAB[x.type]||x.type)+'</b><div class="m">'+x.hits+'/'+x.n+(x.p_all!=null?' \u00b7 <span>m\u00f4 h\u00ecnh</span> '+Math.round(x.p_all*100)+'%':'')+(x.flag_n>0?' \u00b7 <span>d\u1ea5u hi\u1ec7u</span> '+x.flag_hits+'/'+x.flag_n:'')+'</div>','<span>'+rpPct(x.hits,x.n)+'</span>',"")}).join("");
       h+=rpSec('<span>GoldMe</span>',rpPct(gA.hits,gA.n),gRows,full);
-      var gT=(GM.top||[]).map(function(x,i){return rpIt((i+1)+'. <b>'+esc(x.name)+'</b><div class="m">'+x.hits+'/'+x.n+'</div>','<span class="g">'+rpPct(x.hits,x.n)+'</span>',"")}).join("");
+      var gT=(GM.top||[]).map(function(x,i){return rpIt((i+1)+'. <b>'+esc(x.name)+'</b><div class="m">'+x.hits+'/'+x.n+(x.league?' \u00b7 <span translate="no">'+esc(x.league)+'</span>':'')+'</div>','<span class="g">'+rpPct(x.hits,x.n)+'</span>',"")}).join("");
       if(gT)h+=rpSec('<span>Top 20 \u0111\u1ed9i GoldMe</span>','',gT,full);
     }
     var HR=d.hours||[];
@@ -1852,19 +1855,30 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   rpDots();
   var goldAt=0;
   function goldMarket(m,l){return m==="over_ht"?"Tài "+l+" hiệp 1":m==="over_ft"?"Tài "+l+" cả trận":m?marketLabel(m):""}
+  function goldTopRow(x,badge){
+    var roles=(x.att?'<span>ghi ≥4</span> <span translate="no">'+x.att+'</span>':'')+(x.att&&x.def?' · ':'')+(x.def?'<span>thủng ≥4</span> <span translate="no">'+x.def+'</span>':'');
+    var lg=x.league?'<div style="font-size:11px;color:var(--muted);overflow-wrap:anywhere" translate="no">'+esc(x.league)+(x.lrate!=null?' · <span translate="yes">nền giải</span> '+Math.round(x.lrate*100)+'%':'')+'</div>':'';
+    return '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><div style="min-width:0"><div style="font-weight:700;overflow-wrap:anywhere"><span translate="no">'+x.rk+'.</span> '+esc(x.name)+badge+'</div>'+lg+(roles?'<div style="font-size:11px;color:var(--muted)">'+roles+'</div>':'')+'</div><div style="text-align:right;white-space:nowrap"><b translate="no" style="color:var(--cyan)">'+Math.round(x.rate*100)+'%</b><div style="font-size:11px;color:var(--muted)" translate="no">'+x.hits+'/'+x.n+'</div></div></div>';
+  }
+  function goldLeagueRow(x){
+    return '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><div style="min-width:0"><div style="font-weight:700;overflow-wrap:anywhere"><span translate="no">'+x.rk+'.</span> <span translate="no">'+esc(x.league||"")+'</span>'+(x.eng?GT_ENG_BADGE:'')+'</div>'+(x.country?'<div style="font-size:11px;color:var(--muted)" translate="no">'+esc(x.country)+'</div>':'')+'</div><div style="text-align:right;white-space:nowrap"><b translate="no" style="color:var(--cyan)">'+Math.round(x.rate*100)+'%</b><div style="font-size:11px;color:var(--muted)" translate="no">'+x.hits+'/'+x.n+'</div></div></div>';
+  }
   function goldTopHtml(){
-    var T=state.goldTop||[];if(!T.length)return "";
-    var rows=T.map(function(x){
-      var roles=(x.att?'<span>ghi \u22654</span> <span translate="no">'+x.att+'</span>':'')+(x.att&&x.def?' \u00b7 ':'')+(x.def?'<span>th\u1ee7ng \u22654</span> <span translate="no">'+x.def+'</span>':'');
-      return '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><div style="min-width:0"><div style="font-weight:700;overflow-wrap:anywhere"><span translate="no">'+x.rk+'.</span> '+esc(x.name)+GT_BADGE+'</div><div style="font-size:11px;color:var(--muted)">'+roles+'</div></div><div style="text-align:right;white-space:nowrap"><b translate="no" style="color:var(--cyan)">'+Math.round(x.rate*100)+'%</b><div style="font-size:11px;color:var(--muted)" translate="no">'+x.hits+'/'+x.n+'</div></div></div>'}).join("");
-    return '<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Top 20 \u0111\u1ed9i ra GoldMe nhi\u1ec1u nh\u1ea5t</span> \u00b7 <span translate="no">60d \u00b7 \u22655</span></div>'+rows+'<div style="font-size:11px;color:var(--muted);margin-top:8px"><span>\u0110\u1ed9i trong Top 20 c\u00f3 t\u1ec9 l\u1ec7 ra GoldMe cao h\u01a1n kho\u1ea3ng 2 l\u1ea7n m\u1ee9c trung b\u00ecnh theo th\u1ed1ng k\u00ea qu\u00e1 kh\u1ee9, kh\u00f4ng ph\u1ea3i cam k\u1ebft.</span></div></div>'
+    var T=state.goldTop||[],E=state.goldEng||[],L=state.goldLeagues||[];if(!T.length&&!E.length&&!L.length)return "";
+    var h='';
+    if(T.length)h+='<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Top 20 đội vượt mức ra GoldMe của giải</span> · <span translate="no">60d · ≥8</span></div>'+T.map(function(x){return goldTopRow(x,GT_BADGE)}).join("")+'<div style="font-size:11px;color:var(--muted);margin-top:8px"><span>Xếp theo mức ra GoldMe vượt nền của chính giải, mỗi giải tối đa 2 đội. Theo thống kê quá khứ, trận có đội này ra GoldMe cao hơn khoảng 1,3–1,5 lần nền giải, không phải cam kết.</span></div></div>';
+    if(L.length)h+='<details class="card" style="padding:10px 12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px"><b><span>Gi\u1ea3i ra GoldMe nhi\u1ec1u nh\u1ea5t</span> <span translate="no">('+L.length+')</span></b><span translate="no" style="font-size:12px;color:var(--cyan)">'+Math.round(L[0].rate*100)+'%</span></summary><div style="font-size:11px;color:var(--muted);margin:8px 0 4px"><span>T\u1ec9 l\u1ec7 tr\u1eadn ra GoldMe c\u1ee7a c\u1ea3 gi\u1ea3i trong 60 ng\u00e0y, t\u1ed1i thi\u1ec3u 80 tr\u1eadn.</span></div>'+L.map(goldLeagueRow).join("")+'</details>';
+    if(E.length)h+='<details class="card" style="padding:10px 12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px"><b><span>Đội hạng thấp nước Anh (tham khảo)</span> <span translate="no">'+GT_ENG_BADGE+'('+E.length+')</span></b></summary><div style="font-size:11px;color:var(--muted);margin:8px 0 4px"><span>Các giải hạng thấp Anh có tỉ lệ ra GoldMe rất cao ngay từ mức nền giải (khoảng 50–70% số trận). Đây là đặc điểm của giải, không riêng đội.</span></div>'+E.map(function(x){return goldTopRow(x,GT_ENG_BADGE)}).join("")+'</details>';
+    return h;
   }
   async function ensureGoldTop(){
     if(state.goldTop&&Date.now()-GT_AT<6*3600*1000)return state.goldTop;
     try{
-      var r=await api("/api/goldme-top","GET"),dd=r.data||{},t=dd.teams||[],set={};
+      var r=await api("/api/goldme-top","GET"),dd=r.data||{},t=dd.teams||[],e=dd.eng||[],set={},eset={};
+      state.goldLeagues=dd.leagues||[];
       t.forEach(function(x){set[gtKey(x.name)]=1});
-      GT_SET=set;state.goldTop=t;GT_AT=Date.now();
+      e.forEach(function(x){eset[gtKey(x.name)]=1});
+      GT_SET=set;GT_ENG=eset;state.goldTop=t;state.goldEng=e;GT_AT=Date.now();
     }catch(e){}
     return state.goldTop||[];
   }
@@ -2022,7 +2036,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return t;
   }
   function tagBadges(name){
-    return (GT_SET[gtKey(name)]?GT_BADGE:"")+teamTags(name).map(function(x){return ' <span style="background:#1c242c;color:#8fa1af;padding:1px 5px;border-radius:4px;font-size:9px;font-weight:600;vertical-align:middle">'+x+'</span>'}).join("");
+    return gtBadge(name)+teamTags(name).map(function(x){return ' <span style="background:#1c242c;color:#8fa1af;padding:1px 5px;border-radius:4px;font-size:9px;font-weight:600;vertical-align:middle">'+x+'</span>'}).join("");
   }
   async function loadSuggest(){
     var el=$("suggestContent");
@@ -3243,6 +3257,14 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Top kèo": "Top markets",
       "Khả năng thắng": "Win chance",
       "Top 20 đội ra GoldMe nhiều nhất": "Top 20 teams by GoldMe hits",
+      "Top 20 đội vượt mức ra GoldMe của giải": "Top 20 teams above their league's GoldMe rate",
+      "nền giải": "league baseline",
+      "Giải ra GoldMe nhiều nhất": "Leagues by GoldMe rate",
+      "Tỉ lệ trận ra GoldMe của cả giải trong 60 ngày, tối thiểu 80 trận.": "Share of matches hitting GoldMe across the whole league over 60 days, at least 80 matches.",
+      "Xếp theo mức ra GoldMe vượt nền của chính giải, mỗi giải tối đa 2 đội. Theo thống kê quá khứ, trận có đội này ra GoldMe cao hơn khoảng 1,3–1,5 lần nền giải, không phải cam kết.": "Ranked by GoldMe rate above the team's own league baseline, at most 2 teams per league. In past data, matches with these teams hit GoldMe about 1.3-1.5 times the league baseline; this is not a guarantee.",
+      "Đội hạng thấp nước Anh (tham khảo)": "English low-league teams (reference)",
+      "Các giải hạng thấp Anh có tỉ lệ ra GoldMe rất cao ngay từ mức nền giải (khoảng 50–70% số trận). Đây là đặc điểm của giải, không riêng đội.": "English low leagues have a very high GoldMe rate at the league level (about 50-70% of matches). This is a league trait, not specific to a team.",
+      "Trận có đội hạng thấp Anh": "Matches with an English low-league team",
       "Đội trong Top 20 có tỉ lệ ra GoldMe cao hơn khoảng 2 lần mức trung bình theo thống kê quá khứ, không phải cam kết.": "Top 20 teams hit GoldMe about twice as often as average in past data; this is not a guarantee.",
       "ghi ≥4": "scored ≥4",
       "thủng ≥4": "conceded ≥4",
