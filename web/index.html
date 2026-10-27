@@ -1806,7 +1806,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var RDR=d.radar;
     if(RDR&&RDR.flagged&&RDR.flagged.n>0){
       var rF=RDR.flagged,rA=RDR.all||{n:0,hits:0},BL=["<15%","15\u201325%","25\u201340%","\u226540%"];
-      var rRows=rpIt('<b><span>Tr\u1eadn \u0111\u01b0\u1ee3c g\u1eafn \u0111\u1ea5u Radar</span></b><div class="m">'+rF.hits+'/'+rF.n+(rF.avg_p!=null?' \u00b7 <span>d\u1ef1 b\u00e1o</span> <span translate="no">'+Math.round(rF.avg_p*100)+'%</span>':'')+'</div>','<span class="g">'+rpPct(rF.hits,rF.n)+'</span>',"");
+      var rRows=rpIt('<b><span>Tr\u1eadn \u0111\u01b0\u1ee3c g\u1eafn d\u1ea5u Radar</span></b><div class="m">'+rF.hits+'/'+rF.n+(rF.avg_p!=null?' \u00b7 <span>d\u1ef1 b\u00e1o</span> <span translate="no">'+Math.round(rF.avg_p*100)+'%</span>':'')+'</div>','<span class="g">'+rpPct(rF.hits,rF.n)+'</span>',"");
       rRows+=rpIt('<b><span>T\u1ea5t c\u1ea3 tr\u1eadn \u0111\u01b0\u1ee3c ch\u1ea5m</span></b><div class="m">'+rA.hits+'/'+rA.n+'</div>','<span>'+rpPct(rA.hits,rA.n)+'</span>',"");
       rRows+=(RDR.buckets||[]).map(function(b){return rpIt('<b translate="no">'+BL[b.k]+'</b><div class="m">'+b.hits+'/'+b.n+(b.avg_p!=null?' \u00b7 <span>d\u1ef1 b\u00e1o</span> <span translate="no">'+Math.round(b.avg_p*100)+'%</span>':'')+'</div>','<span>'+rpPct(b.hits,b.n)+'</span>',"")}).join("");
       h+=rpSec('<span>Radar GoldMe</span>',rpPct(rF.hits,rF.n),rRows,full);
