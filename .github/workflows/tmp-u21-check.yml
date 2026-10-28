@@ -10,22 +10,22 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
-      - name: FotMob leagues
+      - name: API-Football leagues
+        env:
+          APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
         run: |
-          for off in -24 -20 -17 -14 -13 -10 -7 -6 -5 -3 -2 -1 0 1 2; do
-            d=$(date -u -d "$off day" +%Y%m%d)
-            curl -sS --max-time 40 -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36" -H "Referer: https://www.fotmob.com/" -H "Accept: application/json" -o fm_$d.json -w "fotmob $d %{http_code} %{size_download}\n" "https://www.fotmob.com/api/data/matches?date=$d"
+          for q in Development "International Cup" "Premier League 2" "League Cup" ENL; do
+            curl -sS --max-time 30 -G -H "x-apisports-key: $APIFOOTBALL_KEY" --data-urlencode "search=$q" -o l.json -w "search $q %{http_code}\n" "https://v3.football.api-sports.io/leagues"
+            node -e "
+            const j=require('./l.json');
+            console.log('errors',JSON.stringify(j.errors||{}),'results',j.results);
+            for(const x of (j.response||[])){
+              const c=x.country&&x.country.name;
+              if(!/(england|world|europe)/i.test(c||''))continue;
+              const cur=(x.seasons||[]).find(s=>s.current)||(x.seasons||[]).slice(-1)[0]||{};
+              console.log(' ',x.league.id,'|',c,'|',x.league.name,'|',x.league.type,'| season',cur.year,'fixtures',cur.coverage&&cur.coverage.fixtures&&cur.coverage.fixtures.events,'standings',cur.coverage&&cur.coverage.standings);
+            }"
             sleep 1
           done
-          node -e "
-          const fs=require('fs');const names={};
-          for(const f of fs.readdirSync('.').filter(x=>/^fm_\d+\.json$/.test(x)).sort()){
-            let j;try{j=JSON.parse(fs.readFileSync(f))}catch(e){console.log(f,'bad');continue}
-            for(const l of (j.leagues||[])){
-              const t=(l.matches||[]).map(m=>(m.home&&m.home.name)+' '+(m.away&&m.away.name)).join(' ');
-              if(/(england|eng)/i.test((l.ccode||'')+' '+(l.name||''))&&/(U21|U23|U18|development|international cup|enl|trophy|league cup|academy)/i.test((l.name||'')+' '+t)||/(development league|international cup|enl cup|premier league cup|u21)/i.test(l.name||'')){const k=(l.ccode||'')+' | '+l.name+' | id '+l.primaryId;names[k]=(names[k]||0)+(l.matches||[]).length}
-            }
-          }
-          console.log(JSON.stringify(Object.entries(names).sort((a,b)=>a[0]<b[0]?-1:1),null,0))"
