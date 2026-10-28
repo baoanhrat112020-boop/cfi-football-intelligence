@@ -10,22 +10,16 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - name: API-Football leagues
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/apifootball-youth
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Dry run
         env:
           APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
-        run: |
-          for q in Development "International Cup" "Premier League 2" "League Cup" ENL; do
-            curl -sS --max-time 30 -G -H "x-apisports-key: $APIFOOTBALL_KEY" --data-urlencode "search=$q" -o l.json -w "search $q %{http_code}\n" "https://v3.football.api-sports.io/leagues"
-            node -e "
-            const j=require('./l.json');
-            console.log('errors',JSON.stringify(j.errors||{}),'results',j.results);
-            for(const x of (j.response||[])){
-              const c=x.country&&x.country.name;
-              if(!/(england|world|europe)/i.test(c||''))continue;
-              const cur=(x.seasons||[]).find(s=>s.current)||(x.seasons||[]).slice(-1)[0]||{};
-              console.log(' ',x.league.id,'|',c,'|',x.league.name,'|',x.league.type,'| season',cur.year,'fixtures',cur.coverage&&cur.coverage.fixtures&&cur.coverage.fixtures.events,'standings',cur.coverage&&cur.coverage.standings);
-            }"
-            sleep 1
-          done
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/apifootball_youth.py --dry-run
