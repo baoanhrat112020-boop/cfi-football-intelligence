@@ -1,0 +1,49 @@
+name: Tmp U21 Check
+
+on:
+  push:
+    branches: [tmp/u21-check]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: LiveScore stages
+        run: |
+          for off in -1 0 1; do
+            d=$(date -u -d "$off day" +%Y%m%d)
+            curl -sS --max-time 60 -A "Mozilla/5.0" -o ls_$d.json -w "livescore $d %{http_code}\n" "https://prod-cdn-mev-api.livescore.com/v1/api/app/date/soccer/$d/0?MD=1"
+          done
+          node -e "
+          const fs=require('fs');
+          for(const f of fs.readdirSync('.').filter(x=>/^ls_\d+\.json$/.test(x))){
+            let j;try{j=JSON.parse(fs.readFileSync(f))}catch(e){console.log(f,'bad json');continue}
+            const st=j.Stages||[];
+            console.log(f,'stages',st.length,'events',st.reduce((a,s)=>a+(s.Events||[]).length,0));
+            for(const s of st){
+              const n=(s.Cnm||'')+' | '+(s.Snm||'');
+              if(/england/i.test(n)&&/(u21|u23|u18|u19|premier league 2|development|youth|academy)/i.test(n))console.log('  ',n,'events',(s.Events||[]).length);
+            }
+          }"
+      - name: Supabase fixtures
+        env:
+          K: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          U=https://zbwkowqluwuvsnajkuvc.supabase.co/rest/v1
+          since=$(date -u -d "60 day ago" +%Y-%m-%d)
+          curl -sS --max-time 60 -H "apikey: $K" -H "Authorization: Bearer $K" -o fx.json -w "fixtures %{http_code}\n" "$U/fixtures?select=competition_name,competition_key,match_date&match_date=gte.$since&or=(competition_name.ilike.*U21*,competition_name.ilike.*Premier League 2*,competition_name.ilike.*U23*,competition_name.ilike.*Development*)&limit=5000"
+          node -e "
+          const j=require('./fx.json');
+          if(!Array.isArray(j)){console.log(JSON.stringify(j).slice(0,300));process.exit(0)}
+          const c={};for(const x of j){const k=x.competition_name||x.competition_key;c[k]=c[k]||{n:0,last:''};c[k].n++;if(x.match_date>c[k].last)c[k].last=x.match_date}
+          console.log(JSON.stringify(Object.entries(c).sort((a,b)=>b[1].n-a[1].n).slice(0,40),null,0));"
+          curl -sS --max-time 60 -H "apikey: $K" -H "Authorization: Bearer $K" -o lv.json -w "living %{http_code}\n" "$U/cfi_living_verified_fixtures?select=source_provenance,kickoff_at&kickoff_at=gte.$(date -u -d '1 day ago' +%Y-%m-%dT00:00:00Z)&limit=3000"
+          node -e "
+          const j=require('./lv.json');
+          if(!Array.isArray(j)){console.log(JSON.stringify(j).slice(0,300));process.exit(0)}
+          const c={};for(const x of j){const l=(x.source_provenance||{}).league||'';if(/england/i.test(l)&&/(u21|u23|u18|u19|premier league 2|development|youth)/i.test(l))c[l]=(c[l]||0)+1}
+          console.log('living england youth',JSON.stringify(c),'total',j.length)"
