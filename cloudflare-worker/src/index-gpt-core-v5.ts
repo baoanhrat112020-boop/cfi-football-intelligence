@@ -1107,6 +1107,15 @@ export default{
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});
       try{
+        const dq=url.searchParams.get('day');
+        if(dq){
+          const vnToday=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+          const diff=(Date.parse(dq)-Date.parse(vnToday))/86400000;
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(dq)||!(diff<=-1&&diff>=-30))return Response.json({error:'bad day'},{status:400});
+          const rd=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme_radar_day`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_day:dq}),signal:AbortSignal.timeout(25000)});
+          if(!rd.ok)return Response.json({error:'goldme radar day failed',status:rd.status},{status:502});
+          return Response.json(await rd.json(),{headers:{'Cache-Control':'public, max-age=300'}});
+        }
         const r=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goldme_radar_latest`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(25000)});
         if(!r.ok)return Response.json({error:'goldme radar failed',status:r.status},{status:502});
         return Response.json(await r.json(),{headers:{'Cache-Control':'public, max-age=600'}});

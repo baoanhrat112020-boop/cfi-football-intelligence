@@ -1114,7 +1114,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.2 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.3 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1901,13 +1901,58 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return '<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)"><div style="min-width:0"><div style="font-size:11px;color:var(--muted)"><span translate="no">'+bcdKick(x.t)+'</span> · <span translate="no">'+esc(x.c||"")+'</span></div><div style="font-weight:700;overflow-wrap:anywhere;margin-top:2px"><span translate="no">'+esc(x.home)+' - '+esc(x.away)+'</span>'+badge+'</div><div>'+rs+'</div></div><div style="text-align:right;white-space:nowrap"><b translate="no" style="font-size:20px;color:var(--cyan)">'+Math.round(x.p*100)+'%</b>'+(base?'<div style="font-size:11px;color:var(--muted)"><span>gấp</span> <span translate="no">'+(x.p/base).toFixed(1)+'×</span> <span>nền</span></div>':'')+'</div></div>';
   }
   function goldRadarHtml(){
-    var R=state.radar;if(!R)return "";
-    var M=R.items||[],E=R.eng_items||[];if(!M.length&&!E.length)return "";
+    var btn='<div style="margin-bottom:8px"><button class="chip" data-rdopen="1"><span>Kết quả Radar hôm qua</span> ›</button></div>';
+    var R=state.radar;if(!R)return btn;
+    var M=R.items||[],E=R.eng_items||[];if(!M.length&&!E.length)return btn;
     var base=Number(R.base)||0.18,top=R.test&&R.test.prec_top5!=null?Math.round(R.test.prec_top5*100):null,h='';
     if(M.length)h+='<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px"><span>Radar GoldMe hôm nay</span> · <span translate="no">'+Math.min(M.length,10)+'/'+(R.n_main!=null?R.n_main:R.n)+'</span></div>'+M.slice(0,10).map(function(x){return rdRow(x,RD_BADGE,base)}).join("")+'<div style="font-size:11px;color:var(--muted);margin-top:8px"><span>Xác suất ước tính từ nền giải và phong độ ghi/thủng bàn của hai đội. Kiểm tra trên trận quá khứ</span>'+(top!=null?': <span translate="no">top 5% ≈ '+top+'%</span> <span>so với nền</span> <span translate="no">'+Math.round(base*100)+'%</span>':'')+'. <span>Không phải cam kết.</span></div></div>';
     if(E.length)h+='<details class="card" style="padding:10px 12px;margin-bottom:10px"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px"><b><span>Radar hạng thấp Anh (tham khảo)</span> <span translate="no">'+GT_ENG_BADGE+'('+E.length+'/'+(R.n_eng!=null?R.n_eng:E.length)+')</span></b></summary><div style="font-size:11px;color:var(--muted);margin:8px 0 4px"><span>Giải hạng thấp Anh có tỉ lệ ra GoldMe rất cao ngay từ nền giải, nên xác suất ở nhóm này phản ánh chủ yếu đặc điểm giải. Xếp riêng để không lấn át nhóm chính.</span></div>'+E.map(function(x){return rdRow(x,GT_ENG_BADGE,0)}).join("")+'</details>';
-    return h;
+    return btn+h;
   }
+  function rdGoldTypes(x){
+    var t=[];
+    if(x.hh!=null&&x.ha!=null&&x.hh+x.ha>=3)t.push("3+ HT");
+    if(x.hh>=4||x.ha>=4)t.push("Other HT");
+    if(x.fh>=5||x.fa>=5)t.push("Other FT");
+    if(x.fh!=null&&x.fa!=null&&x.fh+x.fa>=7)t.push("7+ FT");
+    return t;
+  }
+  function rdResRow(x){
+    var st=x.gold===true?'<b style="color:#35d07f">✓ <span>Ra GoldMe</span></b>':x.gold===false?'<b style="color:#ff6b6b">✗ <span>Không ra</span></b>':'<span style="color:var(--muted)"><span>Chưa có kết quả</span></span>';
+    var sc=x.fh!=null&&x.fa!=null?'<div style="font-size:12px;margin-top:3px" translate="no">'+(x.hh!=null&&x.ha!=null?'HT '+x.hh+'-'+x.ha+' · ':'')+'FT '+x.fh+'-'+x.fa+'</div>':'';
+    var tg=x.gold===true?'<div style="margin-top:3px">'+rdGoldTypes(x).map(function(t){return '<span translate="no" style="font-size:11px;font-weight:700;color:#35d07f;border:1px solid #35d07f;border-radius:6px;padding:1px 6px;margin-right:4px">'+t+'</span>'}).join("")+'</div>':'';
+    return '<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)"><div style="min-width:0"><div style="font-size:11px;color:var(--muted)"><span translate="no">'+bcdKick(x.t)+'</span> · <span translate="no">'+esc(x.c||"")+'</span></div><div style="font-weight:700;overflow-wrap:anywhere;margin-top:2px"><span translate="no">'+esc(x.home)+' - '+esc(x.away)+'</span></div>'+sc+tg+'</div><div style="text-align:right;white-space:nowrap">'+st+'<div style="font-size:11px;color:var(--muted)"><span>Dự báo</span> <span translate="no">'+Math.round(x.p*100)+'%</span></div></div></div>';
+  }
+  function rdResSec(title,s,items){
+    s=s||{};
+    if(!items.length)return "";
+    var head='<div style="font-weight:700;margin:12px 0 4px"><span>'+title+'</span> <span style="font-size:12px;font-weight:400;color:var(--muted)" translate="no">'+(s.n>0?s.hits+'/'+s.n+' ('+rpPct(s.hits,s.n)+')'+(s.avg_p!=null?' · '+Math.round(s.avg_p*100)+'%':''):'')+'</span></div>';
+    return head+items.map(rdResRow).join("");
+  }
+  function rdResHtml(d,day){
+    var nav='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><button class="chip" data-rdnav="-1"'+(state.rdOff<=-14?' disabled style="opacity:.4"':'')+'>‹</button><b translate="no">'+day.slice(8,10)+'/'+day.slice(5,7)+'/'+day.slice(0,4)+'</b><button class="chip" data-rdnav="1"'+(state.rdOff>=-1?' disabled style="opacity:.4"':'')+'>›</button></div>';
+    var M=d.items||[],E=d.eng_items||[];
+    if(!M.length&&!E.length)return nav+'<div class="context-state"><span>Chưa có Radar cho ngày này</span></div>';
+    return nav+rdResSec('Nhóm chính',d.main,M)+rdResSec('Hạng thấp Anh',d.eng,E);
+  }
+  async function loadRdRes(){
+    var day=new Date(Date.parse(bcdBase())+state.rdOff*86400000).toISOString().slice(0,10);
+    if(!$("modalWrap").classList.contains("show"))modal("GoldMe Radar",'<div class="context-state">Đang tải...</div>');
+    try{
+      var r=await api("/api/goldme-radar?day="+day,"GET"),d=r.data||{};
+      if(d.error)throw new Error(d.error);
+      $("modalBody").innerHTML=rdResHtml(d,day);
+    }catch(e){$("modalBody").innerHTML='<div class="context-state">Không tải được: '+esc(String(e.message||e))+'</div>'}
+  }
+  state.rdOff=-1;
+  $("mvpContent").addEventListener("click",function(e){
+    var b=e.target.closest("[data-rdopen]");if(!b)return;
+    state.rdOff=-1;loadRdRes();
+  });
+  $("modalBody").addEventListener("click",function(e){
+    var n=e.target.closest("[data-rdnav]");if(!n||n.disabled)return;
+    state.rdOff=Math.max(-14,Math.min(-1,state.rdOff+Number(n.dataset.rdnav)));loadRdRes();
+  });
   async function ensureRadar(){
     if(state.radar&&Date.now()-RD_AT<30*60*1000)return state.radar;
     try{
@@ -3324,6 +3369,14 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "so với nền": "vs baseline",
       "Không phải cam kết.": "Not a guarantee.",
       "Radar GoldMe": "GoldMe Radar",
+      "Kết quả Radar hôm qua": "Yesterday's Radar results",
+      "Ra GoldMe": "Hit GoldMe",
+      "Không ra": "Missed",
+      "Chưa có kết quả": "No result yet",
+      "Dự báo": "Predicted",
+      "Nhóm chính": "Main group",
+      "Hạng thấp Anh": "English low leagues",
+      "Chưa có Radar cho ngày này": "No Radar for this day",
       "Radar hạng thấp Anh (tham khảo)": "English low-league Radar (reference)",
       "Giải hạng thấp Anh có tỉ lệ ra GoldMe rất cao ngay từ nền giải, nên xác suất ở nhóm này phản ánh chủ yếu đặc điểm giải. Xếp riêng để không lấn át nhóm chính.": "English low leagues have a very high GoldMe rate from the league baseline alone, so probabilities in this group mostly reflect the league. Shown separately so they do not crowd out the main group.",
       "Trận hạng thấp Anh được gắn dấu": "English low-league matches flagged",
