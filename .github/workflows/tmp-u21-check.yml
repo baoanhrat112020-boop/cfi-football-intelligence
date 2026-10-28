@@ -12,32 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: LiveScore PL2
+      - name: LiveScore England stages
         run: |
-          for off in -13 -12 -11 -10 -9 -8 -7 -6 -5 -4 -3 -2 -1 0 1 2; do
+          for off in -20 -19 -18 -17 -16 -15 -14 -13 -12 -11 -10 -9 -8 -7 -6 -5 -4 -3 -2 -1 0 1 2 3; do
             d=$(date -u -d "$off day" +%Y%m%d)
             curl -sS --max-time 60 -A "Mozilla/5.0" -o ls_$d.json "https://prod-cdn-mev-api.livescore.com/v1/api/app/date/soccer/$d/0?MD=1"
           done
           node -e "
-          const fs=require('fs');
+          const fs=require('fs');const names={};
           for(const f of fs.readdirSync('.').filter(x=>/^ls_\d+\.json$/.test(x)).sort()){
             let j;try{j=JSON.parse(fs.readFileSync(f))}catch(e){continue}
             for(const s of (j.Stages||[])){
-              if(!(/england/i.test(s.Cnm||'')&&/^premier league 2$/i.test(s.Snm||'')))continue;
-              const ev=s.Events||[];
-              console.log('LS',f.slice(3,11),'events',ev.length,'FT',ev.filter(e=>e.Eps==='FT').length,'withHT',ev.filter(e=>e.Eps==='FT'&&e.Trh1!=null&&e.Trh2!=null).length,'|',ev.map(e=>(e.T1&&e.T1[0].Nm)+' v '+(e.T2&&e.T2[0].Nm)+' '+e.Eps+' esd='+String(e.Esd).slice(0,12)).join('; '));
+              const n=(s.Cnm||'')+' | '+(s.Snm||'');
+              const t=((s.Events||[]).map(e=>(e.T1&&e.T1[0].Nm)+' '+(e.T2&&e.T2[0].Nm)).join(' '));
+              if(/england/i.test(s.Cnm||'')||/(development|international cup|enl|trophy|league cup|u21|u23|academy)/i.test(n)||/ U2[13]\b/.test(t)){names[n]=(names[n]||0)+(s.Events||[]).length}
             }
-          }"
-      - name: Supabase
-        env:
-          K: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          U=https://zbwkowqluwuvsnajkuvc.supabase.co/rest/v1
-          curl -g -sS --max-time 60 -H "apikey: $K" -H "Authorization: Bearer $K" -o fx.json -w "fixtures %{http_code}\n" "$U/fixtures?select=match_date,fixture_id&match_date=gte.2026-10-10&competition_key=eq.livescore:premier_league_2&limit=1000"
-          node -e "
-          const j=require('./fx.json');const c={};for(const x of j)c[x.match_date]=(c[x.match_date]||0)+1;console.log('DB fixtures by match_date',JSON.stringify(c))"
-          curl -g -sS --max-time 60 -H "apikey: $K" -H "Authorization: Bearer $K" -o lv.json -w "living %{http_code}\n" "$U/cfi_living_verified_fixtures?select=kickoff_at,canonical_home_team_id,canonical_away_team_id&source_provenance-%3E%3Eleague=eq.Premier%20League%202&kickoff_at=gte.2026-10-10T00:00:00Z&limit=1000"
-          node -e "
-          const j=require('./lv.json');if(!Array.isArray(j)){console.log(JSON.stringify(j).slice(0,300));process.exit(0)}
-          const c={};let both=0;for(const x of j){const d=String(x.kickoff_at).slice(0,10);c[d]=(c[d]||0)+1;if(x.canonical_home_team_id&&x.canonical_away_team_id)both++}
-          console.log('living PL2 by kickoff day',JSON.stringify(c),'both ids',both,'of',j.length)"
+          }
+          console.log(JSON.stringify(Object.entries(names).sort((a,b)=>a[0]<b[0]?-1:1),null,0))"
