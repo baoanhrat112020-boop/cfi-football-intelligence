@@ -1,0 +1,35 @@
+name: API-Football Youth
+
+on:
+  schedule:
+    - cron: '40 16 * * *'
+    - cron: '40 5 * * *'
+  workflow_dispatch:
+    inputs:
+      write:
+        description: 'Ghi vao DB (true/false)'
+        default: 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apifootball-youth
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Sync
+        env:
+          APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
+        run: |
+          if [ "$WRITE" = "true" ]; then python scripts/apifootball_youth.py; else python scripts/apifootball_youth.py --dry-run; fi
