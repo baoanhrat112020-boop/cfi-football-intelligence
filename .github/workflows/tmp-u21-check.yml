@@ -10,16 +10,27 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: feat/apifootball-youth
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Dry run
+      - name: Settle diagnostics
         env:
-          APIFOOTBALL_KEY: ${{ secrets.APIFOOTBALL_KEY }}
-          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/apifootball_youth.py --dry-run
+          K: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          U=https://zbwkowqluwuvsnajkuvc.supabase.co/rest/v1
+          H1="apikey: $K"; H2="Authorization: Bearer $K"
+          curl -g -sS --max-time 60 -H "$H1" -H "$H2" -o pl.json -w "pick_log %{http_code}\n" "$U/suggest_pick_log?select=top_market,settled_at,void_reason,ft_home,ht_home,home_team_id,away_team_id,kickoff_at&target_date=eq.2026-10-29&top_market=not.is.null&limit=1000"
+          node -e "
+          const j=require('./pl.json');
+          if(!Array.isArray(j)){console.log(JSON.stringify(j).slice(0,300));process.exit(0)}
+          const needHT=m=>/_ht\$/.test(m);
+          const c={};
+          for(const x of j){
+            const k=(needHT(x.top_market)?'HT':'FT')+' | '+(x.home_team_id&&x.away_team_id?'ids':'noids')+' | '+(x.settled_at?(x.void_reason||'settled_ok'):'unsettled')+' | ft '+(x.ft_home!=null?'y':'n');
+            c[k]=(c[k]||0)+1;
+          }
+          console.log('total',j.length);
+          console.log(JSON.stringify(Object.entries(c).sort((a,b)=>b[1]-a[1]),null,0));"
+          curl -g -sS --max-time 60 -H "$H1" -H "$H2" -H "Prefer: count=exact" -I -o /dev/null -D h1.txt "$U/fixtures?select=fixture_id&ht_home=is.null&match_date=gte.2026-09-01&limit=1"
+          grep -i "content-range\|HTTP/" h1.txt | head -3
+          curl -g -sS --max-time 60 -H "$H1" -H "$H2" -H "Prefer: count=exact" -I -o /dev/null -D h2.txt "$U/fixtures?select=fixture_id&match_date=gte.2026-09-01&limit=1"
+          grep -i "content-range" h2.txt | head -2
