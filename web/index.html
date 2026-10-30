@@ -1894,7 +1894,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function smDoc(d,kind){
     var t=rpRange(d,kind).replace(/<[^>]+>/g,"");
-    return '<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CFI · '+esc(t)+'</title><style>'+SM_CSS+'</style></head><body><h1>CFI · Báo cáo tổng</h1><div style="font-size:12px;color:#7f9daf;margin-bottom:10px">'+esc(t)+'</div>'+smBody(d)+'</body></html>';
+    return '<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CFI · '+esc(t)+'</title><style>'+SM_CSS+'</style></head><body><h1>CFI · <span>Báo cáo tổng</span></h1><div style="font-size:12px;color:#7f9daf;margin-bottom:10px">'+esc(t)+'</div>'+smBody(d)+'</body></html>';
   }
   async function loadSummary(){
     var el=$("smContent"),kind=state.smKind,off=state.smOff[kind],req=++SM_REQ;
@@ -3444,7 +3444,6 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Báo cáo tổng": "Summary",
       "Tất cả các tab · tỷ lệ thắng theo từng kèo": "All tabs · win rate by market",
       "Singles (Kèo lẻ)": "Singles",
-      "Picks (Suggest)": "Picks (Suggest)",
       "Radar hạng thấp Anh": "English low-league Radar",
       "Tổng dự đoán": "Total predictions",
       "Ít mẫu": "Small sample",
