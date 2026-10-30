@@ -37,11 +37,11 @@ WITH x AS (
   FROM public.goldme_radar r WHERE r.flagged AND r.day BETWEEN p_from AND p_to
 ), tabs AS (
   SELECT tab, count(*) AS n, count(*) FILTER (WHERE settled) AS settled, count(*) FILTER (WHERE settled AND win) AS wins,
-         round(avg(p) FILTER (WHERE settled), 4) AS avg_p
+         round(avg(p::numeric) FILTER (WHERE settled), 4) AS avg_p
   FROM x GROUP BY tab
 ), grp AS (
   SELECT tab, k, count(*) AS n, count(*) FILTER (WHERE settled) AS settled, count(*) FILTER (WHERE settled AND win) AS wins,
-         round(avg(p) FILTER (WHERE settled), 4) AS avg_p
+         round(avg(p::numeric) FILTER (WHERE settled), 4) AS avg_p
   FROM x GROUP BY tab, k
 )
 SELECT jsonb_build_object(
