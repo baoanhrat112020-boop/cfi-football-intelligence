@@ -1,79 +1,150 @@
-import os, json, urllib.request, collections, math
+import os, json, urllib.request, collections, math, bisect
 from datetime import date, timedelta
 U = "https://zbwkowqluwuvsnajkuvc.supabase.co/rest/v1/"
 K = os.environ["K"]
 H = {"apikey": K, "Authorization": "Bearer " + K}
 
-def get(path, extra=None):
-    h = dict(H)
-    if extra: h.update(extra)
-    req = urllib.request.Request(U + path, headers=h)
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read()), r.headers
+def get(path):
+    req = urllib.request.Request(U + path, headers=H)
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return json.loads(r.read())
 
-def pages(path, size=1000, cap=60):
+def pages(path, size=1000, cap=400):
     out = []
     for i in range(cap):
         try:
-            rows, _ = get(path + "&limit=%d&offset=%d" % (size, i * size))
+            rows = get(path + "&limit=%d&offset=%d" % (size, i * size))
         except Exception as e:
-            print("ERR", path[:60], str(e)[:120]); break
+            print("ERR", str(e)[:100]); break
         out += rows
         if len(rows) < size: break
     return out
 
-try:
-    s, h = get("team_stats?select=*&limit=1", {"Prefer": "count=exact", "Range": "0-0"})
-    print("team_stats cols:", list(s[0].keys()) if s else None, "total:", h.get("content-range"))
-except Exception as e:
-    print("team_stats ERR", str(e)[:200])
+since = (date.today() - timedelta(days=700)).isoformat()
+fx = pages("fixtures?select=home_team_id,away_team_id,match_date,ft_home,ft_away,ht_home,ht_away,competition_key&ft_home=not.is.null&home_team_id=not.is.null&away_team_id=not.is.null&match_date=gte." + since + "&order=match_date.asc,fixture_id.asc")
+print("fixtures", len(fx))
+fx.sort(key=lambda r: r["match_date"])
+TEST_DAYS = 60
+cut = (date.today() - timedelta(days=TEST_DAYS)).isoformat()
 
-ts = pages("team_stats?select=team_id")
-tsset = set(str(r["team_id"]) for r in ts)
-print("team_stats rows:", len(ts))
-
-since = (date.today() - timedelta(days=365)).isoformat()
-fx = pages("fixtures?select=home_team_id,away_team_id,match_date,ft_home,ft_away,ht_home&ft_home=not.is.null&match_date=gte." + since + "&order=match_date.desc", cap=120)
-print("fixtures FT last 365d:", len(fx))
+home_m = collections.defaultdict(list)
+away_m = collections.defaultdict(list)
 cnt = collections.Counter()
-for r in fx:
-    cnt[str(r["home_team_id"])] += 1; cnt[str(r["away_team_id"])] += 1
-teams = len(cnt)
-print("teams in fixtures:", teams, "with team_stats:", sum(1 for t in cnt if t in tsset))
-for n in (1, 3, 5, 10, 20):
-    print("teams with >= %d matches: %d" % (n, sum(1 for v in cnt.values() if v >= n)))
-print("fixtures missing HT:", sum(1 for r in fx if r["ht_home"] is None), "of", len(fx))
-avg_g = sum(r["ft_home"] + r["ft_away"] for r in fx) / max(len(fx), 1)
-print("avg FT goals:", round(avg_g, 3))
+lg_sum = collections.defaultdict(lambda: [0, 0.0, 0.0])
+g_sum = [0, 0.0, 0.0]
+tests = []
 
-pk = pages("suggest_pick_log?select=top_market,top_market_prob,hit_top_market,home_team_id,away_team_id,kickoff_at&settled_at=not.is.null&hit_top_market=not.is.null&top_market=not.is.null", cap=80)
-print("settled picks:", len(pk))
-if pk:
-    print("earliest", min(r["kickoff_at"] for r in pk)[:10], "latest", max(r["kickoff_at"] for r in pk)[:10])
-    noids = sum(1 for r in pk if not r["home_team_id"] or not r["away_team_id"])
-    nostats = sum(1 for r in pk if r["home_team_id"] and r["away_team_id"] and (str(r["home_team_id"]) not in tsset or str(r["away_team_id"]) not in tsset))
-    print("picks no ids:", noids, "ids but no team_stats:", nostats)
-    def block(rows, title):
-        b = collections.defaultdict(lambda: [0, 0, 0.0])
-        for r in rows:
-            p = float(r["top_market_prob"]); k = min(int(p * 10), 9)
-            b[k][0] += 1; b[k][1] += 1 if r["hit_top_market"] else 0; b[k][2] += p
-        print("--", title, "n=", len(rows))
-        for k in sorted(b):
-            n, w, sp = b[k]
-            print("  p %d0-%d0%%: n=%d hit=%.1f%% pred=%.1f%%" % (k, k + 1, n, 100 * w / n, 100 * sp / n))
-        n = len(rows)
-        if n:
-            br = sum((float(r["top_market_prob"]) - (1 if r["hit_top_market"] else 0)) ** 2 for r in rows) / n
-            base = sum(1 if r["hit_top_market"] else 0 for r in rows) / n
-            brb = sum((base - (1 if r["hit_top_market"] else 0)) ** 2 for r in rows) / n
-            print("  brier model=%.4f  constant-base-rate=%.4f  base=%.3f" % (br, brb, base))
-    block(pk, "ALL")
-    byk = collections.defaultdict(list)
-    for r in pk: byk[r["top_market"]].append(r)
-    for k, v in sorted(byk.items(), key=lambda x: -len(x[1]))[:8]:
-        block(v, k)
-    withstats = [r for r in pk if r["home_team_id"] and r["away_team_id"] and str(r["home_team_id"]) in tsset and str(r["away_team_id"]) in tsset]
-    nost = [r for r in pk if r not in withstats]
-    block(withstats, "teams WITH team_stats")
-    block(nost, "teams WITHOUT team_stats/ids")
+def pois(l, k):
+    return math.exp(-l) * l ** k / math.factorial(k)
+
+def dmean(lst, dec=0.94, cap=30):
+    s = lst[-cap:][::-1]
+    w = [dec ** i for i in range(len(s))]
+    sw = sum(w)
+    return sum(a * b for a, b in zip(w, [x[0] for x in s])) / sw, sum(a * b for a, b in zip(w, [x[1] for x in s])) / sw
+
+def feats(h, a, lk):
+    hm = home_m[h]; am = away_m[a]
+    return {"n_h": cnt[h], "n_a": cnt[a], "hh": dmean(hm) if hm else None, "aa": dmean(am) if am else None,
+            "lg": tuple(lg_sum[lk]), "g": tuple(g_sum)}
+
+i = 0
+for r in fx:
+    h = str(r["home_team_id"]); a = str(r["away_team_id"]); lk = r["competition_key"] or "?"
+    if r["match_date"] >= cut:
+        f = feats(h, a, lk); f["r"] = r; tests.append(f)
+    hm_ = (r["ft_home"], r["ft_away"]); am_ = (r["ft_away"], r["ft_home"])
+    home_m[h].append(hm_); away_m[a].append(am_)
+    cnt[h] += 1; cnt[a] += 1
+    s = lg_sum[lk]; s[0] += 1; s[1] += r["ft_home"]; s[2] += r["ft_away"]
+    g_sum[0] += 1; g_sum[1] += r["ft_home"]; g_sum[2] += r["ft_away"]
+print("tests", len(tests))
+
+def means(f, mode, kmin=15):
+    gn, gh, ga = f["g"]; gmh, gma = gh / gn, ga / gn
+    ln, lh_, la_ = f["lg"]
+    if mode == "league" and ln >= kmin:
+        w = ln / (ln + 30.0)
+        return w * lh_ / ln + (1 - w) * gmh, w * la_ / ln + (1 - w) * gma
+    return gmh, gma
+
+def lambdas(f, v):
+    mh, ma = means(f, v.get("tgt", "global"))
+    k = v.get("k"); 
+    def wt(n):
+        return min(1.0, n / 10.0) if k is None else n / (n + k)
+    wh, wa = wt(f["n_h"]), wt(f["n_a"])
+    hh = f["hh"] or (mh, ma); aa = f["aa"] or (ma, mh)
+    att_h = wh * hh[0] + (1 - wh) * mh
+    def_h = wh * hh[1] + (1 - wh) * ma
+    att_a = wa * aa[0] + (1 - wa) * ma
+    def_a = wa * aa[1] + (1 - wa) * mh
+    if v.get("mult"):
+        lh = mh * (att_h / mh) * (def_a / mh) ** 1.0
+        la = ma * (att_a / ma) * (def_h / ma) ** 1.0
+    else:
+        lh = (att_h + def_a) / 2.0
+        la = (att_a + def_h) / 2.0
+    s = v.get("scale", 1.0)
+    return max(lh * s, 0.05), max(la * s, 0.05)
+
+def probs(lh, la, ratio):
+    lt = lh + la
+    pm = {}
+    cdf = lambda l, k: sum(pois(l, j) for j in range(k + 1))
+    for line in (2.0, 2.5, 3.0, 3.5):
+        pm["o%g" % line] = 1 - cdf(lt, int(math.floor(line)))
+    pm["btts"] = (1 - math.exp(-lh)) * (1 - math.exp(-la))
+    ph = lt * ratio
+    pm["o05ht"] = 1 - math.exp(-ph)
+    pm["o15ht"] = 1 - cdf(ph, 1)
+    hw = 0.0
+    for x in range(0, 12):
+        px = pois(lh, x)
+        hw += px * cdf(la, x - 1) if x > 0 else 0
+    pm["hw"] = hw
+    return pm
+
+def outcomes(r):
+    t = r["ft_home"] + r["ft_away"]
+    o = {"o2": t > 2, "o2.5": t > 2.5, "o3": t > 3, "o3.5": t > 3.5, "btts": r["ft_home"] > 0 and r["ft_away"] > 0, "hw": r["ft_home"] > r["ft_away"]}
+    if r["ht_home"] is not None:
+        th = r["ht_home"] + r["ht_away"]
+        o["o05ht"] = th >= 1; o["o15ht"] = th >= 2
+    return o
+
+def evaluate(v, ratio=0.5, label=""):
+    ll = collections.defaultdict(float); br = collections.defaultdict(float); n = collections.Counter()
+    hi = collections.defaultdict(lambda: [0, 0, 0.0])
+    for f in tests:
+        lh, la = lambdas(f, v); pm = probs(lh, la, ratio); o = outcomes(f["r"])
+        for k, p in pm.items():
+            if k not in o: continue
+            p = min(max(p, 1e-4), 1 - 1e-4); y = 1 if o[k] else 0
+            ll[k] += -(y * math.log(p) + (1 - y) * math.log(1 - p)); br[k] += (p - y) ** 2; n[k] += 1
+            if p >= 0.7:
+                hi[k][0] += 1; hi[k][1] += y; hi[k][2] += p
+    keys = ["o2.5", "btts", "hw", "o3.5", "o05ht", "o15ht"]
+    print("%-34s ratio=%.2f " % (label, ratio) + " ".join("%s=%.4f" % (k, ll[k] / n[k]) for k in keys if n[k]) + " | sum=%.4f" % sum(ll[k] / n[k] for k in keys if n[k]))
+    return ll, n, hi
+
+base = {}
+evaluate(base, 0.5, "V0 current")
+for rt in (0.40, 0.44, 0.47):
+    evaluate(base, rt, "V0 ratio")
+for k in (3, 5, 10, 20):
+    evaluate({"k": k}, 0.5, "shrink k=%d global" % k)
+for k in (5, 10, 20):
+    evaluate({"k": k, "tgt": "league"}, 0.5, "shrink k=%d league" % k)
+for sc in (0.9, 0.95, 1.05):
+    evaluate({"scale": sc}, 0.5, "scale %.2f" % sc)
+evaluate({"mult": True}, 0.5, "multiplicative")
+evaluate({"mult": True, "k": 10, "tgt": "league"}, 0.5, "mult+k10+league")
+evaluate({"k": 10, "tgt": "league", "scale": 0.95}, 0.5, "k10 league scale.95")
+
+ll, n, hi = evaluate(base, 0.5, "V0 again")
+print("V0 high-confidence (p>=0.7) test calibration:")
+for k, (c, y, sp) in hi.items():
+    if c: print("  %s n=%d hit=%.1f%% pred=%.1f%%" % (k, c, 100 * y / c, 100 * sp / c))
+ht_tot = [(f["r"]["ht_home"] + f["r"]["ht_away"], f["r"]["ft_home"] + f["r"]["ft_away"]) for f in tests if f["r"]["ht_home"] is not None]
+print("actual HT/FT goal ratio:", round(sum(a for a, b in ht_tot) / max(sum(b for a, b in ht_tot), 1), 4))
