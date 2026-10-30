@@ -1,0 +1,19 @@
+name: Tmp Measure Model
+
+on:
+  push:
+    branches: [tmp/measure-model]
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Measure
+        env:
+          K: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 .github/measure_model.py
