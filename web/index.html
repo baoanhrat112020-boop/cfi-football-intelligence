@@ -1121,7 +1121,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.5 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.6 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1870,7 +1870,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function smLeg(t,l){return t==="ou_ft"?"FT: Over "+l:t==="ou_ht"?"HT: Over "+l:t==="btts"?"BTTS":t==="btts_ht"?"BTTS HT":(XLAB[t]||t)}
   function smLabel(tab,k){
     if(tab==="singles"){var a=String(k).split("|");return smLeg(a[0],a[1])}
-    if(tab==="parlays")return String(k).replace("|"," · ");
+    if(tab==="parlays")return smParts(tab,k).name;
     if(tab==="radar"||tab==="radar_eng")return String(k);
     var o=ouLineOf(k);
     if(o)return o.per.toUpperCase()+": Over "+o.line;
@@ -1884,7 +1884,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       if(a[0]==="ou_ht")return {sec:"HT",name:"Over "+smFmtLine(a[1])};
       return {sec:"",name:a[0]==="btts"?"BTTS":a[0]==="btts_ht"?"BTTS HT":(XLAB[a[0]]||a[0])};
     }
-    if(tab==="parlays")return {sec:"",name:String(k).replace("|"," · ")};
+    if(tab==="parlays"){
+      var q=String(k).split("|"),ty=q[q.length-1],src=q.length>1?q[0]:"";
+      var tl=parlayTypeLabel(ty),sl=src==="suggest"?"Suggest":src;
+      return {sec:"",name:(sl?sl+" · ":"")+tl};
+    }
     if(tab==="radar"||tab==="radar_eng")return {sec:"",name:String(k)};
     var o=ouLineOf(k);
     if(o)return {sec:o.per.toUpperCase(),name:"Over "+smFmtLine(o.line)};
@@ -1892,7 +1896,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function smItem(tab,g){
     var p=smParts(tab,g.k);
-    return '<span translate="no">'+esc(p.name)+' ×'+g.n+' '+(g.small?'<span style="color:var(--muted)">('+g.wins+'/'+g.settled+')</span>':'('+rpPct(g.wins,g.settled)+')')+'</span>';
+    return '<span translate="no">'+esc(p.name)+' ×'+g.n+' '+(!g.settled?'<span style="color:var(--muted)">(<span>chưa chốt</span>)</span>':g.small?'<span style="color:var(--muted)">('+g.wins+'/'+g.settled+')</span>':'('+rpPct(g.wins,g.settled)+')')+'</span>';
   }
   function smCard(t,range){
     var gs=t.groups||[],big=gs.filter(function(g){return !g.small&&g.settled>0}),secs=["FT","HT",""],lines="";
@@ -1906,7 +1910,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var low=big.length>3?big.slice(-2).reverse().map(lab).join(" · "):"";
     var rank=top?'<div style="font-size:12px;margin-top:8px;color:var(--muted)"><span>Top theo tỷ lệ thắng</span>: <span translate="no">'+esc(top)+'</span>'+(low?' &nbsp;|&nbsp; <span>Kém nhất</span>: <span translate="no">'+esc(low)+'</span>':'')+'</div>':'';
     return '<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-weight:800;font-size:15px"><span>'+SM_TAB[t.key]+'</span> · <span translate="no">'+range+'</span></div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-top:3px"><span>Tổng dự đoán</span>: <b style="color:#e6f0f7" translate="no">'+t.n+'</b> · <span>Đã chốt</span>: <span translate="no">'+t.settled+'</span> · <span>Thắng</span>: <b style="color:#35d07f" translate="no">'+t.wins+' ('+rpPct(t.wins,t.settled)+')</b>'+(t.avg_p!=null?' · <span>Dự báo</span>: <span translate="no">'+Math.round(t.avg_p*100)+'%</span>':'')+'</div>'+lines+rank+'</div>';
+      +'<div style="font-size:12px;color:var(--muted);margin-top:3px"><span>Tổng dự đoán</span>: <b style="color:#e6f0f7" translate="no">'+t.n+'</b> · <span>Đã chốt</span>: <span translate="no">'+t.settled+'</span> · <span>Thắng</span>: <b style="color:#35d07f" translate="no">'+t.wins+' ('+rpPct(t.wins,t.settled)+')</b>'+(t.avg_p!=null?' · <span>Dự báo</span>: <span translate="no">'+Math.round(t.avg_p*100)+'%</span>':'')+'</div>'+((t.pending>0||t.missing>0)?'<div style="font-size:12px;color:var(--muted);margin-top:3px">'+(t.pending>0?'<span>Chưa chốt</span>: <span translate="no">'+t.pending+'</span>':'')+(t.pending>0&&t.missing>0?' · ':'')+(t.missing>0?'<span>Thiếu dữ liệu</span>: <span translate="no">'+t.missing+'</span>':'')+'</div>':'')+lines+rank+'</div>';
   }
   function smBody(d){
     var T=(d.tabs||[]).filter(function(t){return SM_TAB[t.key]&&t.n>0});
@@ -3464,6 +3468,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Không phải cam kết.": "Not a guarantee.",
       "Radar GoldMe": "GoldMe Radar",
       "Báo cáo tổng": "Summary",
+      "chưa chốt": "pending",
+      "Chưa chốt": "Pending",
+      "Thiếu dữ liệu": "Missing data",
       "Khác": "Other",
       "Xác suất": "Probability",
       "Top theo tỷ lệ thắng": "Top by win rate",

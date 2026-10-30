@@ -175,7 +175,8 @@ print(f"Finished (FT): {len(finished)}")
 
 fixture_rows = {}
 for m in finished:
-    if m.get("Trh1") is None or m.get("Trh2") is None:
+    no_ht = m.get("Trh1") is None or m.get("Trh2") is None
+    if no_ht and os.environ.get("LIVESCORE_KEEP_NO_HT", "1") != "1":
         drop["fixtures_skip_no_ht"] += 1; continue
     h_name, a_name = team_names(m)
     if not h_name or not a_name or h_name == a_name: continue
@@ -185,10 +186,10 @@ for m in finished:
         drop["fixtures_skip_team_create_fail"] += 1; continue
     try:
         ft_h,ft_a = int(m.get("Tr1")), int(m.get("Tr2"))
-        ht_h,ht_a = int(m.get("Trh1")), int(m.get("Trh2"))
+        ht_h,ht_a = (None, None) if no_ht else (int(m.get("Trh1")), int(m.get("Trh2")))
     except:
         drop["fixtures_skip_bad_score"] += 1; continue
-    if ht_h > ft_h or ht_a > ft_a:
+    if ht_h is not None and (ht_h > ft_h or ht_a > ft_a):
         drop["fixtures_skip_ht_gt_ft"] += 1; continue
     esd = str(m.get("Esd",""))
     if len(esd) < 14:
