@@ -963,6 +963,35 @@ export default{
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
+    if(url.pathname==='/api/summary'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const kq=url.searchParams.get('kind')||'day';
+      const kind=['day','week','month','quarter','season'].includes(kq)?kq:'day';
+      const off=Math.min(0,Math.max(-60,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
+      const vn=new Date(Date.now()+7*3600*1000);
+      const y=vn.getUTCFullYear(),mo=vn.getUTCMonth(),dd=vn.getUTCDate();
+      const U=(a:number,b:number,c:number)=>new Date(Date.UTC(a,b,c));
+      const o=off;
+      let r:[Date,Date];
+      if(kind==='day'){const f=U(y,mo,dd+o);r=[f,f]}
+      else if(kind==='week'){const f=U(y,mo,dd-((U(y,mo,dd).getUTCDay()+6)%7)+o*7);r=[f,new Date(f.getTime()+6*86400000)]}
+      else if(kind==='month')r=[U(y,mo+o,1),U(y,mo+o+1,0)];
+      else if(kind==='quarter'){const q=Math.floor(mo/3)*3+o*3;r=[U(y,q,1),U(y,q+3,0)]}
+      else{const sy=(mo>=7?y:y-1)+o;r=[U(sy,7,1),U(sy+1,7,0)]}
+      const iso=(d:Date)=>d.toISOString().slice(0,10);
+      const closed=iso(r[1])<iso(U(y,mo,dd-1));
+      try{
+        const hdr={'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'};
+        if(!closed)await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_parlay_settle`,{method:'POST',headers:hdr,body:'{}',signal:AbortSignal.timeout(10000)}).catch(()=>null);
+        const x=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_summary`,{method:'POST',headers:hdr,body:JSON.stringify({p_from:iso(r[0]),p_to:iso(r[1])}),signal:AbortSignal.timeout(25000)});
+        if(!x.ok)return Response.json({error:'summary failed',status:x.status},{status:502});
+        const out:any=await x.json();
+        out.kind=kind;
+        return Response.json(out,{headers:{'Cache-Control':`public, max-age=${closed?86400:kind==='day'||kind==='week'?120:900}`}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
     if(url.pathname==='/api/report'&&request.method==='GET'){
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});
