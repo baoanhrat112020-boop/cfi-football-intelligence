@@ -1863,7 +1863,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));a.download=name;document.body.appendChild(a);a.click();a.remove();toast("Đã tạo file "+name);
     }catch(x){toast("Thiết bị không hỗ trợ lưu file")}
   });
-  var SM_TAB={singles:"Singles (Kèo lẻ)",picks:"Picks (Suggest)",parlays:"Xiên",bc:"Best Choice",bc_ht:"Best Choice hiệp 1",radar:"Radar GoldMe",radar_eng:"Radar hạng thấp Anh"};
+  var SM_TAB={singles:"Singles",picks:"Picks",parlays:"Xiên",bc:"Best Choice",bc_ht:"Best Choice hiệp 1",radar:"Radar GoldMe",radar_eng:"Radar hạng thấp Anh"};
   var SM_CSS=":root{--muted:#7f9daf;--line:#1d3445;--cyan:#4cc9f0}body{background:#0a1620;color:#e6f0f7;font-family:-apple-system,system-ui,sans-serif;padding:16px;max-width:680px;margin:auto}h1{font-size:20px;margin:4px 0 2px;color:#fff}.card{background:#102532;border:1px solid #1d3445;border-radius:14px}";
   var SM_REQ=0;
   state.smKind="day";state.smOff={day:0,week:0,month:0,quarter:0,season:0};state.smRaw=null;
@@ -1876,20 +1876,43 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(o)return o.per.toUpperCase()+": Over "+o.line;
     return TOP_MARKET_LABELS[k]||String(k);
   }
-  function smCard(t){
-    var gs=t.groups||[],big=gs.filter(function(g){return !g.small}),sm=gs.filter(function(g){return g.small});
-    var head='<div style="font-weight:800;font-size:15px;margin-bottom:4px"><span>'+SM_TAB[t.key]+'</span></div>'
-      +'<div style="font-size:12px;color:var(--muted)"><span>Tổng dự đoán</span> <b style="color:#e6f0f7" translate="no">'+t.n+'</b> · <span>Đã chốt</span> <span translate="no">'+t.settled+'</span> · <span>Thắng</span> <b style="color:#35d07f" translate="no">'+t.wins+' ('+rpPct(t.wins,t.settled)+')</b>'+(t.avg_p!=null?' · <span>Dự báo</span> <span translate="no">'+Math.round(t.avg_p*100)+'%</span>':'')+'</div>';
-    var rows=big.map(function(g,i){
-      return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-size:13px"><span translate="no">'+(i+1)+'. '+esc(smLabel(t.key,g.k))+' <span style="color:var(--muted)">×'+g.n+'</span></span><b translate="no">'+g.wins+'/'+g.settled+' · '+rpPct(g.wins,g.settled)+'</b></div>';
-    }).join("");
-    var small=sm.length?'<div style="font-size:11px;color:var(--muted);margin-top:6px"><span>Ít mẫu</span>: <span translate="no">'+sm.map(function(g){return esc(smLabel(t.key,g.k))+' ×'+g.n+(g.settled>0?' ('+g.wins+'/'+g.settled+')':'')}).join(" · ")+'</span></div>':'';
-    return '<div class="card" style="padding:12px;margin-bottom:10px">'+head+'<div style="margin-top:6px">'+rows+'</div>'+small+'</div>';
+  function smFmtLine(l){var n=Number(l);return Number.isFinite(n)?(n%1===0?n.toFixed(1):String(n)):String(l)}
+  function smParts(tab,k){
+    if(tab==="singles"){
+      var a=String(k).split("|");
+      if(a[0]==="ou_ft")return {sec:"FT",name:"Over "+smFmtLine(a[1])};
+      if(a[0]==="ou_ht")return {sec:"HT",name:"Over "+smFmtLine(a[1])};
+      return {sec:"",name:a[0]==="btts"?"BTTS":a[0]==="btts_ht"?"BTTS HT":(XLAB[a[0]]||a[0])};
+    }
+    if(tab==="parlays")return {sec:"",name:String(k).replace("|"," · ")};
+    if(tab==="radar"||tab==="radar_eng")return {sec:"",name:String(k)};
+    var o=ouLineOf(k);
+    if(o)return {sec:o.per.toUpperCase(),name:"Over "+smFmtLine(o.line)};
+    return {sec:"",name:TOP_MARKET_LABELS[k]||String(k)};
+  }
+  function smItem(tab,g){
+    var p=smParts(tab,g.k);
+    return '<span translate="no">'+esc(p.name)+' ×'+g.n+' '+(g.small?'<span style="color:var(--muted)">('+g.wins+'/'+g.settled+')</span>':'('+rpPct(g.wins,g.settled)+')')+'</span>';
+  }
+  function smCard(t,range){
+    var gs=t.groups||[],big=gs.filter(function(g){return !g.small&&g.settled>0}),secs=["FT","HT",""],lines="";
+    secs.forEach(function(sec){
+      var it=gs.filter(function(g){return smParts(t.key,g.k).sec===sec});
+      if(!it.length)return;
+      lines+='<div style="font-size:13px;margin-top:6px">'+(sec?'<b translate="no">'+sec+':</b> ':(t.key==="radar"||t.key==="radar_eng"?'<b><span>Xác suất</span>:</b> ':'<b><span>Khác</span>:</b> '))+it.map(function(g){return smItem(t.key,g)}).join(" · ")+'</div>';
+    });
+    var lab=function(g){var p=smParts(t.key,g.k);return (p.sec?p.sec+" ":"")+p.name+" "+rpPct(g.wins,g.settled)};
+    var top=big.slice(0,3).map(function(g,i){return (i+1)+') '+lab(g)}).join("  ");
+    var low=big.length>3?big.slice(-2).reverse().map(lab).join(" · "):"";
+    var rank=top?'<div style="font-size:12px;margin-top:8px;color:var(--muted)"><span>Top theo tỷ lệ thắng</span>: <span translate="no">'+esc(top)+'</span>'+(low?' &nbsp;|&nbsp; <span>Kém nhất</span>: <span translate="no">'+esc(low)+'</span>':'')+'</div>':'';
+    return '<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-weight:800;font-size:15px"><span>'+SM_TAB[t.key]+'</span> · <span translate="no">'+range+'</span></div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:3px"><span>Tổng dự đoán</span>: <b style="color:#e6f0f7" translate="no">'+t.n+'</b> · <span>Đã chốt</span>: <span translate="no">'+t.settled+'</span> · <span>Thắng</span>: <b style="color:#35d07f" translate="no">'+t.wins+' ('+rpPct(t.wins,t.settled)+')</b>'+(t.avg_p!=null?' · <span>Dự báo</span>: <span translate="no">'+Math.round(t.avg_p*100)+'%</span>':'')+'</div>'+lines+rank+'</div>';
   }
   function smBody(d){
     var T=(d.tabs||[]).filter(function(t){return SM_TAB[t.key]&&t.n>0});
     if(!T.length)return '<div class="context-state"><span>Chưa có dự đoán trong kỳ này</span></div>';
-    return T.map(smCard).join("");
+    var range=rpRange(d,d.kind||state.smKind);
+    return T.map(function(t){return smCard(t,range)}).join("");
   }
   function smDoc(d,kind){
     var t=rpRange(d,kind).replace(/<[^>]+>/g,"");
@@ -3441,6 +3464,10 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Không phải cam kết.": "Not a guarantee.",
       "Radar GoldMe": "GoldMe Radar",
       "Báo cáo tổng": "Summary",
+      "Khác": "Other",
+      "Xác suất": "Probability",
+      "Top theo tỷ lệ thắng": "Top by win rate",
+      "Kém nhất": "Worst",
       "Tất cả các tab · tỷ lệ thắng theo từng kèo": "All tabs · win rate by market",
       "Singles (Kèo lẻ)": "Singles",
       "Radar hạng thấp Anh": "English low-league Radar",
