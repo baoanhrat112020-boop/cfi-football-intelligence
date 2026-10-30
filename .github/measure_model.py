@@ -86,6 +86,9 @@ def lambdas(f, v):
         lh = (att_h + def_a) / 2.0
         la = (att_a + def_h) / 2.0
     s = v.get("scale", 1.0)
+    c = v.get("reg")
+    if c is not None:
+        lh = mh + c * (lh - mh); la = ma + c * (la - ma)
     return max(lh * s, 0.05), max(la * s, 0.05)
 
 def probs(lh, la, ratio):
@@ -128,23 +131,60 @@ def evaluate(v, ratio=0.5, label=""):
     print("%-34s ratio=%.2f " % (label, ratio) + " ".join("%s=%.4f" % (k, ll[k] / n[k]) for k in keys if n[k]) + " | sum=%.4f" % sum(ll[k] / n[k] for k in keys if n[k]))
     return ll, n, hi
 
-base = {}
-evaluate(base, 0.5, "V0 current")
-for rt in (0.40, 0.44, 0.47):
-    evaluate(base, rt, "V0 ratio")
-for k in (3, 5, 10, 20):
-    evaluate({"k": k}, 0.5, "shrink k=%d global" % k)
-for k in (5, 10, 20):
-    evaluate({"k": k, "tgt": "league"}, 0.5, "shrink k=%d league" % k)
-for sc in (0.9, 0.95, 1.05):
-    evaluate({"scale": sc}, 0.5, "scale %.2f" % sc)
-evaluate({"mult": True}, 0.5, "multiplicative")
-evaluate({"mult": True, "k": 10, "tgt": "league"}, 0.5, "mult+k10+league")
-evaluate({"k": 10, "tgt": "league", "scale": 0.95}, 0.5, "k10 league scale.95")
 
-ll, n, hi = evaluate(base, 0.5, "V0 again")
-print("V0 high-confidence (p>=0.7) test calibration:")
-for k, (c, y, sp) in hi.items():
-    if c: print("  %s n=%d hit=%.1f%% pred=%.1f%%" % (k, c, 100 * y / c, 100 * sp / c))
-ht_tot = [(f["r"]["ht_home"] + f["r"]["ht_away"], f["r"]["ft_home"] + f["r"]["ft_away"]) for f in tests if f["r"]["ht_home"] is not None]
-print("actual HT/FT goal ratio:", round(sum(a for a, b in ht_tot) / max(sum(b for a, b in ht_tot), 1), 4))
+def collect(v, ratio=0.5):
+    rows = []
+    for f in tests:
+        lh, la = lambdas(f, v); pm = probs(lh, la, ratio); o = outcomes(f["r"])
+        for k, p in pm.items():
+            if k in o: rows.append((f["r"]["match_date"], k, min(max(p, 1e-4), 1 - 1e-4), 1 if o[k] else 0))
+    return rows
+
+def logloss(rows):
+    return sum(-(y * math.log(p) + (1 - y) * math.log(1 - p)) for _, _, p, y in rows) / max(len(rows), 1)
+
+def lg(p): return math.log(p / (1 - p))
+def sg(x): return 1 / (1 + math.exp(-x))
+
+def fit_platt(pts):
+    a, b = 1.0, 0.0
+    for _ in range(400):
+        ga = gb = 0.0; ha = hb = hab = 1e-9
+        for p, y in pts:
+            z = lg(p); q = sg(a * z + b); d = q - y; w = q * (1 - q)
+            ga += d * z; gb += d; ha += w * z * z; hb += w; hab += w * z
+        det = ha * hb - hab * hab
+        if abs(det) < 1e-12: break
+        da = (ga * hb - gb * hab) / det; db = (gb * ha - ga * hab) / det
+        a -= da; b -= db
+        if abs(da) + abs(db) < 1e-8: break
+    return a, b
+
+split = (date.today() - timedelta(days=TEST_DAYS - 40)).isoformat()
+KEYS = ["o2.5", "btts", "hw", "o3.5", "o05ht", "o15ht"]
+def report(v, ratio, label):
+    rows = [r for r in collect(v, ratio) if r[1] in KEYS]
+    tr = [r for r in rows if r[0] < split]; te = [r for r in rows if r[0] >= split]
+    raw = {k: logloss([r for r in te if r[1] == k]) for k in KEYS}
+    cal = {}; par = {}
+    for k in KEYS:
+        a, b = fit_platt([(r[2], r[3]) for r in tr if r[1] == k]); par[k] = (round(a, 3), round(b, 3))
+        cal[k] = logloss([(r[0], r[1], sg(a * lg(r[2]) + b), r[3]) for r in te if r[1] == k])
+    print("%-26s RAW  " % label + " ".join("%s=%.4f" % (k, raw[k]) for k in KEYS) + " sum=%.4f" % sum(raw.values()))
+    print("%-26s PLATT" % label + " ".join("%s=%.4f" % (k, cal[k]) for k in KEYS) + " sum=%.4f" % sum(cal.values()))
+    print("   platt params(train->test):", par)
+    return rows
+
+report({"k": 10}, 0.47, "k10 global")
+for c in (0.9, 0.85, 0.8):
+    report({"k": 10, "reg": c}, 0.47, "k10 reg=%.2f" % c)
+rows = report({"k": 10}, 0.47, "k10 global (again)")
+allp = {}
+for k in KEYS:
+    allp[k] = fit_platt([(r[2], r[3]) for r in rows if r[1] == k])
+print("FINAL platt all-test params:", {k: (round(a, 4), round(b, 4)) for k, (a, b) in allp.items()})
+for k in KEYS:
+    hi = [r for r in rows if r[1] == k and r[2] >= 0.7]
+    if hi:
+        a, b = allp[k]
+        print("  %s p>=.7 n=%d hit=%.1f%% raw_pred=%.1f%% cal_pred=%.1f%%" % (k, len(hi), 100 * sum(r[3] for r in hi) / len(hi), 100 * sum(r[2] for r in hi) / len(hi), 100 * sum(sg(a * lg(r[2]) + b) for r in hi) / len(hi)))
