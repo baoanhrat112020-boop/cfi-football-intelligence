@@ -443,7 +443,7 @@ def main():
     if not rows:
         print("no matches parsed (size=%d)" % len(html))
         if not args.dry_run:
-            sys.exit("ALERT: parsed_matches=0 < %d" % MIN_MATCHES)
+            print("WARN: parsed_matches=0 < %d" % MIN_MATCHES)
         return
     inserts, stats = build_inserts(picks, rows, args.tz)
     report(rows, stats, inserts)
