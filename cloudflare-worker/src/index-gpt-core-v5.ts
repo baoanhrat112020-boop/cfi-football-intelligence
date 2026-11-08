@@ -540,7 +540,7 @@ function buildExtremeDaily(matches:any[],now:number):any[]{
   return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
 }
 function buildExtremeSingles(matches:any[],now:number):any[]{
-  const up=upcomingMatches(matches,now,false,48);
+  const up=upcomingMatches(matches,now,false,48,240);
   const byBucket=new Map<number,any[]>();
   up.forEach(m=>{const b=Math.floor((Date.parse(m.kickoff)+7*3600*1000)/(4*3600*1000));const a=byBucket.get(b)||[];a.push(m);byBucket.set(b,a)});
   const out:any[]=[];
@@ -552,6 +552,7 @@ function buildExtremeSingles(matches:any[],now:number):any[]{
       pool.filter(l=>l.type===t).sort((a,b)=>b.rw-a.rw).forEach(l=>out.push(mkParlay('same:'+t,'window_4h:'+first,[l])));
     }
   });
+  out.sort((a,b)=>String(a.legs[0].kickoff).localeCompare(String(b.legs[0].kickoff)));
   return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
 }
 function buildSingles(matches:any[],now:number,oddsOnly:boolean):any[]{
@@ -766,7 +767,7 @@ export default{
         const predOf=(l:any)=>{const m=snapBy.get(l.fixture_id);return m&&Number.isInteger(m.pred_home_ht)&&Number.isInteger(m.pred_away_ht)&&Number.isInteger(m.pred_home_ft)&&Number.isInteger(m.pred_away_ft)?{ht:[m.pred_home_ht,m.pred_away_ht],ft:[m.pred_home_ft,m.pred_away_ft]}:null};
         const liveOf=(l:any)=>{const m=byId.get(l.fixture_id);if(!(m&&m.live_status))return null;const hh=htMap.get(String(m.provider_id));return {h:m.live_score_home,a:m.live_score_away,min:m.live_minute,mt:m.live_minute_text,st:m.live_status,hh:hh?hh.h:null,ha:hh?hh.a:null}};
         let done:any[]=[];
-        if(mode==='single'){
+        if(mode==='single'||mode==='xsingle'){
           await ensureLive();
           if(startedM.length){
             try{
@@ -782,7 +783,7 @@ export default{
             anyLive=true;
             return {...b0,live:liveOf(l)};
           })}));
-          try{
+          if(mode==='single')try{
             const y2=new Date(Date.now()+7*3600*1000-86400000).toISOString().slice(0,10);
             const dr=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.single&day=gte.${y2}&select=pkey,scope,ptype,system_p,legs,user_legs,placed,result&order=day.desc&limit=400`,{headers:hdr,signal:AbortSignal.timeout(5000)});
             const dj:any=dr.ok?await dr.json():[];
@@ -808,7 +809,7 @@ export default{
           }catch{}
         }
         const inplay:any[]=[];
-        if(mode!=='single'){
+        if(mode!=='single'&&mode!=='xsingle'){
           try{
             const yday=new Date(Date.now()+7*3600*1000-86400000).toISOString().slice(0,10);
             const ir=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/parlay_log?mode=eq.${mode}&placed=eq.true&result=is.null&day=gte.${yday}&select=pkey,scope,ptype,system_p,legs,user_legs&limit=100`,{headers:hdr,signal:AbortSignal.timeout(4000)});
