@@ -114,9 +114,9 @@
     .markets{display:grid;gap:8px}.market{display:grid;grid-template-columns:1.2fr .8fr .75fr;align-items:center;padding:11px 12px;border:1px solid #16425e;border-radius:10px;background:#092237}.market b{font-size:13px}.prob{font-size:15px;font-weight:900;text-align:right}.signal{text-align:right;font-size:10px;font-weight:800}.sig-strong{color:var(--green)}.sig-watch{color:var(--amber)}.sig-pass{color:#829aaa}.sig-block{color:var(--red)}
     .result-panel{display:none}.result-panel.active{display:block}.fusion-grid,.insight-grid{display:grid;gap:10px}.fusion-card,.insight-card{padding:13px;border:1px solid #174863;border-radius:11px;background:#082238}.fusion-card h3,.insight-card h3{margin:0 0 8px;font-size:13px;color:#d9edf8}.kv{display:flex;justify-content:space-between;gap:14px;padding:6px 0;border-top:1px solid #12384f;font-size:11px}.kv:first-of-type{border-top:0}.kv span{color:#7f9daf}.kv b{text-align:right}.weights{display:grid;gap:6px}.weight-row{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11px}.weight-bar{grid-column:1/-1;height:5px;border-radius:999px;background:#12384f;overflow:hidden}.weight-bar i{display:block;height:100%;background:#2aa8ff}.pill-line{display:flex;gap:6px;flex-wrap:wrap}.pill{padding:5px 8px;border:1px solid #245572;border-radius:999px;font-size:10px;color:#9ec3d8;background:#071d2f}
 
-    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(6,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
+    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(540px,100%);height:68px;padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(5,18,29,.97);border-top:1px solid #18425d;backdrop-filter:blur(18px);z-index:30}
     .lv-day{flex:none}.lv-st{padding:8px 4px 4px;font-size:12px;font-weight:700;color:#8ea8ba;display:flex;gap:6px;align-items:baseline}.lv-st small{font-weight:500;color:#5f7b8f}.lv-row{display:grid;grid-template-columns:56px 1fr 38px;gap:6px;align-items:center;padding:8px 6px;border-bottom:1px solid #12344a;font-size:13px}.lv-row b{font-weight:600}.lv-tm{color:#8ea8ba;font-size:12px}.lv-tm small{display:block;font-weight:500;font-size:10px;color:#5f7b8f}#lvFilter .chip,#lvView .chip,#lvDays .chip{flex:none;white-space:nowrap}.lv-tg{cursor:pointer;user-select:none;-webkit-user-select:none}.lv-ch{width:12px;color:#5f7b8f;flex:none}.lv-ct{margin-left:auto;font-weight:500;color:#5f7b8f}.lv-lv{color:#ff5d5d}.lv-lg{font-size:11px;color:#6f8da1}.lv-pk{font-size:11px;color:#62bbff;font-weight:600}.lv-pk.w{color:#3fcf7f}.lv-pk.l{color:#ff6b6b}.lv-pk.v{color:#8ea8ba}.lv-fav{cursor:pointer;color:#5f7b8f;font-size:14px;line-height:1}.lv-fav.on{color:#f5c542}.lv-in{width:100%;height:40px;margin:0 0 8px;padding:0 12px;border:1px solid #1f2a35;border-radius:10px;background:#0f1419;color:#c9d6e2;font-size:13px;box-sizing:border-box}.lv-sel{width:100%;height:40px;margin:0 0 8px;padding:0 10px;border:1px solid #1f2a35;border-radius:10px;background:#0f1419;color:#c9d6e2;font-size:13px}.lv-tm.live{color:#ff5d5d;font-weight:700}.lv-sc{text-align:right;font-weight:800}.lv-sc.live{color:#ff5d5d}.lv-t{display:flex;flex-direction:column;gap:2px;min-width:0}.lv-t span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .nav-btn{border:0;background:transparent;color:#7896aa;display:grid;place-items:center;align-content:center;gap:2px;font-size:10px}.nav-btn.active{color:#49aeff}.nav-btn svg{width:20px;height:20px}
+    .nav-btn{position:relative;border:0;background:transparent;color:#7896aa;display:grid;place-items:center;align-content:center;gap:3px;font-size:10px;font-weight:600;white-space:nowrap;padding:0 2px;min-width:0}.nav-btn [data-rpdot]{position:absolute;top:10px;left:calc(50% + 9px);margin:0!important}.nav-btn.active{color:#49aeff}.nav-btn svg{width:20px;height:20px}
     .toast{position:fixed;left:50%;bottom:82px;transform:translate(-50%,14px);width:min(460px,calc(100% - 32px));padding:12px 14px;background:#102b40;border:1px solid #2a6b91;border-radius:11px;color:#dbeaf3;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:60;box-shadow:var(--shadow)}.toast.show{opacity:1;transform:translate(-50%,0)}
     .modal-wrap{position:fixed;inset:0;background:rgba(0,8,14,.72);backdrop-filter:blur(8px);display:none;align-items:flex-end;z-index:80}.modal-wrap.show{display:flex}.modal{width:min(540px,100%);max-height:72vh;overflow:auto;background:#092136;border:1px solid #216084;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -16px 50px rgba(0,0,0,.4)}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.modal h3{margin:0}.modal pre{white-space:pre-wrap;word-break:break-word;color:#9db5c6;font-size:11px;line-height:1.5;background:#061725;border:1px solid #173b53;border-radius:10px;padding:12px}
     .loading{display:inline-flex;gap:5px;align-items:center}.loading i{width:6px;height:6px;border-radius:50%;background:currentColor;animation:b 1s infinite}.loading i:nth-child(2){animation-delay:.15s}.loading i:nth-child(3){animation-delay:.3s}@keyframes b{0%,70%,100%{opacity:.3;transform:scale(.8)}35%{opacity:1;transform:scale(1)}} 
@@ -153,6 +153,15 @@
 #screenSuggest .chip-row::-webkit-scrollbar{display:none}
 #screenSuggest .chip-row:not(#suggestSubtabs) .chip{flex:none;min-height:44px;padding:0 16px;border-radius:22px;font-size:13px;white-space:nowrap;background:var(--surface);border-color:var(--line);color:var(--muted)}
 #screenSuggest .chip-row:not(#suggestSubtabs) .chip.active{background:var(--cyan);border-color:var(--cyan);color:var(--bg)}
+#suggestSubtabs{display:flex!important;justify-content:space-between;padding:0 6px!important}
+#suggestSubtabs .chip{padding:0 2px;font-size:12px}
+#mvpSubtabs,#smPeriods{display:grid!important;grid-template-columns:repeat(2,1fr);gap:8px!important;padding:2px 0 12px!important}
+#mvpSubtabs .chip,#smPeriods .chip{min-height:40px;padding:0 10px;border-radius:22px;font-size:13px;white-space:nowrap;background:var(--surface);border-color:var(--line);color:var(--muted)}
+#mvpSubtabs .chip.active,#smPeriods .chip.active{background:var(--cyan);border-color:var(--cyan);color:var(--bg)}
+#smPeriods{grid-template-columns:repeat(5,1fr);gap:6px!important}
+#smPeriods .chip{padding:0 2px;font-size:11px;min-height:38px}
+#xparlayModeChips{gap:6px!important}
+#xparlayModeChips .chip{padding:0 11px!important;font-size:12px!important}
 #trackModel{background:var(--surface)!important;color:var(--text)!important;border:1px solid var(--line)!important;border-radius:22px!important;min-height:44px!important;padding:0 16px!important;font-size:13px!important;font-weight:600}
 .sg-hint{align-items:center}.sg-showpast{border:0;background:none;color:var(--cyan);font-size:12px;font-weight:700;min-height:44px;padding:0 6px}
 .sg-past{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:48px;margin-top:12px;padding:0 14px;border-radius:10px;background:var(--surface);border:1px solid var(--line);color:var(--text);font-size:13px;font-weight:700}
@@ -552,6 +561,7 @@
         <div class="chip-row" id="xparlayModeChips" style="display:none;gap:6px;padding:8px 2px;flex-wrap:wrap">
           <button class="chip active" data-pm="xspecial">Special</button>
           <button class="chip" data-pm="xdaily">Daily</button>
+          <button class="chip" data-pm="xsingle">Kèo lẻ</button>
           <button class="chip" data-pm="stats">Thống kê</button>
         </div>
         <div id="parlayOddsRow" style="padding:0 2px 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="chip active" id="parlayOddsOnly">Chỉ trận có odds</button><span id="parlayRankBox" style="display:none;gap:6px"><button class="chip active" data-rank="prob">Mặc định</button><button class="chip" data-rank="edge">Thử nghiệm: Edge</button></span></div>
@@ -1121,7 +1131,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.7 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.4.8 · Build 1</b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#7f9daf">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1739,8 +1749,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       +'<div style="font-size:11px;color:var(--muted);margin-top:6px"><span translate="no">'+l.n+' / '+p.n+'</span> <span>trận</span></div></div>';
   }
   var RP_CSS=".rp{font-family:-apple-system,system-ui,sans-serif;color:#e6f0f7}.rp .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.rp .k{background:#10202e;border:1px solid #1d3347;border-radius:12px;padding:10px;text-align:center}.rp .k b{display:block;font-size:20px;color:#4cc9f0}.rp .k span{font-size:11px;color:#7f9daf}.rp .g{color:#35d07f;font-weight:700}.rp .r{color:#ff6b6b;font-weight:700}.rp .m{color:#7f9daf;font-size:11px;font-style:normal}.rp .tag{font-size:10px;color:#fbbf24;border:1px solid #fbbf24;border-radius:5px;padding:0 4px;margin-left:4px}.rp details.sec{background:#10202e;border:1px solid #1d3347;border-radius:12px;margin-top:10px;overflow:hidden}.rp summary{list-style:none;cursor:pointer}.rp summary::-webkit-details-marker{display:none}.rp details.sec>summary{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 12px}.rp details.sec>summary h2{margin:0;font-size:14px;color:#7fc8ff}.rp details.sec>summary::after,.rp details.it>summary::after{content:'▸';color:#7f9daf;margin-left:6px}.rp details[open]>summary::after{content:'▾'}.rp .sm{font-size:12px;color:#7f9daf;margin-left:auto;text-align:right}.rp .bd{padding:0 12px 6px}.rp table{width:100%;border-collapse:collapse;font-size:13px}.rp th{font-size:11px;color:#7f9daf;text-align:right;padding:4px 6px;font-weight:600}.rp th:first-child,.rp td:first-child{text-align:left}.rp td{padding:7px 6px;border-top:1px solid #1d3347;text-align:right}.rp .row,.rp details.it>summary{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid #1d3347;font-size:13px}.rp .row>div:first-child,.rp details.it>summary>div:first-child{min-width:0;overflow-wrap:anywhere}.rp .rt{margin-left:auto;text-align:right;white-space:nowrap}.rp .dt{padding:0 0 8px 10px;margin-left:4px;border-left:2px solid #1d3347}.rp .dl{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;color:#c5d4de}.rp .dl>span{min-width:0;overflow-wrap:anywhere}.rp .ft{margin-top:18px;font-size:11px;color:#7f9daf;text-align:center}";
-  var RP_MODE={suggest:"Suggest",round:"Round",special:"Đặc biệt",xspecial:"Cực đoan · Đặc biệt",xdaily:"Cực đoan · Hằng ngày",single:"Kèo lẻ"};
-  var RP_TAB=[["Picks",null],["Parlay",["suggest","round","special"]],["Cực đoan",["xspecial","xdaily"]],["Kèo lẻ",["single"]]];
+  var RP_MODE={suggest:"Suggest",round:"Round",special:"Đặc biệt",xspecial:"Cực đoan · Đặc biệt",xdaily:"Cực đoan · Hằng ngày",xsingle:"Cực đoan · Kèo lẻ",single:"Kèo lẻ"};
+  var RP_TAB=[["Picks",null],["Parlay",["suggest","round","special"]],["Cực đoan",["xspecial","xdaily","xsingle"]],["Kèo lẻ",["single"]]];
   var RP_KIND={day:"Báo cáo ngày",week:"Báo cáo tuần",month:"Báo cáo tháng",quarter:"Báo cáo quý",season:"Báo cáo mùa giải"};
   var RP_PREV={day:"so với hôm trước",week:"so với tuần trước",month:"so với tháng trước",quarter:"so với quý trước",season:"so với mùa trước"};
   function rpPct(a,b){return b>0?(a/b*100).toFixed(0)+"%":"—"}
@@ -2824,7 +2834,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var v=t.value.replace(/,/g,".").replace(/[^0-9.]/g,"");if(v!==t.value)t.value=v;
     var k=t.dataset.ci+":"+t.dataset.li;parlayEdits[k]=parlayEdits[k]||{};parlayEdits[k].odds=Number(v)||0;parlayRecalc(Number(t.dataset.ci));parlaySave(Number(t.dataset.ci));
   });
-  var PST_MODE={suggest:"<span>Suggest</span>",round:"<span>Round</span>",special:"<span>Đặc biệt</span>",xspecial:"<span>Cực đoan</span> · <span>Đặc biệt</span>",xdaily:"<span>Cực đoan</span> · <span>Hàng ngày</span>",single:"<span>Kèo lẻ</span>"};
+  var PST_MODE={suggest:"<span>Suggest</span>",round:"<span>Round</span>",special:"<span>Đặc biệt</span>",xspecial:"<span>Cực đoan</span> · <span>Đặc biệt</span>",xdaily:"<span>Cực đoan</span> · <span>Hàng ngày</span>",xsingle:"<span>Cực đoan</span> · <span>Kèo lẻ</span>",single:"<span>Kèo lẻ</span>"};
   var parlayFilt={kind:"",type:"",legs:""},parlayLast=null;
   try{var pf=JSON.parse(localStorage.getItem("cfi_parlay_filt")||"{}");parlayFilt.kind=pf.kind||"";parlayFilt.type=pf.type||"";parlayFilt.legs=pf.legs||""}catch(e){}
   var PKIND={seg6:"Buổi",same_hour:"Cùng giờ",window_4h:"Cửa sổ 4h",window_8h:"Khung 8h",any_time:"Mọi khung giờ",daily:"Cả ngày"};
@@ -2898,7 +2908,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0 6px 12px;border-top:1px dashed var(--line)"><div style="min-width:0"><div style="overflow-wrap:anywhere">'+esc(l.home)+' - '+esc(l.away)+'</div><div style="font-size:11px;color:var(--muted)"><span>'+mk+'</span>'+(l.odds?' @<span translate="no">'+Number(l.odds).toFixed(2)+'</span>':'')+' · <span translate="no">'+(l.ft?'HT '+esc(l.ht)+' · FT '+esc(l.ft):esc(String(l.kickoff||"").substring(8,10)+"/"+String(l.kickoff||"").substring(5,7)+" "+String(l.kickoff||"").substring(11,16)))+'</span></div></div><b style="color:'+r[1]+';white-space:nowrap">'+r[0]+'</b></div>';
   }
   function renderParlayStats(d0){
-    var xg=state.suggestSub==="xparlay",sg=state.suggestSub==="sparlay",MS=xg?["xspecial","xdaily"]:sg?["single"]:["suggest","round","special"];
+    var xg=state.suggestSub==="xparlay",sg=state.suggestSub==="sparlay",MS=xg?["xspecial","xdaily","xsingle"]:sg?["single"]:["suggest","round","special"];
     var okm=function(x){return MS.indexOf(x.mode)>=0};
     var d={days:d0.days,pending:d0.pending,groups:(d0.groups||[]).filter(okm),totals:(d0.totals||[]).filter(okm),by_legs:(d0.by_legs||[]).filter(okm),by_kind:(d0.by_kind||[]).filter(okm),placed:(d0.placed||[]).filter(okm),top1:(d0.top1||[]).filter(okm),recent:(d0.recent||[]).filter(okm),placed_list:(d0.placed_list||[]).filter(okm),buckets:d0.buckets||[],daily:d0.daily||[],legs:(d0.legs||[]).filter(function(x){return xg?!!XLAB[x.ltype]:!XLAB[x.ltype]}),calibration:{}};
     Object.keys(d0.calibration||{}).forEach(function(k){if(MS.indexOf(k.split("|")[0])>=0)d.calibration[k]=d0.calibration[k]});
@@ -3046,7 +3056,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       $("suggestRounds").style.display=sub==="rounds"?"":"none";
       $("suggestParlay").style.display=sub==="parlay"||sub==="xparlay"||sub==="sparlay"?"":"none";
       if(sub==="parlay"||sub==="xparlay"||sub==="sparlay"){
-        var xm=parlayMode==="xspecial"||parlayMode==="xdaily",sm=parlayMode==="single";
+        var xm=parlayMode==="xspecial"||parlayMode==="xdaily"||parlayMode==="xsingle",sm=parlayMode==="single";
         if(sub==="xparlay"&&parlayMode!=="stats"&&!xm)parlayMode="xspecial";
         if(sub==="sparlay"&&parlayMode!=="stats"&&!sm)parlayMode="single";
         if(sub==="parlay"&&(xm||sm))parlayMode="suggest";
@@ -3532,6 +3542,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Đang đá": "In play",
       "Cực đoan · Đặc biệt": "Extreme · Special",
       "Cực đoan · Hằng ngày": "Extreme · Daily",
+      "Cực đoan · Kèo lẻ": "Extreme · Singles",
       "Đã chốt": "Settled",
       "Theo từng tab": "By tab",
       "Chốt": "Settled",
