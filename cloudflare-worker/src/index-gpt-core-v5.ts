@@ -541,13 +541,15 @@ function buildExtremeDaily(matches:any[],now:number):any[]{
 }
 function buildExtremeSingles(matches:any[],now:number):any[]{
   const up=upcomingMatches(matches,now,false,48);
-  const byDay=new Map<string,any[]>();
-  up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=byDay.get(d)||[];a.push(m);byDay.set(d,a)});
+  const byBucket=new Map<number,any[]>();
+  up.forEach(m=>{const b=Math.floor((Date.parse(m.kickoff)+7*3600*1000)/(4*3600*1000));const a=byBucket.get(b)||[];a.push(m);byBucket.set(b,a)});
   const out:any[]=[];
-  byDay.forEach((ms,d)=>{
+  [...byBucket.keys()].sort((a,b)=>a-b).forEach(b=>{
+    const ms=byBucket.get(b)!;
+    const first=ms.map(m=>m.kickoff).sort()[0];
     const pool=ms.flatMap(m=>extremeLegs(m,true));
     for(const [,t] of XM){
-      pool.filter(l=>l.type===t).sort((a,b)=>b.rw-a.rw).slice(0,8).forEach(l=>out.push(mkParlay('same:'+t,'xsingle:'+d,[l])));
+      pool.filter(l=>l.type===t).sort((a,b)=>b.rw-a.rw).slice(0,5).forEach(l=>out.push(mkParlay('same:'+t,'window_4h:'+first,[l])));
     }
   });
   return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
