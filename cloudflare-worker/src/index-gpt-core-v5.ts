@@ -539,6 +539,19 @@ function buildExtremeDaily(matches:any[],now:number):any[]{
   byDay.forEach((ms,d)=>{out.push(...extremeFromPool(ms.flatMap(m=>extremeLegs(m,true)),'daily:'+d,'w','rw'))});
   return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
 }
+function buildExtremeSingles(matches:any[],now:number):any[]{
+  const up=upcomingMatches(matches,now,false,48);
+  const byDay=new Map<string,any[]>();
+  up.forEach(m=>{const d=String(m.kickoff).substring(0,10);const a=byDay.get(d)||[];a.push(m);byDay.set(d,a)});
+  const out:any[]=[];
+  byDay.forEach((ms,d)=>{
+    const pool=ms.flatMap(m=>extremeLegs(m,true));
+    for(const [,t] of XM){
+      pool.filter(l=>l.type===t).sort((a,b)=>b.rw-a.rw).slice(0,8).forEach(l=>out.push(mkParlay('same:'+t,'xsingle:'+d,[l])));
+    }
+  });
+  return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));
+}
 function buildSingles(matches:any[],now:number,oddsOnly:boolean):any[]{
   const up=upcomingMatches(matches,now,oddsOnly,24,120);
   const all:any[]=[];
@@ -696,8 +709,8 @@ export default{
     if(url.pathname==='/api/suggest-parlays'&&request.method==='GET'){
       try{
         const modeQ=url.searchParams.get('mode')||'';
-        const mode=['round','special','xspecial','xdaily','single'].includes(modeQ)?modeQ:'suggest';
-        const isX=mode==='xspecial'||mode==='xdaily';
+        const mode=['round','special','xspecial','xdaily','xsingle','single'].includes(modeQ)?modeQ:'suggest';
+        const isX=mode==='xspecial'||mode==='xdaily'||mode==='xsingle';
         const key0=(env as any).SUPABASE_SERVICE_KEY;
         let rankApplied='prob',leagueBase:any=null;
         if(url.searchParams.get('rank')==='edge'&&(mode==='suggest'||mode==='round')&&key0){
@@ -731,6 +744,7 @@ export default{
         let built:any[];
         if(mode==='xspecial')built=buildExtremeSpecial(all,Date.now()).map((x:any)=>({...x,odds_ok:true}));
         else if(mode==='xdaily')built=buildExtremeDaily(all,Date.now()).map((x:any)=>({...x,odds_ok:true}));
+        else if(mode==='xsingle')built=buildExtremeSingles(all,Date.now()).map((x:any)=>({...x,odds_ok:true}));
         else if(oddsOnly)built=buildStd(true).map((x:any)=>({...x,odds_ok:true}));
         else{
           const withOdds=buildStd(true).map((x:any)=>({...x,odds_ok:true}));
@@ -934,7 +948,7 @@ export default{
     if(url.pathname==='/api/parlay-edit'&&request.method==='POST'){
       let input:any=null;try{input=await request.clone().json()}catch{}
       if(!input||typeof input!=='object')return Response.json({error:'invalid body'},{status:400});
-      const mode=['suggest','round','special','xspecial','xdaily','single'].includes(input.mode)?input.mode:null;
+      const mode=['suggest','round','special','xspecial','xdaily','xsingle','single'].includes(input.mode)?input.mode:null;
       const pk=typeof input.pkey==='string'&&input.pkey.length>0&&input.pkey.length<2000?input.pkey:null;
       if(!mode||!pk)return Response.json({error:'invalid key'},{status:400});
       const legsIn=input.legs===undefined?null:Array.isArray(input.legs)?input.legs:undefined;
