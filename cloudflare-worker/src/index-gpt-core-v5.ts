@@ -549,7 +549,7 @@ function buildExtremeSingles(matches:any[],now:number):any[]{
     const first=ms.map(m=>m.kickoff).sort()[0];
     const pool=ms.flatMap(m=>extremeLegs(m,true));
     for(const [,t] of XM){
-      pool.filter(l=>l.type===t).sort((a,b)=>b.rw-a.rw).slice(0,5).forEach(l=>out.push(mkParlay('same:'+t,'window_4h:'+first,[l])));
+      pool.filter(l=>l.type===t).sort((a,b)=>b.rw-a.rw).forEach(l=>out.push(mkParlay('same:'+t,'window_4h:'+first,[l])));
     }
   });
   return dedupeByLegs(out).map(x=>({...x,pkey:parlayPkey(x)}));

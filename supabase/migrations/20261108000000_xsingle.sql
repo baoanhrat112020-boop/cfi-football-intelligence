@@ -1,6 +1,22 @@
 ALTER TABLE public.parlay_log DROP CONSTRAINT IF EXISTS parlay_log_mode_check;
 ALTER TABLE public.parlay_log ADD CONSTRAINT parlay_log_mode_check CHECK (mode IN ('suggest','round','special','xspecial','xdaily','xsingle','single'));
 
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT p.oid
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prokind = 'f'
+      AND p.proname IN ('cfi_parlay_stats', 'cfi_parlay_placed', 'cfi_parlay_recent')
+      AND p.prosrc LIKE '%(''xspecial'',''xdaily'')%'
+  LOOP
+    EXECUTE replace(pg_get_functiondef(r.oid), '(''xspecial'',''xdaily'')', '(''xspecial'',''xdaily'',''xsingle'')');
+  END LOOP;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.cfi_summary(p_from date, p_to date, p_min_n integer DEFAULT 5)
 RETURNS jsonb
 LANGUAGE sql
