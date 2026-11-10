@@ -10,12 +10,14 @@
 		11A000000000000000000001 /* CFIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B000000000000000000001 /* CFIApp.swift */; };
 		11A000000000000000000002 /* CFIWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B000000000000000000002 /* CFIWebView.swift */; };
 		11A000000000000000000003 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 11B000000000000000000003 /* index.html */; };
+		11A000000000000000000004 /* Audio in Resources */ = {isa = PBXBuildFile; fileRef = 11B000000000000000000005 /* Audio */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		11B000000000000000000001 /* CFIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CFIApp.swift; sourceTree = "<group>"; };
 		11B000000000000000000002 /* CFIWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CFIWebView.swift; sourceTree = "<group>"; };
 		11B000000000000000000003 /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = index.html; path = ../web/index.html; sourceTree = "<group>"; };
+		11B000000000000000000005 /* Audio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Audio; sourceTree = "<group>"; };
 		11B000000000000000000004 /* CFI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CFI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -35,6 +37,7 @@
 			children = (
 				11D000000000000000000002 /* CFI */,
 				11B000000000000000000003 /* index.html */,
+				11B000000000000000000005 /* Audio */,
 				11D000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -115,6 +118,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				11A000000000000000000003 /* index.html in Resources */,
+				11A000000000000000000004 /* Audio in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -174,7 +178,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = CFI;
+				INFOPLIST_KEY_CFBundleDisplayName = Goalcast;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -184,7 +188,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cfi.footballintelligence;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -201,7 +205,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = CFI;
+				INFOPLIST_KEY_CFBundleDisplayName = Goalcast;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -211,7 +215,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cfi.footballintelligence;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

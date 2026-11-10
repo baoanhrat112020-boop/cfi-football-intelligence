@@ -20,7 +20,7 @@ function loadI18N() {
 const I18N = loadI18N();
 
 const NEUTRAL_EN_STATIC = new Set([
-  'CFI', 'Football Intelligence', 'VS', 'H2H', 'RT', 'DB', 'SP', 'MK', 'CFI Runtime', 'CFI Historical DB',
+  'CFI', 'Goalcast', 'Football Intelligence', 'VS', 'H2H', 'RT', 'DB', 'SP', 'MK', 'CFI Runtime', 'CFI Historical DB', 'Goalcast Runtime', 'Goalcast Historical DB',
   'Production worker · /health', 'BigDB strict-prior evidence', 'Strict-Prior Guard', 'Match DNA', 'Fusion',
   'Strict-Prior', 'Champion Fusion', 'CFI App', 'CFI Production API', 'Engine', 'No Data', 'Raw Payload',
   '3+ HT', '7+ FT', 'Other HT', 'Other FT', 'HT', 'FT', 'CI 95%',

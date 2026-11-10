@@ -1,0 +1,132 @@
+ALTER TABLE public.goal_probs ADD COLUMN IF NOT EXISTS tier text;
+
+CREATE OR REPLACE FUNCTION public.cfi_goal_probs_upsert(p_rows jsonb)
+RETURNS integer
+LANGUAGE plpgsql
+VOLATILE SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_n integer := 0;
+BEGIN
+  IF p_rows IS NOT NULL AND jsonb_typeof(p_rows) = 'array' AND jsonb_array_length(p_rows) > 0 THEN
+    WITH ins AS (
+      INSERT INTO public.goal_probs (fixture_id, kickoff_at, home_team, away_team, nk, h1_home, h1_away, ft_home, ft_away, conf, home_id, away_id, tier, updated_at)
+      SELECT r.fixture_id, r.kickoff_at, r.home_team, r.away_team, r.nk, r.h1_home, r.h1_away, r.ft_home, r.ft_away, COALESCE(r.conf, 'low'), r.home_id, r.away_id, r.tier, now()
+      FROM jsonb_to_recordset(p_rows) AS r(fixture_id uuid, kickoff_at timestamptz, home_team text, away_team text, nk text, h1_home numeric, h1_away numeric, ft_home numeric, ft_away numeric, conf text, home_id text, away_id text, tier text)
+      WHERE r.fixture_id IS NOT NULL AND r.kickoff_at IS NOT NULL AND r.nk IS NOT NULL
+        AND r.h1_home BETWEEN 0 AND 1 AND r.h1_away BETWEEN 0 AND 1 AND r.ft_home BETWEEN 0 AND 1 AND r.ft_away BETWEEN 0 AND 1
+      ON CONFLICT (fixture_id) DO UPDATE SET
+        kickoff_at = EXCLUDED.kickoff_at, home_team = EXCLUDED.home_team, away_team = EXCLUDED.away_team, nk = EXCLUDED.nk,
+        h1_home = EXCLUDED.h1_home, h1_away = EXCLUDED.h1_away, ft_home = EXCLUDED.ft_home, ft_away = EXCLUDED.ft_away,
+        conf = EXCLUDED.conf, home_id = EXCLUDED.home_id, away_id = EXCLUDED.away_id, tier = EXCLUDED.tier, updated_at = now()
+      WHERE public.goal_probs.kickoff_at > now()
+      RETURNING 1
+    )
+    SELECT count(*) INTO v_n FROM ins;
+  END IF;
+  DELETE FROM public.goal_probs WHERE kickoff_at < now() - interval '120 days';
+  RETURN v_n;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.cfi_goal_probs_upsert(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cfi_goal_probs_upsert(jsonb) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.cfi_summary(p_from date, p_to date, p_min_n integer DEFAULT 5)
+RETURNS jsonb
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+WITH x AS (
+  SELECT 'singles'::text AS tab,
+         COALESCE(l.legs->0->>'type', '?') || '|' || CASE WHEN (l.legs->0->>'line') ~ '^-?[0-9]+(\.[0-9]+)?$' THEN trim_scale((l.legs->0->>'line')::numeric)::text ELSE '' END AS k,
+         l.result IN ('WIN', 'LOSS', 'HALF_LOSS') AS settled, l.result = 'WIN' AS win, l.system_p AS p,
+         l.result IS NULL AND l.day >= (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - 1 AS pend, l.result IS NULL AND l.day < (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - 1 AS miss, l.ret AS ret
+  FROM public.parlay_log l WHERE l.mode IN ('single', 'xsingle') AND l.day BETWEEN p_from AND p_to
+  UNION ALL
+  SELECT 'parlays', l.mode || '|' || l.ptype, l.result IN ('WIN', 'LOSS', 'HALF_LOSS'), l.result = 'WIN', l.system_p,
+         l.result IS NULL AND l.day >= (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - 1, l.result IS NULL AND l.day < (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - 1, l.ret
+  FROM public.parlay_log l WHERE l.mode NOT IN ('single', 'xsingle') AND l.day BETWEEN p_from AND p_to
+  UNION ALL
+  SELECT 'picks', q.k, q.settled, q.win, q.p, q.pend, q.miss, NULL::numeric
+  FROM (
+    SELECT regexp_replace(l.top_market, '^over_(\d)_(\d+)_(ht|ft)$', 'over_\1\2_\3') AS k,
+           l.settled_at IS NOT NULL AND l.void_reason IS NULL AND l.ft_home IS NOT NULL AND l.hit_top_market IS NOT NULL AS settled,
+           COALESCE(l.hit_top_market, false) AS win, l.top_market_prob AS p,
+           l.settled_at IS NULL AND l.kickoff_at >= now() - interval '30 hours' AS pend,
+           (l.settled_at IS NULL AND l.kickoff_at < now() - interval '30 hours')
+             OR (l.settled_at IS NOT NULL AND (l.void_reason IS NOT NULL OR l.ft_home IS NULL)) AS miss
+    FROM public.suggest_pick_log l
+    WHERE (l.kickoff_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN p_from AND p_to
+      AND l.top_market IS NOT NULL
+      AND (l.home_team || ' ' || l.away_team) !~* '\mU1[0-8]\M'
+  ) q
+  WHERE q.k !~ '^over_[01]\d*_ft$' AND q.k !~ '^over_0[0-6]\d*_ht$'
+  UNION ALL
+  SELECT 'bc', b.market, b.settled_at IS NOT NULL AND NOT b.void AND b.hit IS NOT NULL, COALESCE(b.hit, false), b.p_win,
+         b.settled_at IS NULL AND b.kickoff_at >= now() - interval '30 hours',
+         (b.settled_at IS NULL AND b.kickoff_at < now() - interval '30 hours') OR (b.void AND b.ht_home IS NULL AND b.market ~ '_ht$'), NULL::numeric
+  FROM public.best_choice_daily b WHERE b.day BETWEEN p_from AND p_to
+  UNION ALL
+  SELECT 'bc_ht', b.market, b.settled_at IS NOT NULL AND NOT b.void AND b.hit IS NOT NULL, COALESCE(b.hit, false), b.p_win,
+         b.settled_at IS NULL AND b.kickoff_at >= now() - interval '30 hours',
+         (b.settled_at IS NULL AND b.kickoff_at < now() - interval '30 hours') OR (b.void AND b.ht_home IS NULL), NULL::numeric
+  FROM public.best_choice_ht b WHERE b.day BETWEEN p_from AND p_to
+  UNION ALL
+  SELECT CASE WHEN r.grp = 'eng' THEN 'radar_eng' ELSE 'radar' END,
+         CASE WHEN r.p < 0.15 THEN '<15%' WHEN r.p < 0.25 THEN '15-25%' WHEN r.p < 0.40 THEN '25-40%' ELSE '>=40%' END,
+         r.settled_at IS NOT NULL AND r.gold IS NOT NULL, COALESCE(r.gold, false), r.p,
+         r.settled_at IS NULL AND r.kickoff_at >= now() - interval '30 hours', r.settled_at IS NULL AND r.kickoff_at < now() - interval '30 hours', NULL::numeric
+  FROM public.goldme_radar r WHERE r.flagged AND r.day BETWEEN p_from AND p_to
+  UNION ALL
+  SELECT 'goals', q.k || '|' || COALESCE(gp.tier, 'minor'), gp.settled_at IS NOT NULL AND q.g IS NOT NULL, COALESCE(q.g >= 1, false), q.p::double precision,
+         gp.settled_at IS NULL AND gp.kickoff_at >= now() - interval '30 hours',
+         gp.kickoff_at < now() - interval '30 hours' AND (gp.settled_at IS NULL OR q.g IS NULL), NULL::numeric
+  FROM public.goal_probs gp
+  CROSS JOIN LATERAL (VALUES
+    ('h1h', gp.h1_home, gp.g_h1_home),
+    ('h1a', gp.h1_away, gp.g_h1_away),
+    ('fth', gp.ft_home, gp.g_ft_home),
+    ('fta', gp.ft_away, gp.g_ft_away)
+  ) AS q(k, p, g)
+  WHERE (gp.kickoff_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN p_from AND p_to
+), tabs AS (
+  SELECT tab, count(*) AS n, count(*) FILTER (WHERE settled) AS settled, count(*) FILTER (WHERE settled AND win) AS wins,
+         round(avg(p::numeric) FILTER (WHERE settled), 4) AS avg_p,
+         avg(((p::numeric - win::int) ^ 2)) FILTER (WHERE settled) AS brier,
+         avg(win::int) FILTER (WHERE settled) AS obs,
+         round(avg(ret - 1) FILTER (WHERE settled AND ret IS NOT NULL), 4) AS roi,
+         count(ret) FILTER (WHERE settled) AS n_odds,
+         count(*) FILTER (WHERE pend) AS pend, count(*) FILTER (WHERE miss) AS miss
+  FROM x GROUP BY tab
+), grp AS (
+  SELECT tab, k, count(*) AS n, count(*) FILTER (WHERE settled) AS settled, count(*) FILTER (WHERE settled AND win) AS wins,
+         round(avg(p::numeric) FILTER (WHERE settled), 4) AS avg_p
+  FROM x GROUP BY tab, k
+)
+SELECT jsonb_build_object(
+  'from', p_from, 'to', p_to, 'min_n', p_min_n,
+  'tabs', COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+      'key', t.tab, 'n', t.n, 'settled', t.settled, 'wins', t.wins, 'pending', t.pend, 'missing', t.miss,
+      'rate', CASE WHEN t.settled > 0 THEN round(t.wins::numeric / t.settled, 4) END,
+      'avg_p', t.avg_p,
+      'brier', round(t.brier, 4),
+      'skill', CASE WHEN t.obs > 0 AND t.obs < 1 THEN round(1 - t.brier / (t.obs * (1 - t.obs)), 4) END,
+      'roi', t.roi, 'n_odds', t.n_odds,
+      'groups', COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('k', g.k, 'n', g.n, 'settled', g.settled, 'wins', g.wins,
+                 'rate', CASE WHEN g.settled > 0 THEN round(g.wins::numeric / g.settled, 4) END,
+                 'avg_p', g.avg_p, 'small', g.settled < p_min_n)
+               ORDER BY (g.settled < p_min_n), CASE WHEN g.settled > 0 THEN g.wins::numeric / g.settled END DESC NULLS LAST, g.settled DESC, g.n DESC)
+        FROM (SELECT * FROM grp WHERE grp.tab = t.tab ORDER BY (grp.settled < p_min_n), CASE WHEN grp.settled > 0 THEN grp.wins::numeric / grp.settled END DESC NULLS LAST, grp.settled DESC, grp.n DESC LIMIT 14) g
+      ), '[]'::jsonb)
+    ) ORDER BY CASE t.tab WHEN 'singles' THEN 1 WHEN 'picks' THEN 2 WHEN 'parlays' THEN 3 WHEN 'bc' THEN 4 WHEN 'bc_ht' THEN 5 WHEN 'radar' THEN 6 WHEN 'radar_eng' THEN 7 WHEN 'goals' THEN 8 ELSE 9 END)
+    FROM tabs t), '[]'::jsonb)
+);
+$function$;
+
+REVOKE ALL ON FUNCTION public.cfi_summary(date, date, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cfi_summary(date, date, integer) TO service_role;
