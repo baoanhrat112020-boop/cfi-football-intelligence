@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#1e1208">
-  <title>CFI Football Intelligence</title>
+  <title>Goalcast</title>
   <style>
     :root{
       --bg:#1e1208;--bg2:#28180b;--surface:#2d1c0e;--surface2:#392311;--surface3:#412915;
@@ -123,7 +123,7 @@
     .scroll-top-btn{position:fixed;right:max(16px,calc(50% - 254px));bottom:calc(88px + env(safe-area-inset-bottom));width:40px;height:40px;padding:2px;border-radius:50%;background:var(--surface3);border:1px solid var(--cyan);color:var(--cyan);display:none;z-index:40;cursor:pointer;align-items:center;justify-content:center}.scroll-top-btn.visible{display:flex}
     @media(min-width:700px){.app{padding-top:18px}.header{border-radius:16px 16px 0 0}.bottom-nav{border-radius:0 0 16px 16px}}
   
-/* ==== CFI ODDS SIDECAR ==== */
+/* ==== Goalcast ODDS SIDECAR ==== */
 .odds-row{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;padding:6px 8px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.05)}
 .odds-label{font-size:11px;color:#888}
 .odds-input{width:72px;padding:4px 6px;font-size:13px;background:#1a1a1a;color:#eee;border:1px solid #333;border-radius:6px;text-align:center;font-family:ui-monospace,monospace}
@@ -236,7 +236,7 @@
 <body>
 <div class="app">
   <header class="header">
-    <div class="brand"><strong>CFI</strong><span>Football Intelligence</span></div>
+    <div class="brand"><strong>Goalcast</strong><span>Football Intelligence</span></div>
     <button class="icon-btn" id="settingsBtn" aria-label="Settings">
       <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg>
     </button>
@@ -255,7 +255,7 @@
       </div>
       <div class="card pad">
         <h1 class="section-title">SELECT MATCH</h1>
-        <p class="section-sub">Chọn trận để CFI kiểm tra dữ liệu và chuẩn bị prediction.</p>
+        <p class="section-sub">Chọn trận để Goalcast kiểm tra dữ liệu và chuẩn bị prediction.</p>
         <div class="teams">
           <div class="team-box">
             <div class="shirt home" id="homeShirt">
@@ -280,14 +280,14 @@
         <button id="findBtn" class="primary">⌕ &nbsp; Find Match</button>
         <div class="hint">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
-          <span>CFI chỉ tạo prediction sau khi backend phản hồi và các gate strict-prior được kiểm tra.</span>
+          <span>Goalcast chỉ tạo prediction sau khi backend phản hồi và các gate strict-prior được kiểm tra.</span>
         </div>
       </div>
       </div>
       <div id="todayPanel" class="today-panel">
         <div class="card pad">
           <h1 class="section-title">TRẬN TRONG NGÀY</h1>
-          <p class="section-sub">Tự lấy lịch thi đấu. Chọn một trận rồi CFI mới kiểm tra BigDB/strict-prior và chạy prediction.</p>
+          <p class="section-sub">Tự lấy lịch thi đấu. Chọn một trận rồi Goalcast mới kiểm tra BigDB/strict-prior và chạy prediction.</p>
           <div class="today-toolbar">
             <div class="field"><label>Ngày</label><input id="todayDateInput" type="date"></div>
             <button id="todayRefreshBtn" class="refresh-today">↻ Refresh</button>
@@ -296,6 +296,7 @@
           <div id="fixtureList" class="fixture-list">
             <div class="fixture-empty">Bấm “Refresh” để tự tìm các trận chưa bắt đầu trong ngày.</div>
           </div>
+          <button id="mcOpenBtn" class="chip active" type="button" style="width:100%;height:44px;margin-top:12px;font-size:14px"><span>Không thấy trận? Tự tính từ odds</span></button>
         </div>
       </div>
     </section>
@@ -325,8 +326,8 @@
           <h2 class="section-title">Data Preparation</h2>
           <p class="section-sub">Trạng thái thật từ backend production, không mô phỏng.</p>
           <div class="source-list">
-            <div class="source"><div class="source-left"><div class="source-icon">RT</div><div><b>CFI Runtime</b><small>Production worker · /health</small></div></div><div class="status"><i id="runtimeDot" class="dot"></i><div><span id="runtimeStatus">Checking…</span><div id="runtimeTime" class="source-time"></div></div></div></div>
-            <div class="source"><div class="source-left"><div class="source-icon">DB</div><div><b>CFI Historical DB</b><small>BigDB strict-prior evidence</small></div></div><div class="status"><i id="dbDot" class="dot"></i><div><span id="dbStatus">Checking…</span><div id="dbTime" class="source-time"></div></div></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">RT</div><div><b>Goalcast Runtime</b><small>Production worker · /health</small></div></div><div class="status"><i id="runtimeDot" class="dot"></i><div><span id="runtimeStatus">Checking…</span><div id="runtimeTime" class="source-time"></div></div></div></div>
+            <div class="source"><div class="source-left"><div class="source-icon">DB</div><div><b>Goalcast Historical DB</b><small>BigDB strict-prior evidence</small></div></div><div class="status"><i id="dbDot" class="dot"></i><div><span id="dbStatus">Checking…</span><div id="dbTime" class="source-time"></div></div></div></div>
             <div class="source"><div class="source-left"><div class="source-icon">SP</div><div><b>Strict-Prior Guard</b><small>Context before match date</small></div></div><div class="status"><i id="strictDot" class="dot warn"></i><span id="strictStatus">Pending</span></div></div>
             <div class="source"><div class="source-left"><div class="source-icon">MK</div><div><b>Market Engine</b><small>Multi-market / Champion</small></div></div><div class="status"><i id="marketDot" class="dot warn"></i><span id="marketStatus">Run prediction</span></div></div>
           </div>
@@ -347,7 +348,7 @@
       <div class="selected-panel" data-panel="stats">
         <div class="card pad">
           <h2 class="section-title">Team Stats</h2>
-          <p class="section-sub">Strict-prior historical summary from CFI BigDB.</p>
+          <p class="section-sub">Strict-prior historical summary from Goalcast BigDB.</p>
           <div id="statsContent" class="context-state">Đang tải dữ liệu đội…</div>
         </div>
       </div>
@@ -363,7 +364,7 @@
       <div class="selected-panel" data-panel="form">
         <div class="card pad">
           <h2 class="section-title">Recent Form</h2>
-          <p class="section-sub">10 trận gần nhất có trong CFI BigDB, chỉ dùng dữ liệu trước ngày trận.</p>
+          <p class="section-sub">10 trận gần nhất có trong Goalcast BigDB, chỉ dùng dữ liệu trước ngày trận.</p>
           <div id="formContent" class="context-state">Đang tải phong độ…</div>
         </div>
       </div>
@@ -391,8 +392,8 @@
           <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>
         </div>
         <h2>No prediction generated yet</h2>
-        <p>CFI sẽ gửi trận tới production engine. Kết quả chỉ hiện khi backend trả về prediction hợp lệ.</p>
-        <button id="predictBtn" class="primary green">▶ &nbsp; RUN CFI PREDICTION</button>
+        <p>Goalcast sẽ gửi trận tới production engine. Kết quả chỉ hiện khi backend trả về prediction hợp lệ.</p>
+        <button id="predictBtn" class="primary green">▶ &nbsp; RUN GOALCAST PREDICTION</button>
         <div class="quick-actions">
           <button id="refreshBtn" class="quick"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><span>Refresh Data</span></button>
           <button id="evidenceBtn" class="quick"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg><span>Evidence</span></button>
@@ -409,7 +410,7 @@
           <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 2.8 20h18.4z"/><path d="M12 9v5M12 17h.01"/></svg>
         </div>
         <h2>PREDICTION BLOCKED</h2>
-        <p id="blockedSummary">CFI không tạo prediction vì integrity gate chưa đạt.</p>
+        <p id="blockedSummary">Goalcast không tạo prediction vì integrity gate chưa đạt.</p>
         <div id="blockedIssues"></div>
         <button id="blockedDetailsBtn" class="primary" style="background:#2c2a15;color:#ffd23f;margin-top:14px">View Details</button>
       </div>
@@ -425,7 +426,7 @@
       <div class="card pad" style="margin-top:12px">
         <div class="result-hero" style="padding:0">
           <div class="score-ring" id="scoreRing"><strong id="topProbability">—</strong></div>
-          <div><h2 id="resultTitle">CFI Prediction</h2><p id="resultMeta">Strict-prior result from production engine.</p></div>
+          <div><h2 id="resultTitle">Goalcast Prediction</h2><p id="resultMeta">Strict-prior result from production engine.</p></div>
         </div>
         <div class="badge-row">
           <div class="badge-chip" id="badgeQuality"><span>Data Quality</span><b id="badgeQualityVal">—</b></div>
@@ -466,7 +467,7 @@
 
       <div class="result-panel" data-resultpanel="insights">
         <div class="card pad">
-          <h2 class="section-title">CFI Insights</h2>
+          <h2 class="section-title">Goalcast Insights</h2>
           <p class="section-sub">Evidence, explosion scenario, multi-market lean và integrity từ chính output prediction.</p>
           <div id="insightsContent" class="insight-grid"></div>
         </div>
@@ -640,7 +641,7 @@
         <div style="font-size:20px;font-weight:800">Live</div>
         <div style="font-size:12px;color:var(--muted);margin:2px 0 10px" id="lvInfo">Lịch thi đấu và tỉ số trực tiếp</div>
         <input id="lvSearch" class="lv-in" type="search" placeholder="Tìm giải, đội..." autocomplete="off"><div class="chip-row" id="lvDays" style="display:flex;gap:6px;padding:0 0 8px;overflow:auto"></div>
-        <div class="chip-row" id="lvFilter" style="display:flex;gap:6px;padding:0 0 8px;overflow:auto"><button class="chip active" data-lvf="all">Tất cả</button><button class="chip" data-lvf="live">Đang đá</button><button class="chip" data-lvf="ft">Đã xong</button><button class="chip" data-lvf="ns">Sắp đá</button><button class="chip" data-lvf="pick">Có kèo CFI</button></div>
+        <div class="chip-row" id="lvFilter" style="display:flex;gap:6px;padding:0 0 8px;overflow:auto"><button class="chip active" data-lvf="all">Tất cả</button><button class="chip" data-lvf="live">Đang đá</button><button class="chip" data-lvf="ft">Đã xong</button><button class="chip" data-lvf="ns">Sắp đá</button><button class="chip" data-lvf="pick">Có kèo Goalcast</button></div>
         <div class="chip-row" id="lvView" style="display:flex;gap:6px;padding:0 0 8px"><button class="chip active" data-lvv="league">Theo giải</button><button class="chip" data-lvv="time">Theo giờ</button><button class="chip" data-lvall="fold" style="margin-left:auto">Thu gọn</button><button class="chip" data-lvall="open">Mở hết</button></div>
         <div id="lvContent"><div class="context-state">Đang tải...</div></div>
       </div>
@@ -669,7 +670,7 @@
 <div id="toast" class="toast"></div>
 <div id="modalWrap" class="modal-wrap">
   <div class="modal">
-    <div class="modal-head"><h3 id="modalTitle">CFI</h3><button id="modalClose" class="icon-btn">✕</button></div>
+    <div class="modal-head"><h3 id="modalTitle">Goalcast</h3><button id="modalClose" class="icon-btn">✕</button></div>
     <div id="modalBody"></div>
   </div>
 </div>
@@ -699,7 +700,60 @@
     });
   }
   var gpTimer=0;
+  function mcPois(l,k){var p=Math.exp(-l),t=p;for(var i=1;i<=k;i++){p*=l/i;t+=p}return t}
+  function mcEv(lam,line,odds){
+    var q=Math.round(line*4)%2!==0,lo=q?line-0.25:line,hi=q?line+0.25:line,p=Math.exp(-lam),ev=0;
+    for(var t=0;t<=40;t++){
+      if(t>0)p*=lam/t;
+      var k=Math.sign(t-lo)+Math.sign(t-hi);
+      ev+=p*(k===2?odds-1:k===1?(odds-1)/2:k===0?0:k===-1?-0.5:-1);
+    }
+    return ev;
+  }
+  function mcCalc(line,oo,ou,share){
+    if(!(line>0)||!(oo>0)||!(ou>0)||!(share>0&&share<1))return null;
+    var o1=oo<1?oo+1:oo,o2=ou<1?ou+1:ou;
+    if(!(o1>1)||!(o2>1))return null;
+    var pa=1/o1,pb=1/o2,fo=(pa+pb)/pa,lo=0.05,hi=9;
+    if(mcEv(lo,line,fo)>0||mcEv(hi,line,fo)<0)return null;
+    for(var i=0;i<60;i++){var mid=(lo+hi)/2;if(mcEv(mid,line,fo)<0)lo=mid;else hi=mid}
+    var lam=(lo+hi)/2,l1=lam*0.469,x=function(l,sh){return 1-Math.exp(-l*sh)};
+    return {lam:lam,ft:[x(lam,share),x(lam,1-share)],h1:[x(l1,share),x(l1,1-share)],
+      btts:x(lam,share)*x(lam,1-share),
+      over:[0.5,1.5,2.5,3.5].map(function(L){return 1-mcPois(lam,Math.floor(L))}),
+      overH1:[0.5,1.5].map(function(L){return 1-mcPois(l1,Math.floor(L))})};
+  }
+  function mcForm(){
+    var lines=[1.5,1.75,2,2.25,2.5,2.75,3,3.25,3.5,3.75,4,4.5].map(function(v){return '<option value="'+v+'"'+(v===2.5?' selected':'')+'>'+v+'</option>'}).join("");
+    var f='style="width:100%;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--text);padding:0 10px;font-size:14px"';
+    return '<div style="display:grid;gap:10px">'
+      +'<div style="font-size:12px;color:var(--muted)"><span>Dùng khi trận giải nhỏ chưa có trong dữ liệu. Kết quả tính từ odds nhà cái, không dùng lịch sử hai đội.</span></div>'
+      +'<label><span style="font-size:12px;color:var(--muted)">Đội nhà (tuỳ chọn)</span><input id="mcHome" '+f+'></label>'
+      +'<label><span style="font-size:12px;color:var(--muted)">Đội khách (tuỳ chọn)</span><input id="mcAway" '+f+'></label>'
+      +'<label><span style="font-size:12px;color:var(--muted)">Đường Tài/Xỉu cả trận</span><select id="mcLine" '+f+'>'+lines+'</select></label>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label><span style="font-size:12px;color:var(--muted)">Odds Tài</span><input id="mcOO" inputmode="decimal" placeholder="1.90" '+f+'></label>'
+      +'<label><span style="font-size:12px;color:var(--muted)">Odds Xỉu</span><input id="mcOU" inputmode="decimal" placeholder="1.90" '+f+'></label></div>'
+      +'<label><span style="font-size:12px;color:var(--muted)">Thế trận</span><select id="mcShare" '+f+'><option value="0.55">Cân bằng</option><option value="0.64">Nhà mạnh hơn</option><option value="0.42">Khách mạnh hơn</option></select></label>'
+      +'<button id="mcGo" class="chip active" style="height:44px;font-size:14px" type="button"><span>Tính</span></button>'
+      +'<div id="mcOut"></div></div>';
+  }
+  function mcRun(){
+    var v=function(id){return Number(String($(id).value).replace(",","."))};
+    var r=mcCalc(v("mcLine"),v("mcOO"),v("mcOU"),v("mcShare")),el=$("mcOut");
+    if(!r){el.innerHTML='<div class="context-state"><span>Odds hoặc đường Tài/Xỉu chưa hợp lệ</span></div>';return}
+    var h=String($("mcHome").value||"").trim(),a=String($("mcAway").value||"").trim();
+    var pc=function(x){return Math.round(x*100)+"%"};
+    el.innerHTML=(h||a?'<div style="font-weight:800;margin-bottom:6px" translate="no">'+esc(h||"-")+' - '+esc(a||"-")+'</div>':'')
+      +'<div class="gp"><span class="gp-g">'+gpCell("H1","Nhà",r.h1[0])+gpCell("H1","Khách",r.h1[1])+'</span><span class="gp-g">'+gpCell("FT","Nhà",r.ft[0])+gpCell("FT","Khách",r.ft[1])+'</span></div>'
+      +'<div style="font-size:13px;margin-top:8px;line-height:1.7"><span>Tổng bàn kỳ vọng</span>: <b translate="no">'+r.lam.toFixed(2)+'</b><br>'
+      +'<span>Tài</span> <span translate="no">0.5 / 1.5 / 2.5 / 3.5</span>: <b translate="no">'+r.over.map(pc).join(" / ")+'</b><br>'
+      +'<span>Tài hiệp 1</span> <span translate="no">0.5 / 1.5</span>: <b translate="no">'+r.overH1.map(pc).join(" / ")+'</b><br>'
+      +'<span>Hai đội ghi bàn</span>: <b translate="no">'+pc(r.btts)+'</b></div>';
+  }
+  function mcOpen(){modal("Tự tính trận giải nhỏ",mcForm());$("mcGo").onclick=mcRun}
+
   function gpSchedule(){if(gpTimer)return;gpTimer=requestAnimationFrame(function(){gpTimer=0;gpFill()})}
+  setTimeout(function(){var b=$("mcOpenBtn");if(b)b.onclick=mcOpen},0);
   new MutationObserver(gpSchedule).observe(document.body,{childList:true,subtree:true});
   async function gpLoad(){
     try{
@@ -711,6 +765,7 @@
     }catch(e){}
   }
   setTimeout(gpLoad,0);
+  setTimeout(function(){["/api/mvp","/api/goldme-top","/api/summary?kind=day&offset=0"].forEach(function(u){api(u,"GET").catch(function(){})})},2500);
   setInterval(function(){if(!document.hidden)gpLoad()},600000);
   function rdBadge(fid,pid,h,a){
     var v=(fid&&RD_F[fid])||(pid&&RD_P[pid])||(h&&a&&RD_N[gtKey(h)+"|"+gtKey(a)])||0;
@@ -799,16 +854,36 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       try{item.reject(new Error("Match changed"))}catch(e){}
     });
   }
+  var SWR_RE=/^\/api\/(mvp|bestchoice|goldme-top|goldme|summary|report|round-stats)(\?|$)/,SWR_TTL=300000,SWR_MEM={},SWR_FLY={};
+  function swrGet(path){
+    var e=SWR_MEM[path];
+    if(!e){try{var raw=localStorage.getItem("gc_swr:"+path);if(raw)e=SWR_MEM[path]=JSON.parse(raw)}catch(x){}}
+    return e&&Date.now()-e.t<SWR_TTL?JSON.parse(JSON.stringify(e.r)):null;
+  }
+  function swrPut(path,r){
+    var e={t:Date.now(),r:JSON.parse(JSON.stringify(r))};SWR_MEM[path]=e;
+    try{localStorage.setItem("gc_swr:"+path,JSON.stringify(e))}catch(x){}
+  }
   function api(path,method,body){
+    method=method||"GET";
+    if(method==="GET"&&SWR_RE.test(path)){
+      var hit=swrGet(path);if(hit)return Promise.resolve(hit);
+      if(SWR_FLY[path])return SWR_FLY[path];
+      var pr=apiRaw(path,method,body).then(function(r){delete SWR_FLY[path];swrPut(path,r);return r},function(e){delete SWR_FLY[path];throw e});
+      SWR_FLY[path]=pr;return pr;
+    }
+    return apiRaw(path,method,body);
+  }
+  function apiRaw(path,method,body){
     method=method||"GET";
     if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.cfiAPI){
       return new Promise(function(resolve,reject){
         var id="r"+Date.now()+Math.floor(Math.random()*100000);state.pending[id]={resolve:resolve,reject:reject};
         window.webkit.messageHandlers.cfiAPI.postMessage({id:id,path:path,method:method,body:body||null});
-        setTimeout(function(){if(state.pending[id]){delete state.pending[id];reject(new Error("CFI API timeout"))}},30000);
+        setTimeout(function(){if(state.pending[id]){delete state.pending[id];reject(new Error("Goalcast API timeout"))}},30000);
       });
     }
-    return Promise.reject(new Error("Native CFI API bridge unavailable in this preview"));
+    return Promise.reject(new Error("Native Goalcast API bridge unavailable in this preview"));
   }
 
   function statusText(obj){try{return JSON.stringify(obj).toLowerCase()}catch(e){return ""}}
@@ -824,7 +899,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       state.status=r.data;
       setStatus("runtimeDot","runtimeStatus","ok","Online");
       stamp("runtimeTime","Last checked");
-      if(!silent)toast("CFI runtime online");
+      if(!silent)toast("Goalcast runtime online");
       return true;
     }catch(e){
       setStatus("runtimeDot","runtimeStatus","bad","Offline");
@@ -942,7 +1017,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function renderTodayFixtures(rows,source,fromNetwork){
     state.todayFixtures=Array.isArray(rows)?rows:[];
-    $("fixtureSource").textContent="Nguồn: "+(source||"CFI fixture discovery");
+    $("fixtureSource").textContent="Nguồn: "+(source||"Goalcast fixture discovery");
     $("fixtureCount").textContent=state.todayFixtures.length+" trận";
     var list=$("fixtureList");list.innerHTML="";
     if(!state.todayFixtures.length){list.innerHTML='<div class="fixture-empty">Không tìm thấy trận chưa bắt đầu cho ngày này. Có thể thử Refresh hoặc đổi ngày.</div>';return}
@@ -982,7 +1057,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       var rows=[],source="";
       try{
         var sr=await api("/api/fixtures-day","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh"});
-        var sd=sr.data||{};rows=Array.isArray(sd.rows)?sd.rows:[];source=sd.source||"CFI SERVER DISCOVERY";
+        var sd=sr.data||{};rows=Array.isArray(sd.rows)?sd.rows:[];source=sd.source||"Goalcast SERVER DISCOVERY";
       }catch(primaryErr){
         var dr=await api("/api/discover","POST",{target_date:date,timezone:"Asia/Ho_Chi_Minh",max_matches:100,scan_limit:100,response_mode:"compact",internal_provider_diagnostics:true});
         var dd=dr.data||{},board=Array.isArray(dd.board)?dd.board:[];
@@ -1052,7 +1127,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     if(state.contextError||!state.context){
       var e=state.contextError||{message:"Context unavailable"};
       var code=e.upstreamStatus?(" · upstream "+e.upstreamStatus):"";
-      var err='Không lấy được CFI context'+esc(code)+'.<br>'+esc(e.message||e.upstreamError||e.error||"");
+      var err='Không lấy được Goalcast context'+esc(code)+'.<br>'+esc(e.message||e.upstreamError||e.error||"");
       stats.className="context-state";h2h.className="context-state";form.className="context-state";
       stats.innerHTML=err;h2h.innerHTML=err;form.innerHTML=err;return;
     }
@@ -1148,8 +1223,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   function renderEvidence(){
     var health=state.status,ctx=state.context,pred=state.prediction;
     var srcRows=[
-      {label:"CFI Runtime",sub:"/health",ok:!!health,detail:health?"Online":"Not loaded"},
-      {label:"CFI Historical DB",sub:"/api/match-context",ok:!!ctx,detail:ctx?"Loaded":(state.contextError?"Failed":"Not loaded")},
+      {label:"Goalcast Runtime",sub:"/health",ok:!!health,detail:health?"Online":"Not loaded"},
+      {label:"Goalcast Historical DB",sub:"/api/match-context",ok:!!ctx,detail:ctx?"Loaded":(state.contextError?"Failed":"Not loaded")},
       {label:"Market Engine",sub:"/api/predict",ok:!!pred,detail:pred?"Prediction loaded":"Not run yet"}
     ];
     $("evidenceSources").innerHTML=srcRows.map(function(r){return '<div class="source"><div class="source-left"><div class="source-icon">'+esc(r.label.slice(0,2).toUpperCase())+'</div><div><b>'+esc(r.label)+'</b><small>'+esc(r.sub)+'</small></div></div><div class="status"><i class="dot '+(r.ok?"ok":"warn")+'"></i><span>'+esc(r.detail)+'</span></div></div>'}).join("");
@@ -1170,7 +1245,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
   $("evidenceBtn").onclick=goToEvidence;
   $("dnaBtn").onclick=goToDNA;
-  $("settingsBtn").onclick=function(){modal("CFI App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>CFI Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.5.0 · Build 1</b></div><div class="source"><span>Xác suất ghi bàn</span><b><span>Nhà · khách</span></b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#af997f">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
+  $("settingsBtn").onclick=function(){modal("Goalcast App",'<div class="source-list"><div class="source"><span>Mode</span><b>Native iOS shell</b></div><div class="source"><span>Engine</span><b>Goalcast Production API</b></div><div class="source"><span>Prediction policy</span><b>Fail-closed</b></div><div class="source"><span>Version</span><b>v0.5.1 · Build 1</b></div><div class="source"><span>Xác suất ghi bàn</span><b><span>Nhà · khách</span></b></div></div><div style="margin-top:14px;font-size:12px;font-weight:700;color:#af997f">Ngôn ngữ / Language</div><div style="display:flex;gap:8px;margin-top:6px"><button class="chip'+(window.CFI_LANG==="en"?"":" active")+'" data-set-lang="vi">Tiếng Việt</button><button class="chip'+(window.CFI_LANG==="en"?" active":"")+'" data-set-lang="en">English</button></div>')};
   $("modalClose").onclick=function(){$("modalWrap").classList.remove("show")};
   $("modalWrap").onclick=function(e){if(e.target===$("modalWrap"))$("modalWrap").classList.remove("show")};
 
@@ -1561,7 +1636,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     $("badgeAgreementVal").textContent=isTierC?"LOW":(grades.agreement||"—");$("badgeAgreement").className="badge-chip"+(isTierC?" agree-LOW":(grades.agreement?" agree-"+grades.agreement:""));
     $("badgeGradeVal").textContent=grades.grade;$("badgeGrade").className="badge-chip grade-"+grades.grade;
     (function(){var lam=null,scan=data,dep=3;while(scan&&typeof scan==="object"&&dep-->0){if(scan.lambdaFT){lam=scan.lambdaFT;break}if(scan.body&&typeof scan.body==="object")scan=scan.body;else break}var eg=lam||out.expectedGoals,ft=eg&&eg.ft?eg.ft:eg,h=ft?Number(ft.home):NaN,a=ft?Number(ft.away):NaN;if(!(h>=0&&a>=0))return;var wrap=document.createElement("div");wrap.innerHTML=scoreBlockHtml(scorePredFromLambda(h,a));if(wrap.firstChild)list.insertBefore(wrap.firstChild,list.firstChild)})();
-    renderScoreline(out);renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"CFI")+" · "+prettyDate(state.match.date);showScreen("result");
+    renderScoreline(out);renderFusion(out);renderInsights(out);$("resultMeta").textContent="Production response · "+(out.version||"Goalcast")+" · "+prettyDate(state.match.date);showScreen("result");
   }
 
   function renderBlockedIssues(msg,payload,status){
@@ -1577,7 +1652,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     modal("Blocked · Raw response",'<pre>'+esc(JSON.stringify(state.lastBlockedPayload||{},null,2))+'</pre>');
   };
   $("predictBtn").onclick=async function(){
-    var btn=$("predictBtn");btn.disabled=true;btn.innerHTML='<span class="loading"><i></i><i></i><i></i></span> Running CFI';
+    var btn=$("predictBtn");btn.disabled=true;btn.innerHTML='<span class="loading"><i></i><i></i><i></i></span> Running Goalcast';
     try{
       var r=await api("/api/predict","POST",{home:state.match.canonicalHome||state.match.home,away:state.match.canonicalAway||state.match.away,target_date:state.match.date,language:"vi",input_mode:"SINGLE_MATCH",response_mode:"full"});
       setStatus("marketDot","marketStatus","ok","Champion ready");
@@ -1585,9 +1660,9 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     }catch(e){
       setStatus("marketDot","marketStatus","bad","Rejected");
       var payload=e.data||{};var msg=(payload&&payload.message)||(payload&&payload.error)||e.message||"Prediction rejected";
-      $("blockedSummary").textContent=e.status===422?"Evidence/identity gate rejected this prediction.":"CFI engine did not return an accepted prediction.";
+      $("blockedSummary").textContent=e.status===422?"Evidence/identity gate rejected this prediction.":"Goalcast engine did not return an accepted prediction.";
       renderBlockedIssues(msg,payload,e.status);showScreen("blocked");
-    }finally{btn.disabled=false;btn.innerHTML="▶ &nbsp; RUN CFI PREDICTION"}
+    }finally{btn.disabled=false;btn.innerHTML="▶ &nbsp; RUN GOALCAST PREDICTION"}
   };
   $("blockedBackBtn").onclick=function(){showScreen("ready")};
   $("newMatchBtn").onclick=function(){state.prediction=null;showScreen("search")};
@@ -1880,11 +1955,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     ins+=rpIt('<span>Trận có kết quả cực đoan</span>','<b>3+ HT '+(E.x3ht||0)+' · Other HT '+(E.xoht||0)+'<br>Other FT '+(E.xoft||0)+' · 7+ FT '+(E.x7ft||0)+'</b>',"");
     ins+=rpIt('<span>Xiên đã đặt</span>','<b>'+(PD.wins||0)+'/'+(PD.n||0)+(PD.roi!=null?' · ROI '+(PD.roi>=0?'+':'')+(PD.roi*100).toFixed(0)+'%':'')+'</b>',"");
     h+=rpSec('<span>Thông tin thêm</span>','',ins,full);
-    return h+'<div class="ft">CFI Football Intelligence · <span>'+RP_KIND[kind]+'</span> '+rpRange(d,kind)+'</div></div>';
+    return h+'<div class="ft">Goalcast · <span>'+RP_KIND[kind]+'</span> '+rpRange(d,kind)+'</div></div>';
   }
   function rpDoc(d,kind){
     var t=RP_KIND[kind]+" "+rpRange(d,kind).replace(/<[^>]+>/g,"");
-    return '<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CFI · '+esc(t)+'</title><style>body{margin:0;background:#1d130c;padding:16px;max-width:680px;margin:auto}h1{font:800 20px -apple-system,system-ui,sans-serif;color:#fff;margin:4px 0 2px}.s{font:12px -apple-system,system-ui,sans-serif;color:#af997f;margin-bottom:6px}'+RP_CSS+'</style></head><body><h1>CFI Football Intelligence</h1><div class="s">'+esc(t)+'</div>'+rpBody(d,kind,true)+'</body></html>';
+    return '<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Goalcast · '+esc(t)+'</title><style>body{margin:0;background:#1d130c;padding:16px;max-width:680px;margin:auto}h1{font:800 20px -apple-system,system-ui,sans-serif;color:#fff;margin:4px 0 2px}.s{font:12px -apple-system,system-ui,sans-serif;color:#af997f;margin-bottom:6px}'+RP_CSS+'</style></head><body><h1>Goalcast</h1><div class="s">'+esc(t)+'</div>'+rpBody(d,kind,true)+'</body></html>';
   }
   var RP_KINDS=["day","week","month","quarter","season"];
   state.rpOff={day:0,week:0,month:0,quarter:0,season:0};state.rpRaw=null;state.rpLast="day";
@@ -1939,8 +2014,8 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       return {sec:"",name:(sl?sl+" · ":"")+tl,html:(sl?'<span>'+esc(sl)+'</span> · ':'')+'<span>'+esc(tl)+'</span>'};
     }
     if(tab==="goals"){
-      var gs=String(k).charAt(0)==="h"?"H1":"FT",gh=String(k).charAt(2)==="h",gn=gh?"Nhà":"Khách";
-      return {sec:gs,name:gn,html:'<span>'+gn+'</span>'};
+      var gk=String(k).split("|"),gs=gk[0].charAt(0)==="h"?"H1":"FT",gn=gk[0].charAt(2)==="h"?"Nhà":"Khách",gt=gk[1]==="major"?"Giải lớn":"Giải nhỏ";
+      return {sec:gs,name:gn+" "+gt,html:'<span>'+gn+'</span> <span>'+gt+'</span>'};
     }
     if(tab==="radar"||tab==="radar_eng")return {sec:"",name:String(k)};
     var o=ouLineOf(k);
@@ -1952,7 +2027,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     return '<span'+(p.html?'':' translate="no"')+'>'+(p.html||esc(p.name))+' <span translate="no">×'+g.n+' '+(!g.settled?'<span style="color:var(--muted)">(<span>chưa chốt</span>)</span>':tab==="goals"?'('+rpPct(g.wins,g.settled)+(g.avg_p!=null?' · </span><span>Dự báo</span><span translate="no"> '+Math.round(g.avg_p*100)+'%':'')+')':g.small?'<span style="color:var(--muted)">('+g.wins+'/'+g.settled+')</span>':'('+rpPct(g.wins,g.settled)+')')+'</span></span>';
   }
   function smCard(t,range){
-    var gs=t.groups||[],big=t.key==="goals"?[]:gs.filter(function(g){return !g.small&&g.settled>0}),secs=["H1","FT","HT",""],lines="",wl=t.key==="goals"?"Có ghi":"Thắng",sk=t.key==="goals"&&t.skill!=null?' · <span>Kỹ năng so với trung bình</span>: <b translate="no" style="color:'+(t.skill>=0?"#35d07f":"#ff6b6b")+'">'+(t.skill>=0?"+":"")+(t.skill*100).toFixed(1)+'%</b>':"";
+    var gs=t.groups||[],big=t.key==="goals"?[]:gs.filter(function(g){return !g.small&&g.settled>0}),secs=["H1","FT","HT",""],lines="",wl=t.key==="goals"?"Có ghi":"Thắng",rv=t.n_odds>0&&t.roi!=null?' · <b translate="no" style="color:'+(t.roi>=0?"#35d07f":"#ff6b6b")+'">ROI '+(t.roi>=0?"+":"")+(t.roi*100).toFixed(1)+'% · n='+t.n_odds+'</b>':"",sk=t.key==="goals"&&t.skill!=null?' · <span>Kỹ năng so với trung bình</span>: <b translate="no" style="color:'+(t.skill>=0?"#35d07f":"#ff6b6b")+'">'+(t.skill>=0?"+":"")+(t.skill*100).toFixed(1)+'%</b>':"";
     secs.forEach(function(sec){
       var it=gs.filter(function(g){return smParts(t.key,g.k).sec===sec});
       if(!it.length)return;
@@ -1963,7 +2038,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
     var low=big.length>3?big.slice(-2).reverse().map(lab).join(" · "):"";
     var rank=top?'<div style="font-size:12px;margin-top:8px;color:var(--muted)"><span>Top theo tỷ lệ thắng</span>: '+top+(low?' &nbsp;|&nbsp; <span>Kém nhất</span>: '+low:'')+'</div>':'';
     return '<div class="card" style="padding:12px;margin-bottom:10px"><div style="font-weight:800;font-size:15px"><span>'+SM_TAB[t.key]+'</span> · <span translate="no">'+range+'</span></div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-top:3px"><span>Tổng dự đoán</span>: <b style="color:#f6f0e7" translate="no">'+t.n+'</b> · <span>Đã chốt</span>: <span translate="no">'+t.settled+'</span> · <span>'+wl+'</span>: <b style="color:#35d07f" translate="no">'+t.wins+' ('+rpPct(t.wins,t.settled)+')</b>'+(t.avg_p!=null?' · <span>Dự báo</span>: <span translate="no">'+Math.round(t.avg_p*100)+'%</span>':'')+sk+'</div>'+((t.pending>0||t.missing>0)?'<div style="font-size:12px;color:var(--muted);margin-top:3px">'+(t.pending>0?'<span>Chưa chốt</span>: <span translate="no">'+t.pending+'</span>':'')+(t.pending>0&&t.missing>0?' · ':'')+(t.missing>0?'<span>Thiếu dữ liệu</span>: <span translate="no">'+t.missing+'</span>':'')+'</div>':'')+lines+rank+'</div>';
+      +'<div style="font-size:12px;color:var(--muted);margin-top:3px"><span>Tổng dự đoán</span>: <b style="color:#f6f0e7" translate="no">'+t.n+'</b> · <span>Đã chốt</span>: <span translate="no">'+t.settled+'</span> · <span>'+wl+'</span>: <b style="color:#35d07f" translate="no">'+t.wins+' ('+rpPct(t.wins,t.settled)+')</b>'+(t.avg_p!=null?' · <span>Dự báo</span>: <span translate="no">'+Math.round(t.avg_p*100)+'%</span>':'')+sk+rv+'</div>'+((t.pending>0||t.missing>0)?'<div style="font-size:12px;color:var(--muted);margin-top:3px">'+(t.pending>0?'<span>Chưa chốt</span>: <span translate="no">'+t.pending+'</span>':'')+(t.pending>0&&t.missing>0?' · ':'')+(t.missing>0?'<span>Thiếu dữ liệu</span>: <span translate="no">'+t.missing+'</span>':'')+'</div>':'')+lines+rank+'</div>';
   }
   function smBody(d){
     var T=(d.tabs||[]).filter(function(t){return SM_TAB[t.key]&&t.n>0});
@@ -1973,7 +2048,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
   }
   function smDoc(d,kind){
     var t=rpRange(d,kind).replace(/<[^>]+>/g,"");
-    return '<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CFI · '+esc(t)+'</title><style>'+SM_CSS+'</style></head><body><h1>CFI · <span>Báo cáo tổng</span></h1><div style="font-size:12px;color:#af997f;margin-bottom:10px">'+esc(t)+'</div>'+smBody(d)+'</body></html>';
+    return '<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Goalcast · '+esc(t)+'</title><style>'+SM_CSS+'</style></head><body><h1>Goalcast · <span>Báo cáo tổng</span></h1><div style="font-size:12px;color:#af997f;margin-bottom:10px">'+esc(t)+'</div>'+smBody(d)+'</body></html>';
   }
   async function loadSummary(){
     var el=$("smContent"),kind=state.smKind,off=state.smOff[kind],req=++SM_REQ;
@@ -3155,7 +3230,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
 
 
 <script>
-/* ==== CFI ODDS SIDECAR v2 ==== */
+/* ==== Goalcast ODDS SIDECAR v2 ==== */
 (function () {
   var API_BASE = "";
   var CFI_RULES = { betMinEdge: 0.04, betMinEV: 0.05, leanMinEdge: 0.015 };
@@ -3313,19 +3388,19 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "League & season": "Giải đấu & mùa giải",
       "Strict-prior evidence": "Bằng chứng strict-prior",
       "Evidence volume (H/A/H2H)": "Số liệu bằng chứng (Nhà/Khách/H2H)",
-      "Strict-prior historical summary from CFI BigDB.": "Tóm tắt lịch sử strict-prior từ CFI BigDB.",
+      "Strict-prior historical summary from Goalcast BigDB.": "Tóm tắt lịch sử strict-prior từ Goalcast BigDB.",
       "Head to Head": "Đối đầu",
       "Recent Form": "Phong độ gần đây",
       "Continue": "Tiếp tục",
       "No prediction generated yet": "Chưa có dự đoán",
-      "RUN CFI PREDICTION": "CHẠY DỰ ĐOÁN CFI",
+      "RUN GOALCAST PREDICTION": "CHẠY DỰ ĐOÁN GOALCAST",
       "Evidence": "Bằng chứng",
       "PREDICTION BLOCKED": "DỰ ĐOÁN BỊ CHẶN",
       "View Details": "Xem chi tiết",
       "Back to match": "Quay lại trận",
       "Markets": "Kèo",
       "Insights": "Phân tích",
-      "CFI Prediction": "Dự đoán CFI",
+      "Goalcast Prediction": "Dự đoán Goalcast",
       "Strict-prior result from production engine.": "Kết quả strict-prior từ engine production.",
       "Data Quality": "Chất lượng dữ liệu",
       "Model Agreement": "Đồng thuận mô hình",
@@ -3335,7 +3410,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Integrity": "Toàn vẹn",
       "Consistency": "Nhất quán",
       "Final decision": "Quyết định cuối",
-      "CFI Insights": "Phân tích CFI",
+      "Goalcast Insights": "Phân tích Goalcast",
       "New Match": "Trận mới",
       "Settings": "Cài đặt",
       "Discover": "Khám phá",
@@ -3388,7 +3463,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Settled": "Đã chấm",
       "FT Top1 Hit Rate": "Tỉ lệ trúng Top1 FT",
       "Mean Brier": "Brier trung bình",
-      "Running CFI": "Đang chạy CFI",
+      "Running Goalcast": "Đang chạy Goalcast",
       "Champion ready": "Champion sẵn sàng",
       "Rejected": "Bị từ chối",
       "Prediction rejected": "Dự đoán bị từ chối",
@@ -3397,7 +3472,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Insufficient data": "Không đủ dữ liệu",
       "Canonical identity unresolved": "Chưa xác định định danh chuẩn",
       "Evidence/identity gate rejected this prediction.": "Cổng bằng chứng/định danh đã từ chối dự đoán này.",
-      "CFI engine did not return an accepted prediction.": "CFI engine không trả về dự đoán hợp lệ.",
+      "Goalcast engine did not return an accepted prediction.": "Goalcast engine không trả về dự đoán hợp lệ.",
       "TIER C — ELO FALLBACK": "TIER C — ELO DỰ PHÒNG",
       "Reserve": "Dự bị",
       "Youth": "Trẻ",
@@ -3437,15 +3512,15 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Dự đoán FT": "Pred FT",
       "Nhập trận": "Enter match",
       "Trận hôm nay": "Today's matches",
-      "Chọn trận để CFI kiểm tra dữ liệu và chuẩn bị prediction.": "Pick a match so CFI can check the data and prepare the prediction.",
+      "Chọn trận để Goalcast kiểm tra dữ liệu và chuẩn bị prediction.": "Pick a match so Goalcast can check the data and prepare the prediction.",
       "Ngày thi đấu": "Match date",
       "Giải đấu (không bắt buộc)": "Competition (optional)",
       "Nhập Home vs Away...": "Enter Home vs Away...",
       "Đội nhà": "Home team",
       "Đội khách": "Away team",
-      "CFI chỉ tạo prediction sau khi backend phản hồi và các gate strict-prior được kiểm tra.": "CFI only creates a prediction after the backend responds and the strict-prior gates are checked.",
+      "Goalcast chỉ tạo prediction sau khi backend phản hồi và các gate strict-prior được kiểm tra.": "Goalcast only creates a prediction after the backend responds and the strict-prior gates are checked.",
       "TRẬN TRONG NGÀY": "MATCHES TODAY",
-      "Tự lấy lịch thi đấu. Chọn một trận rồi CFI mới kiểm tra BigDB/strict-prior và chạy prediction.": "Fixtures load automatically. Pick a match and CFI will check BigDB/strict-prior and run the prediction.",
+      "Tự lấy lịch thi đấu. Chọn một trận rồi Goalcast mới kiểm tra BigDB/strict-prior và chạy prediction.": "Fixtures load automatically. Pick a match and Goalcast will check BigDB/strict-prior and run the prediction.",
       "Ngày": "Date",
       "Bấm “Refresh” để tự tìm các trận chưa bắt đầu trong ngày.": "Press “Refresh” to find matches that have not started today.",
       "Trạng thái thật từ backend production, không mô phỏng.": "Real status from the production backend, not simulated.",
@@ -3453,11 +3528,11 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Đang tải dữ liệu đội…": "Loading team data…",
       "Các lần đối đầu trước ngày trận hiện tại.": "Head-to-head meetings before the current match date.",
       "Đang tải H2H…": "Loading H2H…",
-      "10 trận gần nhất có trong CFI BigDB, chỉ dùng dữ liệu trước ngày trận.": "Last 10 matches in CFI BigDB, using only data from before the match date.",
+      "10 trận gần nhất có trong Goalcast BigDB, chỉ dùng dữ liệu trước ngày trận.": "Last 10 matches in Goalcast BigDB, using only data from before the match date.",
       "Đang tải phong độ…": "Loading form…",
-      "CFI sẽ gửi trận tới production engine. Kết quả chỉ hiện khi backend trả về prediction hợp lệ.": "CFI will send the match to the production engine. A result is shown only when the backend returns a valid prediction.",
+      "Goalcast sẽ gửi trận tới production engine. Kết quả chỉ hiện khi backend trả về prediction hợp lệ.": "Goalcast will send the match to the production engine. A result is shown only when the backend returns a valid prediction.",
       "Dữ liệu được re-validate tại thời điểm bấm Run Prediction; app không tự dựng xác suất nếu backend từ chối.": "Data is re-validated when you press Run Prediction; the app never invents probabilities if the backend rejects.",
-      "CFI không tạo prediction vì integrity gate chưa đạt.": "CFI did not create a prediction because the integrity gate was not passed.",
+      "Goalcast không tạo prediction vì integrity gate chưa đạt.": "Goalcast did not create a prediction because the integrity gate was not passed.",
       "Tỉ số khả năng cao nhất (Top 1) là dự đoán chính. Top 3 chỉ để tham khảo phân bố khả năng.": "The most likely scoreline (Top 1) is the main prediction. Top 3 is only a reference for the distribution.",
       "Hiển thị trực tiếp từ outputV3.championFusion. Research/shadow không được biến thành BET.": "Shown directly from outputV3.championFusion. Research/shadow is never turned into a BET.",
       "Evidence, explosion scenario, multi-market lean và integrity từ chính output prediction.": "Evidence, explosion scenario, multi-market lean and integrity from the prediction output itself.",
@@ -3480,7 +3555,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Không lấy được lịch thi đấu.": "Could not get the fixture list.",
       "Không có fixture phù hợp.": "No matching fixtures.",
       "Đang tải strict-prior context…": "Loading strict-prior context…",
-      "Không lấy được CFI context": "Could not get CFI context",
+      "Không lấy được Goalcast context": "Could not get Goalcast context",
       "Lỗi": "Error",
       "Dự đoán": "Picks",
       "Lịch sử": "History",
@@ -3522,6 +3597,23 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Không phải cam kết.": "Not a guarantee.",
       "Radar GoldMe": "GoldMe Radar",
       "Báo cáo tổng": "Summary",
+      "Không thấy trận? Tự tính từ odds": "Match not listed? Calculate from odds",
+      "Tự tính trận giải nhỏ": "Small-league calculator",
+      "Dùng khi trận giải nhỏ chưa có trong dữ liệu. Kết quả tính từ odds nhà cái, không dùng lịch sử hai đội.": "Use when a small-league match is not in the data. Results come from bookmaker odds, not from team history.",
+      "Đội nhà (tuỳ chọn)": "Home team (optional)",
+      "Đội khách (tuỳ chọn)": "Away team (optional)",
+      "Đường Tài/Xỉu cả trận": "Full-time Over/Under line",
+      "Odds Tài": "Over odds",
+      "Odds Xỉu": "Under odds",
+      "Thế trận": "Match balance",
+      "Cân bằng": "Balanced",
+      "Nhà mạnh hơn": "Home stronger",
+      "Khách mạnh hơn": "Away stronger",
+      "Tính": "Calculate",
+      "Odds hoặc đường Tài/Xỉu chưa hợp lệ": "Odds or Over/Under line not valid",
+      "Tổng bàn kỳ vọng": "Expected total goals",
+      "Tài": "Over",
+      "Giải nhỏ": "Minor leagues",
       "Ghi bàn": "Goals scored",
       "Khách": "Away",
       "Có ghi": "Scored",
@@ -3748,7 +3840,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       "Mở hết": "Expand all",
       "Trước giờ đá": "Before kickoff",
       "Chờ cập nhật": "Awaiting update",
-      "Có kèo CFI": "CFI picks",
+      "Có kèo Goalcast": "Goalcast picks",
       "Tìm giải, đội...": "Search league or team...",
       "Theo giải": "By league",
       "Theo giờ": "By time",
@@ -3809,7 +3901,7 @@ function clubColor(n){if(!n)return null;var s=String(n).toLowerCase().trim();if(
       { re: /^Dự đoán FT: Home (\d+) - Away (\d+)$/, to: "Pred FT: Home $1 - Away $2" },
       { re: /^Đã tải (\d+) trận$/, to: "Loaded $1 matches" },
       { re: /^Không lấy được lịch thi đấu\. (.*)$/, to: "Failed to load the schedule. $1" },
-      { re: /^Không lấy được CFI context(.*)\.$/, to: "Failed to load CFI context$1." },
+      { re: /^Không lấy được Goalcast context(.*)\.$/, to: "Failed to load Goalcast context$1." },
       { re: /^(\d+) H2H fixture\(s\) trước (\S+)\.$/, to: "$1 H2H fixture(s) before $2." },
       { re: /^Thiếu dữ liệu lịch sử cho một hoặc cả hai đội \(home (.+), away (.+)\)\.$/, to: "Missing history for one or both teams (home $1, away $2)." },
       { re: /^\/ (\d+) khung giờ$/, to: "/ $1 time slots" },

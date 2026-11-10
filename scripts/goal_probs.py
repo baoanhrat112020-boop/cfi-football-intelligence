@@ -360,7 +360,7 @@ def main():
         yf = apply_platt(pr["ft"][1], par.get(("ft", tier, "a"), (1.0, 0.0)), "ft")
         if any(math.isnan(v) for v in (x1, y1, xf, yf)):
             continue
-        rows.append({"fixture_id": fid, "kickoff_at": u["kickoff_at"], "home_team": u["home_team"], "away_team": u["away_team"], "home_id": h, "away_id": a,
+        rows.append({"fixture_id": fid, "kickoff_at": u["kickoff_at"], "home_team": u["home_team"], "away_team": u["away_team"], "home_id": h, "away_id": a, "tier": tier,
                      "nk": name_key(u["home_team"], u["away_team"], u["kickoff_at"]),
                      "h1_home": round(x1, 4), "h1_away": round(y1, 4), "ft_home": round(xf, 4), "ft_away": round(yf, 4),
                      "conf": confidence(m, h, a, pr["ft"][2])})
