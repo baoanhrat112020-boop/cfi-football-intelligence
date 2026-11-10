@@ -16,7 +16,7 @@ struct CFIWebView: UIViewRepresentable {
         context.coordinator.webView = webView
 
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(red: 0.024, green: 0.082, blue: 0.133, alpha: 1)
+        webView.backgroundColor = UIColor(red: 0.118, green: 0.071, blue: 0.031, alpha: 1)
         webView.scrollView.backgroundColor = webView.backgroundColor
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.allowsBackForwardNavigationGestures = false
