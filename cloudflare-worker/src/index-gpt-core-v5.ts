@@ -1009,6 +1009,18 @@ export default{
       }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
     }
 
+    if(url.pathname==='/api/goal-probs'&&request.method==='GET'){
+      const key=(env as any).SUPABASE_SERVICE_KEY;
+      if(!key)return Response.json({error:'not configured'},{status:500});
+      const now=Date.now();
+      try{
+        const x=await fetch(`${TIER_C_LOG_SUPABASE_URL}/rest/v1/rpc/cfi_goal_probs_range`,{method:'POST',headers:{'apikey':key,'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({p_from:new Date(now-30*3600*1000).toISOString(),p_to:new Date(now+72*3600*1000).toISOString()}),signal:AbortSignal.timeout(10000)});
+        if(!x.ok)return Response.json({error:'goal probs failed',status:x.status},{status:502});
+        const items:any=await x.json();
+        return Response.json({items:Array.isArray(items)?items:[]},{headers:{'Cache-Control':'public, max-age=300'}});
+      }catch(e:any){return Response.json({error:String(e?.message||e)},{status:502})}
+    }
+
     if(url.pathname==='/api/report'&&request.method==='GET'){
       const key=(env as any).SUPABASE_SERVICE_KEY;
       if(!key)return Response.json({error:'not configured'},{status:500});

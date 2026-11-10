@@ -1,0 +1,18 @@
+name: Goal Probs Sync
+on:
+  schedule:
+    - cron: '41 */3 * * *'
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/goal_probs.py
+        env:
+          SB_URL: https://zbwkowqluwuvsnajkuvc.supabase.co
+          SB_SERVICE_ROLE_KEY: ${{ secrets.CFI_SUPABASE_SERVICE_ROLE_KEY }}
