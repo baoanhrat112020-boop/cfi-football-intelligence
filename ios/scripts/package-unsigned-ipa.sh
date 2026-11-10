@@ -36,6 +36,7 @@ BUNDLE="$WORK_DIR/Payload/CFI.app"
 test -s "$BUNDLE/Info.plist" || { echo "IPA validation failed: Info.plist missing" >&2; exit 65; }
 test -s "$BUNDLE/index.html" || { echo "IPA validation failed: bundled index.html missing" >&2; exit 65; }
 test -s "$BUNDLE/CFI" || { echo "IPA validation failed: executable missing" >&2; exit 65; }
+compgen -G "$BUNDLE/Audio/*.m4a" > /dev/null || { echo "IPA validation failed: bundled audio missing" >&2; exit 65; }
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUNDLE/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUNDLE/Info.plist")"
