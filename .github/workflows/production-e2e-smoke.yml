@@ -1,0 +1,128 @@
+name: Production E2E Smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-e2e-smoke.yml'
+      - 'cloudflare-worker/**'
+      - 'src/prediction/**'
+      - 'src/runtime/**'
+      - 'wrangler.jsonc'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-e2e-smoke.yml'
+      - 'cloudflare-worker/**'
+      - 'src/prediction/**'
+      - 'src/runtime/**'
+      - 'wrangler.jsonc'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Verify Cloudflare credentials for remote smoke proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing CLOUDFLARE_API_TOKEN' >&2; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }
+      - name: Verify deployed production through Cloudflare service binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/cfi-e2e-smoke-proxy.mjs <<'EOF'
+          export default {
+            async fetch(request, env) {
+              return env.PROD.fetch(request);
+            }
+          };
+          EOF
+          cat > /tmp/cfi-e2e-smoke-wrangler.jsonc <<'EOF'
+          {
+            "$schema": "./node_modules/wrangler/config-schema.json",
+            "name": "cfi-e2e-smoke-proxy",
+            "main": "/tmp/cfi-e2e-smoke-proxy.mjs",
+            "compatibility_date": "2026-08-15",
+            "services": [
+              { "binding": "PROD", "service": "cfi-football-intelligence" }
+            ]
+          }
+          EOF
+
+          npx wrangler dev --remote --port 8788 --config /tmp/cfi-e2e-smoke-wrangler.jsonc > /tmp/cfi-proxy.log 2>&1 &
+          PROXY_PID=$!
+          trap 'kill "$PROXY_PID" 2>/dev/null || true; wait "$PROXY_PID" 2>/dev/null || true; cat /tmp/cfi-proxy.log || true' EXIT
+
+          READY=0
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/8788) >/dev/null 2>&1; then READY=1; break; fi
+            sleep 1
+          done
+          test "$READY" = 1 || { echo 'Remote service-binding proxy port did not become ready'; exit 1; }
+
+          STATUS_CODE=$(curl -sS --connect-timeout 5 --max-time 130 -o /tmp/proxy-status.json -w '%{http_code}' http://127.0.0.1:8788/api/status)
+          test "$STATUS_CODE" = "200" || { echo "Production status returned HTTP $STATUS_CODE"; cat /tmp/proxy-status.json || true; exit 1; }
+
+          python3 - <<'PY'
+          import json, subprocess, tempfile, datetime
+          base='http://127.0.0.1:8788'
+          today=datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+
+          with open('/tmp/proxy-status.json',encoding='utf-8') as f:
+              s=json.load(f)
+          runtime=s.get('runtime') or {}
+          assert runtime.get('productionEntrypoint')=='index-live-router.ts',runtime
+          assert runtime.get('prematchEntrypoint')=='index-v55.ts',runtime
+
+          def call(method,path,payload=None):
+              with tempfile.NamedTemporaryFile() as body:
+                  cmd=['curl','-sS','--connect-timeout','5','--max-time','150','-H','Accept: application/json','-o',body.name,'-w','%{http_code}','-X',method]
+                  if payload is not None:
+                      cmd += ['-H','Content-Type: application/json','--data-binary',json.dumps(payload)]
+                  cmd += [base+path]
+                  p=subprocess.run(cmd,text=True,capture_output=True)
+                  body.seek(0); raw=body.read().decode(errors='replace')
+                  if p.returncode!=0: raise RuntimeError(f'curl rc={p.returncode} stderr={p.stderr.strip()} body={raw[:1200]}')
+                  code=int(p.stdout.strip())
+                  try: parsed=json.loads(raw) if raw else {}
+                  except Exception: parsed={'raw':raw}
+                  return code,parsed
+
+          home='CFI E2E NONEXISTENT HOME 9F3A7C'; away='CFI E2E NONEXISTENT AWAY 4D2B8E'
+          c_status,c=call('POST','/api/predict-live',{'home':home,'away':away,'status':'COUNTDOWN','clientLocalDate':today,'language':'vi'})
+          assert c_status==422,(c_status,c)
+          assert c.get('status')=='INSUFFICIENT_DATA',c
+          route=c.get('matchStateRouting') or {}
+          expected={'classifiedAs':'PREMATCH','requestedEndpoint':'/api/predict-live','executedEndpoint':'/api/predict','targetDate':today,'targetDateSource':'clientLocalDate'}
+          for k,v in expected.items(): assert route.get(k)==v,(k,v,route)
+
+          m_status,m=call('POST','/api/predict-live',{'home':home,'away':away,'status':'COUNTDOWN','language':'vi'})
+          assert m_status==400,(m_status,m)
+          assert m.get('error')=='TARGET_DATE_REQUIRED',m
+          mroute=m.get('matchStateRouting') or {}
+          assert mroute.get('classifiedAs')=='PREMATCH',mroute
+          assert mroute.get('executedEndpoint') is None,mroute
+          assert mroute.get('reason')=='PRE_KICKOFF_TARGET_DATE_UNRESOLVED',mroute
+
+          l_status,l=call('POST','/api/predict-live',{'home':home,'away':away,'status':'COUNTDOWN','live':{'period':'1H','minute':1,'homeGoals':0,'awayGoals':0},'language':'vi'})
+          assert l_status==400,(l_status,l)
+          assert l.get('error')=='TARGET_DATE_REQUIRED',l
+          lruntime=l.get('runtime') or {}
+          assert lruntime.get('predictionPath')=='LIVE_PRIOR_STRICT_FAIL_CLOSED',lruntime
+
+          print(json.dumps({'status':'PASS','verificationPath':'CLOUDFLARE_SERVICE_BINDING','runtime':runtime,'countdownRouting':route,'missingDateRouting':mroute,'liveRuntime':lruntime},ensure_ascii=False,indent=2))
+          PY
