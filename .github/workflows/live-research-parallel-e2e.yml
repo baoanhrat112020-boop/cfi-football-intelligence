@@ -1,0 +1,60 @@
+name: CFI LIVE Research Parallel E2E
+on:
+  pull_request:
+    paths:
+      - 'research/**'
+      - 'src/prediction/live-engine.ts'
+      - 'tests/live-**'
+      - '.github/workflows/live-research-parallel-e2e.yml'
+  workflow_dispatch:
+
+jobs:
+  snapshot-prefix-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --experimental-strip-types --test tests/live-historical-snapshot-builder.test.mjs
+
+  strict-prior-replay-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --experimental-strip-types --test tests/live-research-parallel-e2e.test.mjs
+
+  full-regression-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  worker-bundle-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx wrangler deploy --dry-run
+
+  e2e-verdict:
+    runs-on: ubuntu-latest
+    needs: [snapshot-prefix-gate, strict-prior-replay-gate, full-regression-gate, worker-bundle-gate]
+    steps:
+      - run: echo 'CFI LIVE research parallel E2E PASS; promotion remains governed by live-self-learning-v1.mjs and real strict-prior evidence.'
