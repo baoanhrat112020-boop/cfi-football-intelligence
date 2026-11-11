@@ -225,6 +225,17 @@ begin
   if jsonb_array_length(coalesce(tele#>'{scoreGrids,fusionV3,ht,cells}','[]'::jsonb))=0 then return new; end if;
   if jsonb_array_length(coalesce(tele#>'{scoreGrids,fusionV3,ft,cells}','[]'::jsonb))=0 then return new; end if;
 
+  -- One prospective decision per canonical matchup/date. Repeated snapshots are
+  -- useful operationally but must never inflate locked-OOS sample size.
+  if exists (
+    select 1
+    from public.cfi_mm_fusion_v3_prospective_samples s
+    where s.trial_id=t.trial_id
+      and s.target_date=new.target_date
+      and s.home_team=new.home_team
+      and s.away_team=new.away_team
+  ) then return new; end if;
+
   audit:=jsonb_build_object(
     'status','ELIGIBLE_PROSPECTIVE_FUSION_V3',
     'snapshotCreatedAt',new.created_at,
@@ -250,7 +261,9 @@ begin
 
   update public.cfi_mm_fusion_v3_prospective_trials x
   set eligible_snapshot_count=(
-    select count(*) from public.cfi_mm_fusion_v3_prospective_samples s where s.trial_id=x.trial_id
+    select count(distinct (s.target_date,s.home_team,s.away_team))
+    from public.cfi_mm_fusion_v3_prospective_samples s
+    where s.trial_id=x.trial_id
   ),updated_at=now()
   where x.trial_id=t.trial_id;
   return new;
@@ -297,7 +310,7 @@ begin
       set settled=true,settlement_id=new.snapshot_id,evaluation=ev
       where trial_id=tid and snapshot_id=new.snapshot_id;
 
-    select count(*) into ready_count
+    select count(distinct (s.target_date,s.home_team,s.away_team)) into ready_count
     from public.cfi_mm_fusion_v3_prospective_samples s
     where s.trial_id=tid
       and s.settled=true
@@ -323,13 +336,17 @@ as $$
 declare out_ece double precision;
 begin
   if p_node not in ('incumbent','fusionV1','challengerV2','fusionV3') then return null; end if;
-  with events as (
-    select greatest(0.0,least(1.0,(e->>'p')::double precision)) as p,
-           (e->>'y')::double precision as y
+  with eligible_samples as (
+    select distinct on (s.target_date,s.home_team,s.away_team) s.*
     from public.cfi_mm_fusion_v3_prospective_samples s
-    cross join lateral jsonb_array_elements(coalesce((s.evaluation->p_node)->'calibrationEvents','[]'::jsonb)) e
     where s.trial_id=p_trial_id and s.settled=true
       and s.evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
+    order by s.target_date,s.home_team,s.away_team,s.created_at,s.snapshot_id
+  ), events as (
+    select greatest(0.0,least(1.0,(e->>'p')::double precision)) as p,
+           (e->>'y')::double precision as y
+    from eligible_samples s
+    cross join lateral jsonb_array_elements(coalesce((s.evaluation->p_node)->'calibrationEvents','[]'::jsonb)) e
   ), bins as (
     select least(9,floor(least(0.999999999,p)*10)::integer) as bin,
            count(*)::double precision as n,
@@ -369,6 +386,13 @@ begin
   select * into t from public.cfi_mm_fusion_v3_prospective_trials where trial_id=p_trial_id;
   if not found then return null; end if;
 
+  with eligible_samples as (
+    select distinct on (s.target_date,s.home_team,s.away_team) s.*
+    from public.cfi_mm_fusion_v3_prospective_samples s
+    where s.trial_id=p_trial_id and s.settled=true
+      and s.evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
+    order by s.target_date,s.home_team,s.away_team,s.created_at,s.snapshot_id
+  )
   select count(*),
          avg((evaluation#>>'{incumbent,aggregateBrier}')::double precision),
          avg((evaluation#>>'{incumbent,aggregateLogLoss}')::double precision),
@@ -379,14 +403,18 @@ begin
          avg((evaluation#>>'{fusionV3,aggregateBrier}')::double precision),
          avg((evaluation#>>'{fusionV3,aggregateLogLoss}')::double precision)
   into n,inc_b,inc_l,v1_b,v1_l,v2_b,v2_l,v3_b,v3_l
-  from public.cfi_mm_fusion_v3_prospective_samples
-  where trial_id=p_trial_id and settled=true
-    and evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1';
+  from eligible_samples;
 
   inc_ece:=public.cfi_mm_fusion_v3_trial_ece(p_trial_id,'incumbent');
   v3_ece:=public.cfi_mm_fusion_v3_trial_ece(p_trial_id,'fusionV3');
 
-  with mapping(group_name,node_key) as (
+  with eligible_samples as (
+    select distinct on (s.target_date,s.home_team,s.away_team) s.*
+    from public.cfi_mm_fusion_v3_prospective_samples s
+    where s.trial_id=p_trial_id and s.settled=true
+      and s.evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
+    order by s.target_date,s.home_team,s.away_team,s.created_at,s.snapshot_id
+  ), mapping(group_name,node_key) as (
     values
       ('HT_1X2','1X2_HT'),('FT_1X2','1X2_FT'),
       ('HT_OU','OU_HT'),('FT_OU','OU_FT'),
@@ -400,22 +428,24 @@ begin
            avg((s.evaluation#>>array['fusionV3','groupMetrics',m.node_key,'logLoss'])::double precision)
              -avg((s.evaluation#>>array['incumbent','groupMetrics',m.node_key,'logLoss'])::double precision) as logloss_delta
     from mapping m
-    cross join public.cfi_mm_fusion_v3_prospective_samples s
-    where s.trial_id=p_trial_id and s.settled=true
-      and s.evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
+    cross join eligible_samples s
     group by m.group_name
   )
   select coalesce(jsonb_object_agg(group_name,jsonb_build_object('n',sample_n,'brierDelta',brier_delta,'logLossDelta',logloss_delta)),'{}'::jsonb)
   into groups from agg;
 
-  with monthly as (
+  with eligible_samples as (
+    select distinct on (s.target_date,s.home_team,s.away_team) s.*
+    from public.cfi_mm_fusion_v3_prospective_samples s
+    where s.trial_id=p_trial_id and s.settled=true
+      and s.evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
+    order by s.target_date,s.home_team,s.away_team,s.created_at,s.snapshot_id
+  ), monthly as (
     select date_trunc('month',target_date)::date as segment,
            count(*) segment_n,
            avg((evaluation#>>'{fusionV3,aggregateBrier}')::double precision)
              -avg((evaluation#>>'{incumbent,aggregateBrier}')::double precision) as delta
-    from public.cfi_mm_fusion_v3_prospective_samples
-    where trial_id=p_trial_id and settled=true
-      and evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
+    from eligible_samples
     group by 1
   )
   select max(delta) into segment_worst from monthly where segment_n>=10;
@@ -465,6 +495,22 @@ create trigger cfi_mm_fusion_v3_mark_settled_trg
 after insert or update of audit,actual_ht_home,actual_ht_away,actual_ft_home,actual_ft_away
 on public.cfi_prediction_settlements
 for each row execute function public.cfi_mm_fusion_v3_mark_settled();
+
+-- Reconcile counters for trials created before the distinct-fixture contract.
+update public.cfi_mm_fusion_v3_prospective_trials t
+set eligible_snapshot_count=(
+      select count(distinct (s.target_date,s.home_team,s.away_team))
+      from public.cfi_mm_fusion_v3_prospective_samples s
+      where s.trial_id=t.trial_id
+    ),
+    settled_sample_count=(
+      select count(distinct (s.target_date,s.home_team,s.away_team))
+      from public.cfi_mm_fusion_v3_prospective_samples s
+      where s.trial_id=t.trial_id
+        and s.settled=true
+        and s.evaluation->>'version'='CFI_PROSPECTIVE_MULTI_MARKET_FUSION_V3_SAMPLE_EVAL_V1'
+    ),
+    updated_at=now();
 
 comment on table public.cfi_mm_fusion_v3_prospective_trials is
 'Research-only Fusion V3 prospective trial. decision_use=false; no canonical or production mutation; promotion requires separate fail-closed gate.';
