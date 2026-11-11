@@ -1,0 +1,28 @@
+{
+  "dataset_version": "CFI_HF_REAL_SMOKE_ENGLAND_E2_2016_V1",
+  "source": "CFI-Persistent-DB read-only immutable smoke slice",
+  "competition_key": "england:e2",
+  "exported_for": "HF shadow CI/E2E only",
+  "fixtures": [
+    {"fixture_id":"02ec25b2-5cc9-42f9-a3ca-b978642ecfac","match_date":"2016-01-02","home_team":"Southend","away_team":"Doncaster","ht_home":0,"ht_away":1,"ft_home":0,"ft_away":3,"status":"CANONICAL"},
+    {"fixture_id":"036fcde3-a090-4529-9cc1-a7ff6b6e91f3","match_date":"2016-01-02","home_team":"Chesterfield","away_team":"Shrewsbury","ht_home":3,"ht_away":0,"ft_home":7,"ft_away":1,"status":"CANONICAL"},
+    {"fixture_id":"0c639a59-6671-43bc-8daf-17d36e5773fa","match_date":"2016-01-02","home_team":"Crewe","away_team":"Coventry","ht_home":0,"ht_away":4,"ft_home":0,"ft_away":5,"status":"CANONICAL"},
+    {"fixture_id":"172cb98e-21af-4582-8f7b-61b5887ac607","match_date":"2016-01-02","home_team":"Barnsley","away_team":"Millwall","ht_home":1,"ht_away":0,"ft_home":2,"ft_away":1,"status":"CANONICAL"},
+    {"fixture_id":"3ec67a54-dd2d-46ab-9df4-59cb0dad8f67","match_date":"2016-01-02","home_team":"Walsall","away_team":"Rochdale","ht_home":0,"ht_away":1,"ft_home":0,"ft_away":3,"status":"CANONICAL"},
+    {"fixture_id":"5430d2c7-db74-469b-9acc-95923d606953","match_date":"2016-01-02","home_team":"Sheffield United","away_team":"Peterboro","ht_home":1,"ht_away":1,"ft_home":2,"ft_away":3,"status":"CANONICAL"},
+    {"fixture_id":"69a56d33-fa3a-40f2-bb56-0a0c3d172b5b","match_date":"2016-01-02","home_team":"Scunthorpe","away_team":"Wigan","ht_home":1,"ht_away":1,"ft_home":1,"ft_away":1,"status":"CANONICAL"},
+    {"fixture_id":"717d2f94-747a-4806-94ef-57634d6a7261","match_date":"2016-01-02","home_team":"Oldham","away_team":"Colchester","ht_home":1,"ht_away":0,"ft_home":1,"ft_away":1,"status":"CANONICAL"},
+    {"fixture_id":"a456613a-0049-417f-aee1-7a4f6163b3cc","match_date":"2016-01-02","home_team":"Fleetwood Town","away_team":"Bury","ht_home":0,"ht_away":0,"ft_home":2,"ft_away":0,"status":"CANONICAL"},
+    {"fixture_id":"a65fe655-d010-4e9d-b855-eec3c5fa96fc","match_date":"2016-01-02","home_team":"Gillingham","away_team":"Bradford","ht_home":2,"ht_away":0,"ft_home":3,"ft_away":0,"status":"CANONICAL"},
+    {"fixture_id":"d468d6f3-6d30-42b0-a2bf-b553b5860a00","match_date":"2016-01-02","home_team":"Burton","away_team":"Blackpool","ht_home":0,"ht_away":0,"ft_home":1,"ft_away":0,"status":"CANONICAL"},
+    {"fixture_id":"b817b2b5-4278-4794-a2d4-4d67ebe9a583","match_date":"2016-01-07","home_team":"Wigan","away_team":"Gillingham","ht_home":0,"ht_away":1,"ft_home":3,"ft_away":2,"status":"CANONICAL"},
+    {"fixture_id":"607c676c-1a5b-4089-9769-2ab95acf1a84","match_date":"2016-01-09","home_team":"Swindon","away_team":"Southend","ht_home":2,"ht_away":2,"ft_home":4,"ft_away":2,"status":"CANONICAL"},
+    {"fixture_id":"7f16dd6b-0299-412f-a1da-71b064db6f44","match_date":"2016-01-09","home_team":"Rochdale","away_team":"Chesterfield","ht_home":0,"ht_away":1,"ft_home":2,"ft_away":3,"status":"CANONICAL"},
+    {"fixture_id":"846d170f-9c6f-4494-ac02-81966c33bdc0","match_date":"2016-01-09","home_team":"Blackpool","away_team":"Port Vale","ht_home":0,"ht_away":0,"ft_home":0,"ft_away":1,"status":"CANONICAL"},
+    {"fixture_id":"da65d91b-712c-44b4-a393-2789dc0268fc","match_date":"2016-01-09","home_team":"Oldham","away_team":"Millwall","ht_home":0,"ht_away":1,"ft_home":1,"ft_away":2,"status":"CANONICAL"},
+    {"fixture_id":"698fd19e-bbf6-4a7f-881c-2ce2ed8a845a","match_date":"2016-01-12","home_team":"Wigan","away_team":"Sheffield United","ht_home":2,"ht_away":0,"ft_home":3,"ft_away":3,"status":"CANONICAL"},
+    {"fixture_id":"b3bba825-23b2-4ba1-9ad4-e5a74bfd23d3","match_date":"2016-01-12","home_team":"Coventry","away_team":"Walsall","ht_home":1,"ht_away":0,"ft_home":1,"ft_away":1,"status":"CANONICAL"},
+    {"fixture_id":"097ded6b-e0a9-4059-97f5-d45b7637e28a","match_date":"2016-01-16","home_team":"Coventry","away_team":"Burton","ht_home":0,"ht_away":0,"ft_home":0,"ft_away":2,"status":"CANONICAL"},
+    {"fixture_id":"1e17aed1-cd3b-4ec4-80f0-dde03d93fe1e","match_date":"2016-01-16","home_team":"Peterboro","away_team":"Southend","ht_home":0,"ht_away":0,"ft_home":0,"ft_away":0,"status":"CANONICAL"}
+  ]
+}

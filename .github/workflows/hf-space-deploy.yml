@@ -1,0 +1,67 @@
+name: CFI HF Space Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      space_id:
+        description: Hugging Face Space id as namespace/name
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cfi-hf-space-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-shadow-space:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: cfi-hf-shadow
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE_ID: ${{ inputs.space_id }}
+      CFI_HF_SHADOW_MODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Fail closed unless Hugging Face credential is configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${HF_TOKEN:-}" || { echo 'HF_TOKEN secret is required'; exit 2; }
+          [[ "${HF_SPACE_ID}" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || { echo 'Invalid HF_SPACE_ID'; exit 3; }
+
+      - run: npm ci
+
+      - name: Re-prove shadow-only runtime before deployment
+        run: node --experimental-strip-types cfi-hf-shadow-node/src/self-check.mjs
+
+      - name: Install pinned Hugging Face Hub CLI
+        run: python -m pip install --disable-pip-version-check 'huggingface_hub[cli]==1.30.0'
+
+      - name: Authenticate without printing token
+        run: |
+          hf auth login --token "$HF_TOKEN"
+          hf auth whoami
+
+      - name: Deploy isolated Docker Space
+        run: bash cfi-hf-shadow-node/deploy-hf.sh
+
+      - name: Record deployment target
+        if: always()
+        run: |
+          echo "HF_SPACE_ID=${HF_SPACE_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "SOURCE_SHA=${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHADOW_ONLY=true" >> "$GITHUB_STEP_SUMMARY"
+          echo "PRODUCTION_MUTATION=false" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+local-node/cache
+local-node/logs
+local-node/state
+cfi-hf-shadow-node/artifacts
+.env
+.env.*
+coverage
+playwright-report
+test-results

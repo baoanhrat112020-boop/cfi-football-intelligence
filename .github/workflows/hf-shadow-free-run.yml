@@ -1,0 +1,73 @@
+name: CFI Shadow Free Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Shadow workload
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - historical
+          - locked_oos_gate
+      dataset_location:
+        description: Immutable JSON artifact URL/path for historical or locked OOS
+        required: false
+        type: string
+      dataset_sha256:
+        description: Exact SHA-256 for immutable dataset
+        required: false
+        type: string
+      dataset_version:
+        description: Immutable dataset version label
+        required: false
+        default: CFI_FREE_MANUAL_V1
+        type: string
+      run_id:
+        description: Optional append-only run id
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cfi-shadow-free-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  free-shadow-run:
+    runs-on: ubuntu-slim
+    timeout-minutes: 30
+    env:
+      CFI_HF_SHADOW_MODE: '1'
+      CFI_HF_ARTIFACT_ROOT: ${{ github.workspace }}/cfi-hf-shadow-artifacts
+      CFI_FREE_RUN_MODE: ${{ inputs.mode }}
+      CFI_FREE_DATASET_LOCATION: ${{ inputs.dataset_location }}
+      CFI_FREE_DATASET_SHA256: ${{ inputs.dataset_sha256 }}
+      CFI_FREE_DATASET_VERSION: ${{ inputs.dataset_version }}
+      CFI_FREE_RUN_ID: ${{ inputs.run_id }}
+      CFI_CODE_COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Prove shadow-only environment
+        run: node --experimental-strip-types cfi-hf-shadow-node/src/self-check.mjs
+      - name: Execute free-first shadow workload
+        run: node --experimental-strip-types cfi-hf-shadow-node/src/free-run.mjs | tee cfi-free-run-result.jsonl
+      - name: Upload shadow artifacts only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfi-shadow-free-${{ github.run_id }}
+          path: |
+            cfi-free-run-result.jsonl
+            cfi-hf-shadow-artifacts/
+          if-no-files-found: warn
+          retention-days: 7

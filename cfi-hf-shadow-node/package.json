@@ -1,0 +1,11 @@
+{
+  "name": "cfi-hf-shadow-node",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types src/server.mjs",
+    "smoke": "node --experimental-strip-types src/smoke.mjs",
+    "soak": "node --experimental-strip-types src/soak.mjs"
+  }
+}
