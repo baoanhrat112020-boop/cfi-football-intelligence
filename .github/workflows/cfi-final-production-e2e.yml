@@ -52,7 +52,7 @@ jobs:
 
           if [ -z "${CFI_DB_KEY:-}" ]; then
             echo '{"gate":"SUPPLIED_FIXTURE_ACCEPTANCE","result":"VERIFIED_SHORTFALL","reason":"CFI_DB_KEY_UNAVAILABLE_FOR_ACQUISITION"}'
-            exit 0
+            exit 1
           fi
 
           FEED_BODY=$(mktemp)
@@ -61,7 +61,7 @@ jobs:
           if [ "$FEED_HTTP" != "200" ]; then
             echo '{"gate":"SUPPLIED_FIXTURE_ACCEPTANCE","result":"VERIFIED_SHORTFALL","reason":"ACQUISITION_FEED_UNAVAILABLE"}'
             cat "$FEED_BODY"
-            exit 0
+            exit 1
           fi
 
           REQUEST=$(mktemp)
@@ -101,7 +101,7 @@ jobs:
           CANDIDATE_COUNT=$(node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); console.log(x.fixture_candidates.length)" "$REQUEST")
           if [ "$CANDIDATE_COUNT" -eq 0 ]; then
             echo '{"gate":"SUPPLIED_FIXTURE_ACCEPTANCE","result":"VERIFIED_SHORTFALL","reason":"NO_AUDITABLE_CANDIDATES_TODAY"}'
-            exit 0
+            exit 1
           fi
 
           BODY=$(mktemp)
@@ -134,6 +134,14 @@ jobs:
           if(n(counts?.fixturesDiscovered)>supplied.length)failures.push('FIXTURE_POOL_GREW_OUTSIDE_INPUT');
           if(n(counts?.predictionAttempts)>supplied.length)failures.push('PREDICTION_ATTEMPTS_EXCEED_INPUT');
 
+          const required=5;
+          if(request.max_matches!==required||supplied.length!==required)failures.push('FIVE_SUPPLIED_FIXTURES_REQUIRED');
+          for(const field of ['predictionAttempts','predictionSuccess','fullPredictionsExecuted']){
+            if(counts[field]!==required)failures.push(`${field.toUpperCase()}_MUST_EQUAL_FIVE`);
+          }
+          if(board.length!==required)failures.push('FIVE_COMPLETE_BOARD_ROWS_REQUIRED');
+          const seen=new Set();
+
           for(const row of board){
             const expected=suppliedById.get(String(row?.providerId));
             if(!expected){failures.push(`OUTSIDE_INPUT_${row?.providerId??row?.match??'UNKNOWN'}`);continue;}
@@ -141,6 +149,14 @@ jobs:
             if(row?.provider!==expectedProvider)failures.push(`PROVIDER_MISMATCH_${row?.providerId}_${row?.provider}_EXPECTED_${expectedProvider}`);
             if(row?.strictPrior!==true)failures.push(`STRICT_PRIOR_FAIL_${row?.providerId}`);
             if(row?.multiMarketDecisionUse!==false)failures.push(`SHADOW_DECISION_USE_FAIL_${row?.providerId}`);
+            const identity=JSON.stringify([row?.provider,row?.providerId]);
+            if(seen.has(identity))failures.push(`DUPLICATE_BOARD_ROW_${row?.providerId}`);
+            seen.add(identity);
+            const prediction=row?.prediction;
+            if(!['SUCCESS','DATA_READY'].includes(prediction?.status))failures.push(`FULL_PREDICTION_MISSING_${row?.providerId}`);
+            if(prediction?.sixTargetMatrix?.verification?.complete!==true)failures.push(`SIX_TARGETS_INCOMPLETE_${row?.providerId}`);
+            if(prediction?.strictPrior?.verified!==true&&prediction?.strictPriorAudit?.evidence?.verified!==true)failures.push(`PREDICTION_STRICT_PRIOR_FAIL_${row?.providerId}`);
+            if(prediction?.consistencyGuard?.status!=='PASS')failures.push(`PREDICTION_CONSISTENCY_FAIL_${row?.providerId}`);
           }
 
           const accepted=n(search?.aiCandidatesAccepted);

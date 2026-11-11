@@ -140,8 +140,20 @@ export default{async fetch(request:Request,env:Env,ctx:ExecutionContext){
     }
   }
   if(url.pathname==='/api/status'&&request.method==='GET'){
-    const res=await base.fetch(request,env,ctx);const body=await readJson(res);
-    return Response.json({...unwrap(body),runtime:{...(unwrap(body)?.runtime??{}),version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6,sixTargetContract:'CFI_2_METHODS_X_6_TARGETS_V1',bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:res.status});
+    let res:Response;
+    try{res=await base.fetch(request,env,ctx)}catch{
+      return Response.json({status:'BLOCKED',error:'UPSTREAM_STATUS_TRANSPORT_ERROR',decisionUse:false},{status:503});
+    }
+    const envelope:any=await readJson(res),raw=unwrap(envelope);
+    const body=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
+    // Legacy wrappers return HTTP 200 even when callCFI captured a backend error.
+    const upstreamHttpStatus=Number.isInteger(envelope?.httpStatus)?envelope.httpStatus:res.status;
+    const healthy=res.ok&&envelope?.ok!==false&&upstreamHttpStatus>=200&&upstreamHttpStatus<300&&body.status==='OK';
+    if(!healthy){
+      const quota=/exceed_egress_quota/i.test(String(body.message??body.error??raw??''));
+      return Response.json({...body,status:'BLOCKED',error:quota?'UPSTREAM_EGRESS_QUOTA_EXCEEDED':body.status==='OK'?'UPSTREAM_STATUS_UNAVAILABLE':'UPSTREAM_STATUS_INVALID',upstreamHttpStatus,decisionUse:false},{status:503});
+    }
+    return Response.json({...body,runtime:{...(body.runtime??{}),version:RUNTIME_VERSION,engine:FINAL_VERSION,predictionPath:'NATIVE_V5_2_STRICT_PRIOR',primaryTargets:6,sixTargetContract:'CFI_2_METHODS_X_6_TARGETS_V1',bigDbRetrieval:BIG_DB_RETRIEVAL_VERSION}},{status:res.status});
   }
   if(url.pathname==='/health'){
     const res=await base.fetch(request,env,ctx);const body=await readJson(res);

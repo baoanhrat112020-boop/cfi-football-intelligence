@@ -20,6 +20,7 @@ const report = {
   aiUsage: "ZERO",
   startedAt: new Date().toISOString(),
   changedFiles: [],
+  scannedFiles: [],
   risk: "P3",
   findings: [],
   checks: [],
@@ -63,7 +64,6 @@ function run(command, args = [], options = {}) {
 }
 
 const git = (args) => run("git", args);
-const lines = (s) => s.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 
 function finding(x) { report.findings.push(x); }
 function check(name, r, blocking = true) {
@@ -81,18 +81,25 @@ function check(name, r, blocking = true) {
 function changedFiles() {
   const files = new Set();
   for (const args of [
-    ["diff", "--name-only"],
-    ["diff", "--cached", "--name-only"],
-    ["ls-files", "--others", "--exclude-standard"],
+    ["diff", "--name-only", "-z"],
+    ["diff", "--cached", "--name-only", "-z"],
+    ["ls-files", "--others", "--exclude-standard", "-z"],
   ]) {
     const r = git(args);
-    if (r.exitCode === 0) lines(r.stdout).forEach(f => files.add(f));
+    if (r.exitCode === 0) r.stdout.split('\0').filter(Boolean).forEach(f => files.add(f));
   }
 
-  const latest = git(["diff", "--name-only", "--diff-filter=ACMRTUXB", "HEAD~1", "HEAD"]);
-  if (latest.exitCode === 0) lines(latest.stdout).forEach(f => files.add(f));
+  const latest = git(["diff", "--name-only", "-z", "--diff-filter=ACMRTUXB", "HEAD~1", "HEAD"]);
+  if (latest.exitCode === 0) latest.stdout.split('\0').filter(Boolean).forEach(f => files.add(f));
 
   return [...files].filter(f => fs.existsSync(path.join(ROOT, f)));
+}
+
+function repositoryFiles() {
+  const r=git(['ls-files','--cached','--others','--exclude-standard','-z']);
+  check('git inventory',r,true);
+  return [...new Set(r.stdout.split('\0').filter(Boolean))]
+    .filter(f=>!isGeneratedAuditArtifact(f));
 }
 
 function hashFiles(files) {
@@ -102,6 +109,8 @@ function hashFiles(files) {
     try { h.update(fs.readFileSync(path.join(ROOT, file))); } catch {}
   }
   h.update(FULL ? "FULL" : "INCREMENTAL");
+  h.update(process.version + process.platform + process.arch);
+  h.update(fs.readFileSync(new URL(import.meta.url)));
   return h.digest("hex");
 }
 
@@ -169,12 +178,12 @@ function scan(file) {
   }
 
   if (/(predict|prediction|model|forecast)/i.test(lf) &&
-      /(reconstruct.{0,40}prediction|prediction.{0,40}reconstruct)/is.test(text)) {
+      /\b(?:reconstruct\w*prediction\w*|prediction\w*reconstruct\w*)\s*\(/i.test(text)) {
     finding({
       severity: "P0", subsystem: "Prediction Integrity", rule: "POSTMATCH_RECONSTRUCTION_RISK", file,
-      symptom: "Prediction reconstruction logic detected.",
+      symptom: "Reconstruction-named prediction callable requires review.",
       impact: "Post-match knowledge may contaminate historical predictions.",
-      evidence: "Prediction and reconstruction terminology found together.",
+      evidence: "Prediction reconstruction callable detected; rejection flags alone are not evidence of reconstruction.",
       proposedFix: "Use immutable pre-kickoff snapshots only.",
       regressionTest: "Settlement without a pre-match snapshot must fail closed."
     });
@@ -219,7 +228,10 @@ function scan(file) {
 
   if (/(shadow|research|challenger|replay)/i.test(lf) &&
       /\.(ts|js|mjs)$/i.test(lf) &&
-      /\.(insert|upsert|update|delete)\s*\(/i.test(text)) {
+      /\.(insert|upsert|update|delete)\s*\(/i.test(
+        // Hash.update is a local digest operation, not a database mutation.
+        text.replace(/\bcreateHash\(\s*(['"])[^'"]+\1\s*\)\s*\.update\s*\(/g, 'hashInput(')
+      )) {
     finding({
       severity: "P1", subsystem: "Shadow Isolation", rule: "SHADOW_DB_WRITE_REVIEW_REQUIRED", file,
       symptom: "Database mutation found in shadow/research code.",
@@ -252,8 +264,19 @@ function runChecks(risk) {
   check("git diff --check", git(["diff", "--check"]), true);
 
   const pkg = packageJson();
-  if (!pkg) return;
+  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) {
+    check('package.json', {exitCode:1,stdout:'',stderr:'Missing or invalid package manifest',durationMs:0});
+    return;
+  }
   const s = pkg.scripts || {};
+
+  if (FULL && (typeof s.test !== 'string' || !s.test.trim())) {
+    check('npm test required', {exitCode:1,stdout:'',stderr:'Full audit requires a test command',durationMs:0});
+  }
+
+  if (FULL && fs.existsSync(path.join(ROOT, 'package-lock.json'))) {
+    check('npm audit', run('npm', ['audit', '--package-lock-only', '--audit-level=moderate', '--fetch-timeout=20000', '--fetch-retries=0']), true);
+  }
 
   if (s.lint) check("npm run lint", run("npm", ["run", "lint"]), true);
   if (s.typecheck) check("npm run typecheck", run("npm", ["run", "typecheck"]), true);
@@ -271,6 +294,10 @@ function runChecks(risk) {
     ROOT, "node_modules", ".bin",
     process.platform === "win32" ? "wrangler.cmd" : "wrangler"
   ));
+
+  if (FULL && hasWranglerConfig && !localWrangler) {
+    check('wrangler deploy --dry-run', {exitCode:1,stdout:'',stderr:'Local Wrangler is missing; install locked dependencies before auditing',durationMs:0});
+  }
 
   if (hasWranglerConfig && localWrangler &&
       (FULL || report.changedFiles.some(f => /(worker|wrangler|supabase\/functions)/i.test(f)))) {
@@ -374,12 +401,14 @@ function writeReports() {
 
 function main() {
   report.changedFiles = changedFiles();
-  report.risk = classify(report.changedFiles);
+  const files=repositoryFiles();
+  report.scannedFiles = (FULL ? files : report.changedFiles).filter(f=>!isGeneratedAuditArtifact(f));
+  report.risk = classify(report.scannedFiles);
 
-  const key = hashFiles(report.changedFiles);
+  const key = hashFiles(files);
   const cacheFile = path.join(CACHE_DIR, "cache.json");
 
-  if (!NO_CACHE && fs.existsSync(cacheFile)) {
+  if (!FULL && !NO_CACHE && report.checks.every(c=>c.status==='PASS') && fs.existsSync(cacheFile)) {
     try {
       const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
       if (cached.key === key && cached.status === "PASS") {
@@ -389,7 +418,7 @@ function main() {
     } catch {}
   }
 
-  for (const f of report.changedFiles) {
+  for (const f of report.scannedFiles) {
     if (isGeneratedAuditArtifact(f)) continue;
     if (/\.(ts|tsx|js|mjs|cjs|sql|json|yaml|yml|md|env)$/i.test(f) ||
         path.basename(f).startsWith(".env")) scan(f);
